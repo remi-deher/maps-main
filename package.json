@@ -1,0 +1,51 @@
+{
+  "name": "gps-mock",
+  "version": "1.0.0",
+  "description": "GPS location spoofer for iPhone via pymobiledevice3",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "build": "electron-builder --win --x64",
+    "test": "jest"
+  },
+  "build": {
+    "appId": "com.gpsmock.app",
+    "productName": "GPS Mock",
+    "win": {
+      "target": "nsis",
+      "icon": "assets/icon.ico",
+      "requestedExecutionLevel": "requireAdministrator"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "GPS Mock"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "index.html",
+      "src/**",
+      "renderer/**",
+      "assets/**"
+    ],
+    "extraResources": [
+      {
+        "from": "resources/python",
+        "to": "python",
+        "filter": [
+          "**/*"
+        ]
+      }
+    ]
+  },
+  "devDependencies": {
+    "electron": "^29.0.0",
+    "electron-builder": "^24.0.0",
+    "jest": "^30.3.0",
+    "jest-environment-jsdom": "^30.3.0",
+    "playwright": "^1.59.1"
+  }
+}
