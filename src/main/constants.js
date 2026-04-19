@@ -8,14 +8,10 @@ module.exports = {
   WIFI_TUNNEL_TIMEOUT: 20000,
   WIFI_SCAN_TIMEOUT: 25000,
   
-  // Port RSD par défaut
-  RSD_DEFAULT_PORT: 53248,
-  
-  // Plage de ports pour le prober
-  PROBE_PORT_START: 53400,
-  PROBE_PORT_COUNT: 60,
-  PROBE_TIMEOUT: 300,
-  PROBE_INTERVAL: 20,
+  // Timeouts et délais
+  TUNNEL_RESTART_DELAY: 3000,
+  TUNNEL_RESTART_DELAY_LONG: 8000,
+  WIFI_TUNNEL_TIMEOUT: 20000,
   
   // Timeouts GPS
   GPS_SEND_TIMEOUT: 15000,

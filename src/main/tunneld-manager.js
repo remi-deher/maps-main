@@ -1,16 +1,14 @@
 'use strict'
 
 /**
- * tunneld-manager.js (Orchestrateur)
+ * tunneld-manager.js (Orchestrateur Unifié)
  *
- * Centralise la gestion des tunnels USB et WiFi en déléguant
- * la logique basse niveau aux sous-modules du dossier ./tunneld/
+ * Centralise la gestion des tunnels via un seul démon (tunneld)
+ * qui gère nativement l'USB et le WiFi.
  */
 
 const ConnectionState = require('./tunneld/connection-state')
-const UsbBus = require('./tunneld/usb-bus')
-const WifiBus = require('./tunneld/wifi-bus')
-const { WIFI_RETRY_DELAY } = require('./constants')
+const TunneldService = require('./tunneld/tunneld-service')
 
 // ─── État Global ──────────────────────────────────────────────────────────────
 
@@ -21,107 +19,66 @@ const state = new ConnectionState(() => {
   if (_onTunnelRestoredCb) _onTunnelRestoredCb()
 })
 
-const usb = new UsbBus()
-const wifi = new WifiBus()
+const service = new TunneldService()
 
 // ─── Configuration des événements ─────────────────────────────────────────────
 
-// Liaison USB -> State
-usb.on('connection', ({ address, port, type }) => {
-  const success = state.setConnected(address, port, type)
-  if (success && type === 'USB') {
-    wifi.stop()
-  }
-})
-
-usb.on('disconnection', (reason) => {
-  if (state.type === 'USB') {
-    state.setDisconnected(reason)
-    // Basculement WiFi rapide
-    wifi.scheduleRetry(500)
-  }
-})
-
-// Liaison WiFi -> State
-wifi.on('connection', ({ address, port, type }) => {
+service.on('connection', ({ address, port, type }) => {
+  // L'orchestrateur met à jour l'état global.
+  // Si on est déjà connecté en USB, et qu'une connexion WiFi arrive, 
+  // on privilégie l'USB pour la stabilité, ou on accepte le switch.
   state.setConnected(address, port, type)
 })
 
-wifi.on('failure', (msg) => {
-  // Optionnel : on pourrait envoyer un status spécifique si besoin
+service.on('disconnection', (reason) => {
+  state.setDisconnected(reason)
 })
 
-// Partage du port USB vers WiFi (Smart Port)
-// On observe les changements d'état pour synchroniser le dernier port connu
-const originalSetConnected = state.setConnected.bind(state)
-state.setConnected = (address, port, type) => {
-  const res = originalSetConnected(address, port, type)
-  if (res && port) wifi.lastKnownPort = port
-  return res
-}
+service.on('error', (msg) => {
+  // On pourrait logguer plus précisément les erreurs tunnel
+})
 
 // ─── API Publique ─────────────────────────────────────────────────────────────
 
+/**
+ * Démarre le service global de gestion des tunnels
+ */
 function startTunneld(settings = {}) {
   if (_isQuitting) return
   
-  const mode = settings.connectionMode || 'both'
-
-  if (mode === 'both' || mode === 'usb') {
-    usb.start()
-  } else {
-    usb.stop()
-  }
-
-  if (mode === 'both' || mode === 'wifi') {
-    // Au démarrage, on tente aussi le WiFi si pas encore de connexion
-    if (!state.isConnected) wifi.scheduleRetry(500)
-  } else {
-    wifi.stop()
-  }
+  // Dans cette nouvelle architecture, on démarre le service unique
+  // qui détectera automatiquement les appareils branchés ou sur le réseau.
+  service.start()
 }
 
+/**
+ * Arrête tout
+ */
 function stopTunneld() {
-  usb.stop()
-  wifi.stop()
+  service.stop()
   state.reset()
 }
 
 function setQuitting() {
   _isQuitting = true
-  usb.destroy()
-  wifi.destroy()
+  service.destroy()
 }
 
+/**
+ * Obsolète dans l'architecture unifiée, gardé pour compatibilité IPC
+ * car tunneld gère lui-même les IP via mDNS.
+ */
 function setWifiIpOverride(ip, port) {
-  const prevIp = wifi.ipOverride
-  wifi.setOverrides(ip, port)
-
-  // Si l'IP change, on relance le WiFi
-  if (prevIp !== wifi.ipOverride) {
-    if (state.type === 'WiFi') state.setDisconnected('Changement IP Config')
-    wifi.stop()
-    wifi.scheduleRetry(500)
-  } else if (!state.isConnected && wifi.ipOverride) {
-    // On ne force le retry que si le Wifi est activé dans les settings
-    // Mais cette fonction est appelée après saveSettings qui s'occupe de la logique globale
-  }
+  // Optionnel : on pourrait implémenter un "ping" ici pour aider la découverte
 }
 
 function applyConnectionMode(mode) {
-  if (mode === 'usb') {
-    wifi.stop()
-    if (state.type === 'WiFi') state.setDisconnected('Mode USB uniquement')
-    usb.start()
-  } else if (mode === 'wifi') {
-    usb.stop()
-    if (state.type === 'USB') state.setDisconnected('Mode WiFi uniquement')
-    wifi.scheduleRetry(500)
-  } else {
-    // both
-    usb.start()
-    if (!state.isConnected) wifi.scheduleRetry(500)
-  }
+  // Optionnel : on pourrait filtrer les évènements 'connection' selon le mode
+}
+
+function forceRefresh() {
+  service.stop()
+  service.start()
 }
 
 function setOnTunnelRestored(cb) { _onTunnelRestoredCb = cb }
@@ -132,6 +89,7 @@ module.exports = {
   setQuitting,
   setWifiIpOverride,
   applyConnectionMode,
+  forceRefresh,
   getRsdAddress: () => state.address,
   getRsdPort: () => state.port,
   getConnectionType: () => state.type,

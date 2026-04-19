@@ -67,15 +67,44 @@ class WifiBus extends EventEmitter {
 
     if (device.manual) {
       let port = device.port || this.lastKnownPort
+      
+      // Smart Verification: si on a un port, on vérifie s'il répond vraiment
+      if (port) {
+        const isOpen = await this._isPortOpen(device.address, port)
+        if (!isOpen) {
+          dbg(`[wifi-bus] port mémorisé ${port} ne répond plus, lancement d'un scan...`)
+          port = null 
+          this.lastKnownPort = null
+        }
+      }
+
       if (!port) {
-        sendStatus('tunneld', 'starting', `Scan des ports sur ${device.address}...`)
+        sendStatus('tunneld', 'starting', `Scan des ports RSD en cours sur ${device.address}...`)
         port = await this._probePort(device.address)
       }
-      this.emit('connection', { address: device.address, port: port || RSD_DEFAULT_PORT, type: 'WiFi' })
+
+      if (port) {
+        this.emit('connection', { address: device.address, port, type: 'WiFi' })
+      } else {
+        dbg('[wifi-bus] aucun port trouvé lors du scan')
+        this.emit('failure', 'Aucun port RSD trouvé')
+        this.scheduleRetry()
+      }
     } else {
       // mDNS case - we use the discovered port
       this.emit('connection', { address: device.address, port: device.port, type: 'WiFi' })
     }
+  }
+
+  _isPortOpen(ip, port) {
+    return new Promise((resolve) => {
+      const s = new net.Socket()
+      s.setTimeout(800) // Très rapide
+      s.on('connect', () => { s.destroy(); resolve(true) })
+      s.on('error', () => { s.destroy(); resolve(false) })
+      s.on('timeout', () => { s.destroy(); resolve(false) })
+      s.connect(port, ip)
+    })
   }
 
   async _resolveAddress() {
@@ -124,7 +153,19 @@ class WifiBus extends EventEmitter {
   }
 
   _probePort(ip) {
-    const ports = [RSD_DEFAULT_PORT, ...Array.from({ length: PROBE_PORT_COUNT }, (_, i) => PROBE_PORT_START + i)]
+    const { 
+      RSD_DEFAULT_PORT, 
+      PROBE_PORT_START, PROBE_PORT_COUNT,
+      PROBE_PORT_HIGH_START, PROBE_PORT_HIGH_COUNT,
+      PROBE_INTERVAL, PROBE_TIMEOUT 
+    } = require('../constants')
+
+    const ports = [
+      RSD_DEFAULT_PORT, 
+      ...Array.from({ length: PROBE_PORT_COUNT }, (_, i) => PROBE_PORT_START + i),
+      ...Array.from({ length: PROBE_PORT_HIGH_COUNT }, (_, i) => PROBE_PORT_HIGH_START + i)
+    ]
+
     return new Promise((resolve) => {
       let finished = false
       const done = (p) => { if (!finished) { finished = true; resolve(p) } }
@@ -140,7 +181,7 @@ class WifiBus extends EventEmitter {
           s.connect(p, ip)
         }, i * PROBE_INTERVAL)
       })
-      setTimeout(() => done(null), 3500)
+      setTimeout(() => done(null), 6000)
     })
   }
 

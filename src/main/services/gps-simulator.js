@@ -119,6 +119,13 @@ class GpsSimulator extends EventEmitter {
         stderr += d.toString()
         if (stderr.toLowerCase().includes('error') || stderr.toLowerCase().includes('failed')) {
           if (this.process === proc) this.process = null
+
+          // Si c'est une erreur de connexion (Port mort / RSD expiré)
+          if (stderr.includes('ConnectionRefusedError') || stderr.includes('1225') || stderr.includes('ECONNREFUSED')) {
+            dbg('[gps-sim] erreur de connexion détectée -> demande de rafraîchissement au tunnel...')
+            this.tunnel.forceRefresh()
+          }
+
           done({ success: false, error: stderr })
         }
       })
@@ -127,8 +134,16 @@ class GpsSimulator extends EventEmitter {
         if (this.process === proc) this.process = null
         if (!resolved) {
           const hasError = stderr.toLowerCase().includes('error') || stderr.toLowerCase().includes('failed')
-          if (code === 0 && !hasError) done({ success: true })
-          else done({ success: false, error: stderr || `Exit ${code}` })
+          
+          if (code === 0 && !hasError) {
+            done({ success: true })
+          } else {
+            // Analyse de l'erreur sur l'exit aussi
+            if (stderr.includes('ConnectionRefusedError') || stderr.includes('1225') || code === 1) {
+               // On pourrait refresh ici aussi mais stderr l'a probablement déjà fait
+            }
+            done({ success: false, error: stderr || `Exit ${code}` })
+          }
         }
       })
 
