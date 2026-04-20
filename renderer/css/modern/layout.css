@@ -1,0 +1,58 @@
+/* ── Layout Modern (Map-Centric) ── */
+
+:root {
+  --radius-xl: 16px;
+  --radius-l: 12px;
+  --radius-m: 8px;
+  --shadow-premium: 0 8px 30px rgba(0, 0, 0, 0.2);
+  --glass-bg: rgba(22, 33, 62, 0.85); /* Dark mode Glass */
+  --glass-border: rgba(15, 52, 96, 0.5);
+  --glass-blur: blur(12px);
+}
+
+[data-theme='light'] :root {
+  --glass-bg: rgba(255, 255, 255, 0.85);
+  --glass-border: rgba(200, 200, 200, 0.4);
+}
+
+body {
+  margin: 0;
+  padding: 0;
+  height: 100vh;
+  width: 100vw;
+  overflow: hidden;
+  position: relative;
+  background: #000; /* Fond noir derrière la map au chargement */
+}
+
+/* Map plein écran en arrière-plan */
+#map {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 1;
+}
+
+/* Conteneurs flottants */
+.floating-ui {
+  position: absolute;
+  z-index: 1000;
+  pointer-events: none; /* Laisse passer les clics sauf sur ses enfants */
+  display: flex;
+  flex-direction: column;
+}
+
+.floating-ui > * {
+  pointer-events: auto; /* Réactive les clics pour les cartes */
+}
+
+/* Glassmorphism utility */
+.glass-panel {
+  background: var(--glass-bg);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  border: 1px solid var(--glass-border);
+  box-shadow: var(--shadow-premium);
+}

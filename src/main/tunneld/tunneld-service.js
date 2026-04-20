@@ -20,6 +20,7 @@ class TunneldService extends EventEmitter {
     this._isQuitting = false
     this.devices = new Map() // udid -> connectionInfo
     this.heartbeatProcesses = new Map() // udid -> process
+    this.activeConnection = null // { address, port, type, id }
   }
 
   start(manualIp = null) {
@@ -63,13 +64,17 @@ class TunneldService extends EventEmitter {
         // On a trouvé, on annule le fallback
         if (this.fallbackTimer) { clearTimeout(this.fallbackTimer); this.fallbackTimer = null }
 
+        // Anti-doublon : Si on est déjà connecté sur cette IP/Port, on ignore
+        if (this.activeConnection && this.activeConnection.address === address && this.activeConnection.port === port) return
+
         dbg(`[tunneld] Connexion détectée : ${type} (${address}:${port})`)
         sendStatus('tunneld', 'active', `iPhone détecté via ${type} (${address}:${port})`)
         
         // Démarrage du heartbeat pour garder l'iPhone réveillé
         this._startHeartbeat(deviceId, type === 'WiFi')
 
-        this.emit('connection', { address, port, type, id: deviceId })
+        this.activeConnection = { address, port, type, id: deviceId }
+        this.emit('connection', this.activeConnection)
       }
 
       // Détection d'erreurs fatales
@@ -115,7 +120,7 @@ class TunneldService extends EventEmitter {
   }
 
   async _triggerNativeFallback(manualIp = null) {
-    if (this._isQuitting) return
+    if (this._isQuitting || this.activeConnection) return
     dbg('[tunneld-service] Aucun appareil détecté via tunneld. Test via Bonjour Natif (dns-sd)...')
     sendStatus('tunneld', 'info', 'Recherche approfondie via Bonjour Natif...')
     
@@ -137,6 +142,8 @@ class TunneldService extends EventEmitter {
     }
 
     if (targetData && targetData.port) {
+      if (this.activeConnection) return // Double check juste avant d'émettre
+      
       const address = targetData.address || 'fe80::1'
       dbg(`[tunneld-service] Appareil trouvé ! ${address}:${targetData.port}`)
       sendStatus('tunneld', 'active', `iPhone forcé via ${targetData.address} (${targetData.port})`)
@@ -156,6 +163,7 @@ class TunneldService extends EventEmitter {
   }
 
   stop() {
+    this.activeConnection = null
     this._stopAllHeartbeats()
     if (this.fallbackTimer) { clearTimeout(this.fallbackTimer); this.fallbackTimer = null }
     if (this.restartTimer) { clearTimeout(this.restartTimer); this.restartTimer = null }

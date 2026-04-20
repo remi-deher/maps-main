@@ -17,56 +17,29 @@
   const settingsTab = document.createElement('div')
   settingsTab.className  = 'tab'
   settingsTab.dataset.tab = 'settings'
-  settingsTab.textContent = '⚙️ Config'
+  settingsTab.textContent = 'Config'
   tabsEl.appendChild(settingsTab)
 
   // Ajouter le panneau settings après les autres list-panels
-  const lastPanel = document.getElementById('tab-favorites')
+  const sidebarContent = document.querySelector('.sidebar-content')
   const settingsPanel = document.createElement('div')
   settingsPanel.id        = 'tab-settings'
   settingsPanel.className = 'list-panel'
   settingsPanel.innerHTML = `
     <div class="settings-section">
-
       <div class="settings-group">
-        <div class="settings-label">
-          📡 Connexion WiFi manuelle
-        </div>
-        <div class="settings-desc">
-          Si l'iPhone n'est pas détecté automatiquement sur le réseau,
-          entrez son adresse IP ici. Laissez vide pour utiliser la
-          découverte automatique (mDNS).
-        </div>
-
+        <div class="settings-label">📡 Connexion WiFi manuelle</div>
+        <div class="settings-desc">Entrez l'adresse IP si l'iPhone n'est pas détecté.</div>
         <div class="settings-row">
-          <label for="setting-wifi-ip">Adresse IP iPhone</label>
-          <input
-            type="text"
-            id="setting-wifi-ip"
-            placeholder="ex : 192.168.1.42"
-            autocomplete="off"
-            spellcheck="false"
-          />
+          <label>Adresse IP</label>
+          <input type="text" id="setting-wifi-ip" placeholder="ex : 192.168.1.42" />
         </div>
-
         <div class="settings-row">
-          <label for="setting-wifi-port">Port (optionnel)</label>
-          <input
-            type="text"
-            id="setting-wifi-port"
-            placeholder="ex : 58783"
-            autocomplete="off"
-            spellcheck="false"
-          />
-        </div>
-
-        <div class="settings-label" style="margin-top: 10px;">
-          🔌 Mode de Connexion
-        </div>
-        <div class="settings-desc">
-          Choisissez comment l'app doit communiquer avec l'iPhone.
+          <label>Port (optionnel)</label>
+          <input type="text" id="setting-wifi-port" placeholder="ex : 58783" />
         </div>
         
+        <div class="settings-label" style="margin-top: 10px;">🔌 Mode</div>
         <div class="toggle-group" id="connection-mode-group">
           <button class="toggle-btn" data-mode="usb">USB</button>
           <button class="toggle-btn" data-mode="wifi">WiFi</button>
@@ -74,131 +47,14 @@
         </div>
 
         <div class="settings-hint" id="settings-hint"></div>
-
         <div class="settings-actions">
-          <button class="btn btn-secondary" id="btn-settings-clear" style="flex:1">
-            🗑 Effacer
-          </button>
-          <button class="btn btn-primary" id="btn-settings-save" style="flex:2">
-            💾 Enregistrer
-          </button>
+          <button class="btn btn-secondary" id="btn-settings-clear" style="flex:1">🗑</button>
+          <button class="btn btn-primary" id="btn-settings-save" style="flex:2">💾 Sauver</button>
         </div>
       </div>
-
-      <div class="settings-group">
-        <div class="settings-label">ℹ️ Comment trouver l'IP de l'iPhone</div>
-        <div class="settings-desc">
-          Réglages → WiFi → appuyer sur le réseau connecté → Adresse IP.<br><br>
-          L'iPhone et le PC doivent être sur le même réseau local.
-        </div>
-      </div>
-
     </div>
   `
-  lastPanel.insertAdjacentElement('afterend', settingsPanel)
-
-  // ─── CSS inline ──────────────────────────────────────────────────────────────
-
-  const style = document.createElement('style')
-  style.textContent = `
-    .settings-section {
-      padding: 12px;
-      display: flex;
-      flex-direction: column;
-      gap: 14px;
-    }
-    .settings-group {
-      background: var(--bg-input);
-      border: 1px solid var(--border-color);
-      border-radius: 8px;
-      padding: 12px 14px;
-      display: flex;
-      flex-direction: column;
-      gap: 8px;
-    }
-    .settings-label {
-      font-size: 12px;
-      font-weight: 700;
-      color: var(--text-main);
-      text-transform: uppercase;
-      letter-spacing: .06em;
-    }
-    .settings-desc {
-      font-size: 11px;
-      color: var(--text-muted);
-      line-height: 1.5;
-    }
-    .settings-row {
-      display: flex;
-      flex-direction: column;
-      gap: 4px;
-    }
-    .settings-row label {
-      font-size: 11px;
-      color: var(--text-muted);
-    }
-    .settings-row input {
-      width: 100%;
-      background: var(--bg-panel);
-      border: 1px solid var(--border-color);
-      border-radius: 6px;
-      color: var(--text-main);
-      font-size: 13px;
-      padding: 7px 10px;
-      outline: none;
-      transition: border-color .2s;
-      font-family: 'Consolas', monospace;
-    }
-    .settings-row input:focus {
-      border-color: var(--btn-primary);
-    }
-    .settings-row input.has-value {
-      border-color: var(--text-success);
-      color: var(--text-success);
-    }
-    .settings-actions {
-      display: flex;
-      gap: 8px;
-      margin-top: 4px;
-    }
-    .settings-hint {
-      font-size: 11px;
-      min-height: 16px;
-      transition: color .2s;
-    }
-    .settings-hint.ok    { color: var(--text-success); }
-    .settings-hint.err   { color: var(--text-error); }
-    .settings-hint.info  { color: var(--text-info); }
-
-    .toggle-group {
-      display: flex;
-      background: var(--bg-panel);
-      border: 1px solid var(--border-color);
-      border-radius: 6px;
-      overflow: hidden;
-      margin-bottom: 4px;
-    }
-    .toggle-btn {
-      flex: 1;
-      background: none;
-      border: none;
-      padding: 6px;
-      font-size: 11px;
-      font-weight: 600;
-      color: var(--text-muted);
-      cursor: pointer;
-      transition: all .2s;
-    }
-    .toggle-btn:hover {
-      background: var(--bg-list-hover);
-      color: var(--text-main);
-    }
-    .toggle-btn.active {
-      background: var(--btn-primary);
-      color: var(--text-white);
-    }
-  `
-  document.head.appendChild(style)
+  sidebarContent.appendChild(settingsPanel)
 
   // ─── Logique ─────────────────────────────────────────────────────────────────
 

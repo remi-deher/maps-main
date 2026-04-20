@@ -1,3 +1,9 @@
+@import './modern/layout.css';
+@import './modern/sidebar.css';
+@import './modern/search.css';
+@import './modern/components.css';
+@import './modern/settings.css';
+
 :root {
   --bg-body: #1a1a2e;
   --bg-panel: #16213e;
