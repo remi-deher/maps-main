@@ -20,6 +20,7 @@ const state = new ConnectionState(() => {
 })
 
 const service = new TunneldService()
+let _manualIp = null
 
 // ─── Configuration des événements ─────────────────────────────────────────────
 
@@ -31,7 +32,14 @@ service.on('connection', ({ address, port, type }) => {
 })
 
 service.on('disconnection', (reason) => {
+  const wasWiFi = state.type === 'WiFi'
   state.setDisconnected(reason)
+  
+  // Si on a perdu le WiFi, on relance immédiatement une recherche agressive
+  if (wasWiFi && !_isQuitting) {
+    dbg('[tunneld-manager] WiFi déconnecté. Relance immédiate de la découverte...')
+    service.start()
+  }
 })
 
 service.on('error', (msg) => {
@@ -48,7 +56,8 @@ function startTunneld(settings = {}) {
   
   // Dans cette nouvelle architecture, on démarre le service unique
   // qui détectera automatiquement les appareils branchés ou sur le réseau.
-  service.start()
+  _manualIp = settings.wifiIp || null
+  service.start(_manualIp)
 }
 
 /**
@@ -69,7 +78,11 @@ function setQuitting() {
  * car tunneld gère lui-même les IP via mDNS.
  */
 function setWifiIpOverride(ip, port) {
-  // Optionnel : on pourrait implémenter un "ping" ici pour aider la découverte
+  _manualIp = ip
+  if (service.process) {
+    // Si on change l'IP alors que c'est déjà lancé, on refresh
+    service.start(_manualIp)
+  }
 }
 
 function applyConnectionMode(mode) {

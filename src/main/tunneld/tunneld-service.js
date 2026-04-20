@@ -19,12 +19,14 @@ class TunneldService extends EventEmitter {
     this.fallbackTimer = null
     this._isQuitting = false
     this.devices = new Map() // udid -> connectionInfo
+    this.heartbeatProcesses = new Map() // udid -> process
   }
 
-  start() {
+  start(manualIp = null) {
     if (this._isQuitting) return
     this.stop()
 
+    this._manualIp = manualIp
     dbg('[tunneld-service] lancement du démon tunneld...')
     sendStatus('tunneld', 'starting', 'Initialisation du démon tunnel...')
 
@@ -33,8 +35,8 @@ class TunneldService extends EventEmitter {
       stdio: ['ignore', 'pipe', 'pipe'],
     })
 
-    // Fallback : Si après 10s on n'a rien trouvé, on tente dns-sd
-    this.fallbackTimer = setTimeout(() => this._triggerNativeFallback(), 10000)
+    // Fallback : Si après 10s on n'a rien trouvé, on tente dns-sd + manuel
+    this.fallbackTimer = setTimeout(() => this._triggerNativeFallback(this._manualIp), 10000)
 
     const onData = (data) => {
       const text = data.toString().trim()
@@ -47,10 +49,14 @@ class TunneldService extends EventEmitter {
       if (matchRsd) {
         const address = matchRsd[1]
         const port = matchRsd[2]
-        
-        // On cherche l'ID de l'appareil dans toute la ligne (format [start-tunnel-task-usbmux-ID-TYPE])
-        const matchId = text.match(/\[start-tunnel-task-usbmux-([^-]+)-(\w+)\]/)
+
+        // On cherche l'ID de l'appareil dans toute la ligne
+        // format : [start-tunnel-task-usbmux-UDID-TYPE]
+        // L'UDID peut contenir des tirets, donc on prend tout jusqu'au dernier tiret
+        const matchId = text.match(/\[start-tunnel-task-usbmux-(.+)-([^-]+)\]/)
+        const deviceId = matchId ? matchId[1] : 'unknown'
         const typeRaw = matchId ? matchId[2] : ''
+        
         const isUSB = typeRaw.toLowerCase().includes('usb')
         const type = isUSB ? 'USB' : 'WiFi'
 
@@ -59,7 +65,11 @@ class TunneldService extends EventEmitter {
 
         dbg(`[tunneld] Connexion détectée : ${type} (${address}:${port})`)
         sendStatus('tunneld', 'active', `iPhone détecté via ${type} (${address}:${port})`)
-        this.emit('connection', { address, port, type, id: matchId ? matchId[1] : 'unknown' })
+        
+        // Démarrage du heartbeat pour garder l'iPhone réveillé
+        this._startHeartbeat(deviceId, type === 'WiFi')
+
+        this.emit('connection', { address, port, type, id: deviceId })
       }
 
       // Détection d'erreurs fatales
@@ -79,23 +89,61 @@ class TunneldService extends EventEmitter {
     })
   }
 
-  async _triggerNativeFallback() {
+  _startHeartbeat(udid, isWiFi) {
+    if (this.heartbeatProcesses.has(udid)) return
+    
+    dbg(`[tunneld-service] Démarrage du battement de coeur (heartbeat) pour ${udid}...`)
+    const args = ['-m', 'pymobiledevice3', 'lockdown', 'heartbeat', '--udid', udid]
+    if (isWiFi) args.push('--mobdev2')
+
+    const proc = spawn(PYTHON, args)
+    this.heartbeatProcesses.set(udid, proc)
+
+    proc.on('exit', () => {
+      if (this.heartbeatProcesses.get(udid) === proc) {
+        this.heartbeatProcesses.delete(udid)
+      }
+    })
+  }
+
+  _stopAllHeartbeats() {
+    for (const [udid, proc] of this.heartbeatProcesses) {
+      dbg(`[tunneld-service] Arrêt heartbeat pour ${udid}`)
+      try { proc.kill() } catch (_) {}
+    }
+    this.heartbeatProcesses.clear()
+  }
+
+  async _triggerNativeFallback(manualIp = null) {
     if (this._isQuitting) return
     dbg('[tunneld-service] Aucun appareil détecté via tunneld. Test via Bonjour Natif (dns-sd)...')
     sendStatus('tunneld', 'info', 'Recherche approfondie via Bonjour Natif...')
     
+    let targetData = null
     const instances = await nativeBonjour.scan(5000)
+    
     if (instances.length > 0) {
-      const data = await nativeBonjour.resolve(instances[0])
-      if (data && data.port) {
-        const address = data.address || 'fe80::1' // Par défaut on tente le link-local si non extrait
-        dbg(`[tunneld-service] Appareil trouvé via fallback ! ${address}:${data.port}`)
-        sendStatus('tunneld', 'active', `iPhone forcé via WiFi (${address}:${data.port})`)
-        this.emit('connection', { address, port: data.port, type: 'WiFi' })
+      targetData = await nativeBonjour.resolve(instances[0])
+    }
+    
+    // DERNIER RECOURS : Si on n'a rien trouvé via Bonjour, on tente l'IP manuelle si elle existe
+    if (!targetData && manualIp) {
+      dbg(`[tunneld-service] Échec Bonjour. Tentative forcée sur l'IP manuelle : ${manualIp}...`)
+      sendStatus('tunneld', 'info', `Tentative forcée sur ${manualIp}...`)
+      const port = await nativeBonjour._probeIPv6(manualIp) // _probeIPv6 gère aussi l'IPv4
+      if (port) {
+        targetData = { address: manualIp, port }
       }
+    }
+
+    if (targetData && targetData.port) {
+      const address = targetData.address || 'fe80::1'
+      dbg(`[tunneld-service] Appareil trouvé ! ${address}:${targetData.port}`)
+      sendStatus('tunneld', 'active', `iPhone forcé via ${targetData.address} (${targetData.port})`)
+      this.emit('connection', { address, port: targetData.port, type: 'WiFi' })
     } else {
-      dbg('[tunneld-service] Échec du fallback natif.')
-      sendStatus('tunneld', 'error', 'iPhone non détecté (Vérifiez le WiFi et le câble)')
+      dbg('[tunneld-service] Échec de la découverte complète.')
+      sendStatus('tunneld', 'error', 'iPhone non détecté (Déverrouillez le téléphone)')
     }
   }
 
@@ -108,6 +156,7 @@ class TunneldService extends EventEmitter {
   }
 
   stop() {
+    this._stopAllHeartbeats()
     if (this.fallbackTimer) { clearTimeout(this.fallbackTimer); this.fallbackTimer = null }
     if (this.restartTimer) { clearTimeout(this.restartTimer); this.restartTimer = null }
     if (this.process) {
