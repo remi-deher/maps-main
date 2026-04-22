@@ -77,10 +77,14 @@ class TunneldService extends EventEmitter {
         this.emit('connection', this.activeConnection)
       }
 
-      // Détection de déconnexion spécifique à un tunnel
-      if (text.includes('Disconnected from tunnel')) {
+      // Détection de déconnexion plus robuste
+      if (text.includes('Disconnected from tunnel') || 
+          text.includes('terminating') || 
+          text.includes('Tunnel task failed')) {
+        dbg(`[tunneld-service] !!! DECONNEXION DETECTEE !!! Motif : ${text}`)
+        this._stopAllHeartbeats()
         this.activeConnection = null
-        this.emit('disconnection', 'Tunnel interrompu')
+        this.emit('disconnection', text)
       }
 
       // Détection d'erreurs fatales
@@ -181,6 +185,10 @@ class TunneldService extends EventEmitter {
       try { this.process.kill('SIGTERM') } catch (_) {}
       this.process = null
     }
+  }
+
+  stopHeartbeats() {
+    this._stopAllHeartbeats()
   }
 
   destroy() {

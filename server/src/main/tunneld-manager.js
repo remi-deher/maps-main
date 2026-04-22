@@ -7,6 +7,7 @@
  * qui gère nativement l'USB et le WiFi.
  */
 
+const { dbg } = require('./logger')
 const ConnectionState = require('./tunneld/connection-state')
 const TunneldService = require('./tunneld/tunneld-service')
 
@@ -81,11 +82,14 @@ function setQuitting() {
  * car tunneld gère lui-même les IP via mDNS.
  */
 function setWifiIpOverride(ip, port) {
-  _manualIp = ip
-  if (service.process) {
-    // Si on change l'IP alors que c'est déjà lancé, on refresh
-    service.start(_manualIp)
+  if (_manualIp === ip && state.isConnected) {
+    // Déjà sur cette IP et connecté, on ne touche à rien
+    return
   }
+  
+  dbg(`[tunneld-manager] Nouvelle IP detectee (${ip}), mise a jour du service...`)
+  _manualIp = ip
+  service.start(_manualIp)
 }
 
 function applyConnectionMode(mode) {
@@ -109,6 +113,7 @@ module.exports = {
   getRsdAddress: () => state.address,
   getRsdPort: () => state.port,
   getConnectionType: () => state.type,
+  stopHeartbeats: () => service.stopHeartbeats(),
   setOnTunnelRestored,
   setOnStatusChange: (cb) => { _onStatusChangeCb = cb },
 }

@@ -15,5 +15,5 @@ module.exports = {
   
   // Timeouts GPS
   GPS_SEND_TIMEOUT: 15000,
-  WATCHDOG_INTERVAL: 30000
+  WATCHDOG_INTERVAL: 10000
 }

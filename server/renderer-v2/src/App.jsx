@@ -13,9 +13,20 @@ function App() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [qrOpen, setQrOpen] = useState(false);
   const [selectedPos, setSelectedPos] = useState(null);
+  const [activeSim, setActiveSim] = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
   
   const { history, favorites, addToHistory, addFavorite, removeFavorite } = useStorage();
+
+  const isFavorite = (lat, lon) => favorites.some(f => Math.abs(f.lat - lat) < 0.0001 && Math.abs(f.lon - lon) < 0.0001);
+  const toggleFavorite = async (pos) => {
+    if (isFavorite(pos.lat, pos.lon)) {
+      const idx = favorites.findIndex(f => Math.abs(f.lat - pos.lat) < 0.0001 && Math.abs(f.lon - pos.lon) < 0.0001);
+      if (idx !== -1) await removeFavorite(idx);
+    } else {
+      await addFavorite({ name: pos.name || "Lieu favori", lat: pos.lat, lon: pos.lon });
+    }
+  };
   const { search, results, loading, reverseGeocode, setResults } = useSearch();
 
   useEffect(() => {
@@ -54,7 +65,7 @@ function App() {
     if (!selectedPos) return;
     const res = await window.gps.setLocation(selectedPos.lat, selectedPos.lon, selectedPos.name);
     if (res.success) {
-      // showToast through IPC or context later
+      setActiveSim(selectedPos);
       addToHistory(selectedPos);
       setSelectedPos(null);
     }
@@ -63,6 +74,7 @@ function App() {
   const resetLocation = async () => {
     await window.gps.clearLocation();
     setSelectedPos(null);
+    setActiveSim(null);
   };
 
   return (
@@ -70,16 +82,17 @@ function App() {
       
       {/* Background Map */}
       <div className="absolute inset-0 z-0">
-        <MapView onMapClick={handleMapClick} selectedPos={selectedPos} />
+        <MapView onMapClick={handleMapClick} selectedPos={selectedPos || activeSim} />
       </div>
 
-      {/* Top Floating Bar (Omnibar) */}
-      <div className="absolute top-6 left-6 right-6 z-50 flex flex-col items-center pointer-events-none">
+      {/* Top Floating Bar (Omnibar) & Active Sim Pill */}
+      <div className="absolute top-6 left-6 right-6 z-50 flex flex-col items-center pointer-events-none gap-4">
         <motion.div 
           initial={{ y: -20, opacity: 0 }}
           animate={{ y: 0, opacity: 1 }}
-          className="w-full max-w-2xl pointer-events-auto glass-dark rounded-2xl h-14 flex items-center px-4 gap-4 shadow-2xl"
+          className="w-full max-w-2xl pointer-events-auto glass-deeper rounded-2xl h-14 flex items-center px-4 gap-4 shadow-2xl"
         >
+          {/* ... existing omnibar content ... */}
           <button 
             onClick={() => setSidebarOpen(true)}
             className="p-2 hover:bg-white/10 rounded-xl transition-colors"
@@ -105,13 +118,49 @@ function App() {
 
           <div className="w-px h-6 bg-white/10" />
           
-          <button 
-            onClick={() => setQrOpen(true)}
-            className="p-2 hover:bg-white/10 rounded-xl transition-colors"
-          >
+          <button onClick={() => setQrOpen(true)} className="p-2 hover:bg-white/10 rounded-xl transition-colors">
             <QrCode className="w-6 h-6 text-slate-300" />
           </button>
         </motion.div>
+
+        {/* Active Simulation Pill */}
+        <AnimatePresence>
+          {activeSim && (
+            <motion.div 
+              initial={{ y: -10, opacity: 0 }}
+              animate={{ y: 0, opacity: 1 }}
+              exit={{ y: -10, opacity: 0 }}
+              className="pointer-events-auto glass-deeper border border-blue-500/30 px-5 py-2 rounded-2xl flex items-center gap-4 shadow-xl"
+            >
+              <div className="w-2 h-2 rounded-full bg-blue-500 animate-pulse shadow-[0_0_8px_rgba(59,130,246,0.8)]" />
+              <div className="flex flex-col">
+                <p className="text-xs font-bold text-blue-400 uppercase tracking-widest leading-none mb-1">Simulation Active</p>
+                <p className="text-sm font-bold text-white leading-none max-w-[250px] truncate">
+                  {activeSim.name || `${activeSim.lat.toFixed(4)}, ${activeSim.lon.toFixed(4)}`}
+                </p>
+              </div>
+              
+              <div className="w-px h-6 bg-white/10 mx-1" />
+              
+              <div className="flex items-center gap-1">
+                <button 
+                  onClick={() => toggleFavorite(activeSim)}
+                  className={`p-2 rounded-lg transition-colors ${isFavorite(activeSim.lat, activeSim.lon) ? 'text-yellow-400 bg-yellow-400/10' : 'text-slate-400 hover:bg-white/10'}`}
+                  title={isFavorite(activeSim.lat, activeSim.lon) ? "Retirer des favoris" : "Ajouter aux favoris"}
+                >
+                  <Star className={`w-5 h-5 ${isFavorite(activeSim.lat, activeSim.lon) ? 'fill-current' : ''}`} />
+                </button>
+                <button 
+                  onClick={resetLocation}
+                  className="p-2 text-slate-400 hover:text-red-400 hover:bg-red-400/10 rounded-lg transition-colors"
+                  title="Arrêter la simulation"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
 
         {/* Search Results Dropdown */}
         <AnimatePresence>
@@ -120,18 +169,18 @@ function App() {
               initial={{ opacity: 0, y: -10 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -10 }}
-              className="w-full max-w-2xl mt-2 glass-dark rounded-2xl overflow-hidden shadow-2xl pointer-events-auto"
+              className="w-full max-w-2xl glass-deeper rounded-2xl overflow-hidden shadow-2xl pointer-events-auto border border-white/5"
             >
               {results.map((res, i) => (
                 <button 
                   key={i}
                   onClick={() => selectLocation(res)}
-                  className="w-full p-4 text-left hover:bg-white/5 border-b border-white/5 last:border-none flex items-start gap-3"
+                  className="w-full p-4 text-left hover:bg-white/10 border-b border-white/5 last:border-none flex items-start gap-4 transition-colors"
                 >
-                  <MapPin className="w-5 h-5 mt-1 text-slate-500" />
+                  <MapPin className="w-5 h-5 mt-1 text-blue-400" />
                   <div>
-                    <p className="font-medium text-slate-200 line-clamp-1">{res.name}</p>
-                    <p className="text-xs text-slate-500">{res.lat}, {res.lon}</p>
+                    <p className="font-bold text-white text-base line-clamp-1">{res.name}</p>
+                    <p className="text-xs text-slate-400 font-medium">{res.lat}, {res.lon}</p>
                   </div>
                 </button>
               ))}

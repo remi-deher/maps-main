@@ -58,6 +58,7 @@ app.whenReady().then(() => {
 
   // Liaison GPS -> Companion (Broadcast de la position vers l'iPhone)
   gps.on('location-changed', ({ lat, lon, name }) => {
+    tunnel.stopHeartbeats() // On arrête les heartbeats pour laisser la simulation prioritaire
     companion.broadcastLocation(lat, lon, name)
   })
 
