@@ -1,0 +1,45 @@
+name: Build Unsigned IPA
+on: [push]
+
+jobs:
+  build:
+    runs-on: macos-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+
+      - name: Setup Node
+        uses: actions/setup-node@v3
+        with:
+          node-version: 18
+
+      - name: Install Expo & Dependencies
+        run: |
+          npm install -g expo-cli
+          cd client && npm install
+
+      - name: Expo Prebuild
+        run: cd client && npx expo prebuild --platform ios
+
+      - name: Build Unsigned App
+        run: |
+          cd client/ios
+          xcodebuild -workspace *.xcworkspace \
+                     -scheme client \
+                     -configuration Release \
+                     -sdk iphoneos \
+                     CODE_SIGNING_ALLOWED=NO \
+                     CODE_SIGNING_REQUIRED=NO \
+                     clean build
+
+      - name: Create IPA
+        run: |
+          mkdir -p Payload
+          cp -r client/ios/build/Release-iphoneos/client.app Payload/
+          zip -r GPSMock.ipa Payload
+
+      - name: Upload result
+        uses: actions/upload-artifact@v3
+        with:
+          name: Unsigned-IPA
+          path: GPSMock.ipa
