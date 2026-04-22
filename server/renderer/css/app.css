@@ -5,6 +5,7 @@
 @import './modern/modal.css';
 @import './modern/settings.css';
 @import './modern/components.css';
+@import './modern/action-pill.css';
 
 :root {
   --bg-body: #0f0f1b;

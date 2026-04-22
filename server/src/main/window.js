@@ -22,7 +22,15 @@ function createWindow() {
       nodeIntegration: false,
     },
   })
-  mainWindow.loadFile('index.html')
+  const isDev = process.env.NODE_ENV === 'development' || !app.isPackaged
+
+  if (isDev) {
+    mainWindow.loadURL('http://localhost:3000')
+    // Optionnel : ouvrir les outils de développement automatiquement
+    // mainWindow.webContents.openDevTools()
+  } else {
+    mainWindow.loadFile(path.join(__dirname, '..', '..', 'dist', 'index.html'))
+  }
 
   // Injecter la référence fenêtre dans le logger
   setWindow(mainWindow)

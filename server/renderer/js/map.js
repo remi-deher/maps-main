@@ -162,11 +162,16 @@
       if (coordsEl) coordsEl.textContent = `${AppState.selectedLat}, ${AppState.selectedLon}`
     }
 
-    // On active les boutons d'action s'ils existent
-    const btnTeleport = document.getElementById('btn-teleport')
-    const btnFav = document.getElementById('btn-favorite')
     if (btnTeleport) btnTeleport.disabled = false
     if (btnFav) btnFav.disabled = false
+
+    // Gestion de la pilule d'action "Allez ici"
+    const actionPill = document.getElementById('action-pill')
+    if (actionPill) {
+      document.getElementById('action-name').textContent = name || 'Lieu sélectionné'
+      document.getElementById('action-coords').textContent = `${AppState.selectedLat}, ${AppState.selectedLon}`
+      actionPill.style.display = 'flex'
+    }
   }
 
   // ─── Initialisation & Switch ────────────────────────────────────────────────

@@ -18,11 +18,12 @@
   const { addToHistory, renderHistory, renderFavorites } = HistoryFavModule
 
   // ─── Bouton Téléporter ────────────────────────────────────────────────────────
-
-  document.getElementById('btn-teleport').addEventListener('click', async () => {
+  
+  const teleportAction = async (btn) => {
     if (AppState.selectedLat === null) return
-    const btn = document.getElementById('btn-teleport')
-    btn.disabled    = true
+    
+    const originalText = btn.textContent
+    btn.disabled = true
     btn.textContent = '⏳ Envoi...'
 
     const label = AppState.selectedName || `${AppState.selectedLat}, ${AppState.selectedLon}`
@@ -30,22 +31,27 @@
 
     const result = await window.gps.setLocation(AppState.selectedLat, AppState.selectedLon, AppState.selectedName)
 
-    btn.disabled    = false
-    btn.textContent = "🚀 Téléporter l'iPhone ici"
+    btn.disabled = false
+    btn.textContent = originalText
 
     if (result.success) {
       log(`✅ ${label} (Latence: ${(result.latencyMs / 1000).toFixed(1)}s)`, 'ok')
       showToast('Position simulée !', 'success')
       addToHistory(AppState.selectedLat, AppState.selectedLon, AppState.selectedName)
       setActiveSim(AppState.selectedLat, AppState.selectedLon, AppState.selectedName, result.latencyMs)
+      
+      const actionPill = document.getElementById('action-pill')
+      if (actionPill) actionPill.style.display = 'none'
     } else {
       log(`❌ ${result.error}`, 'err')
-      showToast(
-        result.error.includes('Timeout') ? 'Timeout — réessaie' : "Erreur lors de l'envoi",
-        'error'
-      )
+      showToast(result.error.includes('Timeout') ? 'Timeout — réessaie' : "Erreur lors de l'envoi", 'error')
     }
-  })
+  }
+
+  document.getElementById('btn-teleport').addEventListener('click', (e) => teleportAction(e.currentTarget))
+  
+  const btnGoHere = document.getElementById('btn-go-here')
+  if (btnGoHere) btnGoHere.addEventListener('click', (e) => teleportAction(e.currentTarget))
 
   // ─── Bouton Réinitialiser ─────────────────────────────────────────────────────
 
@@ -55,6 +61,8 @@
       log('Position réinitialisée', 'ok')
       showToast('Position réinitialisée', 'success')
       clearActiveSim()
+      const actionPill = document.getElementById('action-pill')
+      if (actionPill) actionPill.style.display = 'none'
     } else {
       log(`Erreur clear : ${result.error}`, 'err')
       showToast('Erreur lors de la réinitialisation', 'error')
