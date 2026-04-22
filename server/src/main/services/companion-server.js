@@ -2,13 +2,15 @@
 
 const { WebSocketServer } = require('ws')
 const os = require('os')
+const { EventEmitter } = require('events')
 const { dbg, sendStatus } = require('../logger')
 
 /**
  * CompanionServer - Gère la communication WebSocket avec l'application iOS
  */
-class CompanionServer {
+class CompanionServer extends EventEmitter {
   constructor() {
+    super()
     this.wss = null
     this.port = null
     this.clients = new Set()
@@ -81,6 +83,27 @@ class CompanionServer {
     this._updateFrontend()
   }
 
+  /**
+   * Envoie la position simulée actuelle aux clients connectés
+   */
+  broadcastLocation(lat, lon, name = '') {
+    this._broadcast({ 
+      type: 'LOCATION', 
+      data: { lat, lon, name } 
+    })
+  }
+
+  /**
+   * Retourne l'URL de connexion WebSocket pour le QR Code
+   */
+  getConnectionInfo() {
+    return {
+      ip: this._getLocalIp(),
+      port: this.port,
+      url: `ws://${this._getLocalIp()}:${this.port}`
+    }
+  }
+
   _handleMessage(ws, payload) {
     if (payload.type === 'HEARTBEAT') {
       this.status.maintainActive = payload.data.isMaintaining
@@ -89,6 +112,11 @@ class CompanionServer {
       
       // Répondre au heartbeat
       ws.send(JSON.stringify({ type: 'PONG', timestamp: Date.now() }))
+    } 
+    else if (payload.type === 'SET_LOCATION') {
+      const { lat, lon } = payload.data
+      dbg(`[companion-server] iPhone demande position: ${lat}, ${lon}`)
+      this.emit('request-location', { lat, lon })
     }
   }
 

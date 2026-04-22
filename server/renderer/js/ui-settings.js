@@ -44,6 +44,13 @@
           <label>Port WebSocket</label>
           <input type="number" id="setting-companion-port" placeholder="ex : 8080" />
         </div>
+        
+        <div id="companion-qr-container" style="margin-top: 15px; text-align: center; display: none;">
+          <div class="settings-desc">Scannez ce code avec l'iPhone pour configurer l'IP et le Port :</div>
+          <img id="companion-qr-img" style="width: 150px; height: 150px; margin: 10px auto; border: 4px solid white; border-radius: 8px; box-shadow: 0 4px 10px rgba(0,0,0,0.1);" />
+          <div id="companion-qr-url" style="font-size: 10px; color: #999; font-family: monospace;"></div>
+        </div>
+        <button class="btn btn-secondary" id="btn-show-qr" style="width:100%; margin-top: 10px;">📱 Afficher le QR Code</button>
 
         <div class="settings-label" style="margin-top: 20px;">🗺️ Cartographie</div>
         <div class="settings-desc">Choisissez votre moteur de rendu de carte préféré.</div>
@@ -85,6 +92,10 @@
   const ipInput    = document.getElementById('setting-wifi-ip')
   const portInput  = document.getElementById('setting-wifi-port')
   const companionPortInput = document.getElementById('setting-companion-port')
+  const companionQrContainer = document.getElementById('companion-qr-container')
+  const companionQrImg = document.getElementById('companion-qr-img')
+  const companionQrUrl = document.getElementById('companion-qr-url')
+  const btnShowQr = document.getElementById('btn-show-qr')
   const googleInput = document.getElementById('setting-google-key')
   const hintEl     = document.getElementById('settings-hint')
   const btnSave    = document.getElementById('btn-settings-save')
@@ -225,6 +236,32 @@
       window.UIModule?.showToast('IP WiFi effacée', 'info')
     } catch (e) {
       setHint(`Erreur: ${e.message}`, 'err')
+    }
+  })
+
+  // Gestion du QR Code
+  btnShowQr.addEventListener('click', async () => {
+    if (companionQrContainer.style.display === 'block') {
+      companionQrContainer.style.display = 'none'
+      btnShowQr.textContent = '📱 Afficher le QR Code'
+      return
+    }
+
+    try {
+      btnShowQr.disabled = true
+      const result = await window.gps.getCompanionQr()
+      if (result.success) {
+        companionQrImg.src = result.dataUrl
+        companionQrUrl.textContent = result.url
+        companionQrContainer.style.display = 'block'
+        btnShowQr.textContent = '🙈 Masquer le QR Code'
+      } else {
+        window.UIModule?.showToast('Erreur QR Code', 'error')
+      }
+    } catch (e) {
+      console.error(e)
+    } finally {
+      btnShowQr.disabled = false
     }
   })
 

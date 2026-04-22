@@ -2,6 +2,7 @@
 
 const { ipcMain, app, shell } = require('electron')
 const settings = require('../services/settings-manager')
+const QRCode = require('qrcode')
 
 /**
  * Registre central des IPC Handlers.
@@ -56,6 +57,23 @@ function registerIpcHandlers(tunnel, gps, companion) {
 
   // ─── Système ───────────────────────────────────────────────────────────────
   
+  ipcMain.handle('get-companion-qr', async () => {
+    try {
+      const info = companion.getConnectionInfo()
+      const dataUrl = await QRCode.toDataURL(info.url, {
+        margin: 2,
+        scale: 8,
+        color: {
+          dark: '#2d3748',
+          light: '#ffffff'
+        }
+      })
+      return { success: true, dataUrl, ...info }
+    } catch (e) {
+      return { success: false, error: e.message }
+    }
+  })
+
   ipcMain.handle('open-logs', async () => {
     await shell.openPath(app.getPath('logs'))
   })

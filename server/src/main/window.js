@@ -48,6 +48,16 @@ app.whenReady().then(() => {
   // Liaison Tunnel -> Companion
   tunnel.setOnStatusChange((active) => companion.updateTunnelStatus(active))
 
+  // Liaison GPS -> Companion (Broadcast de la position vers l'iPhone)
+  gps.on('location-changed', ({ lat, lon, name }) => {
+    companion.broadcastLocation(lat, lon, name)
+  })
+
+  // Liaison Companion -> GPS (Demande de l'iPhone vers le PC)
+  companion.on('request-location', ({ lat, lon }) => {
+    gps.setLocation(lat, lon, "Position iPhone")
+  })
+
   companion.start(initialSettings.companionPort) // Démarrer le serveur WebSocket
   
   tunnel.startTunneld(initialSettings)

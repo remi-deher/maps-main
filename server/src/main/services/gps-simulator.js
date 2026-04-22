@@ -33,6 +33,7 @@ class GpsSimulator extends EventEmitter {
     const result = await this._spawn('set', [String(lat), String(lon)])
     if (result.success) {
       this.lastCoords = { lat, lon, name }
+      this.emit('location-changed', this.lastCoords)
       this._startWatchdog()
     }
     return result

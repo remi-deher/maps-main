@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { StyleSheet, Text, View, Button, TextInput, KeyboardAvoidingView, Platform } from 'react-native';
+import { StyleSheet, Text, View, Button, TextInput, KeyboardAvoidingView, Platform, Alert } from 'react-native';
 import * as Location from 'expo-location';
 import * as TaskManager from 'expo-task-manager';
+import MapView, { Marker } from 'react-native-maps';
 
 const LOCATION_TASK_NAME = 'background-location-task';
 const DEFAULT_PORT = '8080';
@@ -26,6 +27,8 @@ export default function App() {
   const [serverPort, setServerPort] = useState(DEFAULT_PORT);
   const [wsStatus, setWsStatus] = useState('Déconnecté');
   const [pcTunnelActive, setPcTunnelActive] = useState(false);
+  const [simulatedCoords, setSimulatedCoords] = useState(null);
+  const [pendingCoords, setPendingCoords] = useState(null);
   const [errorMsg, setErrorMsg] = useState(null);
   
   const ws = useRef(null);
@@ -85,6 +88,10 @@ export default function App() {
           const payload = JSON.parse(e.data);
           if (payload.type === 'STATUS') {
             setPcTunnelActive(payload.data.tunnelActive);
+          } else if (payload.type === 'LOCATION') {
+            setSimulatedCoords(payload.data);
+            setPendingCoords(null); // Réinitialiser si une nouvelle position arrive du PC
+            Alert.alert("Succès", "Position mise à jour sur le PC");
           }
         } catch (err) {
           console.log('WS JSON Error', err);
@@ -152,6 +159,22 @@ export default function App() {
     }
   };
 
+  const onMapLongPress = (e) => {
+    const coords = e.nativeEvent.coordinate;
+    setPendingCoords(coords);
+  };
+
+  const applyPendingLocation = () => {
+    if (ws.current?.readyState === WebSocket.OPEN && pendingCoords) {
+      ws.current.send(JSON.stringify({
+        type: 'SET_LOCATION',
+        data: { lat: pendingCoords.latitude, lon: pendingCoords.longitude }
+      }));
+    } else {
+      Alert.alert("Erreur", "Vérifiez votre connexion au PC");
+    }
+  };
+
   return (
     <KeyboardAvoidingView 
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
@@ -184,6 +207,73 @@ export default function App() {
           <View style={[styles.cardIndicator, { backgroundColor: isMaintaining ? '#2196F3' : '#E0E0E0' }]} />
         </View>
       </View>
+
+      {simulatedCoords ? (
+        <View style={styles.mapContainer}>
+          <MapView
+            style={styles.map}
+            region={{
+              latitude: simulatedCoords.lat,
+              longitude: simulatedCoords.lon,
+              latitudeDelta: 0.01,
+              longitudeDelta: 0.01,
+            }}
+            onLongPress={onMapLongPress}
+          >
+            {simulatedCoords && (
+              <Marker
+                coordinate={{ latitude: simulatedCoords.lat, longitude: simulatedCoords.lon }}
+                title="Simulation Active"
+                pinColor="blue"
+              />
+            )}
+            {pendingCoords && (
+              <Marker
+                coordinate={pendingCoords}
+                title="Nouveau point choisi"
+                pinColor="red"
+              />
+            )}
+          </MapView>
+          <View style={styles.mapOverlay}>
+            <Text style={styles.mapCoords}>
+              {simulatedCoords.lat.toFixed(6)}, {simulatedCoords.lon.toFixed(6)}
+            </Text>
+            {simulatedCoords.name && <Text style={styles.mapPlace}>{simulatedCoords.name}</Text>}
+          </View>
+        </View>
+      ) : (
+        <View style={styles.emptyMapContainer}>
+          <MapView
+            style={styles.map}
+            onLongPress={onMapLongPress}
+            initialRegion={{
+              latitude: 48.8566,
+              longitude: 2.3522,
+              latitudeDelta: 0.1,
+              longitudeDelta: 0.1,
+            }}
+          >
+            {pendingCoords && (
+              <Marker
+                coordinate={pendingCoords}
+                title="Nouveau point choisi"
+                pinColor="red"
+              />
+            )}
+          </MapView>
+          <View style={styles.emptyMapOverlay}>
+             <Text style={styles.emptyMapText}>Faites un appui long pour choisir un point</Text>
+          </View>
+        </View>
+      )}
+
+      {pendingCoords && (
+        <View style={styles.applyBox}>
+          <Button title="🚀 Appliquer cette position" onPress={applyPendingLocation} color="#4CAF50" />
+          <Button title="Annuler" onPress={() => setPendingCoords(null)} color="#666" />
+        </View>
+      )}
 
       <View style={styles.configBox}>
         <Text style={styles.configTitle}>Connexion au Serveur</Text>
@@ -299,6 +389,80 @@ const styles = StyleSheet.create({
     width: '100%',
     height: 4,
     borderRadius: 2,
+  },
+  mapContainer: {
+    height: 180,
+    backgroundColor: '#FFF',
+    borderRadius: 16,
+    overflow: 'hidden',
+    marginBottom: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 10,
+    elevation: 3,
+  },
+  map: {
+    width: '100%',
+    height: '100%',
+  },
+  mapOverlay: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    backgroundColor: 'rgba(255,255,255,0.9)',
+    padding: 8,
+    alignItems: 'center',
+  },
+  mapCoords: {
+    fontSize: 12,
+    fontWeight: 'bold',
+    color: '#2D3748',
+  },
+  mapPlace: {
+    fontSize: 10,
+    color: '#718096',
+  },
+  emptyMapContainer: {
+    height: 180,
+    backgroundColor: '#EDF2F7',
+    borderRadius: 16,
+    overflow: 'hidden',
+    marginBottom: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 10,
+    elevation: 3,
+  },
+  emptyMapOverlay: {
+    position: 'absolute',
+    top: 10,
+    alignSelf: 'center',
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 20,
+  },
+  emptyMapText: {
+    color: '#FFF',
+    fontSize: 12,
+  },
+  applyBox: {
+    backgroundColor: '#FFF',
+    padding: 15,
+    borderRadius: 16,
+    marginBottom: 20,
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    shadowColor: '#4CAF50',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 10,
+    elevation: 5,
+    borderWidth: 1,
+    borderColor: '#C8E6C9',
   },
   configBox: {
     backgroundColor: '#FFF',
