@@ -14,9 +14,11 @@ const TunneldService = require('./tunneld/tunneld-service')
 
 let _isQuitting = false
 let _onTunnelRestoredCb = null
+let _onStatusChangeCb = null
 
 const state = new ConnectionState(() => {
   if (_onTunnelRestoredCb) _onTunnelRestoredCb()
+  if (_onStatusChangeCb) _onStatusChangeCb(true)
 })
 
 const service = new TunneldService()
@@ -40,6 +42,7 @@ service.on('disconnection', (reason) => {
     dbg('[tunneld-manager] WiFi déconnecté. Relance immédiate de la découverte...')
     service.start()
   }
+  if (_onStatusChangeCb) _onStatusChangeCb(false)
 })
 
 service.on('error', (msg) => {
@@ -107,4 +110,5 @@ module.exports = {
   getRsdPort: () => state.port,
   getConnectionType: () => state.type,
   setOnTunnelRestored,
+  setOnStatusChange: (cb) => { _onStatusChangeCb = cb },
 }

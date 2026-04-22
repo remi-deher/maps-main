@@ -5,6 +5,7 @@ const path = require('path')
 const { setWindow } = require('./logger')
 const tunnel = require('./tunneld-manager')
 const GpsSimulator = require('./services/gps-simulator')
+const companion = require('./services/companion-server')
 const { registerIpcHandlers } = require('./ipc/registry')
 
 let mainWindow
@@ -38,6 +39,11 @@ app.whenReady().then(() => {
   
   // Liaison Tunnel -> GPS pour la restauration automatique
   tunnel.setOnTunnelRestored(() => gps.onTunnelRestored())
+  
+  // Liaison Tunnel -> Companion
+  tunnel.setOnStatusChange((active) => companion.updateTunnelStatus(active))
+
+  companion.start() // Démarrer le serveur WebSocket
 
   const initialSettings = require('./services/settings-manager').get()
   
@@ -54,6 +60,7 @@ app.on('before-quit', () => {
 app.on('window-all-closed', () => {
   tunnel.setQuitting()
   if (gps) gps.destroy()
+  companion.stop()
   tunnel.stopTunneld()
   app.quit()
 })
