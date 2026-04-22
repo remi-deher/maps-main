@@ -17,6 +17,7 @@ class GpsSimulator extends EventEmitter {
     this.lastCoords = null
     this.watchdogTimer = null
     this._isQuitting = false
+    this.currentPort = null
   }
 
   async setLocation(lat, lon, name = null) {
@@ -55,11 +56,14 @@ class GpsSimulator extends EventEmitter {
       return
     }
 
-    if (this.process && !this.process.killed) {
-      dbg('[gps-sim] tunnel rétabli — simulation déjà active')
+    const rsdPort = this.tunnel.getRsdPort()
+
+    if (this.process && !this.process.killed && this.currentPort === rsdPort) {
+      dbg('[gps-sim] tunnel rétabli — simulation déjà active sur ce port')
       return
     }
 
+    this.currentPort = rsdPort
     dbg('[gps-sim] tunnel rétabli — relance simulation automatique')
     this.setLocation(this.lastCoords.lat, this.lastCoords.lon, this.lastCoords.name)
       .then(res => {
@@ -157,16 +161,41 @@ class GpsSimulator extends EventEmitter {
 
   _startWatchdog() {
     this._stopWatchdog()
-    this.watchdogTimer = setInterval(() => {
+    this.watchdogTimer = setInterval(async () => {
       if (!this.lastCoords || this._isQuitting) return
-      if (this.process && !this.process.killed) return
 
-      // Si le tunnel est dispo mais process mort -> relance
-      if (this.tunnel.getRsdAddress()) {
-        dbg('[gps-sim] watchdog: crash détecté — relance')
-        this.onTunnelRestored()
+      const rsdAddress = this.tunnel.getRsdAddress()
+      const rsdPort = this.tunnel.getRsdPort()
+      if (!rsdAddress) return
+
+      // Si le processus semble vivant, on fait un "test de santé" (heartbeat actif)
+      if (this.process && !this.process.killed) {
+        const isAlive = await this._checkHealth(rsdAddress, rsdPort)
+        if (isAlive) return
+        dbg('[gps-sim] watchdog: processus zombie détecté (échec rsd-info) — relance')
+      } else {
+        dbg('[gps-sim] watchdog: processus mort détecté — relance')
       }
+
+      this.onTunnelRestored()
     }, WATCHDOG_INTERVAL)
+  }
+
+  async _checkHealth(address, port) {
+    return new Promise((resolve) => {
+      const args = ['-m', 'pymobiledevice3', 'remote', 'rsd-info', '--address', address, '--port', port]
+      const proc = spawn(PYTHON, args)
+      
+      const timer = setTimeout(() => {
+        try { proc.kill() } catch (_) {}
+        resolve(false)
+      }, 2000)
+
+      proc.on('exit', (code) => {
+        clearTimeout(timer)
+        resolve(code === 0)
+      })
+    })
   }
 
   _stopWatchdog() {

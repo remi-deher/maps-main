@@ -77,6 +77,12 @@ class TunneldService extends EventEmitter {
         this.emit('connection', this.activeConnection)
       }
 
+      // Détection de déconnexion spécifique à un tunnel
+      if (text.includes('Disconnected from tunnel')) {
+        this.activeConnection = null
+        this.emit('disconnection', 'Tunnel interrompu')
+      }
+
       // Détection d'erreurs fatales
       if (text.toLowerCase().includes('error') && text.includes('usbmux')) {
         this.emit('error', text)
