@@ -43,7 +43,8 @@
           "locationAlwaysAndWhenInUsePermission": "Allow GPS Mock to use your location always.",
           "isAndroidBackgroundLocationEnabled": true
         }
-      ]
+      ],
+      "expo-barcode-scanner"
     ]
   }
 }
