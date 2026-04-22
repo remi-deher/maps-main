@@ -1,0 +1,55 @@
+/* ── STATUS PILL: Immersive Bottom Feedback ── */
+
+#status-pill-anchored {
+  position: absolute;
+  bottom: 25px;
+  left: 0;
+  right: 0;
+  display: flex;
+  justify-content: center;
+  pointer-events: none;
+  z-index: 1000;
+}
+
+#status-pill {
+  pointer-events: auto;
+  padding: 10px 20px;
+  border-radius: 30px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 250px;
+  transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+.pill-icon {
+  font-size: 20px;
+}
+
+#status-text {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-main);
+}
+
+#status-details {
+  font-size: 11px;
+  color: var(--text-muted);
+  opacity: 0.8;
+}
+
+/* Animations d'état */
+#status-pill.starting { border-color: var(--text-info); box-shadow: 0 0 15px rgba(52, 152, 219, 0.25); }
+#status-pill.active   { border-color: var(--text-success); box-shadow: 0 0 15px rgba(46, 204, 113, 0.25); }
+#status-pill.error    { border-color: var(--text-error); box-shadow: 0 0 15px rgba(231, 76, 60, 0.25); }
+
+/* Animation de pulse interne pour la simulation active */
+#status-pill.active .pill-icon {
+  animation: pill-pulse 2s infinite;
+}
+
+@keyframes pill-pulse {
+  0%   { transform: scale(1); opacity: 1; }
+  50%  { transform: scale(1.2); opacity: 0.7; color: var(--text-success); }
+  100% { transform: scale(1); opacity: 1; }
+}

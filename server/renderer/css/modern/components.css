@@ -1,0 +1,84 @@
+/* ── Components Modern (Factorized) ── */
+
+/* Fenêtre de Logs Flottante */
+#log-window {
+  position: absolute;
+  bottom: 20px;
+  right: 20px;
+  width: 380px;
+  height: 300px;
+  z-index: 1500;
+  border-radius: var(--radius-l);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.log-header {
+  padding: 10px 14px;
+  background: rgba(0, 0, 0, 0.1);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 13px;
+  font-weight: 600;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.log-actions {
+  padding: 6px 14px;
+  background: rgba(0, 0, 0, 0.05);
+  display: flex;
+  justify-content: flex-end;
+}
+
+.btn-text {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  font-size: 11px;
+  cursor: pointer;
+  padding: 4px 8px;
+}
+
+.btn-text:hover {
+  color: var(--text-main);
+}
+
+/* Status Container (Pills en bas à droite) */
+.status-container {
+  position: absolute;
+  bottom: 20px;
+  right: 420px; /* Espace pour la fenêtre de logs si ouverte */
+  display: flex;
+  gap: 8px;
+  z-index: 1000;
+  transition: right 0.3s;
+}
+
+#sim-badge, #tunnel-badge {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 14px;
+  border-radius: 20px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+/* Quick Actions (Boutons sous les coordonnées) */
+.quick-actions .btn {
+  height: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Glassmorphism Refined */
+.glass-panel {
+  background: var(--glass-bg);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  border: 1px solid var(--glass-border);
+  box-shadow: var(--shadow-premium);
+}
