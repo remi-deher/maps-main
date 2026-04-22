@@ -92,11 +92,16 @@ class GpsSimulator extends EventEmitter {
     return new Promise((resolve) => {
       const rsdAddress = this.tunnel.getRsdAddress()
       const rsdPort = this.tunnel.getRsdPort()
+      
+      // Sur Windows/IPv6, pymobiledevice3 préfère l'adresse entre crochets.
+      // On détecte l'IPv6 par la présence de plus d'un ':' (pour ne pas confondre avec IPv4:port)
+      const isIPv6 = rsdAddress && rsdAddress.split(':').length > 2
+      const formattedAddress = isIPv6 ? `[${rsdAddress}]` : rsdAddress
 
       const args = [
         '-m', 'pymobiledevice3',
         'developer', 'dvt', 'simulate-location', command,
-        '--rsd', rsdAddress, rsdPort,
+        '--rsd', formattedAddress, rsdPort,
       ]
       if (extraArgs.length > 0) args.push('--', ...extraArgs)
 

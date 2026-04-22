@@ -58,6 +58,12 @@ app.whenReady().then(() => {
     gps.setLocation(lat, lon, "Position iPhone")
   })
 
+  // Liaison Companion -> Tunnel (Aide à la découverte WiFi)
+  companion.on('iphone-ip-detected', (ip) => {
+    dbg(`[main] Aide à la découverte : iPhone détecté sur ${ip}. Tentative RSD...`)
+    tunnel.setWifiIpOverride(ip)
+  })
+
   companion.start(initialSettings.companionPort) // Démarrer le serveur WebSocket
   
   tunnel.startTunneld(initialSettings)

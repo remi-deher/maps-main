@@ -8,31 +8,59 @@
   const textEl    = document.getElementById('status-text')
   const detailEl  = document.getElementById('status-details')
 
-  function updateStatus(status, text, details = '') {
+  let tunnelState = { state: 'starting', message: 'Initialisation...', type: null }
+  let companionState = { state: 'stopped', message: 'Application non connectée' }
+
+  function refreshUI() {
     if (!pill) return
 
-    // On retire les classes d'état existantes
-    pill.classList.remove('starting', 'active', 'error', 'none')
-    pill.classList.add(status)
+    // Priorité au tunnel : s'il est arrêté, on affiche l'erreur tunnel
+    if (tunnelState.state === 'stopped' || tunnelState.state === 'error') {
+      pill.className = 'glass-panel error'
+      textEl.textContent = tunnelState.message
+      detailEl.textContent = 'Vérifiez la connexion USB/WiFi'
+    } 
+    // Si le tunnel est prêt, on regarde l'application
+    else if (tunnelState.state === 'ready') {
+      const typeLabel = tunnelState.type ? ` [${tunnelState.type}]` : ''
+      
+      if (companionState.state === 'ready') {
+        pill.className = 'glass-panel active'
+        textEl.textContent = `iPhone prêt${typeLabel}`
+        detailEl.textContent = companionState.message
+      } else {
+        pill.className = 'glass-panel starting'
+        textEl.textContent = `iPhone détecté${typeLabel}`
+        detailEl.textContent = companionState.message || 'Lancer l\'application GPS Mock'
+      }
+    }
+    else {
+      pill.className = 'glass-panel starting'
+      textEl.textContent = tunnelState.message
+      detailEl.textContent = 'Recherche en cours...'
+    }
 
-    if (textEl) textEl.textContent = text
-    if (detailEl) detailEl.textContent = details
-
-    // Petite animation de feedback
-    pill.style.transform = 'scale(1.05)'
+    // Animation de feedback
+    pill.style.transform = 'scale(1.02)'
     setTimeout(() => { pill.style.transform = '' }, 200)
   }
 
-  // Écoute des événements système pour mettre à jour la pilule
+  // Écoute des événements système
   window.addEventListener('tunnel-status', (e) => {
-    const { state, message } = e.detail || {}
-    updateStatus(state, message, 'Connexion iPhone')
+    tunnelState = { ...tunnelState, ...e.detail }
+    refreshUI()
+  })
+
+  window.addEventListener('companion-status', (e) => {
+    companionState = { ...companionState, ...e.detail }
+    refreshUI()
   })
 
   window.addEventListener('sim-status', (e) => {
     const { active, name } = e.detail || {}
     if (active) {
-      updateStatus('active', `Simulation active : ${name}`, 'En cours d\'injection')
+      // On peut ajouter une indication de simulation en cours
+      detailEl.textContent = `Simulation : ${name}`
     }
   })
 

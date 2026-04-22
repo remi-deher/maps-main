@@ -65,13 +65,14 @@ function dbg(msg) {
 
 /**
  * Envoie une mise à jour de statut au renderer via IPC status-update
- * @param {'tunneld'} service
+ * @param {string} service
  * @param {'starting'|'ready'|'stopped'} state
  * @param {string} message
+ * @param {object} [data] Données supplémentaires
  */
-function sendStatus(service, state, message) {
+function sendStatus(service, state, message, data = {}) {
   if (_mainWindow && !_mainWindow.isDestroyed()) {
-    _mainWindow.webContents.send('status-update', { service, state, message })
+    _mainWindow.webContents.send('status-update', { service, state, message, ...data })
   }
 }
 

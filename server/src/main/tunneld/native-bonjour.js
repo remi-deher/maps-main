@@ -35,7 +35,7 @@ class NativeBonjour extends EventEmitter {
           // On cherche la colonne "Instance Name"
           if (line.includes('_apple-mobdev2._tcp.')) {
             const parts = line.split(/\s+/)
-            const iface = parts[4] // L'index d'interface (ex: 16)
+            const iface = parts[3] // L'index d'interface (ex: 16)
             const instanceName = parts.slice(6).join(' ').trim()
             
             if (instanceName && !foundInstances.some(i => i.name === instanceName)) {
@@ -72,9 +72,10 @@ class NativeBonjour extends EventEmitter {
 
       resolveProc.stdout.on('data', (data) => {
         const text = data.toString()
-        const match = text.match(/reached at .*?:(\d+)/)
+        // Format: "reached at [hostname]:[port]"
+        const match = text.match(/reached at (.*?):(\d+)/)
         if (match) {
-          found = match[1]
+          found = { host: match[1].replace(/\.$/, ''), port: match[2] }
           resolveProc.kill()
         }
       })
@@ -82,7 +83,7 @@ class NativeBonjour extends EventEmitter {
       setTimeout(() => { resolveProc.kill(); resolve(found) }, 4000)
     })
 
-    if (nativeResult) return { port: nativeResult, address }
+    if (nativeResult) return { port: nativeResult.port, address: nativeResult.host }
 
     // 2. Fallback : Scan de ports sur l'IPv6 extraite
     if (address) {

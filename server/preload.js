@@ -11,4 +11,5 @@ contextBridge.exposeInMainWorld('gps', {
   // Paramètres WiFi
   getSettings:   () => ipcRenderer.invoke('get-settings'),
   saveSettings:  (settings) => ipcRenderer.invoke('save-settings', settings),
+  getCompanionQr: () => ipcRenderer.invoke('get-companion-qr'),
 })

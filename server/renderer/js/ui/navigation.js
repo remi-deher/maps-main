@@ -8,6 +8,7 @@
   const btnToggle    = document.getElementById('sidebar-toggle')
   const btnClose     = document.getElementById('sidebar-close')
   const btnSettings  = document.getElementById('btn-open-settings')
+  const btnQuickQr   = document.getElementById('btn-quick-qr')
   const modalCont    = document.getElementById('modal-container')
   const modalClose   = document.getElementById('modal-close')
   const modalBack    = document.getElementById('modal-backdrop')
@@ -36,6 +37,16 @@
     closeSidebar()
   }
 
+  function openQrModal() {
+    openModal()
+    // Déclencher l'affichage du QR code s'il n'est pas déjà là
+    const btnShowQr = document.getElementById('btn-show-qr')
+    const qrContainer = document.getElementById('companion-qr-container')
+    if (btnShowQr && qrContainer && qrContainer.style.display !== 'block') {
+      btnShowQr.click()
+    }
+  }
+
   function closeModal() {
     modalCont.style.display = 'none'
   }
@@ -46,6 +57,7 @@
   if (btnClose)  btnClose.addEventListener('click', closeSidebar)
   
   if (btnSettings) btnSettings.addEventListener('click', openModal)
+  if (btnQuickQr)  btnQuickQr.addEventListener('click', openQrModal)
   if (modalClose)  modalClose.addEventListener('click', closeModal)
   if (modalBack)   modalBack.addEventListener('click', closeModal)
 

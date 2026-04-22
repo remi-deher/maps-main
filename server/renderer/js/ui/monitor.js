@@ -50,16 +50,30 @@
     }))
   }
 
-  function setTunnelBadge(state, label) {
+  function setTunnelBadge(state, label, type = null) {
     // On notifie la nouvelle Status Pill
     window.dispatchEvent(new CustomEvent('tunnel-status', {
-      detail: { state: (state === 'active' || state === 'ready') ? 'active' : 'starting', message: label }
+      detail: { 
+        state: (state === 'active' || state === 'ready') ? 'ready' : (state === 'stopped' ? 'stopped' : 'starting'), 
+        message: label,
+        type: type 
+      }
+    }))
+  }
+
+  function setCompanionStatus(state, message) {
+    window.dispatchEvent(new CustomEvent('companion-status', {
+      detail: { 
+        state: (state === 'ready' || state === 'active') ? 'ready' : 'stopped', 
+        message 
+      }
     }))
   }
 
   if (!window.UIModule) window.UIModule = {}
-  window.UIModule.setActiveSim   = setActiveSim
-  window.UIModule.clearActiveSim = clearActiveSim
-  window.UIModule.setTunnelBadge = setTunnelBadge
+  window.UIModule.setActiveSim      = setActiveSim
+  window.UIModule.clearActiveSim    = clearActiveSim
+  window.UIModule.setTunnelBadge    = setTunnelBadge
+  window.UIModule.setCompanionStatus = setCompanionStatus
 
 })()

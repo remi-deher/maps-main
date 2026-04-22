@@ -63,22 +63,29 @@
 
   // ─── Statut tunnel (IPC depuis main) ─────────────────────────────────────────
 
-  window.gps.onStatus(({ service, state, message }) => {
+  window.gps.onStatus(({ service, state, message, type }) => {
     if (service === 'sim-restart') {
       showToast('Simulation relancée automatiquement', 'info')
       log(`Simulation relancée : ${message}`, 'ok')
       return
     }
+    
     log(message, state === 'ready' ? 'ok' : state === 'stopped' ? 'err' : 'info')
-    setTunnelBadge(state, state === 'ready' ? 'iPhone connecté' : message)
-    if (state === 'stopped') clearActiveSim()
+    
+    if (service === 'tunneld') {
+      setTunnelBadge(state, message, type)
+    } else if (service === 'companion') {
+      UIModule.setCompanionStatus(state, message)
+    }
+
+    if (state === 'stopped' && service === 'tunneld') clearActiveSim()
   })
 
   // Statut initial (au chargement de la page)
-  window.gps.getStatus().then(({ tunnelReady, rsdAddress, rsdPort }) => {
+  window.gps.getStatus().then(({ tunnelReady, rsdAddress, rsdPort, connectionType }) => {
     if (tunnelReady) {
-      setTunnelBadge('ready', 'iPhone connecté')
-      log(`Tunnel actif → ${rsdAddress}:${rsdPort}`, 'ok')
+      setTunnelBadge('ready', 'iPhone connecté', connectionType)
+      log(`Tunnel actif (${connectionType}) → ${rsdAddress}:${rsdPort}`, 'ok')
     }
   })
 

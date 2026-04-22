@@ -68,7 +68,7 @@ class TunneldService extends EventEmitter {
         if (this.activeConnection && this.activeConnection.address === address && this.activeConnection.port === port) return
 
         dbg(`[tunneld] Connexion détectée : ${type} (${address}:${port})`)
-        sendStatus('tunneld', 'active', `iPhone détecté via ${type} (${address}:${port})`)
+        sendStatus('tunneld', 'ready', `iPhone détecté via ${type} (${address}:${port})`, { type })
         
         // Démarrage du heartbeat pour garder l'iPhone réveillé
         this._startHeartbeat(deviceId, type === 'WiFi')
@@ -148,15 +148,18 @@ class TunneldService extends EventEmitter {
     }
 
     if (targetData && targetData.port) {
-      if (this.activeConnection) return // Double check juste avant d'émettre
+      if (this.activeConnection) return
       
       const address = targetData.address || 'fe80::1'
-      dbg(`[tunneld-service] Appareil trouvé ! ${address}:${targetData.port}`)
-      sendStatus('tunneld', 'active', `iPhone forcé via ${targetData.address} (${targetData.port})`)
+      dbg(`[tunneld-service] Appareil trouvé et résolu ! ${address}:${targetData.port}`)
+      sendStatus('tunneld', 'ready', `iPhone synchronisé via ${targetData.address}`, { type: 'WiFi' })
       this.emit('connection', { address, port: targetData.port, type: 'WiFi' })
+    } else if (instances.length > 0) {
+      dbg('[tunneld-service] iPhone trouvé mais le tunnel RSD n\'est pas encore prêt.')
+      sendStatus('tunneld', 'starting', 'iPhone détecté... Initialisation du tunnel (Déverrouillez-le)')
     } else {
-      dbg('[tunneld-service] Échec de la découverte complète.')
-      sendStatus('tunneld', 'error', 'iPhone non détecté (Déverrouillez le téléphone)')
+      dbg('[tunneld-service] Aucun appareil détecté sur le réseau ou en USB.')
+      sendStatus('tunneld', 'stopped', 'iPhone non détecté (Vérifiez la connexion ou déverrouillez)')
     }
   }
 

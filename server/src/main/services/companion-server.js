@@ -41,8 +41,13 @@ class CompanionServer extends EventEmitter {
       dbg(`[companion-server] Serveur démarré sur ${ip}:${port}`)
       sendStatus('companion', 'info', `Prêt pour connexion iPhone sur ${ip}:${port}`)
 
-      this.wss.on('connection', (ws) => {
-        dbg('[companion-server] Nouveau client connecté (iPhone)')
+      this.wss.on('connection', (ws, req) => {
+        let clientIp = req.socket.remoteAddress
+        if (clientIp.startsWith('::ffff:')) clientIp = clientIp.substring(7)
+        
+        dbg(`[companion-server] Nouveau client connecté : ${clientIp}`)
+        this.emit('iphone-ip-detected', clientIp)
+        
         this.clients.add(ws)
 
         // Envoyer l'état actuel au nouveau client

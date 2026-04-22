@@ -44,7 +44,7 @@ class ConnectionState {
     }
 
     dbg(`[state] RSD actif (${type}) → ${address}:${port}`)
-    sendStatus('tunneld', 'ready', `Tunnel actif (${type}) → ${address}:${port}`)
+    sendStatus('tunneld', 'ready', `Tunnel actif (${type}) → ${address}:${port}`, { type })
 
     if (this.onRestoredCb) this.onRestoredCb()
     return true
