@@ -7,7 +7,7 @@ const settings = require('../services/settings-manager')
  * Registre central des IPC Handlers.
  * Fait le lien entre le Front-end (renderer) et les Services (main).
  */
-function registerIpcHandlers(tunnel, gps) {
+function registerIpcHandlers(tunnel, gps, companion) {
   
   // ─── Tunnel & Status ───────────────────────────────────────────────────────
   
@@ -47,6 +47,9 @@ function registerIpcHandlers(tunnel, gps) {
     tunnel.setWifiIpOverride(newSettings.wifiIp || null, newSettings.wifiPort || null)
     if (newSettings.connectionMode) {
       tunnel.applyConnectionMode(newSettings.connectionMode)
+    }
+    if (newSettings.companionPort) {
+      companion.start(newSettings.companionPort)
     }
     return { success: true }
   })

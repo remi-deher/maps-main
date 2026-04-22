@@ -38,6 +38,13 @@
           <button class="toggle-btn active" data-mode="both">Mixte</button>
         </div>
 
+        <div class="settings-label" style="margin-top: 20px;">📱 Application Compagnon (iOS)</div>
+        <div class="settings-desc">Configurez le serveur pour l'application mobile.</div>
+        <div class="settings-row">
+          <label>Port WebSocket</label>
+          <input type="number" id="setting-companion-port" placeholder="ex : 8080" />
+        </div>
+
         <div class="settings-label" style="margin-top: 20px;">🗺️ Cartographie</div>
         <div class="settings-desc">Choisissez votre moteur de rendu de carte préféré.</div>
         
@@ -77,6 +84,7 @@
 
   const ipInput    = document.getElementById('setting-wifi-ip')
   const portInput  = document.getElementById('setting-wifi-port')
+  const companionPortInput = document.getElementById('setting-companion-port')
   const googleInput = document.getElementById('setting-google-key')
   const hintEl     = document.getElementById('settings-hint')
   const btnSave    = document.getElementById('btn-settings-save')
@@ -142,6 +150,7 @@
       const settings = await window.gps.getSettings()
       ipInput.value     = settings.wifiIp   || ''
       portInput.value   = settings.wifiPort || ''
+      companionPortInput.value = settings.companionPort || 8080
       googleInput.value = settings.googleMapsKey || ''
       
       setModeUI(settings.connectionMode)
@@ -183,6 +192,7 @@
       await window.gps.saveSettings({ 
         wifiIp: ip, 
         wifiPort: port,
+        companionPort: parseInt(companionPortInput.value) || 8080,
         connectionMode: selectedMode,
         mapProvider: selectedProvider,
         googleMapsKey: gKey

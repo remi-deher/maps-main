@@ -10,6 +10,7 @@ const { dbg, sendStatus } = require('../logger')
 class CompanionServer {
   constructor() {
     this.wss = null
+    this.port = null
     this.clients = new Set()
     this.status = {
       tunnelActive: false,
@@ -22,13 +23,21 @@ class CompanionServer {
    * Démarre le serveur WebSocket
    */
   start(port = 8080) {
-    if (this.wss) return
+    // Si le serveur tourne déjà sur le même port, on ne fait rien
+    if (this.wss && this.port === port) return
     
+    // Si on change de port, on ferme l'ancien
+    if (this.wss) {
+      dbg(`[companion-server] Changement de port ${this.port} -> ${port}`)
+      this.stop()
+    }
+
     try {
+      this.port = port
       this.wss = new WebSocketServer({ port })
       const ip = this._getLocalIp()
       dbg(`[companion-server] Serveur démarré sur ${ip}:${port}`)
-      sendStatus('companion', 'info', `Prêt pour connexion iPhone sur ${ip}`)
+      sendStatus('companion', 'info', `Prêt pour connexion iPhone sur ${ip}:${port}`)
 
       this.wss.on('connection', (ws) => {
         dbg('[companion-server] Nouveau client connecté (iPhone)')
@@ -49,14 +58,16 @@ class CompanionServer {
         ws.on('close', () => {
           dbg('[companion-server] Client déconnecté')
           this.clients.delete(ws)
-          if (this.clients.size === 0) {
-            this.status.maintainActive = false
-            this._updateFrontend()
-          }
+          this._checkActivity()
+        })
+
+        ws.on('error', (err) => {
+          dbg(`[companion-server] Erreur client: ${err.message}`)
+          this.clients.delete(ws)
         })
       })
     } catch (e) {
-      dbg(`[companion-server] Erreur démarrage: ${e.message}`)
+      dbg(`[companion-server] Erreur démarrage sur port ${port}: ${e.message}`)
       sendStatus('companion', 'error', `Erreur serveur compagnon : ${e.message}`)
     }
   }
@@ -67,17 +78,14 @@ class CompanionServer {
   updateTunnelStatus(active) {
     this.status.tunnelActive = active
     this._broadcast({ type: 'STATUS', data: this.status })
+    this._updateFrontend()
   }
 
   _handleMessage(ws, payload) {
     if (payload.type === 'HEARTBEAT') {
-      const prevMaintain = this.status.maintainActive
       this.status.maintainActive = payload.data.isMaintaining
       this.status.lastHeartbeat = Date.now()
-      
-      if (prevMaintain !== this.status.maintainActive) {
-        this._updateFrontend()
-      }
+      this._updateFrontend()
       
       // Répondre au heartbeat
       ws.send(JSON.stringify({ type: 'PONG', timestamp: Date.now() }))
@@ -93,10 +101,24 @@ class CompanionServer {
     }
   }
 
+  _checkActivity() {
+    if (this.clients.size === 0) {
+      this.status.maintainActive = false
+      this.status.lastHeartbeat = null
+      this._updateFrontend()
+    }
+  }
+
   _updateFrontend() {
-    const label = this.status.maintainActive ? 'ACTIF (iPhone)' : 'INACTIF'
-    const statusType = this.status.maintainActive ? 'ready' : 'info'
-    sendStatus('companion', statusType, `Maintenance iOS : ${label}`)
+    const count = this.clients.size
+    if (count === 0) {
+      sendStatus('companion', 'stopped', 'iPhone déconnecté')
+      return
+    }
+
+    const label = this.status.maintainActive ? 'MAINTENANCE ACTIVE' : 'CONNECTÉ'
+    const state = this.status.maintainActive ? 'ready' : 'starting'
+    sendStatus('companion', state, `iPhone ${label} (${count})`)
   }
 
   _getLocalIp() {
@@ -113,8 +135,10 @@ class CompanionServer {
 
   stop() {
     if (this.wss) {
+      dbg(`[companion-server] Arrêt du serveur sur port ${this.port}`)
       this.wss.close()
       this.wss = null
+      this.clients.clear()
     }
   }
 }

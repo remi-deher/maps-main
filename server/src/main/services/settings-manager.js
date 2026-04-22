@@ -39,6 +39,7 @@ class SettingsManager {
     return { 
       wifiIp: '', 
       wifiPort: '', 
+      companionPort: 8080,
       connectionMode: 'both' // 'usb', 'wifi', 'both'
     }
   }
