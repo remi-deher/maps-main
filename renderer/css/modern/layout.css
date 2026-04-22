@@ -1,18 +1,18 @@
-/* ── Layout Modern (Map-Centric) ── */
+/* ── LAYOUT MODERN: Deep Glassmorphism & Multi-Layer ── */
 
 :root {
-  --radius-xl: 16px;
+  --radius-xl: 20px;
   --radius-l: 12px;
   --radius-m: 8px;
-  --shadow-premium: 0 8px 30px rgba(0, 0, 0, 0.2);
-  --glass-bg: rgba(22, 33, 62, 0.85); /* Dark mode Glass */
-  --glass-border: rgba(15, 52, 96, 0.5);
-  --glass-blur: blur(12px);
+  --shadow-premium: 0 10px 40px rgba(0, 0, 0, 0.4);
+  --glass-bg: rgba(26, 26, 46, 0.7); /* Deep Dark Glass */
+  --glass-border: rgba(255, 255, 255, 0.1);
+  --glass-blur: blur(20px);
 }
 
 [data-theme='light'] :root {
-  --glass-bg: rgba(255, 255, 255, 0.85);
-  --glass-border: rgba(200, 200, 200, 0.4);
+  --glass-bg: rgba(255, 255, 255, 0.7);
+  --glass-border: rgba(0, 0, 0, 0.05);
 }
 
 body {
@@ -22,37 +22,64 @@ body {
   width: 100vw;
   overflow: hidden;
   position: relative;
-  background: #000; /* Fond noir derrière la map au chargement */
+  background: var(--bg-body);
+  font-family: 'Outfit', -apple-system, sans-serif;
+  color: var(--text-main);
 }
 
-/* Map plein écran en arrière-plan */
+/* Base: Map Fullscreen */
 #map {
   position: absolute;
   top: 0;
   left: 0;
-  width: 100%;
-  height: 100%;
-  z-index: 1;
+  right: 0;
+  bottom: 0;
+  z-index: 0;
 }
 
-/* Conteneurs flottants */
-.floating-ui {
-  position: absolute;
-  z-index: 1000;
-  pointer-events: none; /* Laisse passer les clics sauf sur ses enfants */
-  display: flex;
-  flex-direction: column;
-}
-
-.floating-ui > * {
-  pointer-events: auto; /* Réactive les clics pour les cartes */
-}
-
-/* Glassmorphism utility */
+/* Utility: High-End Glassmorphism */
 .glass-panel {
   background: var(--glass-bg);
   backdrop-filter: var(--glass-blur);
   -webkit-backdrop-filter: var(--glass-blur);
   border: 1px solid var(--glass-border);
   box-shadow: var(--shadow-premium);
+}
+
+/* Icons & Buttons Style */
+.icon-btn {
+  width: 40px;
+  height: 40px;
+  border-radius: 8px;
+  background: none;
+  border: none;
+  color: var(--text-main);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 20px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.icon-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.glass-btn {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--glass-border);
+  border-radius: 12px;
+  color: var(--text-main);
+  font-family: 'Outfit', sans-serif;
+  font-weight: 600;
+  cursor: pointer;
+  height: 48px;
+  transition: all 0.2s;
+}
+
+.glass-btn:hover {
+  background: var(--btn-primary);
+  color: #fff;
+  border-color: transparent;
 }

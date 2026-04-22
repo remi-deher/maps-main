@@ -22,59 +22,39 @@
   function setActiveSim(lat, lon, name, latencyMs) {
     if (window.AppState) window.AppState.activeSim = { lat, lon, name }
     
-    const box = document.getElementById('active-sim-box')
-    if (!box) return
-
-    box.classList.add('visible')
-    document.getElementById('active-sim-name').textContent   = name || `${lat}, ${lon}`
-    document.getElementById('active-sim-coords').textContent = `${lat}, ${lon}`
-    document.getElementById('sim-badge').classList.add('active')
+    // Pour l'affichage dans la sidebar
+    const block = document.getElementById('active-sim-block')
+    if (block) block.style.display = 'block'
+    
+    document.getElementById('active-sim-name').textContent   = name || `${lat.toFixed(4)}, ${lon.toFixed(4)}`
+    document.getElementById('active-sim-coords').textContent = `${lat.toFixed(4)}, ${lon.toFixed(4)}`
 
     const latElem = document.getElementById('active-sim-latency')
     if (latElem) {
       latElem.textContent = latencyMs ? `Latence: ${(latencyMs / 1000).toFixed(1)}s` : ''
     }
 
-    const mapDiv = document.getElementById('active-sim-map')
-    if (mapDiv) {
-      mapDiv.style.display = 'block'
-      if (!minimap) initMinimap()
-      minimap.invalidateSize()
-      minimap.setView([lat, lon], 14)
-
-      const redIcon = L.icon({
-        iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-red.png',
-        shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/0.7.7/images/marker-shadow.png',
-        iconSize: [25, 41],
-        iconAnchor: [12, 41],
-        shadowSize: [41, 41]
-      })
-
-      if (minimapMarker) {
-        minimapMarker.setLatLng([lat, lon])
-      } else {
-        minimapMarker = L.marker([lat, lon], {icon: redIcon}).addTo(minimap)
-      }
-    }
+    // On notifie la nouvelle Status Pill
+    window.dispatchEvent(new CustomEvent('sim-status', {
+      detail: { active: true, name: name || 'Position' }
+    }))
   }
 
   function clearActiveSim() {
     if (window.AppState) window.AppState.activeSim = null
-    const box = document.getElementById('active-sim-box')
-    if (box) box.classList.remove('visible')
-    
-    const badge = document.getElementById('sim-badge')
-    if (badge) badge.classList.remove('active')
-    
-    const mapDiv = document.getElementById('active-sim-map')
-    if (mapDiv) mapDiv.style.display = 'none'
+    const block = document.getElementById('active-sim-block')
+    if (block) block.style.display = 'none'
+
+    window.dispatchEvent(new CustomEvent('sim-status', {
+      detail: { active: false }
+    }))
   }
 
   function setTunnelBadge(state, label) {
-    const badge = document.getElementById('tunnel-badge')
-    if (!badge) return
-    badge.className = state === 'ready' ? 'ready' : 'starting'
-    document.getElementById('tunnel-text').textContent = label
+    // On notifie la nouvelle Status Pill
+    window.dispatchEvent(new CustomEvent('tunnel-status', {
+      detail: { state: (state === 'active' || state === 'ready') ? 'active' : 'starting', message: label }
+    }))
   }
 
   if (!window.UIModule) window.UIModule = {}

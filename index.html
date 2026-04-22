@@ -1,149 +1,161 @@
 <!DOCTYPE html>
 <html lang="fr">
-
 <head>
-  <meta charset="UTF-8" />
-  <title>GPS Mock — iPhone Location Spoofer</title>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Global Mock — Immersion Mobile</title>
+  <link rel="stylesheet" href="renderer/css/app.css">
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-  <link rel="stylesheet" href="renderer/css/app.css" />
-</head>
-
-<body>
-
-  <!-- Bouton Toggle Sidebar (Hamburger) -->
-  <button id="sidebar-toggle" title="Menu" class="glass-panel">☰</button>
-
-  <!-- Barre de Recherche Flottante -->
-  <div class="search-container">
-    <div class="search-card glass-panel">
-      <span class="search-icon">🔍</span>
-      <input type="text" id="search-input" placeholder="Rechercher un lieu..." autocomplete="off"/>
-      <button id="theme-toggle" class="icon-btn" title="Basculer le thème">☀️</button>
-    </div>
-    <div id="search-results" class="modern glass-panel"></div>
-  </div>
-
-  <!-- Status Pills (Flottants en bas à droite) -->
-  <div class="status-container">
-    <div id="sim-badge" class="glass-panel">
-      <div id="sim-dot"></div>
-      <span id="sim-text">Simulation</span>
-    </div>
-    <div id="tunnel-badge" class="glass-panel starting">
-      <div id="tunnel-dot"></div>
-      <span id="tunnel-text">Connexion...</span>
-    </div>
-  </div>
-
-  <div class="main-container">
-    <div id="map"></div>
-
-    <!-- Sidebar Card Flottante -->
-    <div class="sidebar-container" id="sidebar">
-      <div class="sidebar-card glass-panel">
-        
-        <div class="sidebar-header">
-          <h2>Ma Position</h2>
-          <div class="sidebar-actions">
-            <button class="icon-btn" id="btn-open-logs" title="Voir les logs">📜</button>
-          </div>
-        </div>
-
-        <div class="sidebar-content">
-          <!-- Simulation en cours -->
-          <div id="active-sim-box">
-            <div class="active-sim-header">
-              <span>●</span> En direct
-            </div>
-            <div class="active-sim-name" id="active-sim-name">—</div>
-            <div class="active-sim-coords" id="active-sim-coords">—</div>
-            <div class="active-sim-latency" id="active-sim-latency" style="font-size: 11px; color: var(--text-muted); margin-top: 4px;"></div>
-          </div>
-
-          <!-- Position sélectionnée -->
-          <div class="coords-box">
-            <div class="coords-row">
-              <span id="disp-name" style="font-size:12px; color:var(--text-main); font-weight: 500;">Sélectionnez un lieu</span>
-            </div>
-            <div class="coords-row">
-              <span id="disp-lat" class="coords-copyable">—</span>
-              <span id="disp-lon" class="coords-copyable">—</span>
-            </div>
-            
-            <div class="quick-actions" style="margin-top: 12px; display: flex; gap: 8px;">
-              <button class="btn btn-primary" id="btn-teleport" disabled>🚀 Téléporter</button>
-              <button class="btn btn-secondary" id="btn-favorite" disabled style="padding: 9px 12px;">⭐</button>
-            </div>
-          </div>
-
-          <!-- Tabs (Historique / Favoris / Config) -->
-          <div class="tabs">
-            <div class="tab active" data-tab="history">Historique</div>
-            <div class="tab" data-tab="favorites">Favoris</div>
-            <!-- Config injecté ici -->
-          </div>
-
-          <div id="tab-history" class="list-panel active">
-             <div class="list-empty" id="history-empty">Aucun historique</div>
-          </div>
-          <div id="tab-favorites" class="list-panel">
-             <div class="list-search-wrap" id="fav-search-wrap">
-               <input type="text" id="fav-search" placeholder="Filtrer..." />
-             </div>
-             <div class="list-empty" id="favorites-empty">Aucun favori</div>
-          </div>
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <!-- Fenêtre de Logs Flottante -->
-  <div id="log-window" class="glass-panel" style="display:none;">
-    <div class="log-header">
-      <span>📜 Journal Système</span>
-      <button class="icon-btn" id="btn-close-logs">✕</button>
-    </div>
-    <div class="log-box" id="log"></div>
-    <div class="log-actions">
-      <button class="btn-text" id="btn-clear-log">Effacer</button>
-    </div>
-  </div>
-
-  <!-- Modal favori -->
-  <div class="modal-overlay" id="modal-overlay">
-    <div class="modal">
-      <h3>⭐ Nommer ce favori</h3>
-      <input type="text" id="modal-input" placeholder="Ex: Maison, Bureau, Tokyo..." />
-      <div class="modal-actions">
-        <button class="btn btn-secondary" id="modal-cancel">Annuler</button>
-        <button class="btn btn-primary" id="modal-confirm">Enregistrer</button>
-      </div>
-    </div>
-  </div>
-
-  <div id="toast"></div>
-
-  <!-- Leaflet -->
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap">
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+</head>
+<body data-theme="dark">
 
-  <!-- Renderer modules — ordre de chargement important -->
+  <!-- MAP (Layer 0) -->
+  <div id="map"></div>
+
+  <!-- FLOATING UI (Layer 1+) -->
+  
+  <!-- OMNIBAR: Barre de recherche style Google Maps -->
+  <div id="omnibar" class="floating-card glass-panel">
+    <button id="sidebar-toggle" class="icon-btn" title="Menu principal">☰</button>
+    <div class="search-input-wrap">
+      <input type="text" id="search-input" placeholder="Rechercher sur la carte..." autocomplete="off"/>
+    </div>
+    <div class="divider"></div>
+    <button id="btn-theme-cycle" class="icon-btn" title="Changer de thème">☀️</button>
+    <div id="search-results" class="floating-dropdown glass-panel"></div>
+  </div>
+
+  <!-- SLIDING SIDEBAR -->
+  <div id="sidebar-overlay" class="sidebar-hidden">
+    <div id="sidebar" class="glass-panel">
+      <div class="sidebar-header">
+        <div class="brand">📍 Global Mock</div>
+        <button id="sidebar-close" class="icon-btn">✕</button>
+      </div>
+
+      <div class="sidebar-scroll">
+        <!-- Section Active Sim -->
+        <div class="side-block" id="active-sim-block" style="display:none;">
+          <div class="block-header pulse">● En cours</div>
+          <div class="block-body">
+            <h3 id="active-sim-name">Prêt pour simulation</h3>
+            <p id="active-sim-coords">En attente de destination...</p>
+            <div id="active-sim-latency"></div>
+            <button id="btn-clear" class="btn btn-full glass-btn" style="margin-top:12px; height: 32px; font-size: 12px;">
+              ✖ Réinitialiser la position
+            </button>
+          </div>
+        </div>
+
+        <!-- Section Accordion: Favoris -->
+        <div class="side-accordion collapsed" id="accordion-favorites">
+          <div class="accordion-header">
+            <span>⭐ Favoris</span>
+            <span class="arrow">▾</span>
+          </div>
+          <div class="accordion-content">
+            <div class="list-search-wrap">
+              <input type="text" id="fav-search" placeholder="Filtrer mes lieux..." />
+            </div>
+            <div id="tab-favorites" class="list-panel active">
+              <div class="list-empty" id="favorites-empty">Aucun favori</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Section Accordion: Historique -->
+        <div class="side-accordion" id="accordion-history">
+          <div class="accordion-header">
+            <span>🕐 Récents</span>
+            <span class="arrow">▾</span>
+          </div>
+          <div class="accordion-content">
+            <div id="tab-history" class="list-panel active">
+              <div class="list-empty" id="history-empty">Aucun historique</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="sidebar-footer">
+        <div style="display:flex; gap: 8px; margin-bottom: 12px;">
+          <button id="btn-teleport" class="btn btn-primary" style="flex:2" disabled>
+            🚀 Téléporter l'iPhone ici
+          </button>
+          <button id="btn-favorite" class="btn glass-btn" style="flex:0; padding: 0 15px;" title="Sauvegarder ce lieu" disabled>
+            ⭐
+          </button>
+        </div>
+        <button id="btn-open-settings" class="btn btn-full glass-btn">
+          <span>⚙️ Paramètres de connexion</span>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- BOTTOM STATUS PILL -->
+  <div id="status-pill-anchored">
+    <div id="status-pill" class="glass-panel starting">
+      <div class="pill-icon">📱</div>
+      <div id="status-text">Recherche d'iPhone...</div>
+      <div id="status-details">WiFi / USB automatiques</div>
+    </div>
+  </div>
+
+  <!-- MODAL OVERLAYS (Layer Max) -->
+  <div id="modal-container" style="display:none;">
+    <div id="modal-backdrop"></div>
+    
+    <!-- Modal: Settings -->
+    <div id="settings-modal" class="modal-card glass-panel">
+      <div class="modal-header">
+        <h2>Configuration du Tunnel</h2>
+        <button id="modal-close" class="icon-btn">✕</button>
+      </div>
+      <div class="modal-body" id="settings-inject-point">
+        <!-- Injecté par ui-settings.js -->
+      </div>
+    </div>
+
+    <!-- Modal: Naming Favorite (vieux modal-overlay réorganisé) -->
+    <div id="modal-overlay" class="modal-card glass-panel" style="display:none;">
+      <div class="modal-header">
+        <h2>Nommer ce lieu</h2>
+      </div>
+      <div class="modal-body">
+        <input type="text" id="modal-input" placeholder="Ex: Bureau, Maison..." class="modal-input-field" style="width:100%; padding:10px; border-radius:8px; border:1px solid var(--border-color); background:rgba(0,0,0,0.2); color:white;"/>
+        <div style="display:flex; gap:10px; margin-top:20px;">
+          <button id="modal-confirm" class="btn btn-primary" style="flex:1">Enregistrer</button>
+          <button id="modal-cancel" class="btn glass-btn" style="flex:1">Annuler</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="notif-container"></div>
+
+  <!-- Scripts -->
   <script src="renderer/js/state.js"></script>
   <script src="renderer/js/services/storage-service.js"></script>
+  <script src="renderer/js/history-favorites.js"></script>
   <script src="renderer/js/ui/notifier.js"></script>
   <script src="renderer/js/ui/logger.js"></script>
   <script src="renderer/js/ui/theme.js"></script>
-  <script src="renderer/js/ui/tabs.js"></script>
   <script src="renderer/js/ui/monitor.js"></script>
   <script src="renderer/js/ui/clipboard.js"></script>
-  <script src="renderer/js/ui/sidebar-manager.js"></script>
-  <script src="renderer/js/ui/log-window.js"></script>
+  
+  <!-- Modern UI Managers -->
+  <script src="renderer/js/ui/navigation.js"></script>
+  <script src="renderer/js/ui/status-manager.js"></script>
+  <script src="renderer/js/ui/accordions.js"></script>
+
   <script src="renderer/js/ui.js"></script>
+  <script src="renderer/js/ui-settings.js"></script>
   <script src="renderer/js/map.js"></script>
   <script src="renderer/js/search.js"></script>
-  <script src="renderer/js/history-favorites.js"></script>
-  <script src="renderer/js/ui-settings.js"></script>
   <script src="renderer/js/app.js"></script>
 
 </body>
-
 </html>

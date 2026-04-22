@@ -12,19 +12,11 @@
 
   // ─── Injection HTML dans le panneau ──────────────────────────────────────────
 
-  // Ajouter l'onglet Settings dans la barre de tabs
-  const tabsEl = document.querySelector('.tabs')
-  const settingsTab = document.createElement('div')
-  settingsTab.className  = 'tab'
-  settingsTab.dataset.tab = 'settings'
-  settingsTab.textContent = 'Config'
-  tabsEl.appendChild(settingsTab)
-
-  // Ajouter le panneau settings après les autres list-panels
-  const sidebarContent = document.querySelector('.sidebar-content')
+  // Ajouter le panneau settings dans la modale
+  const settingsContainer = document.getElementById('settings-inject-point')
   const settingsPanel = document.createElement('div')
   settingsPanel.id        = 'tab-settings'
-  settingsPanel.className = 'list-panel'
+  settingsPanel.className = 'list-panel active'
   settingsPanel.innerHTML = `
     <div class="settings-section">
       <div class="settings-group">
@@ -46,23 +38,50 @@
           <button class="toggle-btn active" data-mode="both">Mixte</button>
         </div>
 
-        <div class="settings-hint" id="settings-hint"></div>
+        <div class="settings-label" style="margin-top: 20px;">🗺️ Cartographie</div>
+        <div class="settings-desc">Choisissez votre moteur de rendu de carte préféré.</div>
+        
+        <div class="toggle-group" id="map-provider-group" style="margin-top: 8px;">
+          <button class="toggle-btn active" data-mode="leaflet">Leaflet (Libre)</button>
+          <button class="toggle-btn" data-mode="google">Google Maps</button>
+        </div>
+
+        <div id="google-key-section" style="display:none; margin-top: 12px; border-top: 1px solid var(--border-color); padding-top: 12px;">
+          <div class="settings-row">
+            <label>Clé API Google Maps</label>
+            <input type="password" id="setting-google-key" placeholder="AIza..." autocomplete="off"/>
+          </div>
+          <div class="doc-box">
+            <h4>Comment obtenir une clé ?</h4>
+            <ol>
+              <li>Accédez à la <a href="https://console.cloud.google.com/" target="_blank">Google Cloud Console</a>.</li>
+              <li>Créez un projet (gratuit).</li>
+              <li>Activez <b>"Maps JavaScript API"</b> dans le catalogue.</li>
+              <li>Générez une clé dans <b>Identifiants → Créer des identifiants → Clé API</b>.</li>
+            </ol>
+            <p class="settings-desc"><i>Note : Google offre $200 de crédit gratuit par mois, largement suffisant pour cet usage.</i></p>
+          </div>
+        </div>
+
+        <div class="settings-hint" id="settings-hint" style="margin-top: 12px;"></div>
         <div class="settings-actions">
-          <button class="btn btn-secondary" id="btn-settings-clear" style="flex:1">🗑</button>
-          <button class="btn btn-primary" id="btn-settings-save" style="flex:2">💾 Sauver</button>
+          <button class="btn btn-secondary" id="btn-settings-clear" style="flex:1">🗑 Effacer IP</button>
+          <button class="btn btn-primary" id="btn-settings-save" style="flex:2">💾 Enregistrer</button>
         </div>
       </div>
     </div>
   `
-  sidebarContent.appendChild(settingsPanel)
+  if (settingsContainer) settingsContainer.appendChild(settingsPanel)
 
   // ─── Logique ─────────────────────────────────────────────────────────────────
 
-  const ipInput   = document.getElementById('setting-wifi-ip')
-  const portInput = document.getElementById('setting-wifi-port')
-  const hintEl    = document.getElementById('settings-hint')
-  const btnSave   = document.getElementById('btn-settings-save')
-  const btnClear  = document.getElementById('btn-settings-clear')
+  const ipInput    = document.getElementById('setting-wifi-ip')
+  const portInput  = document.getElementById('setting-wifi-port')
+  const googleInput = document.getElementById('setting-google-key')
+  const hintEl     = document.getElementById('settings-hint')
+  const btnSave    = document.getElementById('btn-settings-save')
+  const btnClear   = document.getElementById('btn-settings-clear')
+  const googleSection = document.getElementById('google-key-section')
 
   function setHint(msg, type = 'info') {
     hintEl.textContent = msg
@@ -79,14 +98,26 @@
   }
 
   let selectedMode = 'both'
+  let selectedProvider = 'leaflet'
 
-  // Gestion des clics sur les boutons toggle
+  // Gestion des clics sur les boutons toggle (Mode Connexion)
   const modeGroup = document.getElementById('connection-mode-group')
   modeGroup.querySelectorAll('.toggle-btn').forEach(btn => {
     btn.addEventListener('click', () => {
       modeGroup.querySelectorAll('.toggle-btn').forEach(b => b.classList.remove('active'))
       btn.classList.add('active')
       selectedMode = btn.dataset.mode
+    })
+  })
+
+  // Gestion des clics sur les boutons toggle (Moteur de carte)
+  const providerGroup = document.getElementById('map-provider-group')
+  providerGroup.querySelectorAll('.toggle-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      providerGroup.querySelectorAll('.toggle-btn').forEach(b => b.classList.remove('active'))
+      btn.classList.add('active')
+      selectedProvider = btn.dataset.mode
+      googleSection.style.display = selectedProvider === 'google' ? 'block' : 'none'
     })
   })
 
@@ -97,18 +128,30 @@
     })
   }
 
+  function setProviderUI(provider) {
+    selectedProvider = provider || 'leaflet'
+    providerGroup.querySelectorAll('.toggle-btn').forEach(btn => {
+      btn.classList.toggle('active', btn.dataset.mode === selectedProvider)
+    })
+    googleSection.style.display = selectedProvider === 'google' ? 'block' : 'none'
+  }
+
   // Charger les settings depuis le main process
   async function loadSettings() {
     try {
       const settings = await window.gps.getSettings()
-      ipInput.value   = settings.wifiIp   || ''
-      portInput.value = settings.wifiPort || ''
+      ipInput.value     = settings.wifiIp   || ''
+      portInput.value   = settings.wifiPort || ''
+      googleInput.value = settings.googleMapsKey || ''
+      
       setModeUI(settings.connectionMode)
+      setProviderUI(settings.mapProvider)
+      
       updateInputStyle()
       if (settings.wifiIp) {
         setHint(`IP manuelle active : ${settings.wifiIp}`, 'ok')
       } else {
-        setHint('Mode découverte automatique (mDNS)', 'info')
+        setHint('Découverte automatique activée', 'info')
       }
     } catch (e) {
       setHint('Erreur chargement settings', 'err')
@@ -117,8 +160,9 @@
 
   // Sauvegarder
   btnSave.addEventListener('click', async () => {
-    const ip   = ipInput.value.trim()
-    const port = portInput.value.trim()
+    const ip     = ipInput.value.trim()
+    const port   = portInput.value.trim()
+    const gKey   = googleInput.value.trim()
 
     if (ip && !isValidIp(ip)) {
       setHint('Adresse IP invalide (ex: 192.168.1.42)', 'err')
@@ -126,30 +170,31 @@
       return
     }
 
-    if (port && !/^\d+$/.test(port)) {
-      setHint('Port invalide (nombres uniquement)', 'err')
-      portInput.focus()
+    if (selectedProvider === 'google' && !gKey) {
+      setHint('Clé API Google obligatoire pour ce mode', 'err')
+      googleInput.focus()
       return
     }
 
     btnSave.disabled    = true
-    btnSave.textContent = '⏳ Enregistrement...'
+    btnSave.textContent = '⏳ ...'
 
     try {
       await window.gps.saveSettings({ 
         wifiIp: ip, 
         wifiPort: port,
-        connectionMode: selectedMode
+        connectionMode: selectedMode,
+        mapProvider: selectedProvider,
+        googleMapsKey: gKey
       })
       updateInputStyle()
+      setHint('✅ Réglages enregistrés', 'ok')
+      
+      // On notifie le système de carte
+      window.dispatchEvent(new CustomEvent('map-provider-changed', { 
+        detail: { provider: selectedProvider, key: gKey } 
+      }))
 
-      if (ip) {
-        setHint(`✅ IP manuelle enregistrée — connexion en cours...`, 'ok')
-        window.UIModule?.showToast(`IP WiFi : ${ip}`, 'success')
-      } else {
-        setHint('✅ Retour en mode découverte automatique (mDNS)', 'ok')
-        window.UIModule?.showToast('Mode mDNS activé', 'success')
-      }
     } catch (e) {
       setHint(`Erreur: ${e.message}`, 'err')
     }

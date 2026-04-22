@@ -4,30 +4,26 @@
 ;(function () {
   'use strict'
 
-  const themeToggle = document.getElementById('theme-toggle')
+  const themeToggle = document.getElementById('btn-theme-cycle')
   if (!themeToggle) return
 
   // Initialisation via StorageService
   const currentTheme = window.StorageService ? window.StorageService.getTheme() : 'dark'
-  if (currentTheme === 'light') {
-    document.documentElement.setAttribute('data-theme', 'light')
-    themeToggle.textContent = '🌙'
-  } else {
-    themeToggle.textContent = '☀️'
+  document.body.setAttribute('data-theme', currentTheme)
+
+  function updateIcon(theme) {
+    themeToggle.textContent = theme === 'light' ? '🌙' : '☀️'
   }
+  updateIcon(currentTheme)
 
   // Listener
   themeToggle.addEventListener('click', () => {
-    let theme = document.documentElement.getAttribute('data-theme')
-    if (theme === 'light') {
-      document.documentElement.removeAttribute('data-theme')
-      window.StorageService?.saveTheme('dark')
-      themeToggle.textContent = '☀️'
-    } else {
-      document.documentElement.setAttribute('data-theme', 'light')
-      window.StorageService?.saveTheme('light')
-      themeToggle.textContent = '🌙'
-    }
+    let theme = document.body.getAttribute('data-theme')
+    let nextTheme = (theme === 'light') ? 'dark' : 'light'
+    
+    document.body.setAttribute('data-theme', nextTheme)
+    window.StorageService?.saveTheme(nextTheme)
+    updateIcon(nextTheme)
   })
 
 })()

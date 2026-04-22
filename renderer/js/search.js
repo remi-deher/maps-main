@@ -74,6 +74,6 @@
   })
 
   document.addEventListener('click', (e) => {
-    if (!e.target.closest('.search-wrap')) searchResults.classList.remove('visible')
+    if (!e.target.closest('#omnibar')) searchResults.classList.remove('visible')
   })
 })()

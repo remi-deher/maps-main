@@ -150,28 +150,46 @@
   // ─── Modal de nommage ────────────────────────────────────────────────────────
 
   function openModal(lat, lon, defaultName) {
-    const overlay = document.getElementById('modal-overlay')
-    const input   = document.getElementById('modal-input')
-    input.value   = defaultName
-    overlay.classList.add('visible')
-    setTimeout(() => { input.focus(); input.select() }, 50)
+    const container = document.getElementById('modal-container')
+    const overlay   = document.getElementById('modal-overlay')
+    const settings  = document.getElementById('settings-modal')
+    const input     = document.getElementById('modal-input')
+    
+    if (!container || !overlay || !input) return
+
+    input.value = defaultName || ''
+    
+    // On cache les réglages si ouverts, on montre les favoris
+    if (settings) settings.style.display = 'none'
+    overlay.style.display = 'flex'
+    container.style.display = 'flex'
+
+    setTimeout(() => { input.focus(); input.select() }, 100)
 
     document.getElementById('modal-confirm').onclick = () => {
       const name = input.value.trim() || `${lat}, ${lon}`
       addToFavorites(lat, lon, name)
-      overlay.classList.remove('visible')
+      container.style.display = 'none'
       window.UIModule?.showToast('Favori ajouté !', 'success')
     }
-    document.getElementById('modal-cancel').onclick = () => overlay.classList.remove('visible')
-    input.onkeydown = (e) => { if (e.key === 'Enter') document.getElementById('modal-confirm').click() }
+    document.getElementById('modal-cancel').onclick = () => {
+      container.style.display = 'none'
+    }
+    input.onkeydown = (e) => { 
+      if (e.key === 'Enter') document.getElementById('modal-confirm').click() 
+      if (e.key === 'Escape') container.style.display = 'none'
+    }
   }
 
   // Bouton "Ajouter aux favoris" dans le panneau
-  document.getElementById('btn-favorite').addEventListener('click', () => {
-    const { selectedLat, selectedLon, selectedName } = window.AppState
-    if (selectedLat === null) return
-    openModal(selectedLat, selectedLon, selectedName || '')
-  })
+  const btnFav = document.getElementById('btn-favorite')
+  if (btnFav) {
+    btnFav.addEventListener('click', () => {
+      const { selectedLat, selectedLon, selectedName } = window.AppState
+      if (selectedLat === null || selectedLat === undefined) return
+      openModal(selectedLat, selectedLon, selectedName || '')
+    })
+  }
 
   // ─── Export ──────────────────────────────────────────────────────────────────
 
