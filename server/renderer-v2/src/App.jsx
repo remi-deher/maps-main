@@ -72,9 +72,9 @@ function App() {
     setSelectedPos(null);
     setActiveSim(null);
   };
-
   const handleContainerClick = (e) => {
     e.stopPropagation();
+    window.focus(); // Force le focus de la fenêtre Electron
     searchInputRef.current?.focus();
   };
 
@@ -275,12 +275,15 @@ function App() {
         </motion.div>
       </div>
 
-      {/* OMNIBAR (RESTORING PREMIUM DESIGN + MAINTAINING FIXES) */}
-      <div className="absolute top-6 left-1/2 -translate-x-1/2 w-full max-w-2xl z-[10000] px-6">
+      {/* OMNIBAR (PREMIUM DESIGN + STABILITY FIXES) */}
+      <div 
+        className="absolute top-6 left-1/2 -translate-x-1/2 w-full max-w-2xl z-[10000] px-6"
+        style={{ pointerEvents: 'auto' }}
+      >
         <motion.div 
           initial={{ y: -20, opacity: 0 }}
           animate={{ y: 0, opacity: 1 }}
-          className="w-full glass-deeper rounded-2xl h-14 flex items-center px-4 gap-4 shadow-2xl cursor-text"
+          className="w-full glass-deeper rounded-2xl h-14 flex items-center px-4 gap-4 shadow-2xl cursor-text transition-all focus-within:ring-2 focus-within:ring-blue-500/50"
           style={{ pointerEvents: 'auto', WebkitAppRegion: 'no-drag' }}
           onClick={handleContainerClick}
         >
@@ -302,6 +305,8 @@ function App() {
                 if (e.key === 'Enter') search(searchQuery);
               }}
               placeholder="Rechercher un lieu..."
+              spellCheck={false}
+              autoComplete="off"
               className="w-full bg-transparent border-none outline-none text-lg pl-10 text-white font-bold placeholder:text-slate-400"
               style={{ 
                 userSelect: 'text', 
@@ -317,7 +322,7 @@ function App() {
           <button onClick={(e) => { e.stopPropagation(); setQrOpen(true); }} className="p-2 hover:bg-white/10 rounded-xl transition-colors">
             <QrCode className="w-6 h-6 text-slate-300" />
           </button>
-        </motion.div>
+        </motion.div>ion.div>
 
         {/* Results Dropdown */}
         <AnimatePresence>
