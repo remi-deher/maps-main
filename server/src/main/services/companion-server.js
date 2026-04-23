@@ -178,6 +178,10 @@ class CompanionServer extends EventEmitter {
   }
 
   _getLocalIp() {
+    // Priorité à l'IP forcée dans les réglages
+    const manualIp = settings.get('wifiIp')
+    if (manualIp) return manualIp
+
     const interfaces = os.networkInterfaces()
     let fallbackIp = '127.0.0.1'
     
