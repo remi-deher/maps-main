@@ -32,19 +32,38 @@ class TunneldService extends EventEmitter {
     })
   }
 
-  start(manualIp = null) {
+  async start(manualIp = null) {
     if (this._isQuitting) return
-    this.stop()
+    
+    // Éviter les relances inutiles si déjà en cours avec la même IP
+    if (this.runner.isRunning && this._manualIp === manualIp) {
+      dbg('[tunneld-service] déjà en cours d\'exécution avec cette configuration, ignore le redémarrage')
+      return
+    }
 
-    this._manualIp = manualIp
-    dbg('[tunneld-service] lancement du démon tunneld...')
-    sendStatus('tunneld', 'starting', 'Initialisation du démon tunnel...')
+    if (this._isStarting) return
+    this._isStarting = true
 
-    // On lance tunneld via le runner
-    this.runner.spawn(PYTHON, ['-m', 'pymobiledevice3', 'remote', 'tunneld'])
+    try {
+      if (this.runner.isRunning) {
+        dbg('[tunneld-service] arrêt de l\'instance précédente...')
+        this.stop()
+        // Laisser 1.5s pour que Windows libère le socket (fix Errno 10048)
+        await new Promise(resolve => setTimeout(resolve, 1500))
+      }
 
-    // Fallback : Si après 10s on n'a rien trouvé, on tente dns-sd + manuel
-    this.fallbackTimer = setTimeout(() => this._triggerNativeFallback(this._manualIp), 10000)
+      this._manualIp = manualIp
+      dbg('[tunneld-service] lancement du d\u00e9mon tunneld...')
+      sendStatus('tunneld', 'starting', 'Initialisation du d\u00e9mon tunnel...')
+
+      this.runner.spawn(PYTHON, ['-m', 'pymobiledevice3', 'remote', 'tunneld'])
+
+      if (this.fallbackTimer) clearTimeout(this.fallbackTimer)
+      this.fallbackTimer = setTimeout(() => this._triggerNativeFallback(this._manualIp), 10000)
+    } finally {
+      // Déverrouillage après un court délai
+      setTimeout(() => { this._isStarting = false }, 2000)
+    }
   }
 
   _handleData(text) {
