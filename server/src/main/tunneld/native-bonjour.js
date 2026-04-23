@@ -3,6 +3,7 @@
 const { spawn } = require('child_process')
 const { EventEmitter } = require('events')
 const { dbg } = require('../logger')
+const Encoder = require('../utils/encoder')
 
 /**
  * NativeBonjour - Utilise l'outil dns-sd.exe de Windows (Apple Bonjour)
@@ -29,7 +30,7 @@ class NativeBonjour extends EventEmitter {
       const foundInstances = []
       
       this.browseProcess.stdout.on('data', (data) => {
-        const lines = data.toString().split('\n')
+        const lines = Encoder.decode(data).split('\n')
         for (const line of lines) {
           // Format expected: "Timestamp A/R Flags if Domain Service Type Instance Name"
           // On cherche la colonne "Instance Name"
@@ -71,7 +72,7 @@ class NativeBonjour extends EventEmitter {
       let found = null
 
       resolveProc.stdout.on('data', (data) => {
-        const text = data.toString()
+        const text = Encoder.decode(data)
         // Format: "reached at [hostname]:[port]"
         const match = text.match(/reached at (.*?):(\d+)/)
         if (match) {

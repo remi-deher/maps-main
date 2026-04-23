@@ -3,11 +3,12 @@
 const { spawn } = require('child_process')
 const { EventEmitter } = require('events')
 const { dbg } = require('../logger')
+const Encoder = require('./encoder')
 
 /**
- * ProcessRunner - Utilitaire unifié pour lancer des processus externes
- * Gère l'encodage UTF-8, les variables d'environnement Python
- * et la détection d'erreurs communes.
+ * ProcessRunner - Utilitaire unifi\u00e9 pour lancer des processus externes
+ * G\u00e8re l'encodage UTF-8, les variables d'environnement Python
+ * et la d\u00e9tection d'erreurs communes.
  */
 class ProcessRunner extends EventEmitter {
   constructor(name, options = {}) {
@@ -38,11 +39,12 @@ class ProcessRunner extends EventEmitter {
       shell: false
     })
 
-    this.process.stdout.setEncoding('utf8')
-    this.process.stderr.setEncoding('utf8')
+    // On ne fixe pas l'encodage ici car on veut manipuler le Buffer via Encoder.decode
+    // this.process.stdout.setEncoding('utf8')
+    // this.process.stderr.setEncoding('utf8')
 
     this.process.stdout.on('data', (data) => {
-      const msg = data.toString().trim()
+      const msg = Encoder.decode(data).trim()
       if (msg) {
         dbg(`[${this.name}] [stdout] : ${msg}`)
         this.emit('log', msg)
@@ -51,7 +53,7 @@ class ProcessRunner extends EventEmitter {
     })
 
     this.process.stderr.on('data', (data) => {
-      const msg = data.toString().trim()
+      const msg = Encoder.decode(data).trim()
       if (msg) {
         dbg(`[${this.name}] [stderr] : ${msg}`)
         this.emit('log', `Erreur: ${msg}`)
