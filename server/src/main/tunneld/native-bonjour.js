@@ -59,21 +59,25 @@ class NativeBonjour extends EventEmitter {
     })
   }
 
-  /**
-   * Resolution une instance pour obtenir le port et l'IP
-   */
   async resolve(instanceObj) {
     const { name, address } = instanceObj
-    dbg(`[native-bonjour] resolution de l'instance : ${name}`)
+    dbg(`[native-bonjour] resolution de l'instance : ${name} (${address || 'auto'})`)
     
-    // 1. Tentative via dns-sd -L
+    // 1. Si c'est une resolution manuelle (sans nom d'instance reel), on va direct au scan de ports
+    if (name === 'Manual' && address) {
+      dbg(`[native-bonjour] Resolution manuelle sur ${address}...`)
+      const port = await this._probeAddress(address)
+      if (port) return { port, address }
+      return null
+    }
+
+    // 2. Tentative via dns-sd -L (pour les instances Bonjour reelles)
     const nativeResult = await new Promise((resolve) => {
       const resolveProc = spawn('dns-sd', ['-L', name, '_apple-mobdev2._tcp'], { shell: true })
       let found = null
 
       resolveProc.stdout.on('data', (data) => {
         const text = Encoder.decode(data)
-        // Format: "reached at [hostname]:[port]"
         const match = text.match(/reached at (.*?):(\d+)/)
         if (match) {
           found = { host: match[1].replace(/\.$/, ''), port: match[2] }
@@ -85,14 +89,15 @@ class NativeBonjour extends EventEmitter {
     })
 
     if (nativeResult) {
-      const finalAddress = address || nativeResult.host;
-      return { port: nativeResult.port, address: finalAddress };
+      // On prefere l'adresse IPv6 extraite du nom si presente, sinon on prend le host resolu
+      const finalAddress = address || nativeResult.host
+      return { port: nativeResult.port, address: finalAddress }
     }
 
-    // 2. Fallback : Scan de ports sur l'IPv6 extraite
+    // 3. Fallback : Scan de ports sur l'adresse (IPv6 ou IPv4)
     if (address) {
       dbg(`[native-bonjour] Fallback : scan de ports sur ${address}...`)
-      const port = await this._probeIPv6(address)
+      const port = await this._probeAddress(address)
       if (port) return { port, address }
     }
 
@@ -100,9 +105,9 @@ class NativeBonjour extends EventEmitter {
   }
 
   /**
-   * Scan léger sur l'IPv6 (Link-Local)
+   * Scan léger de ports sur une adresse (IPv4 ou IPv6)
    */
-  async _probeIPv6(address) {
+  async _probeAddress(address) {
     const net = require('net')
     // On scanne les plages probables (53400+ et 62000+)
     const ports = [53248, ...Array.from({ length: 60 }, (_, i) => 53400 + i), ...Array.from({ length: 60 }, (_, i) => 62000 + i)]
