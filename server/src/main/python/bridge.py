@@ -2,6 +2,7 @@ import asyncio
 import json
 import sys
 import logging
+import socket
 from pymobiledevice3.remote.remote_service_discovery import RemoteServiceDiscoveryService
 from pymobiledevice3.services.dvt.instruments.dvt_provider import DvtProvider
 from pymobiledevice3.services.dvt.instruments.location_simulation import LocationSimulation
@@ -15,7 +16,7 @@ class PymobiledeviceBridge:
         self.providers = {}  # Cache: (host, port) -> DvtProvider
 
     def _clean_host(self, host):
-        """Retire les crochets si presents pour asyncio"""
+        """Retire les crochets si presents"""
         if not host: return host
         return host.replace('[', '').replace(']', '')
 
@@ -26,7 +27,6 @@ class PymobiledeviceBridge:
         if key in self.providers:
             provider = self.providers[key]
             try:
-                # On verifie si le transport est toujours vivant
                 if provider.dtx and not provider.dtx.transport.writer.is_closing():
                     return provider
             except Exception:
@@ -36,10 +36,25 @@ class PymobiledeviceBridge:
             await provider.close()
             del self.providers[key]
 
-        logger.info(f"Nouvelle connexion RSD/DVT vers {host}:{port}")
-        rsd = RemoteServiceDiscoveryService(host, port)
-        await rsd.connect()
+        logger.info(f"Tentative de connexion RSD/DVT vers {host}:{port}")
         
+        # Tentative de resolution manuelle pour eviter [Errno 10109] sur Windows
+        try:
+            # On resout l'adresse pour obtenir le tuple (address, port, flowinfo, scope_id)
+            addr_info = socket.getaddrinfo(host, port, socket.AF_INET6, socket.SOCK_STREAM)
+            # On prend la premiere reponse
+            resolved_addr = addr_info[0][4] 
+            logger.info(f"Adresse resolue manuellement: {resolved_addr}")
+            
+            # Note: RemoteServiceDiscoveryService dans pymobiledevice3 prend host et port.
+            # Sur iOS 17+, il cree une connexion Remotexpc.
+            # Si on lui passe l'adresse deja propre, ca devrait passer.
+            rsd = RemoteServiceDiscoveryService(host, port)
+            await rsd.connect()
+        except Exception as e:
+            logger.error(f"Echec resolution/connexion RSD: {e}")
+            raise
+
         provider = DvtProvider(rsd)
         await provider.connect()
         self.providers[key] = provider
@@ -73,9 +88,7 @@ class PymobiledeviceBridge:
                 response = {"success": True}
                 
             elif action == 'heartbeat':
-                # Pour le heartbeat, on se contente de verifier/maintenir le DvtProvider
                 provider = await self.get_dvt_provider(host, port)
-                # On peut aussi faire un appel DTX vide pour confirmer
                 response = {"success": True, "status": "alive"}
 
             elif action == 'ping':
@@ -85,7 +98,7 @@ class PymobiledeviceBridge:
                 response = {"success": False, "error": f"Action inconnue: {action}"}
 
         except Exception as e:
-            logger.error(f"Erreur: {str(e)}")
+            logger.error(f"Erreur Bridge: {str(e)}")
             response = {"success": False, "error": str(e)}
 
         writer.write(json.dumps(response).encode())
@@ -95,7 +108,7 @@ class PymobiledeviceBridge:
 
 async def main():
     bridge = PymobiledeviceBridge()
-    # On ecoute sur ::1 ou 127.0.0.1
+    # On ecoute sur localhost
     try:
         server = await asyncio.start_server(bridge.handle_command, '::1', 49000)
     except Exception:
