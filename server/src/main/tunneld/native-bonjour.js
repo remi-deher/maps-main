@@ -59,11 +59,11 @@ class NativeBonjour extends EventEmitter {
   }
 
   /**
-   * Résout une instance pour obtenir le port et l'IP
+   * R\u00e9solution une instance pour obtenir le port et l'IP
    */
   async resolve(instanceObj) {
     const { name, address } = instanceObj
-    dbg(`[native-bonjour] résolution de l'instance : ${name}`)
+    dbg(`[native-bonjour] r\u00e9solution de l'instance : ${name}`)
     
     // 1. Tentative via dns-sd -L
     const nativeResult = await new Promise((resolve) => {

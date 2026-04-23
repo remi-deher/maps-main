@@ -50,16 +50,17 @@ function setWindow(win) {
 function sanitize(str) {
   if (typeof str !== 'string') return str
   return str
-    .replace(/d\u251c\u00aemon/g, 'demon')
-    .replace(/r\u251c\u00aetabli/g, 'retabli')
-    .replace(/\u251c\u00ae/g, 'e')
-    .replace(/\u251c\u00e0/g, 'a')
-    .replace(/\u251c\u2502/g, 'o')
-    .replace(/\u251c\u2557/g, 'u')
-    .replace(/\u251c\u00ea/g, 'e')
-    .replace(/\u251c\u2524/g, 'a')
-    .replace(/\u00d4\u2020\u00ae/g, '->') // ÔåÆ -> ->
-    .replace(/\u2014/g, '->')
+    .replace(/\u251c\u00ae/g, 'é')   // ├® -> é
+    .replace(/\u251c\u00fb/g, 'û')   // ├û -> û
+    .replace(/\u251c\u00ea/g, 'ê')   // ├ê -> ê
+    .replace(/\u251c\u00e0/g, 'à')   // ├à -> à
+    .replace(/\u251c\u2524/g, 'à')   // ├┤ -> à
+    .replace(/\u251c\u2557/g, 'ù')   // ├╗ -> ù
+    .replace(/\u251c\u2502/g, 'ô')   // ├│ -> ô
+    .replace(/\u251c\u00a9/g, '©')
+    .replace(/\u00d4\u2020\u00ae/g, '→') // ÔåÆ -> →
+    .replace(/\u00d4\u2524\u2557/g, '→')
+    .replace(/\u2014/g, '-')
     .replace(/\u2026/g, '...')
 }
 

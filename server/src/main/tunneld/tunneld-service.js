@@ -34,7 +34,10 @@ class TunneldService extends EventEmitter {
     // On lance tunneld. Sur Windows, il surveille usbmux et Bonjour.
     this.process = spawn(PYTHON, ['-m', 'pymobiledevice3', 'remote', 'tunneld'], {
       stdio: ['ignore', 'pipe', 'pipe'],
+      env: { ...process.env, PYTHONIOENCODING: 'utf-8', PYTHONUNBUFFERED: '1' }
     })
+    this.process.stdout.setEncoding('utf8')
+    this.process.stderr.setEncoding('utf8')
 
     // Fallback : Si après 10s on n'a rien trouvé, on tente dns-sd + manuel
     this.fallbackTimer = setTimeout(() => this._triggerNativeFallback(this._manualIp), 10000)
@@ -111,7 +114,12 @@ class TunneldService extends EventEmitter {
     const args = ['-m', 'pymobiledevice3', 'lockdown', 'heartbeat', '--udid', udid]
     if (isWiFi) args.push('--mobdev2')
 
-    const proc = spawn(PYTHON, args)
+    const proc = spawn(PYTHON, args, {
+      env: { ...process.env, PYTHONIOENCODING: 'utf-8', PYTHONUNBUFFERED: '1' }
+    })
+    proc.stdout?.setEncoding('utf8')
+    proc.stderr?.setEncoding('utf8')
+    
     this.heartbeatProcesses.set(udid, proc)
 
     proc.on('exit', () => {
