@@ -1,5 +1,5 @@
-import React, { useEffect, useRef } from 'react';
-import { StyleSheet, View, TextInput, TouchableOpacity, Text, SafeAreaView, Animated } from 'react-native';
+import React, { useEffect, useRef, useState } from 'react';
+import { StyleSheet, View, TextInput, TouchableOpacity, Text, SafeAreaView, Animated, ScrollView } from 'react-native';
 import { COLORS, SHADOWS } from '../constants/theme';
 
 export default function Omnibar({ 
@@ -8,10 +8,13 @@ export default function Omnibar({
   onSearchSubmit, 
   onScannerPress, 
   onSettingsPress,
+  onSuggestionSelect,
   status,
   isMaintaining
 }) {
   const pillAnim = useRef(new Animated.Value(0)).current;
+  const [suggestions, setSuggestions] = useState([]);
+  const [showSuggestions, setShowSuggestions] = useState(false);
 
   useEffect(() => {
     Animated.spring(pillAnim, {
@@ -20,6 +23,37 @@ export default function Omnibar({
       friction: 8
     }).start();
   }, [status]);
+
+  // Logique de suggestions en temps réel
+  useEffect(() => {
+    if (searchQuery.length < 3) {
+      setSuggestions([]);
+      setShowSuggestions(false);
+      return;
+    }
+
+    const timer = setTimeout(async () => {
+      try {
+        const response = await fetch(`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(searchQuery)}&format=json&limit=5`);
+        const data = await response.json();
+        setSuggestions(data);
+        setShowSuggestions(data.length > 0);
+      } catch (e) {
+        console.error(e);
+      }
+    }, 400);
+
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
+
+  const handleSelect = (item) => {
+    setShowSuggestions(false);
+    onSuggestionSelect({
+      latitude: parseFloat(item.lat),
+      longitude: parseFloat(item.lon),
+      name: item.display_name.split(',')[0]
+    });
+  };
 
   return (
     <SafeAreaView style={styles.container}>
@@ -39,6 +73,27 @@ export default function Omnibar({
           <Text style={{fontSize: 20}}>📷</Text>
         </TouchableOpacity>
       </View>
+
+      {/* Suggestions style Plans */}
+      {showSuggestions && (
+        <View style={[styles.suggestions, SHADOWS.premium]}>
+          <ScrollView keyboardShouldPersistTaps="handled" style={{maxHeight: 250}}>
+            {suggestions.map((item, index) => (
+              <TouchableOpacity 
+                key={index} 
+                style={styles.suggestionItem} 
+                onPress={() => handleSelect(item)}
+              >
+                <View style={styles.suggestionIcon}><Text style={{fontSize: 12}}>📍</Text></View>
+                <View style={{flex: 1}}>
+                  <Text style={styles.suggestionTitle} numberOfLines={1}>{item.display_name.split(',')[0]}</Text>
+                  <Text style={styles.suggestionSub} numberOfLines={1}>{item.display_name.split(',').slice(1).join(',').trim()}</Text>
+                </View>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+        </View>
+      )}
       
       <Animated.View style={[
         styles.pill, 
@@ -65,6 +120,28 @@ const styles = StyleSheet.create({
   },
   input: { flex: 1, fontSize: 17, color: COLORS.text, paddingHorizontal: 10, fontWeight: '500' },
   btn: { width: 44, height: 44, justifyContent: 'center', alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.03)', borderRadius: 14, marginHorizontal: 2 },
+  suggestions: {
+    marginTop: 8,
+    backgroundColor: 'rgba(30, 41, 59, 0.95)',
+    borderRadius: 20,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.1)',
+  },
+  suggestionItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(255,255,255,0.05)',
+    gap: 12
+  },
+  suggestionIcon: {
+    width: 32, height: 32, borderRadius: 8, backgroundColor: 'rgba(99, 102, 241, 0.2)',
+    justifyContent: 'center', alignItems: 'center'
+  },
+  suggestionTitle: { color: COLORS.text, fontSize: 16, fontWeight: '600' },
+  suggestionSub: { color: COLORS.textMuted, fontSize: 12 },
   pill: { 
     alignSelf: 'center', marginTop: 12, paddingHorizontal: 16, paddingVertical: 6, 
     borderRadius: 20, flexDirection: 'row', alignItems: 'center', gap: 8

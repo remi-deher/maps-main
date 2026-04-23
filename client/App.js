@@ -131,6 +131,11 @@ export default function App() {
                 onSearchSubmit={handleSearch}
                 onScannerPress={() => setShowScanner(true)}
                 onSettingsPress={() => setShowSettings(true)}
+                onSuggestionSelect={(coords) => {
+                  setPendingCoords(coords);
+                  mapRef.current?.animateToRegion({ ...coords, latitudeDelta: 0.01, longitudeDelta: 0.01 }, 800);
+                  setSearchQuery('');
+                }}
                 status={status}
                 isMaintaining={isMaintaining}
             />
