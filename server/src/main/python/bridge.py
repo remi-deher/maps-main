@@ -39,25 +39,38 @@ class PymobiledeviceBridge:
         logger.info(f"Tentative de connexion RSD/DVT vers {host}:{port}")
         
         try:
-            # RESOLUTION MANUELLE (CRITIQUE POUR WINDOWS)
+            # 1. RESOLUTION MANUELLE DU TUPLE IPV6
             addr_info = socket.getaddrinfo(host, port, socket.AF_INET6, socket.SOCK_STREAM)
-            # resolved_addr est un tuple (address, port, flowinfo, scope_id)
             resolved_addr = addr_info[0][4] 
-            logger.info(f"Adresse resolue manuellement: {resolved_addr}")
+            logger.info(f"Adresse resolue: {resolved_addr}")
             
-            # On cree l'objet RSD
+            # 2. CONNEXION MANUELLE VIA SOCKET
+            loop = asyncio.get_running_loop()
+            sock = socket.socket(socket.AF_INET6, socket.SOCK_STREAM)
+            sock.setblocking(False)
+            await loop.sock_connect(sock, resolved_addr)
+            logger.info("Socket connectee.")
+
+            # 3. CREATION DU SERVICE RSD ET MONKEYPATCHING
             rsd = RemoteServiceDiscoveryService(host, port)
+            reader, writer = await asyncio.open_connection(sock=sock)
             
-            # TRICK: On injecte l'adresse resolue (tuple) directement dans le service sous-jacent
-            # pour eviter que pymobiledevice3 ne tente une resolution de chaine de caractere qui echouerait sur Windows.
-            # Le service de transport de rsd est generalement rsd.service (Remotexpc)
-            rsd.service.host = resolved_addr[0]
-            # Si le scope_id est present, on s'assure qu'il est utilise. 
-            # asyncio.open_connection accepte l'adresse avec le %scope_id si c'est bien formate.
-            # Mais passer le tuple complet au transport serait ideal si l'API le permettait.
-            # Ici, on va essayer de reconstruire l'adresse la plus 'pure' possible.
+            # Injection manuelle dans RemoteXPCConnection
+            rsd.service._reader = reader
+            rsd.service._writer = writer
             
+            # On doit faire le handshake HTTP2 manuellement puisque rsd.connect va echouer sinon
+            await rsd.service._do_handshake()
+            
+            # Monkeypatch connect pour eviter qu'il ne tente de re-ouvrir la socket
+            async def fake_connect():
+                pass
+            rsd.service.connect = fake_connect
+            
+            # On lance la connexion RSD (qui va maintenant utiliser notre socket deja prete)
             await rsd.connect()
+            logger.info("Connexion RSD etablie via injection de socket.")
+            
         except Exception as e:
             logger.error(f"Echec connexion RSD: {e}")
             raise
