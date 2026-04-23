@@ -23,7 +23,8 @@
         "NSLocationAlwaysAndWhenInUseUsageDescription": "Required to maintain the developer tunnel alive during simulation.",
         "NSLocationWhenInUseUsageDescription": "Required to show your current simulated position.",
         "NSLocationAlwaysUsageDescription": "Required to maintain the developer tunnel alive during simulation."
-      }
+      },
+      "deploymentTarget": "13.0"
     },
     "android": {
       "adaptiveIcon": {
@@ -44,7 +45,7 @@
           "isAndroidBackgroundLocationEnabled": true
         }
       ],
-      "expo-barcode-scanner"
+      "expo-camera"
     ]
   }
 }

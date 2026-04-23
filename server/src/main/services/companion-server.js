@@ -4,6 +4,7 @@ const { WebSocketServer } = require('ws')
 const os = require('os')
 const { EventEmitter } = require('events')
 const { dbg, sendStatus } = require('../logger')
+const settings = require('./settings-manager')
 
 /**
  * CompanionServer - Gère la communication WebSocket avec l'application iOS
@@ -17,7 +18,8 @@ class CompanionServer extends EventEmitter {
     this.status = {
       tunnelActive: false,
       maintainActive: false,
-      lastHeartbeat: null
+      lastHeartbeat: null,
+      favorites: settings.get('favorites') || []
     }
   }
 
@@ -123,6 +125,27 @@ class CompanionServer extends EventEmitter {
       dbg(`[companion-server] iPhone demande position: ${lat}, ${lon}`)
       this.emit('request-location', { lat, lon })
     }
+    else if (payload.type === 'ADD_FAVORITE') {
+      const fav = payload.data;
+      let favs = settings.get('favorites') || [];
+      // Éviter les doublons par coordonnées
+      if (!favs.some(f => Math.abs(f.lat - fav.lat) < 0.0001 && Math.abs(f.lon - fav.lon) < 0.0001)) {
+        favs = [fav, ...favs];
+        settings.save({ favorites: favs });
+        this.status.favorites = favs;
+        this._broadcast({ type: 'STATUS', data: this.status });
+        this.emit('favorites-updated', favs);
+      }
+    }
+    else if (payload.type === 'REMOVE_FAVORITE') {
+      const { lat, lon } = payload.data;
+      let favs = settings.get('favorites') || [];
+      favs = favs.filter(f => Math.abs(f.lat - lat) > 0.0001 || Math.abs(f.lon - lon) > 0.0001);
+      settings.save({ favorites: favs });
+      this.status.favorites = favs;
+      this._broadcast({ type: 'STATUS', data: this.status });
+      this.emit('favorites-updated', favs);
+    }
   }
 
   _broadcast(data) {
@@ -155,15 +178,37 @@ class CompanionServer extends EventEmitter {
   }
 
   _getLocalIp() {
+    // Priorité à l'IP forcée dans les réglages
+    const manualIp = settings.get('wifiIp')
+    if (manualIp) return manualIp
+
     const interfaces = os.networkInterfaces()
+    let fallbackIp = '127.0.0.1'
+    
+    // On parcourt les interfaces par ordre de probabilité
     for (const name of Object.keys(interfaces)) {
+      const lowerName = name.toLowerCase()
+      
+      // Ignorer les interfaces virtuelles connues
+      if (lowerName.includes('virtualbox') || 
+          lowerName.includes('vmware') || 
+          lowerName.includes('vbox') || 
+          lowerName.includes('vethernet') || 
+          lowerName.includes('wsl')) {
+        continue
+      }
+
       for (const iface of interfaces[name]) {
         if (iface.family === 'IPv4' && !iface.internal) {
-          return iface.address
+          // Si on trouve une IP qui ressemble à une IP locale standard, on la prend direct
+          if (iface.address.startsWith('192.168.') || iface.address.startsWith('10.')) {
+            return iface.address
+          }
+          fallbackIp = iface.address
         }
       }
     }
-    return '127.0.0.1'
+    return fallbackIp
   }
 
   stop() {

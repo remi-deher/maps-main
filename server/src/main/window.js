@@ -2,7 +2,7 @@
 
 const { app, BrowserWindow } = require('electron')
 const path = require('path')
-const { setWindow } = require('./logger')
+const { setWindow, dbg } = require('./logger')
 const tunnel = require('./tunneld-manager')
 const GpsSimulator = require('./services/gps-simulator')
 const companion = require('./services/companion-server')
@@ -25,11 +25,18 @@ function createWindow() {
   const isDev = process.env.NODE_ENV === 'development' || !app.isPackaged
 
   if (isDev) {
-    mainWindow.loadURL('http://localhost:3000')
-    // Optionnel : ouvrir les outils de développement automatiquement
-    // mainWindow.webContents.openDevTools()
+    mainWindow.loadURL('http://localhost:3000').catch(() => {
+      // Si le serveur de dev n'est pas lancé, on charge le build local
+      const prodPath = path.join(__dirname, '..', '..', 'dist-web', 'renderer-v2', 'index.html')
+      mainWindow.loadFile(prodPath)
+    })
   } else {
-    mainWindow.loadFile(path.join(__dirname, '..', '..', 'dist', 'index.html'))
+    const prodPath = path.join(__dirname, '..', '..', 'dist-web', 'renderer-v2', 'index.html')
+    const fallbackPath = path.join(app.getAppPath(), 'dist-web', 'renderer-v2', 'index.html')
+    
+    mainWindow.loadFile(prodPath).catch(() => {
+      mainWindow.loadFile(fallbackPath)
+    })
   }
 
   // Injecter la référence fenêtre dans le logger
@@ -71,6 +78,11 @@ app.whenReady().then(() => {
   companion.on('iphone-ip-detected', (ip) => {
     dbg(`[main] Aide à la découverte : iPhone détecté sur ${ip}. Tentative RSD...`)
     tunnel.setWifiIpOverride(ip)
+  })
+
+  // Liaison Companion -> Renderer (Synchro Favoris temps réel)
+  companion.on('favorites-updated', (favs) => {
+    if (mainWindow) mainWindow.webContents.send('status-update', { service: 'favorites', state: 'updated', data: favs })
   })
 
   companion.start(initialSettings.companionPort) // Démarrer le serveur WebSocket

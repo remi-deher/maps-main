@@ -4,7 +4,7 @@
   "description": "GPS location spoofer for iPhone via pymobiledevice3",
   "main": "main.js",
   "scripts": {
-    "start": "electron .",
+    "start": "npm run vite:build && electron .",
     "dev": "vite",
     "build": "electron-builder --win --x64",
     "vite:build": "vite build",
