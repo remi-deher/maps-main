@@ -42,33 +42,45 @@ export function QuickFavorites({ favorites, onTeleport, visible }) {
   );
 }
 
-export function ActionPanel({ visible, coords, isFavorite, onTeleport, onToggleFavorite }) {
+export function ActionPanel({ visible, coords, isFavorite, onTeleport, onToggleFavorite, onClose }) {
   const anim = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
-    Animated.spring(anim, { toValue: visible ? 1 : 0, useNativeDriver: true }).start();
+    Animated.spring(anim, { 
+      toValue: visible ? 1 : 0, 
+      useNativeDriver: true,
+      friction: 8,
+      tension: 40
+    }).start();
   }, [visible]);
 
   if (!visible && anim._value === 0) return null;
 
   return (
-    <Animated.View style={[styles.actionContainer, SHADOWS.premium, { 
-      opacity: anim, 
-      transform: [{ translateY: anim.interpolate({ inputRange: [0, 1], outputRange: [20, 0] }) }] 
+    <Animated.View style={[styles.sheetContainer, SHADOWS.premium, { 
+      transform: [{ translateY: anim.interpolate({ inputRange: [0, 1], outputRange: [300, 0] }) }] 
     }]}>
-      <View style={styles.actionContent}>
-        <View style={styles.actionHeader}>
+      <View style={styles.sheetHandle} />
+      
+      <View style={styles.sheetContent}>
+        <View style={styles.sheetHeader}>
           <View style={{flex: 1}}>
-            <Text style={styles.title} numberOfLines={1}>{coords?.name}</Text>
-            <Text style={styles.coords}>{coords?.latitude.toFixed(4)}, {coords?.longitude.toFixed(4)}</Text>
+            <Text style={styles.sheetTitle} numberOfLines={1}>{coords?.name || "Lieu sélectionné"}</Text>
+            <Text style={styles.sheetCoords}>{coords?.latitude.toFixed(6)}, {coords?.longitude.toFixed(6)}</Text>
           </View>
-          <ScaleButton onPress={() => onToggleFavorite(coords)} style={styles.favBtn}>
-            <Text style={{fontSize: 28}}>{isFavorite ? '★' : '☆'}</Text>
+          <ScaleButton onPress={() => onToggleFavorite(coords)} style={[styles.sheetFavBtn, isFavorite && styles.sheetFavBtnActive]}>
+            <Text style={{fontSize: 24, color: isFavorite ? '#fff' : COLORS.textSecondary}}>{isFavorite ? '★' : '☆'}</Text>
+          </ScaleButton>
+          <TouchableOpacity onPress={onClose} style={styles.sheetClose}>
+            <Text style={{color: COLORS.textMuted, fontSize: 18}}>✕</Text>
+          </TouchableOpacity>
+        </View>
+
+        <View style={styles.sheetActions}>
+          <ScaleButton style={styles.mainActionBtn} onPress={() => onTeleport(coords)}>
+            <Text style={styles.mainActionText}>LANCER LA SIMULATION</Text>
           </ScaleButton>
         </View>
-        <ScaleButton style={styles.teleportBtn} onPress={() => onTeleport(coords)}>
-          <Text style={styles.teleportText}>TÉLÉPORTATION ICI</Text>
-        </ScaleButton>
       </View>
     </Animated.View>
   );
@@ -162,16 +174,37 @@ const styles = StyleSheet.create({
   quickEmoji: { fontSize: 14 },
   quickText: { color: COLORS.text, fontSize: 12, fontWeight: '700', maxWidth: 120 },
 
-  actionContainer: { position: 'absolute', bottom: 30, left: 20, right: 90, zIndex: 60 },
-  actionContent: { backgroundColor: COLORS.surface, borderRadius: 28, padding: 22, borderWidth: 1, borderColor: 'rgba(255,255,255,0.05)' },
-  actionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 18 },
-  title: { color: COLORS.text, fontWeight: '900', fontSize: 20 },
-  coords: { color: COLORS.textSecondary, fontSize: 12, marginTop: 4 },
-  favBtn: { padding: 4 },
-  teleportBtn: { backgroundColor: COLORS.primary, padding: 18, borderRadius: 20, alignItems: 'center', ...SHADOWS.light },
-  teleportText: { color: COLORS.text, fontWeight: '900', fontSize: 14, letterSpacing: 1 },
+  sheetContainer: { 
+    position: 'absolute', bottom: 0, left: 0, right: 0, zIndex: 100,
+    backgroundColor: 'rgba(15, 23, 42, 0.98)', 
+    borderTopLeftRadius: 32, borderTopRightRadius: 32,
+    borderTopWidth: 1, borderTopColor: 'rgba(255,255,255,0.1)',
+    paddingBottom: 40
+  },
+  sheetHandle: {
+    width: 40, height: 5, backgroundColor: 'rgba(255,255,255,0.2)',
+    borderRadius: 3, alignSelf: 'center', marginTop: 12, marginBottom: 8
+  },
+  sheetContent: { padding: 24 },
+  sheetHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 24, gap: 12 },
+  sheetTitle: { color: COLORS.text, fontWeight: '900', fontSize: 24, flex: 1 },
+  sheetCoords: { color: COLORS.textSecondary, fontSize: 13, marginTop: 4, fontOpacity: 0.8 },
+  sheetFavBtn: { 
+    width: 54, height: 54, borderRadius: 27, 
+    backgroundColor: 'rgba(255,255,255,0.05)', 
+    justifyContent: 'center', alignItems: 'center',
+    borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)'
+  },
+  sheetFavBtnActive: { backgroundColor: COLORS.warning, borderColor: COLORS.warning },
+  sheetClose: { padding: 10 },
+  sheetActions: { marginTop: 8 },
+  mainActionBtn: { 
+    backgroundColor: COLORS.primary, padding: 20, borderRadius: 22, 
+    alignItems: 'center', ...SHADOWS.light 
+  },
+  mainActionText: { color: '#fff', fontWeight: '900', fontSize: 16, letterSpacing: 1.5 },
 
-  favOverlay: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: COLORS.background, zIndex: 100, padding: 20 },
+  favOverlay: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: COLORS.background, zIndex: 200, padding: 20 },
   panelHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 25 },
   panelTitle: { fontSize: 34, fontWeight: '900', color: COLORS.text },
   closeBtn: { width: 48, height: 48, backgroundColor: 'rgba(255,255,255,0.08)', borderRadius: 24, justifyContent: 'center', alignItems: 'center' },

@@ -120,7 +120,12 @@ export default function App() {
             ref={mapRef}
             style={StyleSheet.absoluteFill}
             initialRegion={{ latitude: 48.8566, longitude: 2.3522, latitudeDelta: 0.01, longitudeDelta: 0.01 }}
-            onLongPress={(e) => setPendingCoords({ ...e.nativeEvent.coordinate, name: "Position sélectionnée" })}
+            onLongPress={async (e) => {
+              const coords = e.nativeEvent.coordinate;
+              setPendingCoords({ ...coords, name: "Recherche..." });
+              const address = await reverseGeocode(coords.latitude, coords.longitude);
+              setPendingCoords({ ...coords, name: address });
+            }}
           >
             {simulatedCoords && (
               <Marker coordinate={simulatedCoords}>
@@ -184,6 +189,7 @@ export default function App() {
             isFavorite={pendingCoords && favorites.some(f => Math.abs(f.lat - pendingCoords.latitude) < 0.0001 && Math.abs(f.lon - pendingCoords.longitude) < 0.0001)}
             onTeleport={handleTeleport}
             onToggleFavorite={handleToggleFavorite}
+            onClose={() => setPendingCoords(null)}
           />
 
           <FavoritesPanel 
