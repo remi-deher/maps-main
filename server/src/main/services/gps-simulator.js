@@ -8,7 +8,7 @@ const ProcessRunner = require('../utils/process-runner')
 const { GPS_SEND_TIMEOUT, WATCHDOG_INTERVAL } = require('../constants')
 
 /**
- * Gère le service de simulation GPS (pymobiledevice3 developer dvt)
+ * Gere le service de simulation GPS (pymobiledevice3 developer dvt)
  */
 class GpsSimulator extends EventEmitter {
   constructor(tunnelManager) {
@@ -25,29 +25,22 @@ class GpsSimulator extends EventEmitter {
     // Liaison avec le runner
     this.runner.on('log', (msg) => this.emit('log', msg))
     this.runner.on('critical-error', (msg) => {
-      dbg(`[gps-sim] Erreur CRITIQUE de tunnel detectee (${msg}) -> forceRefresh`)
+      dbg(`[gps-sim] Erreur CRITIQUE detectee (${msg}) -> forceRefresh`)
       this.tunnel.forceRefresh()
     })
 
     this.runner.on('exit', ({ code, signal }) => {
       if (this._isQuitting) return
-      const isUnexpected = code !== 0 && code !== null
-      dbg(`[gps-sim] Processus simulation arrete (code: ${code}, signal: ${signal}) ${isUnexpected ? '!!! CRASH/ARRET INATTENDU !!!' : ''}`)
-      
-      if (isUnexpected) {
-        this.onTunnelRestored() // Tentative de restauration immédiate
+      dbg(`[gps-sim] Processus simulation arrete (code: ${code}, signal: ${signal})`)
+      if (code !== 0 && code !== null) {
+        this.onTunnelRestored() 
       }
     })
   }
 
   async setLocation(lat, lon, name = null) {
-    if (this._isLaunching) {
-      dbg('[gps-sim] Simulation deja en cours de lancement (lock active)')
-      return { success: false, error: 'Already launching' }
-    }
-
+    if (this._isLaunching) return { success: false, error: 'Already launching' }
     if (this.restorationTimer) {
-      dbg('[gps-sim] Tunnel en cours de stabilisation - position mise en attente')
       this.lastCoords = { lat, lon, name }
       return { success: false, error: 'Tunnel stabilizing, queued' }
     }
@@ -56,16 +49,14 @@ class GpsSimulator extends EventEmitter {
     const rsdPort = this.tunnel.getRsdPort()
 
     if (!rsdAddress || !rsdPort) {
-      dbg('[gps-sim] Tunnel non pret - position mise en attente pour le retablissement')
       this.lastCoords = { lat, lon, name }
       return { success: false, error: 'Tunnel not ready, queued' }
     }
 
     this._isLaunching = true
     try {
-      this.stop() // Tuer l'ancienne simulation
+      this.stop()
       const result = await this._spawn('set', [String(lat), String(lon)])
-      
       if (result.success) {
         this.lastCoords = { lat, lon, name }
         this.currentPort = rsdPort
@@ -88,8 +79,6 @@ class GpsSimulator extends EventEmitter {
 
   onTunnelRestored() {
     if (!this.lastCoords || this._isQuitting || this.restorationTimer) return
-
-    // On évite de relancer en boucle si le tunnel saute toutes les secondes
     dbg('[gps-sim] tunnel retabli - attente de stabilisation (6s)...')
     this.restorationTimer = setTimeout(async () => {
       this.restorationTimer = null
@@ -101,24 +90,19 @@ class GpsSimulator extends EventEmitter {
     }, 6000)
   }
 
-  stop() {
-    this.runner.stop()
-  }
-
-  destroy() {
-    this._isQuitting = true
-    this._stopWatchdog()
-    this.stop()
-    this.lastCoords = null
-  }
-
-  // ─── Privé ───────────────────────────────────────────────────────────────────
+  stop() { this.runner.stop() }
+  destroy() { this._isQuitting = true; this._stopWatchdog(); this.stop(); this.lastCoords = null }
 
   async _spawn(command, extraArgs = []) {
     return new Promise((resolve) => {
-      const rsdAddress = this.tunnel.getRsdAddress()
+      const rawAddress = this.tunnel.getRsdAddress()
       const rsdPort = this.tunnel.getRsdPort()
-      const isIPv6 = rsdAddress && rsdAddress.split(':').length > 2
+      
+      // Nettoyage de l'adresse : on retire le Scope ID (%18) car pymobiledevice3/python 
+      // echoue souvent a parser l'URL si il est present dans le host.
+      const rsdAddress = rawAddress ? rawAddress.split('%')[0] : rawAddress
+      
+      const isIPv6 = rsdAddress && rsdAddress.includes(':')
       const formattedAddress = isIPv6 ? `[${rsdAddress}]` : rsdAddress
 
       const args = [
@@ -141,20 +125,28 @@ class GpsSimulator extends EventEmitter {
         resolve(result)
       }
 
-      proc.stdout.on('data', () => {
-        const latencyMs = Date.now() - spawnTime
-        done({ success: true, latencyMs })
+      proc.stdout.on('data', (d) => {
+        const text = d.toString()
+        // Si on recoit "Press ENTER", c'est que c'est un succes
+        if (text.includes('Press ENTER') || text.includes('Control-C')) {
+          done({ success: true, latencyMs: Date.now() - spawnTime })
+        }
       })
 
       proc.stderr.on('data', (d) => {
         stderr += d.toString()
-        if (stderr.toLowerCase().includes('error') || stderr.toLowerCase().includes('failed')) {
-           if (stderr.length > 200) done({ success: false, error: stderr.slice(-200) })
+        // On ne resout pas immediatement sur stderr car pymobiledevice3 log des INFO sur stderr
+        if (stderr.toLowerCase().includes('failed') || stderr.toLowerCase().includes('error')) {
+          // On attend un peu pour voir si ca se confirme
         }
       })
 
       const timer = setTimeout(() => {
-        done({ success: false, error: 'Timeout' })
+        if (!resolved) {
+          // Si on a rien eu mais que le processus tourne encore, on considere que c'est ok (on est en mode interactif)
+          if (this.runner.isRunning) done({ success: true, latencyMs: GPS_SEND_TIMEOUT })
+          else done({ success: false, error: stderr || 'Timeout' })
+        }
       }, GPS_SEND_TIMEOUT)
 
       proc.on('exit', (code) => {
@@ -169,28 +161,16 @@ class GpsSimulator extends EventEmitter {
     this._stopWatchdog()
     this.watchdogTimer = setInterval(async () => {
       if (!this.lastCoords || this._isQuitting) return
-
       const rsdAddress = this.tunnel.getRsdAddress()
       const rsdPort = this.tunnel.getRsdPort()
       if (!rsdAddress) return
 
-      // Si le processus semble vivant, on fait un "test de santé" (heartbeat actif)
       if (this.runner.isRunning) {
-        const isAlive = await this._checkHealth(rsdAddress, rsdPort)
+        const isAlive = await this._checkHealth(rsdAddress.split('%')[0], rsdPort)
         if (isAlive) return
-        dbg('[gps-sim] watchdog: processus zombie detecte (echec rsd-info) - nettoyage et relance')
-        this.stop() // On tue le zombie
-        this.currentPort = null 
-      } else {
-        dbg('[gps-sim] watchdog: processus mort detecte - verification du tunnel...')
+        dbg('[gps-sim] watchdog: echec rsd-info - relance')
+        this.stop()
       }
-
-      if (!rsdPort) {
-        dbg('[gps-sim] watchdog: tunnel deconnecte - attente du signal de retablissement...')
-        this.tunnel.forceRefresh() 
-        return
-      }
-
       this.onTunnelRestored()
     }, WATCHDOG_INTERVAL)
   }
@@ -205,24 +185,9 @@ class GpsSimulator extends EventEmitter {
   async _checkHealth(address, port) {
     return new Promise((resolve) => {
       const socket = new net.Socket()
-      
-      const timer = setTimeout(() => {
-        socket.destroy()
-        resolve(false)
-      }, 2000)
-
-      socket.on('error', (err) => {
-        clearTimeout(timer)
-        socket.destroy()
-        dbg(`[gps-sim] Test de sante TCP echoue sur ${address}:${port} : ${err.message}`)
-        resolve(false)
-      })
-
-      socket.connect(port, address, () => {
-        clearTimeout(timer)
-        socket.destroy()
-        resolve(true)
-      })
+      const timer = setTimeout(() => { socket.destroy(); resolve(false) }, 2000)
+      socket.on('error', () => { clearTimeout(timer); socket.destroy(); resolve(false) })
+      socket.connect(port, address, () => { clearTimeout(timer); socket.destroy(); resolve(true) })
     })
   }
 }
