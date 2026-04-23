@@ -75,7 +75,6 @@ function App() {
 
   const handleContainerClick = (e) => {
     e.stopPropagation();
-    console.log("CLICK OMNIBAR");
     searchInputRef.current?.focus();
   };
 
@@ -85,6 +84,47 @@ function App() {
       {/* Background Map */}
       <div className="absolute inset-0 z-0" tabIndex="-1">
         <MapView onMapClick={handleMapClick} selectedPos={selectedPos || activeSim} />
+      </div>
+
+      {/* Status & Active Pill Container */}
+      <div className="absolute top-24 left-1/2 -translate-x-1/2 z-50 flex flex-col items-center pointer-events-none gap-4">
+        <AnimatePresence>
+          {activeSim && (
+            <motion.div 
+              initial={{ y: -10, opacity: 0 }}
+              animate={{ y: 0, opacity: 1 }}
+              exit={{ y: -10, opacity: 0 }}
+              className="pointer-events-auto glass-deeper border border-blue-500/30 px-5 py-2 rounded-2xl flex items-center gap-4 shadow-xl"
+            >
+              <div className="w-2 h-2 rounded-full bg-blue-500 animate-pulse shadow-[0_0_8px_rgba(59,130,246,0.8)]" />
+              <div className="flex flex-col">
+                <p className="text-xs font-bold text-blue-400 uppercase tracking-widest leading-none mb-1">Simulation Active</p>
+                <p className="text-sm font-bold text-white leading-none max-w-[250px] truncate">
+                  {activeSim.name || `${activeSim.lat.toFixed(4)}, ${activeSim.lon.toFixed(4)}`}
+                </p>
+              </div>
+              
+              <div className="w-px h-6 bg-white/10 mx-1" />
+              
+              <div className="flex items-center gap-1">
+                <button 
+                  onClick={() => toggleFavorite(activeSim)}
+                  className={`p-2 rounded-lg transition-colors ${isFavorite(activeSim.lat, activeSim.lon) ? 'text-yellow-400 bg-yellow-400/10' : 'text-slate-400 hover:bg-white/10'}`}
+                  title={isFavorite(activeSim.lat, activeSim.lon) ? "Retirer des favoris" : "Ajouter aux favoris"}
+                >
+                  <Star className={`w-5 h-5 ${isFavorite(activeSim.lat, activeSim.lon) ? 'fill-current' : ''}`} />
+                </button>
+                <button 
+                  onClick={resetLocation}
+                  className="p-2 text-slate-400 hover:text-red-400 hover:bg-red-400/10 rounded-lg transition-colors"
+                  title="Arrêter la simulation"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </div>
 
       {/* Sidebar Overlay */}
@@ -235,58 +275,58 @@ function App() {
         </motion.div>
       </div>
 
-      {/* OMNIBAR (LAST IN DOM = HIGHEST PRIORITY) */}
-      <div className="absolute top-6 left-1/2 -translate-x-1/2 w-full max-w-2xl z-[99999] px-6">
-        <div 
-          className="w-full bg-[#1a1a2e] border-2 border-white/20 rounded-2xl h-16 flex items-center px-4 gap-4 shadow-2xl cursor-text"
+      {/* OMNIBAR (RESTORING PREMIUM DESIGN + MAINTAINING FIXES) */}
+      <div className="absolute top-6 left-1/2 -translate-x-1/2 w-full max-w-2xl z-[10000] px-6">
+        <motion.div 
+          initial={{ y: -20, opacity: 0 }}
+          animate={{ y: 0, opacity: 1 }}
+          className="w-full glass-deeper rounded-2xl h-14 flex items-center px-4 gap-4 shadow-2xl cursor-text"
           style={{ pointerEvents: 'auto', WebkitAppRegion: 'no-drag' }}
           onClick={handleContainerClick}
         >
           <button 
             onClick={(e) => { e.stopPropagation(); setSidebarOpen(true); }}
-            className="p-3 hover:bg-white/10 rounded-xl transition-colors relative z-[100000]"
+            className="p-2 hover:bg-white/10 rounded-xl transition-colors"
           >
             <Monitor className="w-6 h-6 text-blue-300" />
           </button>
           
-          <div className="relative flex-1 flex items-center h-full" style={{ pointerEvents: 'auto' }}>
+          <div className="relative flex-1 flex items-center h-full">
             <Search className="w-5 h-5 text-slate-300 absolute left-0 pointer-events-none" />
             <input 
               ref={searchInputRef}
               type="text" 
               value={searchQuery}
-              onChange={(e) => {
-                console.log("INPUT CHANGE:", e.target.value);
-                setSearchQuery(e.target.value);
-              }}
+              onChange={(e) => setSearchQuery(e.target.value)}
               onKeyDown={(e) => {
-                console.log("KEY PRESS:", e.key);
                 if (e.key === 'Enter') search(searchQuery);
               }}
-              onFocus={() => console.log("INPUT FOCUSED")}
-              placeholder="Rechercher (Bordure jaune = Diagnostic)..."
-              className="w-full bg-slate-900/80 border-4 border-yellow-400 rounded-xl outline-none text-lg pl-10 pr-4 py-2 text-white font-bold placeholder:text-slate-500"
+              placeholder="Rechercher un lieu..."
+              className="w-full bg-transparent border-none outline-none text-lg pl-10 text-white font-bold placeholder:text-slate-400"
               style={{ 
-                pointerEvents: 'auto',
-                userSelect: 'text',
+                userSelect: 'text', 
                 WebkitUserSelect: 'text',
-                WebkitAppRegion: 'no-drag'
+                WebkitAppRegion: 'no-drag',
+                pointerEvents: 'auto'
               }}
             />
           </div>
 
-          <button onClick={(e) => { e.stopPropagation(); setQrOpen(true); }} className="p-3 hover:bg-white/10 rounded-xl transition-colors relative z-[100000]">
+          <div className="w-px h-6 bg-white/10" />
+          
+          <button onClick={(e) => { e.stopPropagation(); setQrOpen(true); }} className="p-2 hover:bg-white/10 rounded-xl transition-colors">
             <QrCode className="w-6 h-6 text-slate-300" />
           </button>
-        </div>
+        </motion.div>
 
+        {/* Results Dropdown */}
         <AnimatePresence>
           {results.length > 0 && (
             <motion.div 
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: 10 }}
-              className="w-full mt-2 glass-deeper rounded-2xl overflow-hidden shadow-2xl pointer-events-auto border border-white/10"
+              className="w-full mt-2 glass-deeper rounded-2xl overflow-hidden shadow-2xl pointer-events-auto border border-white/5"
             >
               {results.map((res, i) => (
                 <button 
