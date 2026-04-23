@@ -2,7 +2,7 @@
 
 const { app, BrowserWindow } = require('electron')
 const path = require('path')
-const { setWindow } = require('./logger')
+const { setWindow, dbg } = require('./logger')
 const tunnel = require('./tunneld-manager')
 const GpsSimulator = require('./services/gps-simulator')
 const companion = require('./services/companion-server')
