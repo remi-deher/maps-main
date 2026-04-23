@@ -60,4 +60,4 @@ class BonjourConnector extends EventEmitter {
   }
 }
 
-module.exports = BonjourConnector
+module.exports = new BonjourConnector()
