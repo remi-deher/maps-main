@@ -88,13 +88,14 @@ function App() {
         <MapView onMapClick={handleMapClick} selectedPos={selectedPos || activeSim} />
       </div>
 
-      {/* Top Floating Bar (Omnibar) */}
-      <div className="absolute top-6 left-1/2 -translate-x-1/2 w-full max-w-2xl z-[100] px-6">
-        <motion.div 
-          initial={{ y: -20, opacity: 0 }}
-          animate={{ y: 0, opacity: 1 }}
-          className="w-full pointer-events-auto glass-deeper rounded-2xl h-14 flex items-center px-4 gap-4 shadow-2xl cursor-text"
-          onClick={() => document.getElementById('search-input')?.focus()}
+      {/* Top Floating Bar (Omnibar) - Version Simplifiée sans Animation */}
+      <div 
+        className="absolute top-6 left-1/2 -translate-x-1/2 w-full max-w-2xl z-[100] px-6"
+        style={{ pointerEvents: 'auto' }}
+      >
+        <div 
+          className="w-full bg-[#1a1a2e] border border-white/10 rounded-2xl h-14 flex items-center px-4 gap-4 shadow-2xl"
+          style={{ WebkitAppRegion: 'no-drag' }}
         >
           <button 
             onClick={() => setSidebarOpen(true)}
@@ -103,7 +104,7 @@ function App() {
             <Monitor className="w-6 h-6 text-blue-300" />
           </button>
           
-          <div className="relative flex-1 flex items-center">
+          <div className="relative flex-1 flex items-center h-full">
             <Search className="w-5 h-5 text-slate-300 absolute left-0" />
             <input 
               id="search-input"
@@ -113,9 +114,16 @@ function App() {
               onKeyDown={(e) => {
                 if (e.key === 'Enter') search(searchQuery);
               }}
-              placeholder="Rechercher (Entrée pour valider)..."
-              className="w-full bg-transparent border-none outline-none text-lg pl-10 text-white font-bold placeholder:text-slate-400 pointer-events-auto"
-              style={{ WebkitAppRegion: 'no-drag', userSelect: 'text' }}
+              placeholder="Rechercher un lieu..."
+              spellCheck={false}
+              autoComplete="off"
+              className="w-full bg-transparent border-none outline-none text-lg pl-10 text-white font-bold placeholder:text-slate-400"
+              style={{ 
+                WebkitAppRegion: 'no-drag', 
+                WebkitUserSelect: 'text',
+                userSelect: 'text',
+                cursor: 'text'
+              }}
             />
           </div>
 
@@ -124,7 +132,7 @@ function App() {
           <button onClick={() => setQrOpen(true)} className="p-2 hover:bg-white/10 rounded-xl transition-colors">
             <QrCode className="w-6 h-6 text-slate-300" />
           </button>
-        </motion.div>
+        </div>
 
         {/* Search Results Dropdown (Attached to Omnibar) */}
         <AnimatePresence>
