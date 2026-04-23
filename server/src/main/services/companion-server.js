@@ -135,40 +135,52 @@ class CompanionServer extends EventEmitter {
       this._addToHistory(payload.data)
     }
     else if (payload.type === 'ADD_FAVORITE') {
-      const fav = payload.data;
-      let favs = settings.get('favorites') || [];
-      // Éviter les doublons par coordonnées
-      if (!favs.some(f => Math.abs(f.lat - fav.lat) < 0.0001 && Math.abs(f.lon - fav.lon) < 0.0001)) {
-        favs = [fav, ...favs];
-        settings.save({ favorites: favs });
-        this.status.favorites = favs;
-        this._broadcast({ type: 'STATUS', data: this.status });
-        this.emit('favorites-updated', favs);
-      }
+      this.addFavorite(payload.data)
     }
     else if (payload.type === 'REMOVE_FAVORITE') {
-      const { lat, lon } = payload.data;
-      let favs = settings.get('favorites') || [];
-      favs = favs.filter(f => Math.abs(f.lat - lat) > 0.0001 || Math.abs(f.lon - lon) > 0.0001);
-      settings.save({ favorites: favs });
-      this.status.favorites = favs;
-      this._broadcast({ type: 'STATUS', data: this.status });
-      this.emit('favorites-updated', favs);
+      this.removeFavorite(payload.data.lat, payload.data.lon)
     }
     else if (payload.type === 'RENAME_FAVORITE') {
-      const { lat, lon, newName } = payload.data;
-      let favs = settings.get('favorites') || [];
-      favs = favs.map(f => {
-        if (Math.abs(f.lat - lat) < 0.0001 && Math.abs(f.lon - lon) < 0.0001) {
-          return { ...f, name: newName };
-        }
-        return f;
-      });
+      this.renameFavorite(payload.data.lat, payload.data.lon, payload.data.newName)
+    }
+  }
+
+  addFavorite(fav) {
+    let favs = settings.get('favorites') || [];
+    // Éviter les doublons par coordonnées
+    if (!favs.some(f => Math.abs(f.lat - fav.lat) < 0.0001 && Math.abs(f.lon - fav.lon) < 0.0001)) {
+      favs = [fav, ...favs];
       settings.save({ favorites: favs });
       this.status.favorites = favs;
       this._broadcast({ type: 'STATUS', data: this.status });
       this.emit('favorites-updated', favs);
     }
+  }
+
+  removeFavorite(lat, lon) {
+    let favs = settings.get('favorites') || [];
+    const newFavs = favs.filter(f => Math.abs(f.lat - lat) > 0.0001 || Math.abs(f.lon - lon) > 0.0001);
+    if (newFavs.length !== favs.length) {
+      settings.save({ favorites: newFavs });
+      this.status.favorites = newFavs;
+      this._broadcast({ type: 'STATUS', data: this.status });
+      this.emit('favorites-updated', newFavs);
+    }
+  }
+
+  renameFavorite(lat, lon, newName) {
+    let favs = settings.get('favorites') || [];
+    favs = favs.map(f => {
+      if (Math.abs(f.lat - lat) < 0.0001 && Math.abs(f.lon - lon) < 0.0001) {
+        return { ...f, name: newName };
+      }
+      return f;
+    });
+    settings.save({ favorites: favs });
+    this.status.favorites = favs;
+    this._broadcast({ type: 'STATUS', data: this.status });
+    this.emit('favorites-updated', favs);
+  }
   }
 
   _addToHistory(entry) {

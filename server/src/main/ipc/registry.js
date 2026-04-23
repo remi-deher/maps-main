@@ -55,6 +55,23 @@ function registerIpcHandlers(tunnel, gps, companion) {
     return { success: true }
   })
 
+  // ─── Favorites Management ──────────────────────────────────────────────────
+  
+  ipcMain.handle('add-favorite', (_event, fav) => {
+    companion.addFavorite(fav)
+    return { success: true }
+  })
+
+  ipcMain.handle('remove-favorite', (_event, { lat, lon }) => {
+    companion.removeFavorite(lat, lon)
+    return { success: true }
+  })
+
+  ipcMain.handle('rename-favorite', (_event, { lat, lon, newName }) => {
+    companion.renameFavorite(lat, lon, newName)
+    return { success: true }
+  })
+
   // ─── Système ───────────────────────────────────────────────────────────────
   
   ipcMain.handle('get-companion-qr', async () => {

@@ -12,8 +12,11 @@ contextBridge.exposeInMainWorld('gps', {
   onDebug:       (cb) => ipcRenderer.on('debug-log', (_e, msg) => cb(msg)),
   openLogs:      () => ipcRenderer.invoke('open-logs'),
 
-  // Paramètres WiFi
+  // Favoris & Historique
   getSettings:   () => ipcRenderer.invoke('get-settings'),
   saveSettings:  (settings) => ipcRenderer.invoke('save-settings', settings),
+  addFavorite:   (fav) => ipcRenderer.invoke('add-favorite', fav),
+  removeFavorite: (lat, lon) => ipcRenderer.invoke('remove-favorite', { lat, lon }),
+  renameFavorite: (lat, lon, newName) => ipcRenderer.invoke('rename-favorite', { lat, lon, newName }),
   getCompanionQr: () => ipcRenderer.invoke('get-companion-qr'),
 })

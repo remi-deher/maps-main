@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { MapPin, Settings, History, Star, QrCode, Monitor, Search, X, Navigation, RotateCcw } from 'lucide-react';
+import { MapPin, Settings, History, Star, QrCode, Monitor, Search, X, Navigation, RotateCcw, Edit2, Trash2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import MapView from './components/MapView';
 import SettingsModal from './components/SettingsModal';
@@ -22,11 +22,25 @@ function App() {
   const isFavorite = (lat, lon) => favorites.some(f => Math.abs(f.lat - lat) < 0.0001 && Math.abs(f.lon - lon) < 0.0001);
   const toggleFavorite = async (pos) => {
     if (isFavorite(pos.lat, pos.lon)) {
-      await removeFavorite(pos.lat, pos.lon);
+      await window.gps.removeFavorite(pos.lat, pos.lon);
     } else {
-      await addFavorite({ name: pos.name || "Lieu favori", lat: pos.lat, lon: pos.lon });
+      await window.gps.addFavorite({ name: pos.name || "Lieu favori", lat: pos.lat, lon: pos.lon });
     }
   };
+
+  const renameFavorite = async (fav) => {
+    const newName = prompt("Nouveau nom pour ce lieu :", fav.name);
+    if (newName && newName.trim()) {
+      await window.gps.renameFavorite(fav.lat, fav.lon, newName.trim());
+    }
+  };
+
+  const removeFavorite = async (fav) => {
+    if (confirm(`Supprimer "${fav.name}" des favoris ?`)) {
+      await window.gps.removeFavorite(fav.lat, fav.lon);
+    }
+  };
+
   const { search, results, loading, reverseGeocode, setResults } = useSearch();
 
   useEffect(() => {
@@ -104,13 +118,26 @@ function App() {
                   </div>
                   <div className="space-y-1">
                     {favorites.length > 0 ? favorites.map((fav, i) => (
-                      <button key={`fav-${i}`} onClick={() => {selectLocation(fav); setSidebarOpen(false);}} className="w-full p-3 rounded-xl hover:bg-white/5 transition-colors text-left group flex items-center justify-between">
-                        <div className="flex-1 min-w-0">
-                          <p className="font-medium line-clamp-1">{fav.name}</p>
-                          <p className="text-xs text-slate-500">{fav.lat.toFixed(4)}, {fav.lon.toFixed(4)}</p>
+                      <div key={`fav-${i}`} className="group flex items-center gap-2 p-1">
+                        <button 
+                          onClick={() => {selectLocation(fav); setSidebarOpen(false);}} 
+                          className="flex-1 p-3 rounded-xl hover:bg-white/5 transition-colors text-left flex items-center justify-between min-w-0"
+                        >
+                          <div className="flex-1 min-w-0">
+                            <p className="font-medium line-clamp-1">{fav.name}</p>
+                            <p className="text-xs text-slate-500">{fav.lat.toFixed(4)}, {fav.lon.toFixed(4)}</p>
+                          </div>
+                          <Star className="w-4 h-4 text-amber-400 opacity-40 group-hover:opacity-100 transition-opacity" fill="currentColor" />
+                        </button>
+                        <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity pr-2">
+                          <button onClick={() => renameFavorite(fav)} className="p-2 hover:bg-blue-500/20 rounded-lg text-blue-400 transition-colors">
+                            <Edit2 className="w-4 h-4" />
+                          </button>
+                          <button onClick={() => removeFavorite(fav)} className="p-2 hover:bg-rose-500/20 rounded-lg text-rose-400 transition-colors">
+                            <Trash2 className="w-4 h-4" />
+                          </button>
                         </div>
-                        <Star className="w-4 h-4 text-amber-400 opacity-0 group-hover:opacity-100 transition-opacity" fill="currentColor" />
-                      </button>
+                      </div>
                     )) : <p className="p-4 text-center text-slate-600 italic text-sm">Aucun favori</p>}
                   </div>
                 </section>
