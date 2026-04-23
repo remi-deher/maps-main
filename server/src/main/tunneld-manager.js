@@ -30,14 +30,21 @@ class ConnectionOrchestrator extends EventEmitter {
   }
 
   _initListeners() {
-    // Événements du Démon (USB & TunnelId)
+    // Événements du Démon (USB & WiFi Tunnel)
     this.daemon.on('connection', (conn) => {
       // Priorité 1 : USB
       if (conn.type === 'USB') {
         dbg('[orchestrator] Priorite USB detectee via Demon')
         this._handleNewConnection(conn)
       } 
-      // Priorité 3 : TunnelId (uniquement si rien d'autre)
+      // Priorité 2 : WiFi via Tunnel (Stabilité maximale sur Windows via localhost)
+      else if (conn.type === 'WiFi (Tunnel)') {
+        if (!this.activeConnection || this.activeConnection.type === 'WiFi') {
+          dbg('[orchestrator] WiFi stable (Tunnel) detecte via Demon')
+          this._handleNewConnection(conn)
+        }
+      }
+      // Priorité 4 : Fallback TunnelId
       else if (!this.activeConnection) {
         dbg('[orchestrator] Fallback TunnelId detecte via Demon')
         this._handleNewConnection(conn)
@@ -46,11 +53,12 @@ class ConnectionOrchestrator extends EventEmitter {
 
     this.daemon.on('disconnection', () => this._handleDisconnection('Demon'))
 
-    // Événements WiFi Bonjour (Priorité 2)
+    // Événements WiFi Bonjour (Priorité 3 - Fallback direct)
     this.wifi.on('connection', (conn) => {
-      if (this.activeConnection?.type === 'USB') return
-      dbg('[orchestrator] Connexion WiFi (Bonjour) detectee')
-      this._handleNewConnection(conn)
+      if (!this.activeConnection) {
+        dbg('[orchestrator] Connexion WiFi (Bonjour) detectee')
+        this._handleNewConnection(conn)
+      }
     })
 
     this.wifi.on('disconnection', () => this._handleDisconnection('WiFi'))
