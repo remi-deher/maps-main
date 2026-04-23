@@ -7,51 +7,27 @@ export function useSocket(ip, port, isMaintaining) {
   const [status, setStatus] = useState('Déconnecté');
   const [favorites, setFavorites] = useState([]);
   const [simulatedCoords, setSimulatedCoords] = useState(null);
+  
   const ws = useRef(null);
   const isConnecting = useRef(false);
   const appState = useRef(AppState.currentState);
+  
+  // Utiliser une ref pour le statut afin d'éviter les boucles dans useEffect
+  const statusRef = useRef('Déconnecté');
 
-  useEffect(() => {
-    // Watchdog : Reconnexion au réveil de l'app
-    const subscription = AppState.addEventListener('change', nextAppState => {
-      if (appState.current.match(/inactive|background/) && nextAppState === 'active') {
-        if (status !== 'Connecté') {
-          logEvent.add("Réveil de l'app détecté, tentative de reconnexion...");
-          connect();
-        }
-      }
-      appState.current = nextAppState;
-    });
-
-    // Watchdog : Reconnexion cyclique
-    const reconnectInterval = setInterval(() => {
-      if (ip && status === 'Déconnecté' && !isConnecting.current) {
-        logEvent.add("Watchdog: Tentative de reconnexion automatique...");
-        connect();
-      }
-    }, 5000);
-
-    // Heartbeat via le service de fond
-    const unsubscribeBus = eventBus.subscribe((ev) => {
-      if (ev.type === 'TICK' && isMaintaining) sendHeartbeat(true);
-    });
-
-    return () => {
-      subscription.remove();
-      clearInterval(reconnectInterval);
-      unsubscribeBus();
-      stop();
-    };
-  }, [ip, port, status, isMaintaining]);
+  const updateStatus = (newStatus) => {
+    statusRef.current = newStatus;
+    setStatus(newStatus);
+  };
 
   const connect = () => {
-    if (!ip || isConnecting.current) {
-        if (!ip) logEvent.add("Abandon connexion: IP non configurée", "error");
+    if (!ip || isConnecting.current || statusRef.current === 'Connecté') {
         return;
     }
+
     stop();
     isConnecting.current = true;
-    setStatus('Connexion...');
+    updateStatus('Connexion...');
     
     const url = `ws://${ip}:${port}`;
     logEvent.add(`Tentative de connexion à ${url}`);
@@ -59,7 +35,6 @@ export function useSocket(ip, port, isMaintaining) {
     try {
       ws.current = new WebSocket(url);
       
-      // Sécurité : Timeout de connexion
       const connectionTimeout = setTimeout(() => {
           if (ws.current && ws.current.readyState !== WebSocket.OPEN) {
               logEvent.add("Timeout de connexion WebSocket", "error");
@@ -70,7 +45,7 @@ export function useSocket(ip, port, isMaintaining) {
       ws.current.onopen = () => {
         clearTimeout(connectionTimeout);
         isConnecting.current = false;
-        setStatus('Connecté');
+        updateStatus('Connecté');
         logEvent.add("WebSocket Connecté !", "success");
         sendHeartbeat(isMaintaining);
       };
@@ -92,18 +67,18 @@ export function useSocket(ip, port, isMaintaining) {
 
       ws.current.onclose = (e) => {
         isConnecting.current = false;
-        setStatus('Déconnecté');
+        updateStatus('Déconnecté');
         logEvent.add(`WebSocket fermé (Code: ${e.code})`, "info");
       };
 
       ws.current.onerror = (e) => {
         isConnecting.current = false;
-        setStatus('Erreur');
+        updateStatus('Erreur');
         logEvent.add(`Erreur WebSocket: ${e.message || "Inconnue"}`, "error");
       };
     } catch (e) {
       isConnecting.current = false;
-      setStatus('Erreur');
+      updateStatus('Erreur');
       logEvent.add(`Exception WebSocket: ${e.message}`, "error");
     }
   };
@@ -120,6 +95,43 @@ export function useSocket(ip, port, isMaintaining) {
       ws.current.send(JSON.stringify({ type: 'HEARTBEAT', data: { isMaintaining: maintaining } }));
     }
   };
+
+  useEffect(() => {
+    // Watchdog : Reconnexion au réveil
+    const subscription = AppState.addEventListener('change', nextAppState => {
+      if (appState.current.match(/inactive|background/) && nextAppState === 'active') {
+        if (statusRef.current !== 'Connecté') {
+          logEvent.add("Réveil de l'app: tentative reconnexion...");
+          connect();
+        }
+      }
+      appState.current = nextAppState;
+    });
+
+    // Watchdog : Reconnexion cyclique
+    const reconnectInterval = setInterval(() => {
+      if (ip && statusRef.current === 'Déconnecté' && !isConnecting.current) {
+        connect();
+      }
+    }, 5000);
+
+    // Initial connect
+    connect();
+
+    return () => {
+      subscription.remove();
+      clearInterval(reconnectInterval);
+      stop();
+    };
+  }, [ip, port]); // Dépendances minimales : on ne change que si l'IP ou le Port changent
+
+  // Effet séparé pour le heartbeat (dépend de isMaintaining)
+  useEffect(() => {
+    const unsubscribeBus = eventBus.subscribe((ev) => {
+      if (ev.type === 'TICK' && isMaintaining) sendHeartbeat(true);
+    });
+    return () => unsubscribeBus();
+  }, [isMaintaining]);
 
   const sendAction = (type, data) => {
     if (ws.current?.readyState === WebSocket.OPEN) {
