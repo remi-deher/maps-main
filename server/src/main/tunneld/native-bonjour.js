@@ -83,7 +83,10 @@ class NativeBonjour extends EventEmitter {
       setTimeout(() => { resolveProc.kill(); resolve(found) }, 4000)
     })
 
-    if (nativeResult) return { port: nativeResult.port, address: nativeResult.host }
+    if (nativeResult) {
+      const finalAddress = address || nativeResult.host;
+      return { port: nativeResult.port, address: finalAddress };
+    }
 
     // 2. Fallback : Scan de ports sur l'IPv6 extraite
     if (address) {

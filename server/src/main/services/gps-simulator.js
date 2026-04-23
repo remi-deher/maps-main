@@ -82,7 +82,7 @@ class GpsSimulator extends EventEmitter {
     }
 
     this.currentPort = rsdPort
-    dbg('[gps-sim] tunnel rétabli — attente de stabilisation (4s)...')
+    dbg(`[gps-sim] tunnel rétabli (Port: ${rsdPort}) — attente de stabilisation (6s)...`)
     
     if (this.restorationTimer) clearTimeout(this.restorationTimer)
 
@@ -95,7 +95,7 @@ class GpsSimulator extends EventEmitter {
         .then(res => {
           if (res.success) sendStatus('sim-restart', 'ok', 'Reconnexion')
         })
-    }, 4000)
+    }, 6000)
   }
 
   stop() {
@@ -168,8 +168,14 @@ class GpsSimulator extends EventEmitter {
         
         if (msg.toLowerCase().includes('error') || msg.toLowerCase().includes('failed')) {
           // Erreurs critiques de tunnel -> on force le refresh global
-          if (msg.includes('ConnectionRefusedError') || msg.includes('1225') || msg.includes('ECONNREFUSED')) {
-            dbg('[gps-sim] Erreur CRITIQUE de tunnel detectee -> forceRefresh')
+          const isCritical = msg.includes('ConnectionRefusedError') || 
+                            msg.includes('1225') || 
+                            msg.includes('1236') || 
+                            msg.includes('ConnectionAbortedError') ||
+                            msg.includes('ECONNREFUSED');
+
+          if (isCritical) {
+            dbg(`[gps-sim] Erreur CRITIQUE de tunnel detectee (${msg.trim()}) -> forceRefresh`)
             if (this.process === proc) this.process = null
             this.tunnel.forceRefresh()
             done({ success: false, error: msg })
