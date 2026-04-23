@@ -75,7 +75,14 @@ app.whenReady().then(() => {
   })
 
   // Liaison Companion -> Tunnel (Aide à la découverte WiFi)
+  let lastIpDetected = null
+  let lastIpTime = 0
   companion.on('iphone-ip-detected', (ip) => {
+    const now = Date.now()
+    if (lastIpDetected === ip && (now - lastIpTime) < 30000) return // Ignorer si moins de 30s
+    
+    lastIpDetected = ip
+    lastIpTime = now
     dbg(`[main] Aide à la découverte : iPhone détecté sur ${ip}. Tentative RSD...`)
     tunnel.setWifiIpOverride(ip)
   })

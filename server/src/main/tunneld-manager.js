@@ -82,8 +82,13 @@ function setQuitting() {
  * car tunneld gère lui-même les IP via mDNS.
  */
 function setWifiIpOverride(ip, port) {
-  if (_manualIp === ip && state.isConnected) {
-    // Déjà sur cette IP et connecté, on ne touche à rien
+  // Si le tunnel est déjà établi et que c'est la même IP, on ne touche à rien
+  if (state.isConnected && state.address === ip) {
+    return
+  }
+
+  // Si on a déjà tenté cette IP récemment et que le service tourne, on attend
+  if (_manualIp === ip && service.isRunning) {
     return
   }
   
