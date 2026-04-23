@@ -15,12 +15,11 @@ class CompanionServer extends EventEmitter {
     this.wss = null
     this.port = null
     this.clients = new Set()
-      status: {
-        tunnelActive: false,
-        maintainActive: false,
-        lastHeartbeat: null,
-        favorites: settings.get('favorites') || []
-      }
+    this.status = {
+      tunnelActive: false,
+      maintainActive: false,
+      lastHeartbeat: null,
+      favorites: settings.get('favorites') || []
     }
   }
 
