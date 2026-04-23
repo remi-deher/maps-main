@@ -75,7 +75,9 @@ function App() {
     setActiveSim(null);
   };
 
-  const handleContainerClick = () => {
+  const handleContainerClick = (e) => {
+    e.stopPropagation();
+    e.nativeEvent.stopImmediatePropagation();
     searchInputRef.current?.focus();
   };
 
@@ -83,19 +85,22 @@ function App() {
     <div className="relative w-full h-full bg-slate-950 overflow-hidden text-slate-200">
       
       {/* Background Map */}
-      <div className="absolute inset-0 z-0">
+      <div className="absolute inset-0 z-0" tabIndex="-1">
         <MapView onMapClick={handleMapClick} selectedPos={selectedPos || activeSim} />
       </div>
  
-      {/* Top Floating Bar (Omnibar) */}
-      <div className="absolute top-6 left-1/2 -translate-x-1/2 w-full max-w-2xl z-[100] px-6">
+      {/* Top Floating Bar (Omnibar) - Version Simplifiée */}
+      <div 
+        className="absolute top-6 left-1/2 -translate-x-1/2 w-full max-w-2xl z-[9999] px-6"
+        style={{ pointerEvents: 'auto' }}
+      >
         <div 
           className="w-full bg-[#1a1a2e] border border-white/10 rounded-2xl h-14 flex items-center px-4 gap-4 shadow-2xl cursor-text"
           onClick={handleContainerClick}
         >
           <button 
             onClick={(e) => { e.stopPropagation(); setSidebarOpen(true); }}
-            className="p-2 hover:bg-white/10 rounded-xl transition-colors"
+            className="p-2 hover:bg-white/10 rounded-xl transition-colors relative z-[10000]"
           >
             <Monitor className="w-6 h-6 text-blue-300" />
           </button>
@@ -106,18 +111,16 @@ function App() {
               ref={searchInputRef}
               type="text" 
               defaultValue={searchQuery}
-              onFocus={() => console.log('Input Focused')}
               onChange={(e) => setSearchQuery(e.target.value)}
               onKeyDown={(e) => {
                 if (e.key === 'Enter') search(e.target.value);
               }}
               placeholder="Rechercher un lieu..."
-              autoFocus
-              className="w-full bg-transparent border-none outline-none text-lg pl-10 text-white font-bold placeholder:text-slate-400"
+              className="w-full bg-transparent border-none outline-none text-lg pl-10 text-white font-bold placeholder:text-slate-400 relative z-[10000]"
               style={{ 
                 userSelect: 'text', 
                 WebkitUserSelect: 'text',
-                WebkitAppRegion: 'no-drag !important',
+                WebkitAppRegion: 'no-drag',
                 pointerEvents: 'auto'
               }}
             />
