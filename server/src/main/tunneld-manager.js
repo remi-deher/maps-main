@@ -97,8 +97,22 @@ class ConnectionOrchestrator {
     this._stopAllHeartbeats()
     if (this._onStatusChangeCb) this._onStatusChangeCb(false)
     
-    // On relance la découverte si on ne quitte pas
-    if (!this._isQuitting) this.start()
+    if (this._isQuitting) return
+
+    if (source === 'USB') {
+      dbg('[orchestrator] Chute de la Priorite 1 (USB) -> Basculement immediat sur Priorite 2 (Bonjour)')
+      this.bonjour.start()
+      
+      // On lance aussi le timer pour le fallback TunnelId plus tard
+      setTimeout(() => {
+        if (!this.state.isConnected && !this._isQuitting) {
+          this.tunneld.start()
+        }
+      }, 10000)
+    } else {
+      // Pour les autres deconnexions, on relance le cycle normal
+      this.start()
+    }
   }
 
   _startRsdHeartbeat(address, port) {
