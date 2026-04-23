@@ -25,12 +25,12 @@ export function useLocation() {
       await Location.startLocationUpdatesAsync(LOCATION_TASK_NAME, {
         accuracy: Location.Accuracy.Balanced,
         distanceInterval: 1,
-        deferredUpdatesInterval: 5000,
+        deferredUpdatesInterval: 1500, // Plus fréquent pour empêcher la mise en veille iOS
         pausesLocationUpdatesAutomatically: false,
         showsBackgroundLocationIndicator: true,
         foregroundService: { 
-          notificationTitle: "GPS Mock Active", 
-          notificationBody: "Maintien de la connexion...", 
+          notificationTitle: "GPS Mock Actif", 
+          notificationBody: "Bouclier de connexion en cours...", 
           notificationColor: "#6366f1" 
         }
       });

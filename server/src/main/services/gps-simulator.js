@@ -82,7 +82,7 @@ class GpsSimulator extends EventEmitter {
     }
 
     this.currentPort = rsdPort
-    dbg('[gps-sim] tunnel rétabli — attente de stabilisation (2s)...')
+    dbg('[gps-sim] tunnel rétabli — attente de stabilisation (4s)...')
     
     if (this.restorationTimer) clearTimeout(this.restorationTimer)
 
@@ -95,7 +95,7 @@ class GpsSimulator extends EventEmitter {
         .then(res => {
           if (res.success) sendStatus('sim-restart', 'ok', 'Reconnexion')
         })
-    }, 2000)
+    }, 4000)
   }
 
   stop() {

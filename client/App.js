@@ -149,6 +149,7 @@ export default function App() {
             onClose={() => setIsFavsOpen(false)}
             onTeleport={handleTeleport}
             onRemove={(f) => sendAction('REMOVE_FAVORITE', { lat: f.lat, lon: f.lon })}
+            onRename={(lat, lon, newName) => sendAction('RENAME_FAVORITE', { lat, lon, newName })}
           />
 
           <SettingsModal 

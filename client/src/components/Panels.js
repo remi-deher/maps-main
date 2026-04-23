@@ -74,12 +74,32 @@ export function ActionPanel({ visible, coords, isFavorite, onTeleport, onToggleF
   );
 }
 
-export function FavoritesPanel({ visible, favorites, history, onClose, onTeleport, onRemove }) {
+export function FavoritesPanel({ visible, favorites, history, onClose, onTeleport, onRemove, onRename }) {
   const anim = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
     Animated.spring(anim, { toValue: visible ? 1 : 0, useNativeDriver: false, friction: 8 }).start();
   }, [visible]);
+
+  const handleRename = (fav) => {
+    Alert.prompt(
+      "Renommer le favori",
+      `Nouveau nom pour ce lieu :`,
+      [
+        { text: "Annuler", style: "cancel" },
+        { 
+          text: "Enregistrer", 
+          onPress: (newName) => {
+            if (newName && newName.trim()) {
+              onRename(fav.lat, fav.lon, newName.trim());
+            }
+          }
+        }
+      ],
+      "plain-text",
+      fav.name
+    );
+  };
 
   return (
     <Animated.View style={[styles.favOverlay, { 
@@ -99,9 +119,14 @@ export function FavoritesPanel({ visible, favorites, history, onClose, onTelepor
               <Text style={styles.itemName}>{fav.name}</Text>
               <Text style={styles.itemCoords}>{fav.lat.toFixed(4)}, {fav.lon.toFixed(4)}</Text>
             </TouchableOpacity>
-            <TouchableOpacity onPress={() => onRemove(fav)} style={styles.deleteBtn}>
-              <Text style={{fontSize: 18}}>🗑️</Text>
-            </TouchableOpacity>
+            <View style={styles.itemActions}>
+              <TouchableOpacity onPress={() => handleRename(fav)} style={styles.editBtn}>
+                <Text style={{fontSize: 16}}>✏️</Text>
+              </TouchableOpacity>
+              <TouchableOpacity onPress={() => onRemove(fav)} style={styles.deleteBtn}>
+                <Text style={{fontSize: 16}}>🗑️</Text>
+              </TouchableOpacity>
+            </View>
           </View>
         )) : <Text style={styles.empty}>Aucun favori enregistré.</Text>}
 
@@ -155,6 +180,8 @@ const styles = StyleSheet.create({
   itemMain: { flex: 1 },
   itemName: { color: COLORS.text, fontWeight: '800', fontSize: 17 },
   itemCoords: { color: COLORS.textMuted, fontSize: 12, marginTop: 4 },
+  itemActions: { flexDirection: 'row', gap: 8 },
+  editBtn: { padding: 10, backgroundColor: 'rgba(255, 255, 255, 0.08)', borderRadius: 12 },
   deleteBtn: { padding: 10, backgroundColor: 'rgba(244, 63, 94, 0.1)', borderRadius: 12 },
   empty: { color: COLORS.textMuted, textAlign: 'center', marginTop: 40, fontWeight: '600', fontSize: 16 },
   sectionTitle: { color: COLORS.textSecondary, fontSize: 13, fontWeight: 'bold', textTransform: 'uppercase', letterSpacing: 1.5, marginBottom: 15, paddingLeft: 5 },

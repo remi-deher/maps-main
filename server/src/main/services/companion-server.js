@@ -155,6 +155,20 @@ class CompanionServer extends EventEmitter {
       this._broadcast({ type: 'STATUS', data: this.status });
       this.emit('favorites-updated', favs);
     }
+    else if (payload.type === 'RENAME_FAVORITE') {
+      const { lat, lon, newName } = payload.data;
+      let favs = settings.get('favorites') || [];
+      favs = favs.map(f => {
+        if (Math.abs(f.lat - lat) < 0.0001 && Math.abs(f.lon - lon) < 0.0001) {
+          return { ...f, name: newName };
+        }
+        return f;
+      });
+      settings.save({ favorites: favs });
+      this.status.favorites = favs;
+      this._broadcast({ type: 'STATUS', data: this.status });
+      this.emit('favorites-updated', favs);
+    }
   }
 
   _addToHistory(entry) {
