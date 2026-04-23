@@ -22,7 +22,7 @@ class GpsBridge extends EventEmitter {
   start() {
     if (this.runner.isRunning) return
 
-    const scriptPath = path.join(__dirname, '..', '..', 'python', 'bridge.py')
+    const scriptPath = path.join(__dirname, '..', '..', '..', 'python', 'bridge.py')
     dbg(`[gps-bridge] Lancement du pont Python...`)
     
     this.runner.spawn(PYTHON, [scriptPath])
