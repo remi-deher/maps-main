@@ -36,7 +36,7 @@ function App() {
     }
   };
 
-  const removeFavorite = async (fav) => {
+  const handleDeleteFavorite = async (fav) => {
     if (confirm(`Supprimer "${fav.name}" des favoris ?`)) {
       await window.gps.removeFavorite(fav.lat, fav.lon);
     }
@@ -136,7 +136,7 @@ function App() {
                           <button onClick={() => renameFavorite(fav)} className="p-2 hover:bg-blue-500/20 rounded-lg text-blue-400 transition-colors">
                             <Edit2 className="w-4 h-4" />
                           </button>
-                          <button onClick={() => removeFavorite(fav)} className="p-2 hover:bg-rose-500/20 rounded-lg text-rose-400 transition-colors">
+                          <button onClick={() => handleDeleteFavorite(fav)} className="p-2 hover:bg-rose-500/20 rounded-lg text-rose-400 transition-colors">
                             <Trash2 className="w-4 h-4" />
                           </button>
                         </div>
