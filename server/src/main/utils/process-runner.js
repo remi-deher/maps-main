@@ -1,14 +1,11 @@
-'use strict'
-
-const { spawn } = require('child_process')
+const { spawn, exec } = require('child_process')
 const { EventEmitter } = require('events')
+const os = require('os')
 const { dbg } = require('../logger')
 const Encoder = require('./encoder')
 
 /**
- * ProcessRunner - Utilitaire unifi\u00e9 pour lancer des processus externes
- * G\u00e8re l'encodage UTF-8, les variables d'environnement Python
- * et la d\u00e9tection d'erreurs communes.
+ * ProcessRunner - Utilitaire unifié pour lancer des processus externes
  */
 class ProcessRunner extends EventEmitter {
   constructor(name, options = {}) {
@@ -17,7 +14,8 @@ class ProcessRunner extends EventEmitter {
     this.process = null
     this.options = {
       cwd: null,
-      python: true, // Force PYTHONIOENCODING=utf-8
+      python: true, 
+      priority: -10, // Haute priorité par défaut (-20 à 19)
       ...options
     }
   }
@@ -39,9 +37,15 @@ class ProcessRunner extends EventEmitter {
       shell: false
     })
 
-    // On ne fixe pas l'encodage ici car on veut manipuler le Buffer via Encoder.decode
-    // this.process.stdout.setEncoding('utf8')
-    // this.process.stderr.setEncoding('utf8')
+    // Application de la priorité CPU
+    if (this.process.pid && this.options.priority !== 0) {
+      try {
+        os.setPriority(this.process.pid, this.options.priority)
+        dbg(`[${this.name}] Priorite fixee a ${this.options.priority}`)
+      } catch (e) {
+        dbg(`[${this.name}] Impossible de fixer la priorite: ${e.message}`)
+      }
+    }
 
     this.process.stdout.on('data', (data) => {
       const msg = Encoder.decode(data).trim()
@@ -59,7 +63,6 @@ class ProcessRunner extends EventEmitter {
         this.emit('log', `Erreur: ${msg}`)
         this.emit('stderr', msg)
         
-        // Détection d'erreurs critiques communes (Réseau/Tunnel)
         if (msg.includes('Connection was terminated abruptly') || 
             msg.includes('WinError 1236') || 
             msg.includes('WinError 10061') ||
@@ -80,10 +83,16 @@ class ProcessRunner extends EventEmitter {
 
   stop() {
     if (this.process) {
-      try {
+      const pid = this.process.pid
+      dbg(`[${this.name}] Arret du processus (PID: ${pid})...`)
+      
+      if (process.platform === 'win32') {
+        // Nettoyage agressif sur Windows pour liberer les ports instantanement
+        exec(`taskkill /F /T /PID ${pid}`, (err) => {
+          if (err) dbg(`[${this.name}] Erreur taskkill: ${err.message}`)
+        })
+      } else {
         this.process.kill('SIGTERM')
-      } catch (e) {
-        dbg(`[${this.name}] erreur lors de l'arret: ${e.message}`)
       }
       this.process = null
     }

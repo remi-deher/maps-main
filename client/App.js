@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { StyleSheet, View, TouchableWithoutFeedback, Keyboard, KeyboardAvoidingView, Platform, TouchableOpacity, Text } from 'react-native';
 import MapView, { Marker } from 'react-native-maps';
 import { CameraView, useCameraPermissions } from 'expo-camera';
+import * as Battery from 'expo-battery';
 
 // Modules locaux
 import { COLORS, SHADOWS } from './src/constants/theme';
@@ -32,6 +33,7 @@ export default function App() {
   const [showSettings, setShowSettings] = useState(false);
   const [showDebug, setShowDebug] = useState(false);
   const [isFavsOpen, setIsFavsOpen] = useState(false);
+  const [isLowPowerMode, setIsLowPowerMode] = useState(false);
 
   const mapRef = useRef(null);
   const [cameraPermission, requestCameraPermission] = useCameraPermissions();
@@ -40,6 +42,19 @@ export default function App() {
     logEvent.add("Application démarrée");
     requestPermissions();
     requestCameraPermission();
+
+    // Surveillance de la batterie / mode économie
+    const checkBattery = async () => {
+      const isLowPower = await Battery.isLowPowerModeEnabledAsync();
+      setIsLowPowerMode(isLowPower);
+    };
+    checkBattery();
+    const batterySub = Battery.addLowPowerModeListener(({ lowPowerMode }) => {
+      setIsLowPowerMode(lowPowerMode);
+      if (lowPowerMode) logEvent.add("⚠️ Mode économie d'énergie activé ! Connexion WiFi instable.");
+    });
+
+    return () => batterySub.remove();
   }, []);
 
   // Géocodage inverse automatique pour la Pill
@@ -158,6 +173,7 @@ export default function App() {
                 }}
                 status={status}
                 isMaintaining={isMaintaining}
+                isLowPowerMode={isLowPowerMode}
             />
           </TouchableOpacity>
 
