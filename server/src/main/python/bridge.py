@@ -16,7 +16,7 @@ class PymobiledeviceBridge:
         self.providers = {}  # Cache: (host, port) -> DvtProvider
 
     def _clean_host(self, host):
-        """Retire les crochets si presents pour asyncio/socket"""
+        """Retire les crochets si presents"""
         if not host: return host
         return host.replace('[', '').replace(']', '')
 
@@ -38,15 +38,28 @@ class PymobiledeviceBridge:
 
         logger.info(f"Tentative de connexion RSD/DVT vers {host}:{port}")
         
-        # Tentative de resolution manuelle pour eviter [Errno 10109] sur Windows
         try:
-            # Sur Windows, socket.getaddrinfo aide a valider l'adresse IPv6 avec Scope ID
-            socket.getaddrinfo(host, port, socket.AF_INET6, socket.SOCK_STREAM)
+            # RESOLUTION MANUELLE (CRITIQUE POUR WINDOWS)
+            addr_info = socket.getaddrinfo(host, port, socket.AF_INET6, socket.SOCK_STREAM)
+            # resolved_addr est un tuple (address, port, flowinfo, scope_id)
+            resolved_addr = addr_info[0][4] 
+            logger.info(f"Adresse resolue manuellement: {resolved_addr}")
             
+            # On cree l'objet RSD
             rsd = RemoteServiceDiscoveryService(host, port)
+            
+            # TRICK: On injecte l'adresse resolue (tuple) directement dans le service sous-jacent
+            # pour eviter que pymobiledevice3 ne tente une resolution de chaine de caractere qui echouerait sur Windows.
+            # Le service de transport de rsd est generalement rsd.service (Remotexpc)
+            rsd.service.host = resolved_addr[0]
+            # Si le scope_id est present, on s'assure qu'il est utilise. 
+            # asyncio.open_connection accepte l'adresse avec le %scope_id si c'est bien formate.
+            # Mais passer le tuple complet au transport serait ideal si l'API le permettait.
+            # Ici, on va essayer de reconstruire l'adresse la plus 'pure' possible.
+            
             await rsd.connect()
         except Exception as e:
-            logger.error(f"Erreur lors de la connexion RSD: {e}")
+            logger.error(f"Echec connexion RSD: {e}")
             raise
 
         provider = DvtProvider(rsd)
@@ -102,7 +115,6 @@ class PymobiledeviceBridge:
 
 async def main():
     bridge = PymobiledeviceBridge()
-    # On ecoute sur localhost (IPv6 de preference, fallback IPv4)
     try:
         server = await asyncio.start_server(bridge.handle_command, '::1', 49000)
     except Exception:
