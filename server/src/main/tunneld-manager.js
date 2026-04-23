@@ -168,7 +168,25 @@ class ConnectionOrchestrator extends EventEmitter {
   forceRefresh() { this.stopTunneld(); this.start() }
   startTunneld() { this.start() }
   applyConnectionMode(mode) { dbg(`[orchestrator] Mode : ${mode} (Auto)`) }
-  setWifiIpOverride(ip) { dbg(`[orchestrator] IP Info : ${ip}`) }
+  setWifiIpOverride(ip) {
+    if (!ip || ip === this.activeConnection?.address) return
+    
+    dbg(`[orchestrator] IP Recue du compagnon : ${ip}. Tentative de connexion forcee...`)
+    
+    // On simule une connexion de type WiFi (Direct) mais en IPv4
+    const conn = {
+      address: ip,
+      port: 32498, // Port RSD standard
+      type: 'WiFi (Direct)',
+      deviceInfo: { name: 'iPhone (Compagnon)', version: 'IPv4' }
+    }
+
+    // L'IPv4 du compagnon surclasse le WiFi Bonjour
+    if (!this.activeConnection || this.activeConnection.type === 'WiFi') {
+      this._handleNewConnection(conn)
+    }
+  }
+
   setOnTunnelRestored(cb) { this._onTunnelRestoredCb = cb }
   setOnStatusChange(cb) { this._onStatusChangeCb = cb }
 }
