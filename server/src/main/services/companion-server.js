@@ -184,7 +184,6 @@ class CompanionServer extends EventEmitter {
     this._broadcast({ type: 'STATUS', data: this.status });
     this.emit('favorites-updated', favs);
   }
-  }
 
   _addToHistory(entry) {
     let history = settings.get('recentHistory') || []
