@@ -11,10 +11,26 @@ import * as Haptics from 'expo-haptics';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
+const LOCATION_TASK_NAME = 'background-location-task';
 const DEFAULT_PORT = '8080';
+
+// Bus d'événement global
+const eventBus = {
+  listeners: [],
+  subscribe(cb) { this.listeners.push(cb); return () => { this.listeners = this.listeners.filter(l => l !== cb); } },
+  emit(data) { this.listeners.forEach(cb => cb(data)) }
+};
+
+import * as TaskManager from 'expo-task-manager';
+
+TaskManager.defineTask(LOCATION_TASK_NAME, ({ data, error }) => {
+  if (error) return;
+  if (data) eventBus.emit({ type: 'TICK' });
+});
 
 export default function App() {
   // États de connexion
+  const [isMaintaining, setIsMaintaining] = useState(false);
   const [serverIp, setServerIp] = useState('');
   const [serverPort, setServerPort] = useState(DEFAULT_PORT);
   const [wsStatus, setWsStatus] = useState('Déconnecté');
@@ -53,8 +69,15 @@ export default function App() {
       }
     })();
 
-    return () => stopWs();
-  }, []);
+    const unsubscribe = eventBus.subscribe((ev) => {
+      if (ev.type === 'TICK' && isMaintaining) sendHeartbeat(true);
+    });
+
+    return () => {
+      unsubscribe();
+      stopWs();
+    };
+  }, [isMaintaining]);
 
   // Tentative de connexion auto
   useEffect(() => {
@@ -77,6 +100,7 @@ export default function App() {
         isConnecting.current = false;
         setWsStatus('Connecté');
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        sendHeartbeat(isMaintaining);
         AsyncStorage.setItem('serverIp', serverIp);
         AsyncStorage.setItem('serverPort', serverPort);
       };
@@ -104,6 +128,12 @@ export default function App() {
   };
 
   const stopWs = () => { if (ws.current) { ws.current.close(); ws.current = null; } };
+
+  const sendHeartbeat = (maintaining) => {
+    if (ws.current?.readyState === WebSocket.OPEN) {
+      ws.current.send(JSON.stringify({ type: 'HEARTBEAT', data: { isMaintaining: maintaining } }));
+    }
+  };
 
   const sendAction = (type, data) => {
     if (ws.current?.readyState === WebSocket.OPEN) {
@@ -162,6 +192,30 @@ export default function App() {
     Animated.spring(favsAnim, { toValue, useNativeDriver: false, friction: 8 }).start();
     setIsFavsOpen(!isFavsOpen);
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+  };
+
+  const toggleLocationUpdates = async () => {
+    if (isMaintaining) {
+      await Location.stopLocationUpdatesAsync(LOCATION_TASK_NAME);
+      setIsMaintaining(false);
+      sendHeartbeat(false);
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    } else {
+      const { status } = await Location.requestBackgroundPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert("Permission", "La permission de localisation en arrière-plan est requise pour maintenir la connexion.");
+        return;
+      }
+      await Location.startLocationUpdatesAsync(LOCATION_TASK_NAME, {
+        accuracy: Location.Accuracy.Balanced,
+        distanceInterval: 1,
+        deferredUpdatesInterval: 5000,
+        foregroundService: { notificationTitle: "GPS Mock", notificationBody: "Service de maintien actif", notificationColor: "#6366f1" }
+      });
+      setIsMaintaining(true);
+      sendHeartbeat(true);
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    }
   };
 
   const isPosFavorite = (lat, lon) => favorites.some(f => Math.abs(f.lat - lat) < 0.0001 && Math.abs(f.lon - lon) < 0.0001);
@@ -226,9 +280,17 @@ export default function App() {
           
           <View style={[styles.statusPill, { borderLeftColor: wsStatus === 'Connecté' ? '#10b981' : '#f43f5e' }]}>
             <View style={[styles.dot, { backgroundColor: wsStatus === 'Connecté' ? '#10b981' : '#f43f5e' }]} />
-            <Text style={styles.statusText}>{wsStatus}</Text>
+            <Text style={styles.statusText}>{wsStatus} {isMaintaining && '• ACTIF'}</Text>
           </View>
         </SafeAreaView>
+
+        {/* Maintain Connection Toggle (Floating Right) */}
+        <TouchableOpacity 
+          style={[styles.maintainBtn, isMaintaining && styles.maintainBtnActive]} 
+          onPress={toggleLocationUpdates}
+        >
+          <Text style={{fontSize: 20}}>{isMaintaining ? '🛡️' : '💤'}</Text>
+        </TouchableOpacity>
 
         {/* Action Panel (Bottom Center) */}
         {pendingCoords && (
@@ -306,6 +368,9 @@ const styles = StyleSheet.create({
   statusPill: { marginTop: 15, flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(15,23,42,0.8)', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 20, borderLeftWidth: 4 },
   dot: { width: 6, height: 6, borderRadius: 3, marginRight: 8 },
   statusText: { color: '#fff', fontSize: 10, fontWeight: 'bold', textTransform: 'uppercase' },
+
+  maintainBtn: { position: 'absolute', top: 120, right: 20, width: 50, height: 50, borderRadius: 25, backgroundColor: 'rgba(15,23,42,0.8)', justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)' },
+  maintainBtnActive: { borderColor: '#6366f1', backgroundColor: 'rgba(99,102,241,0.2)' },
 
   actionPanel: { position: 'absolute', bottom: 40, left: 20, right: 90, backgroundColor: '#1e293b', borderRadius: 25, padding: 20, shadowColor: '#000', shadowOpacity: 0.3, shadowRadius: 15 },
   actionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 15 },
