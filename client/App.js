@@ -17,12 +17,13 @@ import { ActionPanel, FavoritesPanel } from './src/components/Panels';
 export default function App() {
   // Hooks de logique
   const { serverIp, serverPort, saveSettings } = useStorage();
-  const { isMaintaining, requestPermissions, toggleBackground, searchAddress } = useLocation();
+  const { isMaintaining, requestPermissions, toggleBackground, searchAddress, reverseGeocode } = useLocation();
   const { status, favorites, recentHistory, simulatedCoords, sendAction, connect } = useSocket(serverIp, serverPort, isMaintaining);
   
   // États UI locaux
   const [searchQuery, setSearchQuery] = useState('');
   const [pendingCoords, setPendingCoords] = useState(null);
+  const [simulatedAddress, setSimulatedAddress] = useState(null);
   const [showScanner, setShowScanner] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [showDebug, setShowDebug] = useState(false);
@@ -36,6 +37,15 @@ export default function App() {
     requestPermissions();
     requestCameraPermission();
   }, []);
+
+  // Géocodage inverse automatique pour la Pill
+  useEffect(() => {
+    if (simulatedCoords) {
+      reverseGeocode(simulatedCoords.latitude, simulatedCoords.longitude).then(setSimulatedAddress);
+    } else {
+      setSimulatedAddress(null);
+    }
+  }, [simulatedCoords]);
 
   // Actions
   const handleTeleport = (coords) => {
@@ -155,6 +165,19 @@ export default function App() {
             )}
           </View>
 
+          {simulatedCoords && (
+            <TouchableOpacity 
+              style={[styles.simPill, SHADOWS.premium]} 
+              activeOpacity={0.8}
+              onPress={centerOnSimulation}
+            >
+              <View style={styles.simPillIcon}><Text style={{fontSize: 12}}>🚀</Text></View>
+              <Text style={styles.simPillText} numberOfLines={1}>
+                {simulatedAddress || "Simulation en cours..."}
+              </Text>
+            </TouchableOpacity>
+          )}
+
           <ActionPanel 
             visible={!!pendingCoords} 
             coords={pendingCoords} 
@@ -207,5 +230,25 @@ const styles = StyleSheet.create({
   dot: { width: 12, height: 12, borderRadius: 6, backgroundColor: COLORS.primary, borderWidth: 2, borderColor: '#fff' },
   floatingActions: { position: 'absolute', top: 160, right: 15, gap: 10 },
   floatBtn: { width: 54, height: 54, borderRadius: 27, backgroundColor: COLORS.surface, justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)' },
-  activeFloat: { borderColor: COLORS.primary, backgroundColor: 'rgba(99,102,241,0.3)' }
+  activeFloat: { borderColor: COLORS.primary, backgroundColor: 'rgba(99,102,241,0.3)' },
+  simPill: {
+    position: 'absolute',
+    bottom: 40,
+    left: 20,
+    right: 20,
+    backgroundColor: 'rgba(15, 23, 42, 0.95)',
+    borderRadius: 20,
+    padding: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(99, 102, 241, 0.4)',
+    zIndex: 90
+  },
+  simPillIcon: {
+    width: 28, height: 28, borderRadius: 14, backgroundColor: 'rgba(99, 102, 241, 0.2)',
+    justifyContent: 'center', alignItems: 'center'
+  },
+  simPillText: { color: COLORS.text, fontSize: 14, fontWeight: '700', flex: 1 }
 });

@@ -63,5 +63,22 @@ export function useLocation() {
     }
   };
 
-  return { isMaintaining, isSearching, requestPermissions, toggleBackground, searchAddress };
+  const reverseGeocode = async (lat, lon) => {
+    try {
+      const response = await fetch(`https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lon}&format=json&addressdetails=1`);
+      const data = await response.json();
+      if (data && data.address) {
+        const addr = data.address;
+        const main = addr.road || addr.pedestrian || addr.suburb || addr.neighbourhood || addr.city_district || '';
+        const city = addr.city || addr.town || addr.village || '';
+        if (main && city) return `${main}, ${city}`;
+        return data.display_name.split(',')[0] + ', ' + (addr.city || addr.country);
+      }
+      return `${lat.toFixed(4)}, ${lon.toFixed(4)}`;
+    } catch (e) {
+      return `${lat.toFixed(4)}, ${lon.toFixed(4)}`;
+    }
+  };
+
+  return { isMaintaining, isSearching, requestPermissions, toggleBackground, searchAddress, reverseGeocode };
 }
