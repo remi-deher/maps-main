@@ -66,6 +66,17 @@ export default function App() {
       sendAction('ADD_FAVORITE', { lat: coords.latitude, lon: coords.longitude, name: coords.name || "Lieu favori" });
     }
   };
+  
+  const centerOnSimulation = () => {
+    if (simulatedCoords) {
+      logEvent.add("Centrage sur position simulée");
+      mapRef.current?.animateToRegion({
+        ...simulatedCoords,
+        latitudeDelta: 0.005,
+        longitudeDelta: 0.005
+      }, 500);
+    }
+  };
 
   const handleScannerResult = ({ data }) => {
     setShowScanner(false);
@@ -132,6 +143,11 @@ export default function App() {
             <TouchableOpacity style={[styles.floatBtn, SHADOWS.light]} onPress={() => setIsFavsOpen(true)}>
               <Text style={{fontSize: 22}}>⭐</Text>
             </TouchableOpacity>
+            {simulatedCoords && (
+              <TouchableOpacity style={[styles.floatBtn, SHADOWS.light]} onPress={centerOnSimulation}>
+                <Text style={{fontSize: 22}}>🎯</Text>
+              </TouchableOpacity>
+            )}
           </View>
 
           <ActionPanel 
