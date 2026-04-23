@@ -7,7 +7,7 @@ import {
 import * as Location from 'expo-location';
 import * as TaskManager from 'expo-task-manager';
 import MapView, { Marker, PROVIDER_GOOGLE } from 'react-native-maps';
-import { BarCodeScanner } from 'expo-barcode-scanner';
+import { CameraView, useCameraPermissions } from 'expo-camera';
 import * as Haptics from 'expo-haptics';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
@@ -44,7 +44,7 @@ export default function App() {
   // États Recherche & Scanner
   const [searchQuery, setSearchQuery] = useState('');
   const [isSearching, setIsSearching] = useState(false);
-  const [hasCameraPermission, setHasCameraPermission] = useState(null);
+  const [cameraPermission, requestCameraPermission] = useCameraPermissions();
   const [showScanner, setShowScanner] = useState(false);
 
   // États UI
@@ -64,8 +64,7 @@ export default function App() {
   useEffect(() => {
     (async () => {
       await Location.requestForegroundPermissionsAsync();
-      const { status: cam } = await BarCodeScanner.requestPermissionsAsync();
-      setHasCameraPermission(cam === 'granted');
+      requestCameraPermission();
 
       // Charger tout le stockage
       const savedIp = await AsyncStorage.getItem('serverIp');
@@ -250,7 +249,8 @@ export default function App() {
         setServerIp(match[1]);
         setServerPort(match[2]);
       } else {
-        Alert.alert("Scan", "Format inconnu : " + data);
+        // Fallback simple si c'est juste l'IP
+        setServerIp(data);
       }
     } catch (e) { Alert.alert("Erreur", "Données QR invalides."); }
   };
@@ -281,7 +281,13 @@ export default function App() {
   if (showScanner) {
     return (
       <View style={styles.scannerContainer}>
-        <BarCodeScanner onBarCodeScanned={handleBarCodeScanned} style={StyleSheet.absoluteFillObject} />
+        <CameraView 
+          onBarcodeScanned={handleBarCodeScanned} 
+          barcodeScannerSettings={{
+            barcodeTypes: ["qr"],
+          }}
+          style={StyleSheet.absoluteFillObject} 
+        />
         <View style={styles.scannerOverlay}>
           <View style={styles.scannerTarget} />
           <Text style={styles.scannerHint}>Scannez le QR Code sur le PC</Text>

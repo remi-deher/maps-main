@@ -22,7 +22,12 @@ jobs:
           cd client && npm install
 
       - name: Expo Prebuild
-        run: cd client && npx expo prebuild --platform ios
+        run: cd client && npx expo prebuild --platform ios --skip-install
+
+      - name: Install Pods
+        run: |
+          cd client/ios
+          pod install --repo-update
 
       - name: Build Unsigned App
         run: |
