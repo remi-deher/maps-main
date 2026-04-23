@@ -78,7 +78,12 @@ class ConnectionOrchestrator extends EventEmitter {
       device: conn.deviceInfo || { name: 'iPhone' }
     })
 
-    this._startHeartbeat(conn.address, conn.port)
+    // On ne lance le heartbeat QUE si le compagnon est deja la
+    if (this.isCompanionConnected) {
+      this._startHeartbeat(conn.address, conn.port)
+    } else {
+      dbg('[orchestrator] En attente de l\'application compagnon pour lancer le heartbeat...')
+    }
     
     if (this._onTunnelRestoredCb) this._onTunnelRestoredCb()
     if (this._onStatusChangeCb) this._onStatusChangeCb(true)
@@ -90,6 +95,7 @@ class ConnectionOrchestrator extends EventEmitter {
     
     dbg(`[orchestrator] Deconnexion detectee via ${source}`)
     this.activeConnection = null
+    this.isCompanionConnected = false
     this._stopAllHeartbeats()
     
     sendStatus({
@@ -169,11 +175,15 @@ class ConnectionOrchestrator extends EventEmitter {
   startTunneld() { this.start() }
   applyConnectionMode(mode) { dbg(`[orchestrator] Mode : ${mode} (Auto)`) }
   setWifiIpOverride(ip) {
-    if (!ip || ip === this.activeConnection?.address) return
+    if (!ip) return
     
-    dbg(`[orchestrator] IP Recue du compagnon : ${ip}. Tentative de connexion forcee...`)
-    
-    // On simule une connexion de type WiFi (Direct) mais en IPv4
+    // Si c'est la même IP que la connexion active et que le compagnon était déjà marqué connecté, on ne fait rien
+    if (ip === this.activeConnection?.address && this.isCompanionConnected) return
+
+    dbg(`[orchestrator] IP Recue du compagnon : ${ip}. Activation du heartbeat...`)
+    this.isCompanionConnected = true
+
+    // On crée ou met à jour la connexion avec l'IPv4 stable
     const conn = {
       address: ip,
       port: 32498, // Port RSD standard
@@ -181,9 +191,13 @@ class ConnectionOrchestrator extends EventEmitter {
       deviceInfo: { name: 'iPhone (Compagnon)', version: 'IPv4' }
     }
 
-    // L'IPv4 du compagnon surclasse le WiFi Bonjour
-    if (!this.activeConnection || this.activeConnection.type === 'WiFi') {
-      this._handleNewConnection(conn)
+    // On force l'application de cette connexion (elle surclassera Bonjour)
+    this._handleNewConnection(conn)
+    
+    // Si pour une raison ou une autre _handleNewConnection n'a pas relancé le HB (ex: même IP)
+    // On s'assure qu'il tourne
+    if (this.activeConnection) {
+      this._startHeartbeat(this.activeConnection.address, this.activeConnection.port)
     }
   }
 
