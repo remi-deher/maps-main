@@ -1,14 +1,16 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { 
-  StyleSheet, Text, View, Button, TextInput, KeyboardAvoidingView, 
-  Platform, Alert, Animated, PanResponder, Dimensions, TouchableOpacity, ActivityIndicator 
+  StyleSheet, Text, View, TextInput, KeyboardAvoidingView, 
+  Platform, Alert, Animated, PanResponder, Dimensions, TouchableOpacity, ActivityIndicator,
+  TouchableWithoutFeedback, Keyboard 
 } from 'react-native';
 import * as Location from 'expo-location';
 import * as TaskManager from 'expo-task-manager';
 import MapView, { Marker } from 'react-native-maps';
 import { BarCodeScanner } from 'expo-barcode-scanner';
+import * as Haptics from 'expo-haptics';
 
-const { height: SCREEN_HEIGHT } = Dimensions.get('window');
+const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 const LOCATION_TASK_NAME = 'background-location-task';
 const DEFAULT_PORT = '8080';
 
@@ -33,29 +35,76 @@ export default function App() {
   const [pcTunnelActive, setPcTunnelActive] = useState(false);
   const [simulatedCoords, setSimulatedCoords] = useState(null);
   const [pendingCoords, setPendingCoords] = useState(null);
-  const [errorMsg, setErrorMsg] = useState(null);
-
+  
   // États Recherche & Scanner
   const [searchQuery, setSearchQuery] = useState('');
   const [isSearching, setIsSearching] = useState(false);
   const [hasCameraPermission, setHasCameraPermission] = useState(null);
   const [showScanner, setShowScanner] = useState(false);
 
-  // États UI (Bottom Sheet)
-  const [sheetOpen, setSheetOpen] = useState(false);
-  const sheetY = useRef(new Animated.Value(SCREEN_HEIGHT * 0.75)).current;
+  // États UI
+  const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const menuAnim = useRef(new Animated.Value(0)).current;
   const mapRef = useRef(null);
   const ws = useRef(null);
   const reconnectTimer = useRef(null);
   const isConnecting = useRef(false);
 
-  // ─── Initialisation & Permissions ───────────────────────────────────────────
+  // ─── Joystick Logic ────────────────────────────────────────────────────────
+  const [joystickActive, setJoystickActive] = useState(false);
+  const joystickPos = useRef(new Animated.ValueXY({ x: 0, y: 0 })).current;
+  const joystickTimer = useRef(null);
+
+  const panResponder = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => true,
+      onPanResponderMove: (evt, gestureState) => {
+        const dist = Math.sqrt(gestureState.dx**2 + gestureState.dy**2);
+        const maxDist = 40;
+        
+        if (dist > maxDist) {
+          const ratio = maxDist / dist;
+          joystickPos.setValue({ x: gestureState.dx * ratio, y: gestureState.dy * ratio });
+        } else {
+          joystickPos.setValue({ x: gestureState.dx, y: gestureState.dy });
+        }
+        
+        if (!joystickActive) setJoystickActive(true);
+        startJoystickMovement(gestureState.dx, gestureState.dy);
+      },
+      onPanResponderRelease: () => {
+        Animated.spring(joystickPos, { toValue: { x: 0, y: 0 }, useNativeDriver: false }).start();
+        setJoystickActive(false);
+        stopJoystickMovement();
+      },
+    })
+  ).current;
+
+  const startJoystickMovement = (dx, dy) => {
+    if (joystickTimer.current) clearInterval(joystickTimer.current);
+    joystickTimer.current = setInterval(() => {
+      moveSimulatedLocation(dx * 0.000005, -dy * 0.000005);
+    }, 100);
+  };
+
+  const stopJoystickMovement = () => {
+    if (joystickTimer.current) clearInterval(joystickTimer.current);
+  };
+
+  const moveSimulatedLocation = (dLat, dLon) => {
+    setSimulatedCoords(prev => {
+      if (!prev) return null;
+      const next = { latitude: prev.latitude + dLat, longitude: prev.longitude + dLon };
+      sendLocationToPc(next.latitude, next.longitude);
+      return next;
+    });
+  };
+
+  // ─── Initialisation ──────────────────────────────────────────────────────────
 
   useEffect(() => {
     (async () => {
-      let { status: foreground } = await Location.requestForegroundPermissionsAsync();
-      if (foreground !== 'granted') setErrorMsg('Permission de localisation refusée');
-      
+      await Location.requestForegroundPermissionsAsync();
       const { status: cam } = await BarCodeScanner.requestPermissionsAsync();
       setHasCameraPermission(cam === 'granted');
     })();
@@ -67,18 +116,9 @@ export default function App() {
     return () => {
       unsubscribe();
       stopWs();
-      if (reconnectTimer.current) clearInterval(reconnectTimer.current);
+      if (joystickTimer.current) clearInterval(joystickTimer.current);
     };
   }, [isMaintaining]);
-
-  useEffect(() => {
-    if (serverIp && wsStatus === 'Déconnecté' && !isConnecting.current) {
-      reconnectTimer.current = setTimeout(() => connectWs(), 5000);
-    } else if (wsStatus === 'Connecté' && reconnectTimer.current) {
-      clearTimeout(reconnectTimer.current);
-    }
-    return () => clearTimeout(reconnectTimer.current);
-  }, [serverIp, wsStatus]);
 
   // ─── Logique WebSocket ──────────────────────────────────────────────────────
 
@@ -93,6 +133,7 @@ export default function App() {
       ws.current.onopen = () => {
         isConnecting.current = false;
         setWsStatus('Connecté');
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
         sendHeartbeat(isMaintaining);
       };
       ws.current.onmessage = (e) => {
@@ -101,16 +142,13 @@ export default function App() {
           if (payload.type === 'STATUS') {
             setPcTunnelActive(payload.data.tunnelActive);
           } else if (payload.type === 'LOCATION') {
-            setSimulatedCoords(payload.data);
-            setPendingCoords(null);
-            Alert.alert("📍 Simulation Active", `Position mise à jour sur le PC`);
-            // Centrer la carte sur la nouvelle position
+            const nextCoords = { latitude: payload.data.lat, longitude: payload.data.lon };
+            setSimulatedCoords(nextCoords);
             mapRef.current?.animateToRegion({
-              latitude: payload.data.lat,
-              longitude: payload.data.lon,
-              latitudeDelta: 0.01,
-              longitudeDelta: 0.01,
-            }, 1000);
+              ...nextCoords,
+              latitudeDelta: 0.005,
+              longitudeDelta: 0.005,
+            }, 800);
           }
         } catch (err) { console.log('WS JSON Error', err); }
       };
@@ -131,49 +169,47 @@ export default function App() {
     }
   };
 
-  // ─── Actions Simulation ─────────────────────────────────────────────────────
+  const sendLocationToPc = (lat, lon) => {
+    if (ws.current?.readyState === WebSocket.OPEN) {
+      ws.current.send(JSON.stringify({ type: 'SET_LOCATION', data: { lat, lon } }));
+    }
+  };
+
+  // ─── Actions ────────────────────────────────────────────────────────────────
 
   const toggleLocationUpdates = async () => {
     if (isMaintaining) {
       await Location.stopLocationUpdatesAsync(LOCATION_TASK_NAME);
       setIsMaintaining(false);
       sendHeartbeat(false);
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     } else {
-      const { status: foregroundStatus } = await Location.getForegroundPermissionsAsync();
-      if (foregroundStatus !== 'granted') return;
-      const { status: backgroundStatus } = await Location.requestBackgroundPermissionsAsync();
-      if (backgroundStatus !== 'granted') {
-        Alert.alert("Permission Requise", "Autorisez l'accès 'Toujours' pour la maintenance.");
-        return;
-      }
+      const { status: bg } = await Location.requestBackgroundPermissionsAsync();
+      if (bg !== 'granted') return Alert.alert("Permission", "Autorisez l'accès 'Toujours'.");
+      
       await Location.startLocationUpdatesAsync(LOCATION_TASK_NAME, {
         accuracy: Location.Accuracy.BestForNavigation,
         timeInterval: 2000,
         distanceInterval: 1,
         pausesLocationUpdatesAutomatically: false,
         allowsBackgroundLocationUpdates: true,
-        showsBackgroundLocationIndicator: true,
       });
       setIsMaintaining(true);
       sendHeartbeat(true);
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     }
   };
 
-  const onMapLongPress = (e) => {
-    const coords = e.nativeEvent.coordinate;
-    setPendingCoords(coords);
-    if (!sheetOpen) toggleSheet();
-  };
-
-  const applyPendingLocation = () => {
-    if (ws.current?.readyState === WebSocket.OPEN && pendingCoords) {
-      ws.current.send(JSON.stringify({
-        type: 'SET_LOCATION',
-        data: { lat: pendingCoords.latitude, lon: pendingCoords.longitude }
-      }));
-    } else {
-      Alert.alert("Erreur", "Vérifiez votre connexion au PC");
-    }
+  const handleBarCodeScanned = ({ data }) => {
+    setShowScanner(false);
+    try {
+      const config = JSON.parse(data);
+      if (config.ip) {
+        setServerIp(config.ip);
+        setServerPort(config.port || DEFAULT_PORT);
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      }
+    } catch (e) { Alert.alert("Erreur", "QR Code invalide (JSON attendu)."); }
   };
 
   const handleSearch = async () => {
@@ -182,45 +218,19 @@ export default function App() {
     try {
       const results = await Location.geocodeAsync(searchQuery);
       if (results.length > 0) {
-        const { latitude, longitude } = results[0];
-        const newCoords = { latitude, longitude };
+        const newCoords = { latitude: results[0].latitude, longitude: results[0].longitude };
         setPendingCoords(newCoords);
-        mapRef.current?.animateToRegion({
-          ...newCoords,
-          latitudeDelta: 0.01,
-          longitudeDelta: 0.01,
-        }, 1000);
-        if (!sheetOpen) toggleSheet();
-      } else {
-        Alert.alert("Non trouvé", "Adresse inconnue.");
+        mapRef.current?.animateToRegion({ ...newCoords, latitudeDelta: 0.01, longitudeDelta: 0.01 }, 1000);
       }
-    } catch (e) { Alert.alert("Erreur", "Problème lors de la recherche."); }
-    finally { setIsSearching(false); }
+    } catch (e) { Alert.alert("Erreur", "Recherche impossible."); }
+    finally { setIsSearching(false); Keyboard.dismiss(); }
   };
 
-  const handleBarCodeScanned = ({ data }) => {
-    setShowScanner(false);
-    try {
-      // Format attendu: ws://IP:PORT
-      const url = new URL(data);
-      if (url.protocol === 'ws:') {
-        setServerIp(url.hostname);
-        setServerPort(url.port || DEFAULT_PORT);
-        Alert.alert("QR Code Scanné", `Serveur détecté : ${url.hostname}`);
-      }
-    } catch (e) { Alert.alert("Erreur", "QR Code invalide."); }
-  };
-
-  // ─── Animation Bottom Sheet ─────────────────────────────────────────────────
-
-  const toggleSheet = () => {
-    const toValue = sheetOpen ? SCREEN_HEIGHT * 0.75 : SCREEN_HEIGHT * 0.35;
-    Animated.spring(sheetY, {
-      toValue,
-      useNativeDriver: false,
-      friction: 8
-    }).start();
-    setSheetOpen(!sheetOpen);
+  const toggleMenu = () => {
+    const toValue = isMenuOpen ? 0 : 1;
+    Animated.spring(menuAnim, { toValue, useNativeDriver: false, friction: 8 }).start();
+    setIsMenuOpen(!isMenuOpen);
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
   };
 
   // ─── Rendu ──────────────────────────────────────────────────────────────────
@@ -228,181 +238,192 @@ export default function App() {
   if (showScanner) {
     return (
       <View style={styles.scannerContainer}>
-        <BarCodeScanner
-          onBarCodeScanned={handleBarCodeScanned}
-          style={StyleSheet.absoluteFillObject}
-        />
+        <BarCodeScanner onBarCodeScanned={handleBarCodeScanned} style={StyleSheet.absoluteFillObject} />
         <TouchableOpacity style={styles.closeScanner} onPress={() => setShowScanner(false)}>
-          <Text style={styles.closeScannerText}>Annuler</Text>
+          <Text style={styles.btnText}>ANNULER</Text>
         </TouchableOpacity>
       </View>
     );
   }
 
   return (
-    <View style={styles.container}>
-      {/* 1. Carte Full Screen */}
-      <MapView
-        ref={mapRef}
-        style={styles.map}
-        initialRegion={{
-          latitude: simulatedCoords?.lat || 48.8566,
-          longitude: simulatedCoords?.lon || 2.3522,
-          latitudeDelta: 0.01,
-          longitudeDelta: 0.01,
-        }}
-        onLongPress={onMapLongPress}
-      >
-        {simulatedCoords && (
-          <Marker
-            coordinate={{ latitude: simulatedCoords.lat, longitude: simulatedCoords.lon }}
-            title="Simulation Active"
-            pinColor="blue"
-          />
-        )}
-        {pendingCoords && (
-          <Marker
-            coordinate={pendingCoords}
-            title="Point choisi"
-            pinColor="red"
-          />
-        )}
-      </MapView>
+    <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
+      <View style={styles.container}>
+        <MapView
+          ref={mapRef}
+          style={styles.map}
+          initialRegion={{ latitude: 48.8566, longitude: 2.3522, latitudeDelta: 0.01, longitudeDelta: 0.01 }}
+          onLongPress={(e) => setPendingCoords(e.nativeEvent.coordinate)}
+        >
+          {simulatedCoords && <Marker coordinate={simulatedCoords} pinColor="blue" title="Position Active" />}
+          {pendingCoords && <Marker coordinate={pendingCoords} pinColor="red" title="Cible" />}
+        </MapView>
 
-      {/* 2. Barre de Recherche Flottante */}
-      <KeyboardAvoidingView behavior="position" style={styles.searchContainer}>
-        <View style={styles.searchBar}>
-          <TextInput
-            style={styles.searchInput}
-            placeholder="Rechercher une adresse..."
-            value={searchQuery}
-            onChangeText={setSearchQuery}
-            onSubmitEditing={handleSearch}
-          />
-          <TouchableOpacity onPress={handleSearch} disabled={isSearching}>
-            {isSearching ? <ActivityIndicator size="small" color="#2196F3" /> : <Text style={styles.searchIcon}>🔍</Text>}
-          </TouchableOpacity>
+        {/* Floating Top UI */}
+        <View style={styles.topContainer}>
+          <View style={styles.searchBar}>
+            <TextInput
+              style={styles.searchInput}
+              placeholder="Rechercher..."
+              placeholderTextColor="#94a3b8"
+              value={searchQuery}
+              onChangeText={setSearchQuery}
+              onSubmitEditing={handleSearch}
+            />
+            <TouchableOpacity onPress={handleSearch} style={styles.searchIconBtn}>
+              {isSearching ? <ActivityIndicator size="small" color="#6366f1" /> : <Text style={{fontSize: 20}}>🔍</Text>}
+            </TouchableOpacity>
+          </View>
         </View>
-      </KeyboardAvoidingView>
 
-      {/* 3. Bottom Sheet Coulissant */}
-      <Animated.View style={[styles.bottomSheet, { top: sheetY }]}>
-        <TouchableOpacity style={styles.sheetHandleArea} onPress={toggleSheet}>
-          <View style={styles.sheetHandle} />
+        {/* Connection Status Pill */}
+        <View style={styles.statusContainer}>
+          <View style={[styles.statusPill, { borderLeftColor: wsStatus === 'Connecté' ? '#10b981' : '#f43f5e' }]}>
+            <View style={[styles.dot, { backgroundColor: wsStatus === 'Connecté' ? '#10b981' : '#f43f5e' }]} />
+            <Text style={styles.statusText}>{wsStatus} {pcTunnelActive && '• Tunnel OK'}</Text>
+          </View>
+        </View>
+
+        {/* Joystick Controller (Visible only if connected) */}
+        {wsStatus === 'Connecté' && simulatedCoords && (
+          <View style={styles.joystickArea}>
+            <View style={styles.joystickBase}>
+              <Animated.View 
+                {...panResponder.panHandlers}
+                style={[styles.joystickHandle, { transform: joystickPos.getTranslateTransform() }]}
+              >
+                <View style={styles.joystickInner} />
+              </Animated.View>
+            </View>
+          </View>
+        )}
+
+        {/* Floating Action Button (Menu) */}
+        <TouchableOpacity style={styles.fab} onPress={toggleMenu}>
+          <Text style={styles.fabText}>{isMenuOpen ? '✕' : '⚙️'}</Text>
         </TouchableOpacity>
 
-        <View style={styles.sheetContent}>
-          {/* Section Statut */}
-          <View style={styles.statusRow}>
-            <View style={[styles.badge, { backgroundColor: wsStatus === 'Connecté' ? '#E8F5E9' : '#FFF3E0' }]}>
-              <View style={[styles.dot, { backgroundColor: wsStatus === 'Connecté' ? '#4CAF50' : '#FF9800' }]} />
-              <Text style={[styles.badgeText, { color: wsStatus === 'Connecté' ? '#2E7D32' : '#E65100' }]}>{wsStatus}</Text>
-            </View>
-            <View style={[styles.badge, { backgroundColor: pcTunnelActive ? '#E3F2FD' : '#F5F5F5' }]}>
-              <Text style={[styles.badgeText, { color: pcTunnelActive ? '#1976D2' : '#9E9E9E' }]}>Tunnel PC: {pcTunnelActive ? 'PRÊT' : 'OFF'}</Text>
-            </View>
-          </View>
-
-          {/* Section Pending (Si point choisi) */}
-          {pendingCoords && (
-            <View style={styles.pendingArea}>
-              <Text style={styles.pendingText}>📍 Position sélectionnée</Text>
-              <View style={styles.pendingButtons}>
-                <TouchableOpacity style={[styles.actionBtn, styles.applyBtn]} onPress={applyPendingLocation}>
-                  <Text style={styles.btnText}>🚀 Appliquer</Text>
-                </TouchableOpacity>
-                <TouchableOpacity style={[styles.actionBtn, styles.cancelBtn]} onPress={() => setPendingCoords(null)}>
-                  <Text style={styles.btnText}>Annuler</Text>
+        {/* Sliding Menu Overlay */}
+        <Animated.View style={[styles.menuOverlay, { 
+          transform: [{ translateY: menuAnim.interpolate({ inputRange: [0, 1], outputRange: [SCREEN_HEIGHT, 0] }) }]
+        }]}>
+          <View style={styles.menuHeader}>
+            <Text style={styles.menuTitle}>Configuration</Text>
+            <TouchableOpacity onPress={toggleMenu}><Text style={styles.menuCloseText}>Fermer</Text></TouchableOpacity>
+          </div>
+          
+          <View style={styles.menuContent}>
+            {/* IP/Port Config */}
+            <View style={styles.configGroup}>
+              <Text style={styles.label}>Adresse du PC</Text>
+              <View style={styles.inputRow}>
+                <TextInput 
+                  style={[styles.input, { flex: 2 }]} 
+                  placeholder="192.168.1.XX" 
+                  value={serverIp} 
+                  onChangeText={setServerIp} 
+                />
+                <TextInput 
+                  style={[styles.input, { flex: 1, marginLeft: 10 }]} 
+                  placeholder="8080" 
+                  value={serverPort} 
+                  onChangeText={setServerPort} 
+                />
+                <TouchableOpacity style={styles.qrBtn} onPress={() => setShowScanner(true)}>
+                  <Text style={{fontSize: 24}}>📷</Text>
                 </TouchableOpacity>
               </View>
-            </View>
-          )}
-
-          {/* Section Maintenance */}
-          <TouchableOpacity 
-            style={[styles.maintenanceBtn, { backgroundColor: isMaintaining ? '#F44336' : '#2196F3' }]} 
-            onPress={toggleLocationUpdates}
-          >
-            <Text style={styles.btnText}>{isMaintaining ? "Désactiver la Surveillance" : "Activer la Surveillance"}</Text>
-          </TouchableOpacity>
-
-          {/* Section Config */}
-          <View style={styles.configArea}>
-            <Text style={styles.configLabel}>Configuration Serveur</Text>
-            <View style={styles.inputRow}>
-              <TextInput
-                style={[styles.configInput, { flex: 3 }]}
-                placeholder="IP PC (ex: 192.168.1.15)"
-                value={serverIp}
-                onChangeText={setServerIp}
-                keyboardType="decimal-pad"
-              />
-              <TextInput
-                style={[styles.configInput, { flex: 1, marginLeft: 8 }]}
-                placeholder="Port"
-                value={serverPort}
-                onChangeText={setServerPort}
-                keyboardType="numeric"
-              />
-              <TouchableOpacity style={styles.scanBtn} onPress={() => setShowScanner(true)}>
-                <Text style={{ fontSize: 20 }}>📷</Text>
+              <TouchableOpacity 
+                style={[styles.button, { backgroundColor: '#6366f1' }]} 
+                onPress={connectWs}
+              >
+                <Text style={styles.buttonText}>CONNECTER</Text>
               </TouchableOpacity>
             </View>
-            <Button title="Connecter" onPress={connectWs} disabled={!serverIp || wsStatus === 'Connecté'} />
+
+            {/* Simulation Controls */}
+            <View style={styles.configGroup}>
+              <Text style={styles.label}>Simulation & Maintenance</Text>
+              <TouchableOpacity 
+                style={[styles.button, { backgroundColor: isMaintaining ? '#f43f5e' : '#10b981' }]} 
+                onPress={toggleLocationUpdates}
+              >
+                <Text style={styles.buttonText}>{isMaintaining ? 'ARRÊTER LA SURVEILLANCE' : 'ACTIVER LA SURVEILLANCE'}</Text>
+              </TouchableOpacity>
+              
+              {pendingCoords && (
+                <TouchableOpacity 
+                  style={[styles.button, { backgroundColor: '#8b5cf6', marginTop: 10 }]} 
+                  onPress={() => { sendLocationToPc(pendingCoords.latitude, pendingCoords.longitude); setPendingCoords(null); toggleMenu(); }}
+                >
+                  <Text style={styles.buttonText}>TÉLÉPORTER ICI 🚀</Text>
+                </TouchableOpacity>
+              )}
+            </View>
           </View>
-        </View>
-      </Animated.View>
-    </View>
+        </Animated.View>
+      </View>
+    </TouchableWithoutFeedback>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#000' },
+  container: { flex: 1, backgroundColor: '#0f172a' },
   map: { width: '100%', height: '100%' },
   
-  // Scanner
+  // Scanner UI
   scannerContainer: { flex: 1, backgroundColor: '#000' },
-  closeScanner: { position: 'absolute', bottom: 50, alignSelf: 'center', backgroundColor: 'rgba(255,255,255,0.8)', padding: 15, borderRadius: 30 },
-  closeScannerText: { fontWeight: 'bold', color: '#000' },
-
-  // Recherche
-  searchContainer: { position: 'absolute', top: 50, left: 20, right: 20, zIndex: 10 },
-  searchBar: { 
-    flexDirection: 'row', backgroundColor: '#FFF', borderRadius: 25, 
-    paddingHorizontal: 20, paddingVertical: 12, alignItems: 'center',
-    shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.1, shadowRadius: 10, elevation: 5
-  },
-  searchInput: { flex: 1, fontSize: 16, color: '#2D3748' },
-  searchIcon: { fontSize: 18 },
-
-  // Bottom Sheet
-  bottomSheet: {
-    position: 'absolute', left: 0, right: 0, bottom: 0,
-    backgroundColor: '#FFF', borderTopLeftRadius: 25, borderTopRightRadius: 25,
-    shadowColor: '#000', shadowOffset: { width: 0, height: -5 }, shadowOpacity: 0.1, shadowRadius: 10, elevation: 20
-  },
-  sheetHandleArea: { width: '100%', height: 30, alignItems: 'center', justifyContent: 'center' },
-  sheetHandle: { width: 40, height: 5, backgroundColor: '#E2E8F0', borderRadius: 3 },
-  sheetContent: { paddingHorizontal: 20, paddingBottom: 40 },
-
-  statusRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 20 },
-  badge: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 20 },
-  dot: { width: 8, height: 8, borderRadius: 4, marginRight: 6 },
-  badgeText: { fontSize: 13, fontWeight: '700' },
-
-  pendingArea: { backgroundColor: '#F0FFF4', padding: 15, borderRadius: 15, marginBottom: 20, borderWeight: 1, borderColor: '#C6F6D5' },
-  pendingText: { fontSize: 14, fontWeight: 'bold', color: '#2F855A', marginBottom: 10, textAlign: 'center' },
-  pendingButtons: { flexDirection: 'row', justifyContent: 'space-around' },
-  actionBtn: { paddingVertical: 10, paddingHorizontal: 20, borderRadius: 10, flex: 0.45, alignItems: 'center' },
-  applyBtn: { backgroundColor: '#48BB78' },
-  cancelBtn: { backgroundColor: '#EDF2F7' },
-  btnText: { color: '#FFF', fontWeight: 'bold' },
-
-  maintenanceBtn: { padding: 15, borderRadius: 15, alignItems: 'center', marginBottom: 20 },
+  closeScanner: { position: 'absolute', bottom: 60, alignSelf: 'center', backgroundColor: '#6366f1', padding: 15, borderRadius: 30 },
   
-  configArea: { backgroundColor: '#F7FAFC', padding: 15, borderRadius: 15 },
-  configLabel: { fontSize: 12, fontWeight: '700', color: '#718096', marginBottom: 10, textTransform: 'uppercase' },
-  inputRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 10 },
-  configInput: { backgroundColor: '#FFF', padding: 10, borderRadius: 10, borderWidth: 1, borderColor: '#E2E8F0' },
-  scanBtn: { marginLeft: 10, padding: 8, backgroundColor: '#FFF', borderRadius: 10, borderWidth: 1, borderColor: '#E2E8F0' }
+  // Floating Top UI
+  topContainer: { position: 'absolute', top: 50, left: 15, right: 15, zIndex: 10 },
+  searchBar: { 
+    flexDirection: 'row', backgroundColor: 'rgba(255,255,255,0.95)', borderRadius: 20, 
+    paddingHorizontal: 15, paddingVertical: 10, alignItems: 'center',
+    shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.2, shadowRadius: 8, elevation: 5
+  },
+  searchInput: { flex: 1, fontSize: 16, color: '#1e293b' },
+  searchIconBtn: { marginLeft: 10 },
+
+  // Status Pill
+  statusContainer: { position: 'absolute', top: 110, alignSelf: 'center', zIndex: 5 },
+  statusPill: { 
+    flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(15,23,42,0.85)', 
+    paddingHorizontal: 12, paddingVertical: 6, borderRadius: 20, borderLeftWidth: 4
+  },
+  dot: { width: 6, height: 6, borderRadius: 3, marginRight: 8 },
+  statusText: { color: '#fff', fontSize: 12, fontWeight: 'bold' },
+
+  // Joystick
+  joystickArea: { position: 'absolute', bottom: 120, right: 30, zIndex: 20 },
+  joystickBase: { width: 100, height: 100, borderRadius: 50, backgroundColor: 'rgba(0,0,0,0.3)', justifyContent: 'center', alignItems: 'center' },
+  joystickHandle: { width: 60, height: 60, borderRadius: 30, backgroundColor: 'rgba(255,255,255,0.2)', padding: 10 },
+  joystickInner: { flex: 1, borderRadius: 20, backgroundColor: '#6366f1', shadowColor: '#6366f1', shadowOpacity: 0.5, shadowRadius: 5 },
+
+  // FAB
+  fab: { 
+    position: 'absolute', bottom: 40, right: 20, width: 60, height: 60, 
+    borderRadius: 30, backgroundColor: '#6366f1', justifyContent: 'center', alignItems: 'center',
+    shadowColor: '#6366f1', shadowOpacity: 0.4, shadowRadius: 10, elevation: 10
+  },
+  fabText: { fontSize: 24, color: '#fff' },
+
+  // Menu Overlay
+  menuOverlay: { 
+    position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, 
+    backgroundColor: '#0f172a', zIndex: 100, padding: 25, paddingTop: 60 
+  },
+  menuHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 30 },
+  menuTitle: { fontSize: 28, fontWeight: 'bold', color: '#f1f5f9' },
+  menuCloseText: { color: '#6366f1', fontWeight: 'bold' },
+  menuContent: { flex: 1 },
+  
+  configGroup: { marginBottom: 30 },
+  label: { color: '#94a3b8', fontSize: 12, fontWeight: 'bold', textTransform: 'uppercase', marginBottom: 10, trackingWidest: 2 },
+  inputRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 15 },
+  input: { flex: 1, backgroundColor: '#1e293b', color: '#fff', padding: 15, borderRadius: 12, fontSize: 16 },
+  qrBtn: { marginLeft: 10, padding: 10, backgroundColor: '#1e293b', borderRadius: 12 },
+  button: { padding: 18, borderRadius: 15, alignItems: 'center', shadowColor: '#000', shadowOpacity: 0.3, shadowRadius: 5 },
+  buttonText: { color: '#fff', fontWeight: 'bold', fontSize: 14 },
+  btnText: { color: '#fff', fontWeight: 'bold' }
 });

@@ -60,7 +60,8 @@ function registerIpcHandlers(tunnel, gps, companion) {
   ipcMain.handle('get-companion-qr', async () => {
     try {
       const info = companion.getConnectionInfo()
-      const dataUrl = await QRCode.toDataURL(info.url, {
+      const qrData = JSON.stringify({ ip: info.ip, port: info.port })
+      const dataUrl = await QRCode.toDataURL(qrData, {
         margin: 2,
         scale: 8,
         color: {
