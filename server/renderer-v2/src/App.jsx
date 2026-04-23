@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { MapPin, Settings, History, Star, QrCode, Monitor, Search, X, Navigation, RotateCcw } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import MapView from './components/MapView';
@@ -16,6 +16,7 @@ function App() {
   const [activeSim, setActiveSim] = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
   
+  const searchInputRef = useRef(null);
   const { history, favorites, addToHistory, addFavorite, removeFavorite } = useStorage();
 
   const isFavorite = (lat, lon) => favorites.some(f => Math.abs(f.lat - lat) < 0.0001 && Math.abs(f.lon - lon) < 0.0001);
@@ -40,8 +41,7 @@ function App() {
       if (data.service === 'tunneld') {
         setStatus(prev => ({ ...prev, state: data.state, message: data.message, type: data.type || prev.type }));
       } else if (data.service === 'favorites') {
-        // useStorage gère déjà le chargement, mais on force ici la mise à jour si besoin
-        // Ou mieux, on pourrait simplement rafraîchir les réglages
+        // La synchro est gérée par le hook via les settings, mais on pourrait rafraîchir ici
       }
     });
 
@@ -51,11 +51,6 @@ function App() {
   const handleMapClick = async (lat, lon) => {
     const name = await reverseGeocode(lat, lon);
     setSelectedPos({ lat, lon, name });
-  };
-
-  const handleSearch = (e) => {
-    setSearchQuery(e.target.value);
-    search(e.target.value);
   };
 
   const selectLocation = (loc) => {
@@ -80,6 +75,10 @@ function App() {
     setActiveSim(null);
   };
 
+  const handleContainerClick = () => {
+    searchInputRef.current?.focus();
+  };
+
   return (
     <div className="relative w-full h-full bg-slate-950 overflow-hidden text-slate-200">
       
@@ -87,27 +86,24 @@ function App() {
       <div className="absolute inset-0 z-0">
         <MapView onMapClick={handleMapClick} selectedPos={selectedPos || activeSim} />
       </div>
-
-      {/* Top Floating Bar (Omnibar) - Version Simplifiée sans Animation */}
-      <div 
-        className="absolute top-6 left-1/2 -translate-x-1/2 w-full max-w-2xl z-[100] px-6"
-        style={{ pointerEvents: 'auto' }}
-      >
+ 
+      {/* Top Floating Bar (Omnibar) */}
+      <div className="absolute top-6 left-1/2 -translate-x-1/2 w-full max-w-2xl z-[100] px-6">
         <div 
-          className="w-full bg-[#1a1a2e] border border-white/10 rounded-2xl h-14 flex items-center px-4 gap-4 shadow-2xl"
-          style={{ WebkitAppRegion: 'no-drag' }}
+          className="w-full bg-[#1a1a2e] border border-white/10 rounded-2xl h-14 flex items-center px-4 gap-4 shadow-2xl cursor-text"
+          onClick={handleContainerClick}
         >
           <button 
-            onClick={() => setSidebarOpen(true)}
+            onClick={(e) => { e.stopPropagation(); setSidebarOpen(true); }}
             className="p-2 hover:bg-white/10 rounded-xl transition-colors"
           >
             <Monitor className="w-6 h-6 text-blue-300" />
           </button>
           
           <div className="relative flex-1 flex items-center h-full">
-            <Search className="w-5 h-5 text-slate-300 absolute left-0" />
+            <Search className="w-5 h-5 text-slate-300 absolute left-0 pointer-events-none" />
             <input 
-              id="search-input"
+              ref={searchInputRef}
               type="text" 
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
@@ -118,18 +114,13 @@ function App() {
               spellCheck={false}
               autoComplete="off"
               className="w-full bg-transparent border-none outline-none text-lg pl-10 text-white font-bold placeholder:text-slate-400"
-              style={{ 
-                WebkitAppRegion: 'no-drag', 
-                WebkitUserSelect: 'text',
-                userSelect: 'text',
-                cursor: 'text'
-              }}
+              style={{ userSelect: 'text' }}
             />
           </div>
 
           <div className="w-px h-6 bg-white/10" />
           
-          <button onClick={() => setQrOpen(true)} className="p-2 hover:bg-white/10 rounded-xl transition-colors">
+          <button onClick={(e) => { e.stopPropagation(); setQrOpen(true); }} className="p-2 hover:bg-white/10 rounded-xl transition-colors">
             <QrCode className="w-6 h-6 text-slate-300" />
           </button>
         </div>
@@ -261,7 +252,7 @@ function App() {
                   {favorites.length > 0 ? (
                     <div className="space-y-1">
                       {favorites.map((fav, i) => (
-                        <button key={i} className="w-full p-3 rounded-xl hover:bg-white/5 transition-colors text-left">
+                        <button key={i} onClick={() => {selectLocation(fav); setSidebarOpen(false);}} className="w-full p-3 rounded-xl hover:bg-white/5 transition-colors text-left">
                           <p className="font-medium">{fav.name}</p>
                         </button>
                       ))}
