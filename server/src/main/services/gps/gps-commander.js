@@ -1,74 +1,44 @@
 'use strict'
 
-const { PYTHON } = require('../../python-resolver')
-const ProcessRunner = require('../../utils/process-runner')
-const { GPS_SEND_TIMEOUT } = require('../../constants')
+const gpsBridge = require('./gps-bridge')
 const { dbg } = require('../../logger')
 
 /**
- * GpsCommander - Exécute physiquement les commandes de simulation
+ * GpsCommander - Exécute les commandes via le pont Python persistant
  */
 class GpsCommander {
   constructor() {
-    this.runner = new ProcessRunner('gps-commander')
+    // Initialisation du pont au démarrage
+    gpsBridge.start()
   }
 
   async execute(command, rsdAddress, rsdPort, extraArgs = []) {
-    return new Promise((resolve) => {
-      const formattedAddress = rsdAddress.includes(':') ? `[${rsdAddress}]` : rsdAddress
-      dbg(`[gps-commander] Commande : ${command} sur ${formattedAddress}:${rsdPort}`)
-      const args = [
-        '-m', 'pymobiledevice3',
-        'developer', 'dvt', 'simulate-location', command,
-        '--rsd', formattedAddress, rsdPort,
-      ]
-      if (extraArgs.length > 0) args.push('--', ...extraArgs)
+    dbg(`[gps-commander] Commande via PONT : ${command} sur ${rsdAddress}:${rsdPort}`)
+    
+    let action = ''
+    let payload = {}
 
-      const cmdLine = `${PYTHON} ${args.join(' ')}`
-      dbg(`[gps-commander] Exec: ${cmdLine}`)
-      const spawnTime = Date.now()
-      const proc = this.runner.spawn(PYTHON, args)
+    if (command === 'set') {
+      action = 'set_location'
+      payload = { lat: parseFloat(extraArgs[0]), lon: parseFloat(extraArgs[1]) }
+    } else if (command === 'clear') {
+      action = 'clear_location'
+    } else {
+      return { success: false, error: `Commande inconnue du pont: ${command}` }
+    }
 
-      let stderr = ''
-      let resolved = false
-
-      const done = (result) => {
-        if (resolved) return
-        resolved = true
-        clearTimeout(timer)
-        resolve(result)
-      }
-
-      proc.stdout.on('data', (d) => {
-        const text = d.toString()
-        // Sur Windows, si on voit les invites interactives, c'est que c'est OK
-        if (text.includes('Press ENTER') || text.includes('Control-C')) {
-          done({ success: true, latencyMs: Date.now() - spawnTime })
-        }
-      })
-
-      proc.stderr.on('data', (d) => {
-        stderr += d.toString()
-      })
-
-      const timer = setTimeout(() => {
-        if (!resolved) {
-          // Si le processus tourne encore, on considère que c'est bon (il attend ENTER)
-          if (this.runner.isRunning) done({ success: true, latencyMs: GPS_SEND_TIMEOUT })
-          else done({ success: false, error: stderr || 'Timeout' })
-        }
-      }, GPS_SEND_TIMEOUT)
-
-      proc.on('exit', (code) => {
-        if (!resolved) {
-          done({ success: code === 0, error: stderr || `Exit ${code}` })
-        }
-      })
-    })
+    // On passe par le pont au lieu du CLI
+    const result = await gpsBridge.sendCommand(action, rsdAddress, rsdPort, payload)
+    
+    if (!result.success) {
+      dbg(`[gps-commander] Echec via pont : ${result.error}`)
+    }
+    
+    return result
   }
 
   stop() {
-    this.runner.stop()
+    // Le pont est géré globalement, on n'arrête rien ici
   }
 }
 
