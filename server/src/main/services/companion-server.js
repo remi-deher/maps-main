@@ -93,6 +93,7 @@ class CompanionServer extends EventEmitter {
         ws.on('message', (message) => {
           try {
             const payload = JSON.parse(message)
+            dbg(`[companion-server] Message reçu : ${payload.type}`)
             if (payload && payload.type) {
               this._handleMessage(ws, payload)
             }

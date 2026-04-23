@@ -1,128 +1,208 @@
 'use strict'
 
 /**
- * tunneld-manager.js (Orchestrateur Unifié)
- *
- * Centralise la gestion des tunnels via un seul démon (tunneld)
- * qui gère nativement l'USB et le WiFi.
+ * tunneld-manager.js (L'Orchestrateur Maître - Version Landsat 9)
+ * Gère la hiérarchie : USB > Bonjour > TunnelId
+ * Utilise TunneldDaemon pour éviter les conflits de ports.
  */
 
-const { dbg } = require('./logger')
-const ConnectionState = require('./tunneld/connection-state')
-const TunneldService = require('./tunneld/tunneld-service')
+const { dbg, sendStatus } = require('./logger')
+const wifiConnector = require('./services/connectors/wifi-connector')
+const tunneldDaemon = require('./services/tunneld-daemon')
+const gpsBridge = require('./services/gps/gps-bridge')
+const { PYTHON } = require('./python-resolver')
+const ProcessRunner = require('./utils/process-runner')
+const { EventEmitter } = require('events')
 
-// ─── État Global ──────────────────────────────────────────────────────────────
+class ConnectionOrchestrator extends EventEmitter {
+  constructor() {
+    super()
+    this.wifi = wifiConnector
+    this.daemon = tunneldDaemon
+    
+    this.activeConnection = null
+    this.heartbeatRunners = new Map()
+    this._isQuitting = false
+    this._onTunnelRestoredCb = null
+    this._onStatusChangeCb = null
 
-let _isQuitting = false
-let _onTunnelRestoredCb = null
-let _onStatusChangeCb = null
-
-const state = new ConnectionState(() => {
-  if (_onTunnelRestoredCb) _onTunnelRestoredCb()
-  if (_onStatusChangeCb) _onStatusChangeCb(true)
-})
-
-const service = new TunneldService()
-let _manualIp = null
-
-// ─── Configuration des événements ─────────────────────────────────────────────
-
-service.on('connection', ({ address, port, type }) => {
-  // L'orchestrateur met à jour l'état global.
-  // Si on est déjà connecté en USB, et qu'une connexion WiFi arrive, 
-  // on privilégie l'USB pour la stabilité, ou on accepte le switch.
-  state.setConnected(address, port, type)
-})
-
-service.on('disconnection', (reason) => {
-  const wasWiFi = state.type === 'WiFi'
-  state.setDisconnected(reason)
-  
-  // Si on a perdu le WiFi, on relance immédiatement une recherche agressive
-  if (wasWiFi && !_isQuitting) {
-    dbg('[tunneld-manager] WiFi deconnecte. Relance immediate de la decouverte...')
-    service.start()
-  }
-  if (_onStatusChangeCb) _onStatusChangeCb(false)
-})
-
-service.on('error', (msg) => {
-  // On pourrait logguer plus précisément les erreurs tunnel
-})
-
-// ─── API Publique ─────────────────────────────────────────────────────────────
-
-/**
- * Démarre le service global de gestion des tunnels
- */
-function startTunneld(settings = {}) {
-  if (_isQuitting) return
-  
-  // Dans cette nouvelle architecture, on démarre le service unique
-  // qui détectera automatiquement les appareils branchés ou sur le réseau.
-  _manualIp = settings.wifiIp || null
-  service.start(_manualIp)
-}
-
-/**
- * Arrête tout
- */
-function stopTunneld() {
-  service.stop()
-  state.reset()
-}
-
-function setQuitting() {
-  _isQuitting = true
-  service.destroy()
-}
-
-/**
- * Obsolète dans l'architecture unifiée, gardé pour compatibilité IPC
- * car tunneld gère lui-même les IP via mDNS.
- */
-function setWifiIpOverride(ip, port) {
-  // Si le tunnel est déjà établi et que c'est la même IP, on ne touche à rien
-  if (state.isConnected && state.address === ip) {
-    return
+    this._initListeners()
   }
 
-  // Si on a déjà tenté cette IP récemment et que le service tourne, on attend
-  if (_manualIp === ip && service.isRunning) {
-    return
+  _initListeners() {
+    // Événements du Démon (USB & WiFi Tunnel)
+    this.daemon.on('connection', (conn) => {
+      // Priorité 1 : USB
+      if (conn.type === 'USB') {
+        dbg('[orchestrator] Priorite USB detectee via Demon')
+        this._handleNewConnection(conn)
+      } 
+      // Priorité 2 : WiFi via Tunnel (Stabilité maximale sur Windows via localhost)
+      else if (conn.type === 'WiFi (Tunnel)') {
+        if (!this.activeConnection || this.activeConnection.type === 'WiFi') {
+          dbg('[orchestrator] WiFi stable (Tunnel) detecte via Demon')
+          this._handleNewConnection(conn)
+        }
+      }
+      // Priorité 4 : Fallback TunnelId
+      else if (!this.activeConnection) {
+        dbg('[orchestrator] Fallback TunnelId detecte via Demon')
+        this._handleNewConnection(conn)
+      }
+    })
+
+    this.daemon.on('disconnection', () => this._handleDisconnection('Demon'))
+
+    // Événements WiFi Bonjour (Priorité 3 - Fallback direct)
+    this.wifi.on('connection', (conn) => {
+      if (!this.activeConnection) {
+        dbg('[orchestrator] Connexion WiFi (Bonjour) detectee')
+        this._handleNewConnection(conn)
+      }
+    })
+
+    this.wifi.on('disconnection', () => this._handleDisconnection('WiFi'))
   }
+
+  _handleNewConnection(conn) {
+    if (this.activeConnection?.address === conn.address && this.activeConnection?.port === conn.port) return
+
+    this.activeConnection = conn
+    dbg(`[orchestrator] Nouvelle connexion active : ${conn.type} (${conn.address}:${conn.port})`)
+
+    sendStatus({
+      service: 'tunneld',
+      state: 'ready',
+      message: `Connecté via ${conn.type}`,
+      type: conn.type,
+      device: conn.deviceInfo || { name: 'iPhone' }
+    })
+
+    // On ne lance le heartbeat QUE si le compagnon est deja la
+    if (this.isCompanionConnected) {
+      this._startHeartbeat(conn.address, conn.port)
+    } else {
+      dbg('[orchestrator] En attente de l\'application compagnon pour lancer le heartbeat...')
+    }
+    
+    if (this._onTunnelRestoredCb) this._onTunnelRestoredCb()
+    if (this._onStatusChangeCb) this._onStatusChangeCb(true)
+    this.emit('ready', conn)
+  }
+
+  _handleDisconnection(source) {
+    if (!this.activeConnection) return
+    
+    dbg(`[orchestrator] Deconnexion detectee via ${source}`)
+    this.activeConnection = null
+    this.isCompanionConnected = false
+    this._stopAllHeartbeats()
+    
+    sendStatus({
+      service: 'tunneld',
+      state: 'scanning',
+      message: 'Connexion perdue, recherche...'
+    })
+
+    if (this._onStatusChangeCb) this._onStatusChangeCb(false)
+    this.emit('lost')
+  }
+
+  start() {
+    if (this._isQuitting) return
+    dbg('[orchestrator] Demarrage du moteur de decouverte...')
+    
+    // On lance le Pont Python pour les heartbeats et la simulation
+    gpsBridge.start()
+
+    this.daemon.start()
+    this.wifi.start()
+
+    sendStatus({
+      service: 'tunneld',
+      state: 'scanning',
+      message: 'Recherche d\'un iPhone...'
+    })
+  }
+
+  _startHeartbeat(address, port) {
+    this._stopAllHeartbeats()
+    
+    dbg(`[orchestrator] Battement de coeur (Bridge) sur ${address}:${port}...`)
+    
+    // On lance une boucle de heartbeat via le pont
+    const hbInterval = setInterval(async () => {
+      if (!this.activeConnection || this.activeConnection.address !== address) {
+        clearInterval(hbInterval)
+        return
+      }
+
+      const result = await gpsBridge.sendCommand('heartbeat', address, port)
+      if (!result.success) {
+        dbg(`[orchestrator] Echec heartbeat pont : ${result.error}`)
+      }
+    }, 10000)
+
+    this.heartbeatRunners.set('active', { stop: () => clearInterval(hbInterval) })
+  }
+
+  _stopAllHeartbeats() {
+    for (const hb of this.heartbeatRunners.values()) {
+      hb.stop()
+    }
+    this.heartbeatRunners.clear()
+  }
+
+  stopTunneld() {
+    this.daemon.stop()
+    this.wifi.stop()
+    this._stopAllHeartbeats()
+    this.activeConnection = null
+  }
+
+  setQuitting() {
+    this._isQuitting = true
+    this.stopTunneld()
+  }
+
+  // API Façade
+  getRsdAddress() { return this.activeConnection?.address }
+  getRsdPort() { return this.activeConnection?.port }
+  getConnectionType() { return this.activeConnection?.type }
+  getDeviceInfo() { return this.activeConnection?.deviceInfo || { name: 'iPhone', version: 'Inconnue' } }
   
-  dbg(`[tunneld-manager] Nouvelle IP detectee (${ip}), mise a jour du service...`)
-  _manualIp = ip
-  service.start(_manualIp)
+  forceRefresh() { this.stopTunneld(); this.start() }
+  startTunneld() { this.start() }
+  applyConnectionMode(mode) { dbg(`[orchestrator] Mode : ${mode} (Auto)`) }
+  setWifiIpOverride(ip) {
+    if (!ip) return
+    
+    // Si c'est la même IP que la connexion active et que le compagnon était déjà marqué connecté, on ne fait rien
+    if (ip === this.activeConnection?.address && this.isCompanionConnected) return
+
+    dbg(`[orchestrator] IP Recue du compagnon : ${ip}. Activation du heartbeat...`)
+    this.isCompanionConnected = true
+
+    // On crée ou met à jour la connexion avec l'IPv4 stable
+    const conn = {
+      address: ip,
+      port: 32498, // Port RSD standard
+      type: 'WiFi (Direct)',
+      deviceInfo: { name: 'iPhone (Compagnon)', version: 'IPv4' }
+    }
+
+    // On force l'application de cette connexion (elle surclassera Bonjour)
+    this._handleNewConnection(conn)
+    
+    // Si pour une raison ou une autre _handleNewConnection n'a pas relancé le HB (ex: même IP)
+    // On s'assure qu'il tourne
+    if (this.activeConnection) {
+      this._startHeartbeat(this.activeConnection.address, this.activeConnection.port)
+    }
+  }
+
+  setOnTunnelRestored(cb) { this._onTunnelRestoredCb = cb }
+  setOnStatusChange(cb) { this._onStatusChangeCb = cb }
 }
 
-function applyConnectionMode(mode) {
-  // Optionnel : on pourrait filtrer les évènements 'connection' selon le mode
-}
-
-function forceRefresh() {
-  service.stop()
-  service.start()
-}
-
-function setOnTunnelRestored(cb) { _onTunnelRestoredCb = cb }
-
-module.exports = {
-  startTunneld,
-  stopTunneld,
-  setQuitting,
-  setWifiIpOverride,
-  applyConnectionMode,
-  forceRefresh,
-  getRsdAddress: () => state.address,
-  getRsdPort: () => state.port,
-  getConnectionType: () => state.type,
-  getDeviceInfo: () => service.deviceInfo,
-  stopHeartbeats: () => service.stopHeartbeats(),
-  setOnTunnelRestored,
-  setOnStatusChange: (cb) => { 
-    _onStatusChangeCb = cb
-    service.on('device-info-updated', () => { if (_onStatusChangeCb) _onStatusChangeCb(state.isConnected) })
-  },
-}
+module.exports = new ConnectionOrchestrator()

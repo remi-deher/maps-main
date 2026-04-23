@@ -1,5 +1,8 @@
 name: Build Unsigned IPA
-on: [push]
+on:
+  push:
+    paths:
+      - 'client/**'
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true

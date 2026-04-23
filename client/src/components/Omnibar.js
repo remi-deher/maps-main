@@ -10,7 +10,8 @@ export default function Omnibar({
   onSettingsPress,
   onSuggestionSelect,
   status,
-  isMaintaining
+  isMaintaining,
+  isLowPowerMode
 }) {
   const pillAnim = useRef(new Animated.Value(0)).current;
   const [suggestions, setSuggestions] = useState([]);
@@ -105,7 +106,9 @@ export default function Omnibar({
         }
       ]}>
         <View style={styles.statusDot} />
-        <Text style={styles.pillText}>{status} {isMaintaining && '• 🛡️'}</Text>
+        <Text style={styles.pillText}>
+          {status} {isMaintaining && '• 🛡️'} {isLowPowerMode && '• 🔋 LOW POWER'}
+        </Text>
       </Animated.View>
     </SafeAreaView>
   );
