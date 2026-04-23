@@ -7,7 +7,6 @@ import {
 import * as Location from 'expo-location';
 import MapView, { Marker, PROVIDER_GOOGLE } from 'react-native-maps';
 import { CameraView, useCameraPermissions } from 'expo-camera';
-import * as Haptics from 'expo-haptics';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
@@ -99,7 +98,6 @@ export default function App() {
       ws.current.onopen = () => {
         isConnecting.current = false;
         setWsStatus('Connecté');
-        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
         sendHeartbeat(isMaintaining);
         AsyncStorage.setItem('serverIp', serverIp);
         AsyncStorage.setItem('serverPort', serverPort);
@@ -147,7 +145,6 @@ export default function App() {
     sendAction('SET_LOCATION', { lat: coords.latitude, lon: coords.longitude, name: coords.name || "" });
     setPendingCoords(null);
     if (isFavsOpen) toggleFavs();
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
   };
 
   const addFavorite = (coords) => {
@@ -161,7 +158,6 @@ export default function App() {
 
   const handleBarCodeScanned = ({ data }) => {
     setShowScanner(false);
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
     try {
       if (data.startsWith('{')) {
         const config = JSON.parse(data);
@@ -191,7 +187,6 @@ export default function App() {
     const toValue = isFavsOpen ? 0 : 1;
     Animated.spring(favsAnim, { toValue, useNativeDriver: false, friction: 8 }).start();
     setIsFavsOpen(!isFavsOpen);
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
   };
 
   const toggleLocationUpdates = async () => {
@@ -199,7 +194,6 @@ export default function App() {
       await Location.stopLocationUpdatesAsync(LOCATION_TASK_NAME);
       setIsMaintaining(false);
       sendHeartbeat(false);
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     } else {
       const { status } = await Location.requestBackgroundPermissionsAsync();
       if (status !== 'granted') {
@@ -214,7 +208,6 @@ export default function App() {
       });
       setIsMaintaining(true);
       sendHeartbeat(true);
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     }
   };
 
@@ -247,7 +240,6 @@ export default function App() {
           initialRegion={{ latitude: 48.8566, longitude: 2.3522, latitudeDelta: 0.01, longitudeDelta: 0.01 }}
           onLongPress={(e) => {
              setPendingCoords({ ...e.nativeEvent.coordinate, name: "Position sélectionnée" });
-             Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
           }}
           customMapStyle={mapDarkStyle}
         >
