@@ -107,7 +107,7 @@ function App() {
               value={searchQuery}
               onChange={handleSearch}
               placeholder="Rechercher un lieu..."
-              className="w-full bg-transparent border-none outline-none text-lg pl-10 text-white font-bold placeholder:text-slate-400"
+              className="w-full bg-transparent border-none outline-none text-lg pl-10 text-white font-bold placeholder:text-slate-400 pointer-events-auto relative z-10"
             />
             {searchQuery && (
               <button onClick={() => {setSearchQuery(''); setResults([]);}} className="p-1 hover:bg-white/10 rounded-full">
