@@ -1,8 +1,6 @@
 name: Build Unsigned IPA
 on:
   push:
-    branches:
-      - testing
     paths:
       - 'client/**'
 
