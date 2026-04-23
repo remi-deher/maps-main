@@ -22,7 +22,6 @@ class GpsSimulator extends EventEmitter {
     this._isLaunching = false
     this.currentPort = null
 
-    // Liaison avec le runner
     this.runner.on('log', (msg) => this.emit('log', msg))
     this.runner.on('critical-error', (msg) => {
       dbg(`[gps-sim] Erreur CRITIQUE detectee (${msg}) -> forceRefresh`)
@@ -32,9 +31,7 @@ class GpsSimulator extends EventEmitter {
     this.runner.on('exit', ({ code, signal }) => {
       if (this._isQuitting) return
       dbg(`[gps-sim] Processus simulation arrete (code: ${code}, signal: ${signal})`)
-      if (code !== 0 && code !== null) {
-        this.onTunnelRestored() 
-      }
+      if (code !== 0 && code !== null) this.onTunnelRestored() 
     })
   }
 
@@ -70,10 +67,7 @@ class GpsSimulator extends EventEmitter {
   }
 
   async clearLocation() {
-    this.stop()
-    this._stopWatchdog()
-    this.lastCoords = null
-    this.currentPort = null
+    this.stop(); this._stopWatchdog(); this.lastCoords = null; this.currentPort = null
     return await this._spawn('clear')
   }
 
@@ -83,7 +77,6 @@ class GpsSimulator extends EventEmitter {
     this.restorationTimer = setTimeout(async () => {
       this.restorationTimer = null
       if (this.lastCoords && !this._isQuitting) {
-        dbg('[gps-sim] relance simulation automatique')
         const { lat, lon, name } = this.lastCoords
         await this.setLocation(lat, lon, name)
       }
@@ -95,20 +88,15 @@ class GpsSimulator extends EventEmitter {
 
   async _spawn(command, extraArgs = []) {
     return new Promise((resolve) => {
-      const rawAddress = this.tunnel.getRsdAddress()
+      const rsdAddress = this.tunnel.getRsdAddress()
       const rsdPort = this.tunnel.getRsdPort()
       
-      // Nettoyage de l'adresse : on retire le Scope ID (%18) car pymobiledevice3/python 
-      // echoue souvent a parser l'URL si il est present dans le host.
-      const rsdAddress = rawAddress ? rawAddress.split('%')[0] : rawAddress
-      
-      const isIPv6 = rsdAddress && rsdAddress.includes(':')
-      const formattedAddress = isIPv6 ? `[${rsdAddress}]` : rsdAddress
-
+      // IMPORT : Sur Windows, l'IPv6 Link-Local avec Scope ID (%xx) ne doit PAS avoir de crochets 
+      // si l'hôte et le port sont passés en arguments séparés.
       const args = [
         '-m', 'pymobiledevice3',
         'developer', 'dvt', 'simulate-location', command,
-        '--rsd', formattedAddress, rsdPort,
+        '--rsd', rsdAddress, rsdPort,
       ]
       if (extraArgs.length > 0) args.push('--', ...extraArgs)
 
@@ -127,7 +115,6 @@ class GpsSimulator extends EventEmitter {
 
       proc.stdout.on('data', (d) => {
         const text = d.toString()
-        // Si on recoit "Press ENTER", c'est que c'est un succes
         if (text.includes('Press ENTER') || text.includes('Control-C')) {
           done({ success: true, latencyMs: Date.now() - spawnTime })
         }
@@ -135,15 +122,10 @@ class GpsSimulator extends EventEmitter {
 
       proc.stderr.on('data', (d) => {
         stderr += d.toString()
-        // On ne resout pas immediatement sur stderr car pymobiledevice3 log des INFO sur stderr
-        if (stderr.toLowerCase().includes('failed') || stderr.toLowerCase().includes('error')) {
-          // On attend un peu pour voir si ca se confirme
-        }
       })
 
       const timer = setTimeout(() => {
         if (!resolved) {
-          // Si on a rien eu mais que le processus tourne encore, on considere que c'est ok (on est en mode interactif)
           if (this.runner.isRunning) done({ success: true, latencyMs: GPS_SEND_TIMEOUT })
           else done({ success: false, error: stderr || 'Timeout' })
         }
@@ -166,9 +148,8 @@ class GpsSimulator extends EventEmitter {
       if (!rsdAddress) return
 
       if (this.runner.isRunning) {
-        const isAlive = await this._checkHealth(rsdAddress.split('%')[0], rsdPort)
+        const isAlive = await this._checkHealth(rsdAddress, rsdPort)
         if (isAlive) return
-        dbg('[gps-sim] watchdog: echec rsd-info - relance')
         this.stop()
       }
       this.onTunnelRestored()

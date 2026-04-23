@@ -9,20 +9,18 @@ const nativeBonjour = require('./native-bonjour')
 
 /**
  * TunneldService - Gere le demon pymobiledevice3 remote tunneld
- * Supporte USB et WiFi via une decouverte unifiee.
  */
 class TunneldService extends EventEmitter {
   constructor() {
     super()
     this.runner = new ProcessRunner('tunneld')
-    this.heartbeatRunners = new Map() // udid/rsd -> ProcessRunner
+    this.heartbeatRunners = new Map()
     this.restartTimer = null
     this.fallbackTimer = null
-    this.activeConnection = null // { address, port, type, id }
+    this.activeConnection = null
     this.deviceInfo = { name: 'iPhone', version: 'Inconnue', type: 'Inconnu', paired: false, ip: null }
     this._isQuitting = false
 
-    // Liaison avec le runner principal
     this.runner.on('stdout', (text) => this._handleData(text))
     this.runner.on('stderr', (text) => this._handleData(text))
     this.runner.on('exit', ({ code, signal }) => {
@@ -61,7 +59,6 @@ class TunneldService extends EventEmitter {
   _handleData(text) {
     if (!text) return
 
-    // Detection d'infos device
     const matchId = text.match(/ID:([\w:.]+)/)
     const matchVer = text.match(/VERSION:([\d.]+)/)
     const matchType = text.match(/TYPE:([^ >]+)/)
@@ -75,9 +72,7 @@ class TunneldService extends EventEmitter {
       this.emit('device-info-updated', this.deviceInfo)
     }
 
-    // Format flexible pour capturer IP et Port
     const matchRsd = text.match(/--rsd\s+([\w:.%]+)\s+(\d+)/)
-    
     if (matchRsd) {
       const address = matchRsd[1]
       const port = matchRsd[2]
@@ -92,8 +87,6 @@ class TunneldService extends EventEmitter {
       if (this.activeConnection && this.activeConnection.address === address && this.activeConnection.port === port) return
 
       dbg(`[tunneld] Connexion detectee : ${type} (${address}:${port})`)
-      
-      // On lance le heartbeat via RSD pour eviter le prompt "Choose device"
       this._startRsdHeartbeat(address, port, deviceId)
 
       this.activeConnection = { address, port, type, id: deviceId }
@@ -119,11 +112,10 @@ class TunneldService extends EventEmitter {
     
     dbg(`[tunneld-service] Battement de coeur (RSD) sur ${key}...`)
     
-    // Nettoyage Scope ID
-    const rsdAddress = address.split('%')[0]
-    const isIPv6 = rsdAddress.includes(':')
-    const formattedHost = isIPv6 ? `[${rsdAddress}]` : rsdAddress
-    const args = ['-m', 'pymobiledevice3', 'lockdown', 'heartbeat', '--rsd', formattedHost, port]
+    // IMPORT : Sur Windows, l'IPv6 Link-Local avec Scope ID (%xx) ne doit PAS avoir de crochets 
+    // si l'hôte et le port sont passés en arguments séparés, sinon pymobiledevice3/python crashe.
+    // Mais il DOIT avoir le Scope ID pour être joignable par l'OS.
+    const args = ['-m', 'pymobiledevice3', 'lockdown', 'heartbeat', '--rsd', address, port]
 
     const hbRunner = new ProcessRunner(`hb-${udid.slice(0,8)}`)
     hbRunner.on('stdout', (t) => this._handleData(t))
@@ -150,7 +142,6 @@ class TunneldService extends EventEmitter {
 
   _stopAllHeartbeats() {
     for (const [key, runner] of this.heartbeatRunners) {
-      dbg(`[tunneld-service] Arret heartbeat ${key}`)
       runner.stop()
     }
     this.heartbeatRunners.clear()
@@ -158,31 +149,21 @@ class TunneldService extends EventEmitter {
 
   async _triggerNativeFallback(manualIp = null) {
     if (this._isQuitting || this.activeConnection) return
-    
     let targetData = null
-
-    // PRIORITE : Si on a une IP manuelle (souvent IPv4 via WebSocket), on tente la resolution directe.
-    // L'IPv4 est BEAUCOUP plus stable que l'IPv6 Link-Local sur Windows pour pymobiledevice3.
     if (manualIp) {
       dbg(`[tunneld-service] Tentative prioritaire sur l'IP detectee (WebSocket) : ${manualIp}...`)
       targetData = await nativeBonjour.resolve({ name: 'Manual', address: manualIp })
     }
-
-    // FALLBACK : Si pas d'IP manuelle ou echec, on scanne le réseau
     if (!targetData) {
       dbg('[tunneld-service] Recherche d\'appareils via Bonjour Natif (dns-sd)...')
       const instances = await nativeBonjour.scan(4000)
       if (instances.length > 0) {
-        dbg(`[tunneld-service] Appareil trouve via Bonjour : ${instances[0].name}. Resolution...`)
         targetData = await nativeBonjour.resolve(instances[0])
       }
     }
-
     if (targetData && !this.activeConnection) {
-      dbg(`[tunneld-service] Succes via Fallback : ${targetData.address}:${targetData.port}`)
       this._handleData(`--rsd ${targetData.address} ${targetData.port} [start-tunnel-task-usbmux-native-WiFi]`)
     } else if (!this.activeConnection) {
-      dbg('[tunneld-service] Echec fallback. Relance du cycle dans 5s...')
       this._scheduleRestart(5000)
     }
   }
