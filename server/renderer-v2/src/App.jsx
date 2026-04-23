@@ -105,17 +105,17 @@ function App() {
             <input 
               type="text" 
               value={searchQuery}
-              onChange={handleSearch}
-              placeholder="Rechercher un lieu..."
-              autoFocus
+              onChange={(e) => {
+                setSearchQuery(e.target.value);
+                // On debounce manuellement ou on cherche seulement sur Enter
+              }}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') search(searchQuery);
+              }}
+              placeholder="Rechercher (Appuyez sur Entrée)..."
               className="w-full bg-transparent border-none outline-none text-lg pl-10 text-white font-bold placeholder:text-slate-400 pointer-events-auto relative z-10"
               style={{ WebkitAppRegion: 'no-drag', userSelect: 'text' }}
             />
-            {searchQuery && (
-              <button onClick={() => {setSearchQuery(''); setResults([]);}} className="p-1 hover:bg-white/10 rounded-full">
-                <X className="w-4 h-4 text-white" />
-              </button>
-            )}
           </div>
 
           <div className="w-px h-6 bg-white/10" />
