@@ -63,12 +63,12 @@ class NativeBonjour extends EventEmitter {
     const { name, address } = instanceObj
     dbg(`[native-bonjour] resolution de l'instance : ${name} (${address || 'auto'})`)
     
-    // 1. Si c'est une resolution manuelle (sans nom d'instance reel), on va direct au scan de ports
-    if (name === 'Manual' && address) {
-      dbg(`[native-bonjour] Resolution manuelle sur ${address}...`)
+    // 1. PRIORITE ABSOLUE : Si on a une IP manuelle (souvent IPv4 via WebSocket), on tente la resolution directe.
+    if (address && (name === 'Manual' || !address.includes(':'))) {
+      dbg(`[native-bonjour] Resolution PRIORITAIRE sur ${address}...`)
       const port = await this._probeAddress(address)
       if (port) return { port, address }
-      return null
+      if (name === 'Manual') return null // On s'arrête là si c'était spécifiquement demandé en manuel
     }
 
     // 2. Tentative via dns-sd -L (pour les instances Bonjour reelles)

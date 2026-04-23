@@ -20,6 +20,7 @@ class TunneldService extends EventEmitter {
     this.activeConnection = null
     this.deviceInfo = { name: 'iPhone', version: 'Inconnue', type: 'Inconnu', paired: false, ip: null }
     this._isQuitting = false
+    dbg('[tunneld-service] Initialise - v2.0.1 (No-Brackets)')
 
     this.runner.on('stdout', (text) => this._handleData(text))
     this.runner.on('stderr', (text) => this._handleData(text))
