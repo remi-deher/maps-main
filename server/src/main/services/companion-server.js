@@ -4,6 +4,7 @@ const { WebSocketServer } = require('ws')
 const os = require('os')
 const { EventEmitter } = require('events')
 const { dbg, sendStatus } = require('../logger')
+const settings = require('./settings-manager')
 
 /**
  * CompanionServer - Gère la communication WebSocket avec l'application iOS
@@ -14,10 +15,12 @@ class CompanionServer extends EventEmitter {
     this.wss = null
     this.port = null
     this.clients = new Set()
-    this.status = {
-      tunnelActive: false,
-      maintainActive: false,
-      lastHeartbeat: null
+      status: {
+        tunnelActive: false,
+        maintainActive: false,
+        lastHeartbeat: null,
+        favorites: settings.get('favorites') || []
+      }
     }
   }
 
@@ -122,6 +125,27 @@ class CompanionServer extends EventEmitter {
       const { lat, lon } = payload.data
       dbg(`[companion-server] iPhone demande position: ${lat}, ${lon}`)
       this.emit('request-location', { lat, lon })
+    }
+    else if (payload.type === 'ADD_FAVORITE') {
+      const fav = payload.data;
+      let favs = settings.get('favorites') || [];
+      // Éviter les doublons par coordonnées
+      if (!favs.some(f => Math.abs(f.lat - fav.lat) < 0.0001 && Math.abs(f.lon - fav.lon) < 0.0001)) {
+        favs = [fav, ...favs];
+        settings.save({ favorites: favs });
+        this.status.favorites = favs;
+        this._broadcast({ type: 'STATUS', data: this.status });
+        this.emit('favorites-updated', favs);
+      }
+    }
+    else if (payload.type === 'REMOVE_FAVORITE') {
+      const { lat, lon } = payload.data;
+      let favs = settings.get('favorites') || [];
+      favs = favs.filter(f => Math.abs(f.lat - lat) > 0.0001 || Math.abs(f.lon - lon) > 0.0001);
+      settings.save({ favorites: favs });
+      this.status.favorites = favs;
+      this._broadcast({ type: 'STATUS', data: this.status });
+      this.emit('favorites-updated', favs);
     }
   }
 

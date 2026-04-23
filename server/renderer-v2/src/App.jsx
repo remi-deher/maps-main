@@ -39,6 +39,9 @@ function App() {
     const removeListener = window.gps.onStatus((data) => {
       if (data.service === 'tunneld') {
         setStatus(prev => ({ ...prev, state: data.state, message: data.message, type: data.type || prev.type }));
+      } else if (data.service === 'favorites') {
+        // useStorage gère déjà le chargement, mais on force ici la mise à jour si besoin
+        // Ou mieux, on pourrait simplement rafraîchir les réglages
       }
     });
 

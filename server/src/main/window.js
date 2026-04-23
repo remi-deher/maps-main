@@ -80,6 +80,11 @@ app.whenReady().then(() => {
     tunnel.setWifiIpOverride(ip)
   })
 
+  // Liaison Companion -> Renderer (Synchro Favoris temps réel)
+  companion.on('favorites-updated', (favs) => {
+    if (mainWindow) mainWindow.webContents.send('status-update', { service: 'favorites', state: 'updated', data: favs })
+  })
+
   companion.start(initialSettings.companionPort) // Démarrer le serveur WebSocket
   
   tunnel.startTunneld(initialSettings)

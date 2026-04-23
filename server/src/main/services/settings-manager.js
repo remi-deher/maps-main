@@ -40,7 +40,8 @@ class SettingsManager {
       wifiIp: '', 
       wifiPort: '', 
       companionPort: 8080,
-      connectionMode: 'both' // 'usb', 'wifi', 'both'
+      connectionMode: 'both', // 'usb', 'wifi', 'both'
+      favorites: []
     }
   }
 }
