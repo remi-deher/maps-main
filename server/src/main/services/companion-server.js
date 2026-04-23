@@ -1,13 +1,13 @@
 'use strict'
 
-const { WebSocketServer } = require('ws')
+const { WebSocketServer, WebSocket } = require('ws')
 const os = require('os')
 const { EventEmitter } = require('events')
 const { dbg, sendStatus } = require('../logger')
 const favoritesManager = require('./favorites-manager')
 
 /**
- * CompanionServer - Gère la communication WebSocket avec l'application iOS
+ * CompanionServer - Gere la communication WebSocket avec l'application iOS
  */
 class CompanionServer extends EventEmitter {
   constructor() {
@@ -15,11 +15,12 @@ class CompanionServer extends EventEmitter {
     this.wss = null
     this.port = null
     this.clients = new Set()
+    this.status = {}
     
     // Initialisation du statut
     this._refreshStatus()
 
-    // Écouter les mises à jour des favoris/historique pour synchroniser les clients
+    // Ecouter les mises a jour des favoris/historique pour synchroniser les clients
     favoritesManager.on('favorites-updated', (favs) => {
       this.status.favorites = favs
       this._broadcast({ type: 'STATUS', data: this.status })
@@ -44,10 +45,13 @@ class CompanionServer extends EventEmitter {
   }
 
   /**
-   * Démarre le serveur WebSocket
+   * Demarre le serveur WebSocket
    */
   start(port = 8080) {
-    if (this.wss && this.port === port) return
+    if (this.wss && this.port === port) {
+      dbg(`[companion-server] Serveur deja actif sur le port ${port}`)
+      return
+    }
     
     if (this.wss) {
       dbg(`[companion-server] Changement de port ${this.port} -> ${port}`)
@@ -74,9 +78,11 @@ class CompanionServer extends EventEmitter {
         ws.on('message', (message) => {
           try {
             const payload = JSON.parse(message)
-            this._handleMessage(ws, payload)
+            if (payload && payload.type) {
+              this._handleMessage(ws, payload)
+            }
           } catch (e) {
-            dbg(`[companion-server] Erreur message: ${e.message}`)
+            dbg(`[companion-server] Erreur traitement message: ${e.message}`)
           }
         })
 
@@ -91,6 +97,12 @@ class CompanionServer extends EventEmitter {
           this.clients.delete(ws)
         })
       })
+
+      this.wss.on('error', (err) => {
+        dbg(`[companion-server] Erreur CRITIQUE serveur: ${err.message}`)
+        sendStatus('companion', 'error', `Erreur serveur : ${err.message}`)
+      })
+
     } catch (e) {
       dbg(`[companion-server] Erreur demarrage sur port ${port}: ${e.message}`)
       sendStatus('companion', 'error', `Erreur serveur compagnon : ${e.message}`)
@@ -113,73 +125,92 @@ class CompanionServer extends EventEmitter {
   getConnectionInfo() {
     return {
       ip: this._getLocalIp(),
-      port: this.port,
-      url: `ws://${this._getLocalIp()}:${this.port}`
+      port: this.port || 8080,
+      url: `ws://${this._getLocalIp()}:${this.port || 8080}`
     }
   }
 
   _handleMessage(ws, payload) {
     switch (payload.type) {
-      case 'HEARTBEAT':
-        this.status.maintainActive = payload.data.isMaintaining
+      case 'HEARTBEAT': {
+        if (payload.data) {
+          this.status.maintainActive = payload.data.isMaintaining || false
+        }
         this.status.lastHeartbeat = Date.now()
         this._updateFrontend()
         ws.send(JSON.stringify({ type: 'PONG', timestamp: Date.now() }))
         break
+      }
       
-      case 'SET_LOCATION':
-        const { lat, lon, name } = payload.data
-        dbg(`[companion-server] iPhone demande position: ${lat}, ${lon} (${name})`)
-        this.emit('request-location', { lat, lon, name })
-        if (name) favoritesManager.addToHistory({ lat, lon, name })
+      case 'SET_LOCATION': {
+        const { lat, lon, name } = payload.data || {}
+        if (lat && lon) {
+          dbg(`[companion-server] iPhone demande position: ${lat}, ${lon} (${name || 'sans nom'})`)
+          this.emit('request-location', { lat, lon, name })
+          if (name) favoritesManager.addToHistory({ lat, lon, name })
+        }
         break
+      }
       
-      case 'ADD_HISTORY':
-        favoritesManager.addToHistory(payload.data)
+      case 'ADD_HISTORY': {
+        if (payload.data) favoritesManager.addToHistory(payload.data)
         break
+      }
       
-      case 'ADD_FAVORITE':
-        favoritesManager.addFavorite(payload.data)
+      case 'ADD_FAVORITE': {
+        if (payload.data) favoritesManager.addFavorite(payload.data)
         break
+      }
       
-      case 'REMOVE_FAVORITE':
-        favoritesManager.removeFavorite(payload.data.lat, payload.data.lon)
+      case 'REMOVE_FAVORITE': {
+        if (payload.data) favoritesManager.removeFavorite(payload.data.lat, payload.data.lon)
         break
+      }
       
-      case 'RENAME_FAVORITE':
-        favoritesManager.renameFavorite(payload.data.lat, payload.data.lon, payload.data.newName)
+      case 'RENAME_FAVORITE': {
+        if (payload.data) favoritesManager.renameFavorite(payload.data.lat, payload.data.lon, payload.data.newName)
         break
+      }
       
-      case 'CLIENT_LOG':
+      case 'CLIENT_LOG': {
         this.emit('client-log', payload.data)
         break
+      }
     }
   }
 
-  // Façades pour appeler la logique métier via le dashboard (ou autres)
+  // Facades pour appeler la logique metier via le dashboard (ou autres)
   addFavorite(fav) { return favoritesManager.addFavorite(fav) }
   removeFavorite(lat, lon) { return favoritesManager.removeFavorite(lat, lon) }
   renameFavorite(lat, lon, newName) { return favoritesManager.renameFavorite(lat, lon, newName) }
 
   stop() {
     if (this.wss) {
+      dbg('[companion-server] Arret du serveur WebSocket...')
       this.wss.close()
       this.wss = null
     }
   }
 
   _broadcast(data) {
+    if (!this.wss) return
     const message = JSON.stringify(data)
     for (const client of this.clients) {
-      if (client.readyState === 1) client.send(message)
+      if (client.readyState === WebSocket.OPEN) {
+        client.send(message)
+      }
     }
   }
 
   _updateFrontend() {
-    if (this.status.maintainActive) {
-      sendStatus('companion', 'ready', 'iPhone connecte & actif')
+    if (this.clients.size > 0) {
+      if (this.status.maintainActive) {
+        sendStatus('companion', 'ready', 'iPhone connecte & actif')
+      } else {
+        sendStatus('companion', 'info', 'iPhone connecte (en attente)')
+      }
     } else {
-      sendStatus('companion', 'info', 'iPhone connecte (en attente)')
+      sendStatus('companion', 'info', 'En attente de connexion iPhone...')
     }
   }
 
