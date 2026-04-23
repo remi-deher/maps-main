@@ -95,9 +95,13 @@ app.whenReady().then(() => {
     tunnel.setWifiIpOverride(ip)
   })
 
-  // Liaison Companion -> Renderer (Synchro Favoris temps réel)
+  // Liaison Companion -> Renderer (Synchro Favoris & Historique temps réel)
   companion.on('favorites-updated', (favs) => {
     if (mainWindow) mainWindow.webContents.send('status-update', { service: 'favorites', state: 'updated', data: favs })
+  })
+
+  companion.on('history-updated', (history) => {
+    if (mainWindow) mainWindow.webContents.send('status-update', { service: 'history', state: 'updated', data: history })
   })
 
   companion.start(initialSettings.companionPort) // Démarrer le serveur WebSocket

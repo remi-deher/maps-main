@@ -22,8 +22,7 @@ function App() {
   const isFavorite = (lat, lon) => favorites.some(f => Math.abs(f.lat - lat) < 0.0001 && Math.abs(f.lon - lon) < 0.0001);
   const toggleFavorite = async (pos) => {
     if (isFavorite(pos.lat, pos.lon)) {
-      const idx = favorites.findIndex(f => Math.abs(f.lat - pos.lat) < 0.0001 && Math.abs(f.lon - pos.lon) < 0.0001);
-      if (idx !== -1) await removeFavorite(idx);
+      await removeFavorite(pos.lat, pos.lon);
     } else {
       await addFavorite({ name: pos.name || "Lieu favori", lat: pos.lat, lon: pos.lon });
     }
@@ -97,16 +96,35 @@ function App() {
                 <h2 className="text-2xl font-bold bg-gradient-to-r from-blue-400 to-emerald-400 bg-clip-text text-transparent">Global Mock</h2>
                 <button onClick={() => setSidebarOpen(false)} className="p-2 hover:bg-white/10 rounded-xl transition-colors"><X className="w-6 h-6" /></button>
               </div>
-              <div className="flex-1 overflow-y-auto space-y-6">
+              <div className="flex-1 overflow-y-auto space-y-8 pr-2 custom-scrollbar">
+                {/* FAVORIS SECTION */}
                 <section>
                   <div className="flex items-center gap-2 text-sm font-semibold text-slate-400 mb-3 px-2">
-                    <History className="w-4 h-4" /> <span>RÉCENTS</span>
+                    <Star className="w-4 h-4 text-amber-400" /> <span>FAVORIS</span>
+                  </div>
+                  <div className="space-y-1">
+                    {favorites.length > 0 ? favorites.map((fav, i) => (
+                      <button key={`fav-${i}`} onClick={() => {selectLocation(fav); setSidebarOpen(false);}} className="w-full p-3 rounded-xl hover:bg-white/5 transition-colors text-left group flex items-center justify-between">
+                        <div className="flex-1 min-w-0">
+                          <p className="font-medium line-clamp-1">{fav.name}</p>
+                          <p className="text-xs text-slate-500">{fav.lat.toFixed(4)}, {fav.lon.toFixed(4)}</p>
+                        </div>
+                        <Star className="w-4 h-4 text-amber-400 opacity-0 group-hover:opacity-100 transition-opacity" fill="currentColor" />
+                      </button>
+                    )) : <p className="p-4 text-center text-slate-600 italic text-sm">Aucun favori</p>}
+                  </div>
+                </section>
+
+                {/* RÉCENTS SECTION */}
+                <section>
+                  <div className="flex items-center gap-2 text-sm font-semibold text-slate-400 mb-3 px-2">
+                    <History className="w-4 h-4 text-blue-400" /> <span>HISTORIQUE RÉCENT</span>
                   </div>
                   <div className="space-y-1">
                     {history.length > 0 ? history.map((item, i) => (
-                      <button key={i} onClick={() => {selectLocation(item); setSidebarOpen(false);}} className="w-full p-3 rounded-xl hover:bg-white/5 transition-colors text-left group">
+                      <button key={`hist-${i}`} onClick={() => {selectLocation(item); setSidebarOpen(false);}} className="w-full p-3 rounded-xl hover:bg-white/5 transition-colors text-left group">
                         <p className="font-medium line-clamp-1">{item.name || "Position"}</p>
-                        <p className="text-xs text-slate-500">{item.lat}, {item.lon}</p>
+                        <p className="text-xs text-slate-500">{item.lat.toFixed(4)}, {item.lon.toFixed(4)}</p>
                       </button>
                     )) : <p className="p-4 text-center text-slate-600 italic text-sm">Aucun historique</p>}
                   </div>
@@ -137,6 +155,9 @@ function App() {
               <p className="text-xs text-slate-400 font-mono">{selectedPos.lat}, {selectedPos.lon}</p>
             </div>
             <div className="flex gap-2">
+              <button onClick={() => toggleFavorite(selectedPos)} className={`p-3 glass hover:bg-white/10 rounded-2xl transition-colors ${isFavorite(selectedPos.lat, selectedPos.lon) ? 'text-amber-400' : 'text-slate-400'}`}>
+                <Star className="w-5 h-5" fill={isFavorite(selectedPos.lat, selectedPos.lon) ? "currentColor" : "none"} />
+              </button>
               <button onClick={resetLocation} className="p-3 glass hover:bg-white/10 rounded-2xl transition-colors text-slate-400"><RotateCcw className="w-5 h-5" /></button>
               <button onClick={teleport} className="bg-blue-600 hover:bg-blue-500 text-white px-6 py-3 rounded-2xl font-bold flex items-center gap-2 transition-all active:scale-95 shadow-lg shadow-blue-900/20"><Navigation className="w-5 h-5" /> Allez ici</button>
             </div>

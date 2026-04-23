@@ -74,7 +74,7 @@ export function ActionPanel({ visible, coords, isFavorite, onTeleport, onToggleF
   );
 }
 
-export function FavoritesPanel({ visible, favorites, onClose, onTeleport, onRemove }) {
+export function FavoritesPanel({ visible, favorites, history, onClose, onTeleport, onRemove }) {
   const anim = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
@@ -86,12 +86,15 @@ export function FavoritesPanel({ visible, favorites, onClose, onTeleport, onRemo
       transform: [{ translateY: anim.interpolate({ inputRange: [0, 1], outputRange: [SCREEN_HEIGHT, 0] }) }]
     }]}>
       <SafeAreaView style={styles.panelHeader}>
-        <Text style={styles.panelTitle}>Favoris</Text>
+        <Text style={styles.panelTitle}>Lieux</Text>
         <TouchableOpacity onPress={onClose} style={styles.closeBtn}><Text style={styles.closeText}>✕</Text></TouchableOpacity>
       </SafeAreaView>
+      
       <ScrollView style={styles.list} showsVerticalScrollIndicator={false}>
+        {/* SECTION FAVORIS */}
+        <Text style={styles.sectionTitle}>Favoris ⭐</Text>
         {favorites.length > 0 ? favorites.map((fav, i) => (
-          <View key={i} style={[styles.item, SHADOWS.light]}>
+          <View key={`fav-${i}`} style={[styles.item, SHADOWS.light]}>
             <TouchableOpacity style={styles.itemMain} onPress={() => onTeleport({ latitude: fav.lat, longitude: fav.lon, name: fav.name })}>
               <Text style={styles.itemName}>{fav.name}</Text>
               <Text style={styles.itemCoords}>{fav.lat.toFixed(4)}, {fav.lon.toFixed(4)}</Text>
@@ -100,7 +103,24 @@ export function FavoritesPanel({ visible, favorites, onClose, onTeleport, onRemo
               <Text style={{fontSize: 18}}>🗑️</Text>
             </TouchableOpacity>
           </View>
-        )) : <Text style={styles.empty}>Aucun favori synchronisé.</Text>}
+        )) : <Text style={styles.empty}>Aucun favori enregistré.</Text>}
+
+        {/* SECTION RÉCENTS */}
+        <Text style={[styles.sectionTitle, { marginTop: 30 }]}>Historique Récents 🕒</Text>
+        {history && history.length > 0 ? history.map((item, i) => (
+          <TouchableOpacity 
+            key={`hist-${i}`} 
+            style={[styles.item, styles.itemHistory, SHADOWS.light]} 
+            onPress={() => onTeleport({ latitude: item.lat, longitude: item.lon, name: item.name })}
+          >
+            <View style={styles.itemMain}>
+              <Text style={styles.itemName}>{item.name}</Text>
+              <Text style={styles.itemCoords}>{item.lat.toFixed(4)}, {item.lon.toFixed(4)}</Text>
+            </View>
+            <Text style={{fontSize: 16}}>📍</Text>
+          </TouchableOpacity>
+        )) : <Text style={styles.empty}>Aucun historique récent.</Text>}
+        <View style={{height: 50}} />
       </ScrollView>
     </Animated.View>
   );
@@ -136,5 +156,7 @@ const styles = StyleSheet.create({
   itemName: { color: COLORS.text, fontWeight: '800', fontSize: 17 },
   itemCoords: { color: COLORS.textMuted, fontSize: 12, marginTop: 4 },
   deleteBtn: { padding: 10, backgroundColor: 'rgba(244, 63, 94, 0.1)', borderRadius: 12 },
-  empty: { color: COLORS.textMuted, textAlign: 'center', marginTop: 120, fontWeight: '600', fontSize: 16 }
+  empty: { color: COLORS.textMuted, textAlign: 'center', marginTop: 40, fontWeight: '600', fontSize: 16 },
+  sectionTitle: { color: COLORS.textSecondary, fontSize: 13, fontWeight: 'bold', textTransform: 'uppercase', letterSpacing: 1.5, marginBottom: 15, paddingLeft: 5 },
+  itemHistory: { opacity: 0.85, paddingVertical: 15 }
 });

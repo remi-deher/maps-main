@@ -18,7 +18,7 @@ export default function App() {
   // Hooks de logique
   const { serverIp, serverPort, saveSettings } = useStorage();
   const { isMaintaining, requestPermissions, toggleBackground, searchAddress } = useLocation();
-  const { status, favorites, simulatedCoords, sendAction, connect } = useSocket(serverIp, serverPort, isMaintaining);
+  const { status, favorites, recentHistory, simulatedCoords, sendAction, connect } = useSocket(serverIp, serverPort, isMaintaining);
   
   // États UI locaux
   const [searchQuery, setSearchQuery] = useState('');
@@ -145,6 +145,7 @@ export default function App() {
           <FavoritesPanel 
             visible={isFavsOpen}
             favorites={favorites}
+            history={recentHistory}
             onClose={() => setIsFavsOpen(false)}
             onTeleport={handleTeleport}
             onRemove={(f) => sendAction('REMOVE_FAVORITE', { lat: f.lat, lon: f.lon })}

@@ -19,7 +19,8 @@ class CompanionServer extends EventEmitter {
       tunnelActive: false,
       maintainActive: false,
       lastHeartbeat: null,
-      favorites: settings.get('favorites') || []
+      favorites: settings.get('favorites') || [],
+      recentHistory: settings.get('recentHistory') || []
     }
   }
 
@@ -121,9 +122,17 @@ class CompanionServer extends EventEmitter {
       ws.send(JSON.stringify({ type: 'PONG', timestamp: Date.now() }))
     } 
     else if (payload.type === 'SET_LOCATION') {
-      const { lat, lon } = payload.data
-      dbg(`[companion-server] iPhone demande position: ${lat}, ${lon}`)
-      this.emit('request-location', { lat, lon })
+      const { lat, lon, name } = payload.data
+      dbg(`[companion-server] iPhone demande position: ${lat}, ${lon} (${name})`)
+      this.emit('request-location', { lat, lon, name })
+      
+      // Ajouter automatiquement à l'historique si un nom est présent
+      if (name) {
+        this._addToHistory({ lat, lon, name })
+      }
+    }
+    else if (payload.type === 'ADD_HISTORY') {
+      this._addToHistory(payload.data)
     }
     else if (payload.type === 'ADD_FAVORITE') {
       const fav = payload.data;
@@ -146,6 +155,18 @@ class CompanionServer extends EventEmitter {
       this._broadcast({ type: 'STATUS', data: this.status });
       this.emit('favorites-updated', favs);
     }
+  }
+
+  _addToHistory(entry) {
+    let history = settings.get('recentHistory') || []
+    // Éviter les doublons consécutifs ou trop proches
+    if (history.length > 0 && history[0].name === entry.name) return
+
+    history = [entry, ...history].slice(0, 20) // Garder les 20 derniers
+    settings.save({ recentHistory: history })
+    this.status.recentHistory = history
+    this._broadcast({ type: 'STATUS', data: this.status })
+    this.emit('history-updated', history)
   }
 
   _broadcast(data) {

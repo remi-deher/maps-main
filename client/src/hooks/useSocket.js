@@ -6,6 +6,7 @@ import { logEvent } from '../services/logger';
 export function useSocket(ip, port, isMaintaining) {
   const [status, setStatus] = useState('Déconnecté');
   const [favorites, setFavorites] = useState([]);
+  const [recentHistory, setRecentHistory] = useState([]);
   const [simulatedCoords, setSimulatedCoords] = useState(null);
   
   const ws = useRef(null);
@@ -62,6 +63,7 @@ export function useSocket(ip, port, isMaintaining) {
           const payload = JSON.parse(e.data);
           if (payload.type === 'STATUS') {
             if (payload.data.favorites) setFavorites(payload.data.favorites);
+            if (payload.data.recentHistory) setRecentHistory(payload.data.recentHistory);
           } else if (payload.type === 'LOCATION') {
             setSimulatedCoords({
               latitude: payload.data.lat,
@@ -148,5 +150,5 @@ export function useSocket(ip, port, isMaintaining) {
     }
   };
 
-  return { status, favorites, simulatedCoords, sendAction, connect };
+  return { status, favorites, recentHistory, simulatedCoords, sendAction, connect };
 }
