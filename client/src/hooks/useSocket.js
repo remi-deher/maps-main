@@ -131,17 +131,30 @@ export function useSocket(ip, port, isMaintaining) {
     return () => subscription.remove();
   }, [connect]);
 
-  // Effet 3 : Heartbeat
+  // Effet 3 : Heartbeat (Événementiel + Temporel pour sécurité maximale)
   useEffect(() => {
     const sendHeartbeat = () => {
         if (ws.current?.readyState === WebSocket.OPEN) {
-          ws.current.send(JSON.stringify({ type: 'HEARTBEAT', data: { isMaintaining: isMaintaining } }));
+          ws.current.send(JSON.stringify({ type: 'HEARTBEAT', data: { isMaintaining: isMaintaining, timestamp: Date.now() } }));
         }
     };
+
+    // 1. Heartbeat basé sur le GPS (TICK)
     const unsubscribeBus = eventBus.subscribe((ev) => {
       if (ev.type === 'TICK' && isMaintaining) sendHeartbeat();
     });
-    return () => unsubscribeBus();
+
+    // 2. Heartbeat temporel strict (toutes les 2.5s) pour forcer le WiFi à rester éveillé
+    const strictHeartbeat = setInterval(() => {
+      if (statusRef.current === 'Connecté' && isMaintaining) {
+        sendHeartbeat();
+      }
+    }, 2500);
+
+    return () => {
+      unsubscribeBus();
+      clearInterval(strictHeartbeat);
+    };
   }, [isMaintaining]);
 
   const sendAction = (type, data) => {

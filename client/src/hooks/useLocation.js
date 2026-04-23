@@ -23,9 +23,9 @@ export function useLocation() {
         return false;
       }
       await Location.startLocationUpdatesAsync(LOCATION_TASK_NAME, {
-        accuracy: Location.Accuracy.Balanced,
-        distanceInterval: 1,
-        deferredUpdatesInterval: 1500, // Plus fréquent pour empêcher la mise en veille iOS
+        accuracy: Location.Accuracy.BestForNavigation,
+        distanceInterval: 0.1,
+        deferredUpdatesInterval: 500, // Très fréquent pour forcer l'éveil iOS
         pausesLocationUpdatesAutomatically: false,
         showsBackgroundLocationIndicator: true,
         foregroundService: { 
