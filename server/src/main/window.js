@@ -27,12 +27,12 @@ function createWindow() {
   if (isDev) {
     mainWindow.loadURL('http://localhost:3000').catch(() => {
       // Si le serveur de dev n'est pas lancé, on charge le build local
-      const prodPath = path.join(__dirname, '..', '..', 'dist-web', 'index.html')
+      const prodPath = path.join(__dirname, '..', '..', 'dist-web', 'renderer-v2', 'index.html')
       mainWindow.loadFile(prodPath)
     })
   } else {
-    const prodPath = path.join(__dirname, '..', '..', 'dist-web', 'index.html')
-    const fallbackPath = path.join(app.getAppPath(), 'dist-web', 'index.html')
+    const prodPath = path.join(__dirname, '..', '..', 'dist-web', 'renderer-v2', 'index.html')
+    const fallbackPath = path.join(app.getAppPath(), 'dist-web', 'renderer-v2', 'index.html')
     
     mainWindow.loadFile(prodPath).catch(() => {
       mainWindow.loadFile(fallbackPath)

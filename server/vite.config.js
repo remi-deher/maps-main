@@ -4,11 +4,13 @@ import path from 'path'
 
 export default defineConfig({
   plugins: [react()],
-  root: path.resolve(__dirname, 'renderer-v2'),
   base: './',
   build: {
     outDir: path.resolve(__dirname, 'dist-web'),
     emptyOutDir: true,
+    rollupOptions: {
+      input: path.resolve(__dirname, 'renderer-v2/index.html'),
+    }
   },
   resolve: {
     alias: {
