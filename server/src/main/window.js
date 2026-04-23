@@ -72,6 +72,14 @@ app.whenReady().then(() => {
   // Liaison Companion -> GPS (Demande de l'iPhone vers le PC)
   companion.on('request-location', ({ lat, lon }) => {
     gps.setLocation(lat, lon, "Position iPhone")
+    // Notifier le renderer pour mettre à jour la carte sur le PC
+    if (mainWindow) {
+        mainWindow.webContents.send('status-update', { 
+            service: 'location', 
+            state: 'active', 
+            data: { lat, lon, name: "iPhone Remote" } 
+        })
+    }
   })
 
   // Liaison Companion -> Tunnel (Aide à la découverte WiFi)

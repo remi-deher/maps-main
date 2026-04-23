@@ -26,6 +26,8 @@ export function useLocation() {
         accuracy: Location.Accuracy.Balanced,
         distanceInterval: 1,
         deferredUpdatesInterval: 5000,
+        pausesLocationUpdatesAutomatically: false,
+        showsBackgroundLocationIndicator: true,
         foregroundService: { 
           notificationTitle: "GPS Mock Active", 
           notificationBody: "Maintien de la connexion...", 
