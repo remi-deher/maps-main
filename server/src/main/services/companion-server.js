@@ -22,7 +22,7 @@ class CompanionServer extends EventEmitter {
     // Initialisation du statut
     this._refreshStatus()
 
-    // Ecouter les mises a jour des favoris/historique pour synchroniser les clients
+    // Ecouter les mises a jour des favoris/historique
     favoritesManager.on('favorites-updated', (favs) => {
       this.status.favorites = favs
       this._broadcast({ type: 'STATUS', data: this.status })
@@ -34,11 +34,19 @@ class CompanionServer extends EventEmitter {
       this._broadcast({ type: 'STATUS', data: this.status })
       this.emit('history-updated', history)
     })
+
+    // Ecouter les mises a jour du tunnel/appareil
+    if (this.tunnel) {
+      this.tunnel.setOnStatusChange(() => {
+        this._refreshStatus()
+        this._broadcast({ type: 'STATUS', data: this.status })
+      })
+    }
   }
 
   _refreshStatus() {
     this.status = {
-      tunnelActive: this.status?.tunnelActive || false,
+      tunnelActive: !!this.tunnel?.getRsdAddress(),
       rsdAddress: this.tunnel?.getRsdAddress() || null,
       rsdPort: this.tunnel?.getRsdPort() || null,
       connectionType: this.tunnel?.getConnectionType() || null,
@@ -79,6 +87,7 @@ class CompanionServer extends EventEmitter {
         this.emit('iphone-ip-detected', clientIp)
         
         this.clients.add(ws)
+        this._refreshStatus() // S'assurer que le statut est a jour avant l'envoi
         ws.send(JSON.stringify({ type: 'STATUS', data: this.status }))
 
         ws.on('message', (message) => {
@@ -116,6 +125,7 @@ class CompanionServer extends EventEmitter {
   }
 
   updateTunnelStatus(active) {
+    this._refreshStatus()
     this.status.tunnelActive = active
     this._broadcast({ type: 'STATUS', data: this.status })
     this._updateFrontend()
@@ -202,7 +212,7 @@ class CompanionServer extends EventEmitter {
     if (!this.wss) return
     const message = JSON.stringify(data)
     for (const client of this.clients) {
-      if (client.readyState === WebSocket.OPEN) {
+      if (client.readyState === 1) { // WebSocket.OPEN
         client.send(message)
       }
     }

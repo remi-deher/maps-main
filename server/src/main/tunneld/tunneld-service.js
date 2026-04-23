@@ -72,12 +72,18 @@ class TunneldService extends EventEmitter {
 
     // Detection d'infos device (TcpLockdownClient ou autre prompt)
     // Format: <TcpLockdownClient ID:192.168.1.105 VERSION:26.5 TYPE:iPhone17,2 PAIRED:False>
-    const matchInfo = text.match(/ID:([\w:.]+) VERSION:([\d.]+) TYPE:([^ ]+) PAIRED:(\w+)/)
-    if (matchInfo) {
-      this.deviceInfo.ip = matchInfo[1]
-      this.deviceInfo.version = matchInfo[2]
-      this.deviceInfo.type = matchInfo[3].replace(/[,>]$/, '') // Nettoyage virgule finale
-      this.deviceInfo.paired = matchInfo[4].toLowerCase().includes('true')
+    const matchId = text.match(/ID:([\w:.]+)/)
+    const matchVer = text.match(/VERSION:([\d.]+)/)
+    const matchType = text.match(/TYPE:([^ >]+)/)
+    const matchPaired = text.match(/PAIRED:(\w+)/)
+
+    if (matchId || matchVer || matchType || matchPaired) {
+      if (matchId) this.deviceInfo.ip = matchId[1]
+      if (matchVer) this.deviceInfo.version = matchVer[1]
+      if (matchType) this.deviceInfo.type = matchType[1].replace(/[,>]$/, '')
+      if (matchPaired) this.deviceInfo.paired = matchPaired[1].toLowerCase().includes('true')
+      
+      dbg(`[tunneld-service] Infos appareil mises a jour : ${this.deviceInfo.type} (iOS ${this.deviceInfo.version})`)
       this.emit('device-info-updated', this.deviceInfo)
     }
 
