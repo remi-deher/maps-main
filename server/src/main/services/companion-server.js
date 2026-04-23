@@ -58,14 +58,14 @@ class CompanionServer extends EventEmitter {
       this.port = port
       this.wss = new WebSocketServer({ port })
       const ip = this._getLocalIp()
-      dbg(`[companion-server] Serveur démarré sur ${ip}:${port}`)
-      sendStatus('companion', 'info', `Prêt pour connexion iPhone sur ${ip}:${port}`)
+      dbg(`[companion-server] Serveur demarre sur ${ip}:${port}`)
+      sendStatus('companion', 'info', `Pret pour connexion iPhone sur ${ip}:${port}`)
 
       this.wss.on('connection', (ws, req) => {
         let clientIp = req.socket.remoteAddress
         if (clientIp.startsWith('::ffff:')) clientIp = clientIp.substring(7)
         
-        dbg(`[companion-server] Nouveau client connecté : ${clientIp}`)
+        dbg(`[companion-server] Nouveau client connecte : ${clientIp}`)
         this.emit('iphone-ip-detected', clientIp)
         
         this.clients.add(ws)
@@ -81,7 +81,7 @@ class CompanionServer extends EventEmitter {
         })
 
         ws.on('close', () => {
-          dbg('[companion-server] Client déconnecté')
+          dbg('[companion-server] Client deconnecte')
           this.clients.delete(ws)
           this._checkActivity()
         })
@@ -92,7 +92,7 @@ class CompanionServer extends EventEmitter {
         })
       })
     } catch (e) {
-      dbg(`[companion-server] Erreur démarrage sur port ${port}: ${e.message}`)
+      dbg(`[companion-server] Erreur demarrage sur port ${port}: ${e.message}`)
       sendStatus('companion', 'error', `Erreur serveur compagnon : ${e.message}`)
     }
   }
@@ -177,9 +177,9 @@ class CompanionServer extends EventEmitter {
 
   _updateFrontend() {
     if (this.status.maintainActive) {
-      sendStatus('companion', 'ready', 'iPhone connect\u00e9 & actif')
+      sendStatus('companion', 'ready', 'iPhone connecte & actif')
     } else {
-      sendStatus('companion', 'info', 'iPhone connect\u00e9 (en attente)')
+      sendStatus('companion', 'info', 'iPhone connecte (en attente)')
     }
   }
 

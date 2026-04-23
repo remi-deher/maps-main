@@ -27,7 +27,8 @@ class TunneldService extends EventEmitter {
     this.runner.on('exit', ({ code, signal }) => {
       if (this._isQuitting || this.restartTimer) return
       dbg(`[tunneld] Démon tunnel arrêté (code ${code}, signal ${signal})`)
-      this.emit('disconnection', 'Démon tunnel arrêté')
+      dbg(`[tunneld] Demon tunnel arrete (code ${code}, signal ${signal})`)
+      this.emit('disconnection', 'Demon tunnel arrete')
       this._scheduleRestart(TUNNEL_RESTART_DELAY)
     })
   }
@@ -35,9 +36,9 @@ class TunneldService extends EventEmitter {
   async start(manualIp = null) {
     if (this._isQuitting) return
     
-    // Éviter les relances inutiles si déjà en cours avec la même IP
+    // Eviter les relances inutiles si deja en cours avec la meme IP
     if (this.runner.isRunning && this._manualIp === manualIp) {
-      dbg('[tunneld-service] déjà en cours d\'exécution avec cette configuration, ignore le redémarrage')
+      dbg('[tunneld-service] deja en cours d\'execution avec cette configuration, ignore le redemarrage')
       return
     }
 
@@ -46,22 +47,22 @@ class TunneldService extends EventEmitter {
 
     try {
       if (this.runner.isRunning) {
-        dbg('[tunneld-service] arrêt de l\'instance précédente...')
+        dbg('[tunneld-service] arret de l\'instance precedente...')
         this.stop()
-        // Laisser 1.5s pour que Windows libère le socket (fix Errno 10048)
+        // Laisser 1.5s pour que Windows libere le socket (fix Errno 10048)
         await new Promise(resolve => setTimeout(resolve, 1500))
       }
 
       this._manualIp = manualIp
-      dbg('[tunneld-service] lancement du d\u00e9mon tunneld...')
-      sendStatus('tunneld', 'starting', 'Initialisation du d\u00e9mon tunnel...')
+      dbg('[tunneld-service] lancement du demon tunneld...')
+      sendStatus('tunneld', 'starting', 'Initialisation du demon tunnel...')
 
       this.runner.spawn(PYTHON, ['-m', 'pymobiledevice3', 'remote', 'tunneld'])
 
       if (this.fallbackTimer) clearTimeout(this.fallbackTimer)
       this.fallbackTimer = setTimeout(() => this._triggerNativeFallback(this._manualIp), 10000)
     } finally {
-      // Déverrouillage après un court délai
+      // Deverrouillage apres un court delai
       setTimeout(() => { this._isStarting = false }, 2000)
     }
   }
@@ -87,8 +88,8 @@ class TunneldService extends EventEmitter {
 
       if (this.activeConnection && this.activeConnection.address === address && this.activeConnection.port === port) return
 
-      dbg(`[tunneld] Connexion détectée : ${type} (${address}:${port})`)
-      sendStatus('tunneld', 'ready', `iPhone détecté via ${type} (${address}:${port})`, { type })
+      dbg(`[tunneld] Connexion detectee : ${type} (${address}:${port})`)
+      sendStatus('tunneld', 'ready', `Tunnel actif (${type}) -> ${address}:${port}`, { type })
       
       this._startHeartbeat(deviceId, type === 'WiFi')
 
@@ -96,7 +97,7 @@ class TunneldService extends EventEmitter {
       this.emit('connection', this.activeConnection)
     }
 
-    // Détection de déconnexion
+    // Detection de deconnexion
     if (text.includes('Disconnected from tunnel') || 
         text.includes('terminating') || 
         text.includes('Tunnel task failed')) {
@@ -123,7 +124,7 @@ class TunneldService extends EventEmitter {
   _startHeartbeat(udid, isWiFi) {
     if (this.heartbeatRunners.has(udid)) return
     
-    dbg(`[tunneld-service] Démarrage du battement de coeur (heartbeat) pour ${udid}...`)
+    dbg(`[tunneld-service] Demarrage du battement de coeur (heartbeat) pour ${udid}...`)
     const args = ['-m', 'pymobiledevice3', 'lockdown', 'heartbeat', '--udid', udid]
     if (isWiFi) args.push('--mobdev2')
 
@@ -140,7 +141,7 @@ class TunneldService extends EventEmitter {
 
   _stopAllHeartbeats() {
     for (const [udid, runner] of this.heartbeatRunners) {
-      dbg(`[tunneld-service] Arrêt heartbeat pour ${udid}`)
+      dbg(`[tunneld-service] Arret heartbeat pour ${udid}`)
       runner.stop()
     }
     this.heartbeatRunners.clear()
@@ -148,7 +149,7 @@ class TunneldService extends EventEmitter {
 
   async _triggerNativeFallback(manualIp = null) {
     if (this._isQuitting || this.activeConnection) return
-    dbg('[tunneld-service] Aucun appareil détecté via tunneld. Test via Bonjour Natif (dns-sd)...')
+    dbg('[tunneld-service] Aucun appareil detecte via tunneld. Test via Bonjour Natif (dns-sd)...')
     sendStatus('tunneld', 'info', 'Recherche approfondie via Bonjour Natif...')
     
     let targetData = null
@@ -156,7 +157,7 @@ class TunneldService extends EventEmitter {
     
     if (instances.length > 0) {
       const instance = instances[0]
-      dbg(`[tunneld-service] Tentative de r\u00e9solution de ${instance.name}...`)
+      dbg(`[tunneld-service] Tentative de resolution de ${instance.name}...`)
       targetData = await nativeBonjour.resolve(instance)
     }
 
@@ -166,10 +167,10 @@ class TunneldService extends EventEmitter {
     }
 
     if (targetData && !this.activeConnection) {
-      dbg(`[tunneld-service] Succès via Fallback : ${targetData.address}:${targetData.port}`)
+      dbg(`[tunneld-service] Succes via Fallback : ${targetData.address}:${targetData.port}`)
       this._handleData(`--rsd ${targetData.address} ${targetData.port} [start-tunnel-task-usbmux-native-WiFi]`)
     } else if (!this.activeConnection) {
-      dbg('[tunneld-service] Échec fallback. Relance du cycle dans 5s...')
+      dbg('[tunneld-service] Echec fallback. Relance du cycle dans 5s...')
       this._scheduleRestart(5000)
     }
   }

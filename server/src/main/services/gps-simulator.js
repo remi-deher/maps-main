@@ -47,7 +47,7 @@ class GpsSimulator extends EventEmitter {
     }
 
     if (this.restorationTimer) {
-      dbg('[gps-sim] Tunnel en cours de stabilisation — position mise en attente')
+      dbg('[gps-sim] Tunnel en cours de stabilisation - position mise en attente')
       this.lastCoords = { lat, lon, name }
       return { success: false, error: 'Tunnel stabilizing, queued' }
     }
@@ -56,7 +56,7 @@ class GpsSimulator extends EventEmitter {
     const rsdPort = this.tunnel.getRsdPort()
 
     if (!rsdAddress || !rsdPort) {
-      dbg('[gps-sim] Tunnel non prêt — position mise en attente pour le rétablissement')
+      dbg('[gps-sim] Tunnel non pret - position mise en attente pour le retablissement')
       this.lastCoords = { lat, lon, name }
       return { success: false, error: 'Tunnel not ready, queued' }
     }
@@ -90,7 +90,7 @@ class GpsSimulator extends EventEmitter {
     if (!this.lastCoords || this._isQuitting || this.restorationTimer) return
 
     // On évite de relancer en boucle si le tunnel saute toutes les secondes
-    dbg('[gps-sim] tunnel rétabli — attente de stabilisation (6s)...')
+    dbg('[gps-sim] tunnel retabli - attente de stabilisation (6s)...')
     this.restorationTimer = setTimeout(async () => {
       this.restorationTimer = null
       if (this.lastCoords && !this._isQuitting) {
@@ -178,15 +178,15 @@ class GpsSimulator extends EventEmitter {
       if (this.runner.isRunning) {
         const isAlive = await this._checkHealth(rsdAddress, rsdPort)
         if (isAlive) return
-        dbg('[gps-sim] watchdog: processus zombie détecté (échec rsd-info) — nettoyage et relance')
+        dbg('[gps-sim] watchdog: processus zombie detecte (echec rsd-info) - nettoyage et relance')
         this.stop() // On tue le zombie
         this.currentPort = null 
       } else {
-        dbg('[gps-sim] watchdog: processus mort détecté — vérification du tunnel...')
+        dbg('[gps-sim] watchdog: processus mort detecte - verification du tunnel...')
       }
 
       if (!rsdPort) {
-        dbg('[gps-sim] watchdog: tunnel déconnecté — attente du signal de rétablissement...')
+        dbg('[gps-sim] watchdog: tunnel deconnecte - attente du signal de retablissement...')
         this.tunnel.forceRefresh() 
         return
       }

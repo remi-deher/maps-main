@@ -40,11 +40,11 @@ class NativeBonjour extends EventEmitter {
             const instanceName = parts.slice(6).join(' ').trim()
             
             if (instanceName && !foundInstances.some(i => i.name === instanceName)) {
-              // Extraction de l'IPv6 si présente (format mac@ipv6)
+              // Extraction de l'IPv6 si presente (format mac@ipv6)
               const ipv6Match = instanceName.match(/@([\w:]+)/)
               const address = ipv6Match ? `${ipv6Match[1]}%${iface}` : null
               
-              dbg(`[native-bonjour] Instance trouvée : ${instanceName} sur iFace ${iface}`)
+              dbg(`[native-bonjour] Instance trouvee : ${instanceName} sur iFace ${iface}`)
               foundInstances.push({ name: instanceName, address })
             }
           }
@@ -60,11 +60,11 @@ class NativeBonjour extends EventEmitter {
   }
 
   /**
-   * R\u00e9solution une instance pour obtenir le port et l'IP
+   * Resolution une instance pour obtenir le port et l'IP
    */
   async resolve(instanceObj) {
     const { name, address } = instanceObj
-    dbg(`[native-bonjour] r\u00e9solution de l'instance : ${name}`)
+    dbg(`[native-bonjour] resolution de l'instance : ${name}`)
     
     // 1. Tentative via dns-sd -L
     const nativeResult = await new Promise((resolve) => {
