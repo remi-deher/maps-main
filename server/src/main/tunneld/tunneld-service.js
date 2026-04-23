@@ -119,9 +119,10 @@ class TunneldService extends EventEmitter {
     
     dbg(`[tunneld-service] Battement de coeur (RSD) sur ${key}...`)
     
-    // On utilise --rsd plutot que --udid pour eviter toute ambiguite/prompt
-    const isIPv6 = address.includes(':')
-    const formattedHost = isIPv6 ? `[${address}]` : address
+    // Nettoyage Scope ID
+    const rsdAddress = address.split('%')[0]
+    const isIPv6 = rsdAddress.includes(':')
+    const formattedHost = isIPv6 ? `[${rsdAddress}]` : rsdAddress
     const args = ['-m', 'pymobiledevice3', 'lockdown', 'heartbeat', '--rsd', formattedHost, port]
 
     const hbRunner = new ProcessRunner(`hb-${udid.slice(0,8)}`)
@@ -157,21 +158,31 @@ class TunneldService extends EventEmitter {
 
   async _triggerNativeFallback(manualIp = null) {
     if (this._isQuitting || this.activeConnection) return
-    dbg('[tunneld-service] Fallback Bonjour...')
     
     let targetData = null
-    const instances = await nativeBonjour.scan(4000)
-    if (instances.length > 0) {
-      targetData = await nativeBonjour.resolve(instances[0])
-    }
 
-    if (!targetData && manualIp) {
+    // PRIORITE : Si on a une IP manuelle (souvent IPv4 via WebSocket), on tente la resolution directe.
+    // L'IPv4 est BEAUCOUP plus stable que l'IPv6 Link-Local sur Windows pour pymobiledevice3.
+    if (manualIp) {
+      dbg(`[tunneld-service] Tentative prioritaire sur l'IP detectee (WebSocket) : ${manualIp}...`)
       targetData = await nativeBonjour.resolve({ name: 'Manual', address: manualIp })
     }
 
+    // FALLBACK : Si pas d'IP manuelle ou echec, on scanne le réseau
+    if (!targetData) {
+      dbg('[tunneld-service] Recherche d\'appareils via Bonjour Natif (dns-sd)...')
+      const instances = await nativeBonjour.scan(4000)
+      if (instances.length > 0) {
+        dbg(`[tunneld-service] Appareil trouve via Bonjour : ${instances[0].name}. Resolution...`)
+        targetData = await nativeBonjour.resolve(instances[0])
+      }
+    }
+
     if (targetData && !this.activeConnection) {
+      dbg(`[tunneld-service] Succes via Fallback : ${targetData.address}:${targetData.port}`)
       this._handleData(`--rsd ${targetData.address} ${targetData.port} [start-tunnel-task-usbmux-native-WiFi]`)
     } else if (!this.activeConnection) {
+      dbg('[tunneld-service] Echec fallback. Relance du cycle dans 5s...')
       this._scheduleRestart(5000)
     }
   }
