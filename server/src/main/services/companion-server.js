@@ -1,6 +1,7 @@
 'use strict'
 
-const { WebSocketServer, WebSocket } = require('ws')
+const WebSocket = require('ws')
+const { WebSocketServer } = WebSocket
 const os = require('os')
 const { EventEmitter } = require('events')
 const { dbg, sendStatus } = require('../logger')
