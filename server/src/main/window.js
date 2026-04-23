@@ -63,10 +63,13 @@ app.whenReady().then(() => {
   // Liaison Tunnel -> Companion
   tunnel.setOnStatusChange((active) => companion.updateTunnelStatus(active))
 
-  // Liaison GPS -> Companion (Broadcast de la position vers l'iPhone)
   gps.on('location-changed', ({ lat, lon, name }) => {
     tunnel.stopHeartbeats() // On arrête les heartbeats pour laisser la simulation prioritaire
     companion.broadcastLocation(lat, lon, name)
+  })
+
+  gps.on('log', (msg) => {
+    if (mainWindow) mainWindow.webContents.send('status-update', { service: 'server-log', state: 'new', data: msg })
   })
 
   // Liaison Companion -> GPS (Demande de l'iPhone vers le PC)

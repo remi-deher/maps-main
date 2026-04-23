@@ -12,7 +12,7 @@ import { logEvent } from './src/services/logger';
 import Omnibar from './src/components/Omnibar';
 import SettingsModal from './src/components/SettingsModal';
 import DebugModal from './src/components/DebugModal';
-import { ActionPanel, FavoritesPanel } from './src/components/Panels';
+import { ActionPanel, FavoritesPanel, QuickFavorites } from './src/components/Panels';
 
 export default function App() {
   // Hooks de logique
@@ -119,6 +119,7 @@ export default function App() {
           <MapView
             ref={mapRef}
             style={StyleSheet.absoluteFill}
+            mapType="hybrid"
             initialRegion={{ latitude: 48.8566, longitude: 2.3522, latitudeDelta: 0.01, longitudeDelta: 0.01 }}
             onLongPress={async (e) => {
               const coords = e.nativeEvent.coordinate;
@@ -169,6 +170,12 @@ export default function App() {
               </TouchableOpacity>
             )}
           </View>
+
+          <QuickFavorites 
+            favorites={favorites} 
+            onTeleport={handleTeleport} 
+            visible={!pendingCoords && !isFavsOpen} 
+          />
 
           {simulatedCoords && (
             <TouchableOpacity 

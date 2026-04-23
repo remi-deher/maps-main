@@ -56,6 +56,8 @@ function App() {
         setStatus(prev => ({ ...prev, state: data.state, message: data.message, type: data.type || prev.type }));
       } else if (data.service === 'client-log') {
         setClientLogs(prev => [data.data, ...prev].slice(0, 50));
+      } else if (data.service === 'server-log') {
+        setClientLogs(prev => [{ timestamp: new Date().toLocaleTimeString(), message: `[SRV] ${data.data}`, type: 'info' }, ...prev].slice(0, 50));
       }
     });
 

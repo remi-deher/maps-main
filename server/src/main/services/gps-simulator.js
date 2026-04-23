@@ -166,17 +166,23 @@ class GpsSimulator extends EventEmitter {
       }
 
       proc.stdout.on('data', (d) => {
+        const msg = d.toString().trim()
+        if (msg) {
+          dbg(`[gps-sim] [stdout] : ${msg}`)
+          this.emit('log', msg)
+        }
         const latencyMs = Date.now() - spawnTime
         done({ success: true, latencyMs })
       })
 
       proc.stderr.on('data', (d) => {
-        const msg = d.toString()
+        const msg = d.toString().trim()
         stderr += msg
         
         // Log de flux pour debug
-        if (msg.trim()) {
-          dbg(`[gps-sim] [stderr] : ${msg.trim()}`)
+        if (msg) {
+          dbg(`[gps-sim] [stderr] : ${msg}`)
+          this.emit('log', `Erreur: ${msg}`)
         }
         
         if (msg.toLowerCase().includes('error') || msg.toLowerCase().includes('failed')) {
