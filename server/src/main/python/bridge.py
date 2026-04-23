@@ -2,10 +2,8 @@ import asyncio
 import json
 import sys
 import logging
-import socket
-from pymobiledevice3.remote.remote_service_discovery import RemoteServiceDiscoveryService
-from pymobiledevice3.services.dvt.instruments.dvt_provider import DvtProvider
-from pymobiledevice3.services.dvt.instruments.location_simulation import LocationSimulation
+import subprocess
+import os
 
 # Configuration logs
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -13,79 +11,71 @@ logger = logging.getLogger('bridge')
 
 class PymobiledeviceBridge:
     def __init__(self):
-        self.providers = {}  # Cache: (host, port) -> DvtProvider
+        self.current_process = None
+        self.current_params = None
 
     def _clean_host(self, host):
-        """Retire les crochets si presents"""
         if not host: return host
         return host.replace('[', '').replace(']', '')
 
-    async def get_dvt_provider(self, host, port):
-        host = self._clean_host(host)
-        key = (host, port)
-        
-        if key in self.providers:
-            provider = self.providers[key]
+    async def stop_current_sim(self):
+        if self.current_process:
+            logger.info("Arret de la simulation precedente...")
             try:
-                if provider.dtx and not provider.dtx.transport.writer.is_closing():
-                    return provider
+                # Sur Windows, on tue l'arbre de processus
+                subprocess.run(['taskkill', '/F', '/T', '/PID', str(self.current_process.pid)], 
+                             capture_output=True, check=False)
             except Exception:
-                pass
-            
-            logger.info(f"Connexion DTX perdue pour {host}:{port}, nettoyage...")
-            await provider.close()
-            del self.providers[key]
+                self.current_process.kill()
+            self.current_process = None
 
-        logger.info(f"Tentative de connexion RSD/DVT vers {host}:{port}")
+    async def set_location(self, host, port, lat, lon):
+        host = self._clean_host(host)
         
+        # Si c'est la même position, on ne fait rien
+        new_params = (host, port, lat, lon)
+        if self.current_params == new_params and self.current_process and self.current_process.poll() is None:
+            return {"success": True, "info": "already_set"}
+
+        await self.stop_current_sim()
+
+        logger.info(f"Execution CLI: simulate-location set sur {host}:{port} ({lat}, {lon})")
+        
+        # Construction de la commande exacte qui a fonctionné pour l'utilisateur
+        cmd = [
+            sys.executable, "-m", "pymobiledevice3", 
+            "developer", "dvt", "simulate-location", "set", 
+            "--rsd", host, str(port), 
+            str(lat), str(lon)
+        ]
+
         try:
-            # 1. DETECTION DE LA FAMILLE (IPv4 ou IPv6)
-            family = socket.AF_INET6 if ':' in host else socket.AF_INET
+            # On lance le processus en arrière-plan
+            # On utilise CREATE_NO_WINDOW pour éviter les flashs de console sur Windows
+            self.current_process = subprocess.Popen(
+                cmd, 
+                stdout=subprocess.PIPE, 
+                stderr=subprocess.PIPE,
+                stdin=subprocess.PIPE,
+                creationflags=subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0
+            )
+            self.current_params = new_params
             
-            # 2. RESOLUTION MANUELLE DU TUPLE
-            addr_info = socket.getaddrinfo(host, port, family, socket.AF_INET6 if family == socket.AF_INET6 else socket.AF_INET)
-            resolved_addr = addr_info[0][4] 
-            logger.info(f"Adresse resolue ({'IPv6' if family == socket.AF_INET6 else 'IPv4'}): {resolved_addr}")
+            # On attend un tout petit peu pour vérifier s'il crashe immédiatement
+            await asyncio.sleep(1)
+            if self.current_process.poll() is not None:
+                stderr = self.current_process.stderr.read().decode()
+                logger.error(f"Le processus de simulation a quitte prematurement: {stderr}")
+                return {"success": False, "error": stderr}
             
-            # 3. CONNEXION MANUELLE VIA SOCKET
-            loop = asyncio.get_running_loop()
-            sock = socket.socket(family, socket.SOCK_STREAM)
-            sock.setblocking(False)
-            await loop.sock_connect(sock, resolved_addr)
-            logger.info("Socket connectee.")
-
-            # 4. CREATION DU SERVICE RSD ET MONKEYPATCHING
-            rsd = RemoteServiceDiscoveryService(host, port)
-            reader, writer = await asyncio.open_connection(sock=sock)
-            
-            # Injection manuelle dans RemoteXPCConnection
-            rsd.service._reader = reader
-            rsd.service._writer = writer
-            
-            # Handshake HTTP2
-            await rsd.service._do_handshake()
-            
-            # Monkeypatch
-            async def fake_connect():
-                pass
-            rsd.service.connect = fake_connect
-            
-            await rsd.connect()
-            logger.info(f"Connexion RSD etablie sur {host}")
-            
+            return {"success": True}
         except Exception as e:
-            logger.error(f"Echec connexion RSD: {e}")
-            raise
-
-        provider = DvtProvider(rsd)
-        await provider.connect()
-        self.providers[key] = provider
-        return provider
+            logger.error(f"Erreur lors du lancement CLI: {e}")
+            return {"success": False, "error": str(e)}
 
     async def handle_command(self, reader, writer):
         data = await reader.read(4096)
-        if not data:
-            return
+        if not data: return
 
         try:
             request = json.loads(data.decode())
@@ -93,25 +83,18 @@ class PymobiledeviceBridge:
             host = self._clean_host(request.get('rsd_host'))
             port = request.get('rsd_port')
             
-            logger.info(f"Action recue: {action} pour {host}")
-
             if action == 'set_location':
-                lat = float(request.get('lat'))
-                lon = float(request.get('lon'))
-                provider = await self.get_dvt_provider(host, port)
-                async with LocationSimulation(provider) as sim:
-                    await sim.set(lat, lon)
-                response = {"success": True}
+                lat, lon = float(request.get('lat')), float(request.get('lon'))
+                response = await self.set_location(host, port, lat, lon)
             
             elif action == 'clear_location':
-                provider = await self.get_dvt_provider(host, port)
-                async with LocationSimulation(provider) as sim:
-                    await sim.clear()
+                await self.stop_current_sim()
                 response = {"success": True}
                 
             elif action == 'heartbeat':
-                provider = await self.get_dvt_provider(host, port)
-                response = {"success": True, "status": "alive"}
+                # Pour le heartbeat, on peut juste vérifier si le processus de sim tourne encore
+                status = "alive" if self.current_process and self.current_process.poll() is None else "idle"
+                response = {"success": True, "status": status}
 
             elif action == 'ping':
                 response = {"success": True, "pong": True}

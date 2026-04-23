@@ -43,6 +43,12 @@ class GpsBridge extends EventEmitter {
   }
 
   async sendCommand(action, rsdHost, rsdPort, payload = {}) {
+    // Log pour aide au débug manuel
+    if (action === 'set_location') {
+      const cmd = `.\\resources\\python\\python.exe -m pymobiledevice3 developer dvt simulate-location set --rsd ${rsdHost} ${rsdPort} ${payload.lat} ${payload.lon}`
+      dbg(`[DEBUG MANUEL] Commande à tester : ${cmd}`)
+    }
+
     return new Promise((resolve) => {
       if (!this.isReady) {
         return resolve({ success: false, error: 'Le pont Python n\'est pas encore pret' })

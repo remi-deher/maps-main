@@ -51,6 +51,7 @@ class TunneldService extends EventEmitter {
 
     try {
       dbg(`[tunneld-service] lancement du demon tunneld (Base Daemon)...`)
+      dbg(`[DEBUG MANUEL] Commande à tester : .\\resources\\python\\python.exe -m pymobiledevice3 remote tunneld`)
       sendStatus('tunneld', 'starting', 'Initialisation du demon tunnel...')
 
       // Lancement du processus de base (Priorité 4 / USB / Passive Discovery)
