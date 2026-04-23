@@ -78,6 +78,10 @@ class GpsSimulator extends EventEmitter {
     }
 
     const rsdPort = this.tunnel.getRsdPort()
+    if (!rsdPort) {
+      dbg('[gps-sim] tunnel rétabli ? — aucun port RSD valide, annulation restauration')
+      return
+    }
 
     if (this.process && !this.process.killed && this.currentPort === rsdPort) {
       dbg('[gps-sim] tunnel rétabli — simulation déjà active sur ce port')
@@ -230,7 +234,14 @@ class GpsSimulator extends EventEmitter {
         this.stop() // On tue le zombie
         this.currentPort = null // On force l'oubli du port actuel
       } else {
-        dbg('[gps-sim] watchdog: processus mort détecté — relance')
+        dbg('[gps-sim] watchdog: processus mort détecté — vérification du tunnel...')
+      }
+
+      // Si le tunnel manager n'a plus de port valide, inutile de tenter une restauration immédiate
+      if (!rsdPort) {
+        dbg('[gps-sim] watchdog: tunnel déconnecté — attente du signal de rétablissement...')
+        this.tunnel.forceRefresh() // On aide un peu le manager
+        return
       }
 
       this.onTunnelRestored()
