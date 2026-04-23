@@ -88,14 +88,14 @@ function App() {
         <MapView onMapClick={handleMapClick} selectedPos={selectedPos || activeSim} />
       </div>
 
-      {/* Top Floating Bar (Omnibar) & Active Sim Pill */}
-      <div className="absolute top-6 left-6 right-6 z-50 flex flex-col items-center pointer-events-none gap-4">
+      {/* Top Floating Bar (Omnibar) */}
+      <div className="absolute top-6 left-1/2 -translate-x-1/2 w-full max-w-2xl z-[100] px-6">
         <motion.div 
           initial={{ y: -20, opacity: 0 }}
           animate={{ y: 0, opacity: 1 }}
-          className="w-full max-w-2xl pointer-events-auto glass-deeper rounded-2xl h-14 flex items-center px-4 gap-4 shadow-2xl"
+          className="w-full pointer-events-auto glass-deeper rounded-2xl h-14 flex items-center px-4 gap-4 shadow-2xl cursor-text"
+          onClick={() => document.getElementById('search-input')?.focus()}
         >
-          {/* ... existing omnibar content ... */}
           <button 
             onClick={() => setSidebarOpen(true)}
             className="p-2 hover:bg-white/10 rounded-xl transition-colors"
@@ -106,17 +106,15 @@ function App() {
           <div className="relative flex-1 flex items-center">
             <Search className="w-5 h-5 text-slate-300 absolute left-0" />
             <input 
+              id="search-input"
               type="text" 
               value={searchQuery}
-              onChange={(e) => {
-                setSearchQuery(e.target.value);
-                // On debounce manuellement ou on cherche seulement sur Enter
-              }}
+              onChange={(e) => setSearchQuery(e.target.value)}
               onKeyDown={(e) => {
                 if (e.key === 'Enter') search(searchQuery);
               }}
-              placeholder="Rechercher (Appuyez sur Entrée)..."
-              className="w-full bg-transparent border-none outline-none text-lg pl-10 text-white font-bold placeholder:text-slate-400 pointer-events-auto relative z-10"
+              placeholder="Rechercher (Entrée pour valider)..."
+              className="w-full bg-transparent border-none outline-none text-lg pl-10 text-white font-bold placeholder:text-slate-400 pointer-events-auto"
               style={{ WebkitAppRegion: 'no-drag', userSelect: 'text' }}
             />
           </div>
@@ -128,7 +126,35 @@ function App() {
           </button>
         </motion.div>
 
-        {/* Active Simulation Pill */}
+        {/* Search Results Dropdown (Attached to Omnibar) */}
+        <AnimatePresence>
+          {results.length > 0 && (
+            <motion.div 
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: 10 }}
+              className="w-full mt-2 glass-deeper rounded-2xl overflow-hidden shadow-2xl pointer-events-auto border border-white/5"
+            >
+              {results.map((res, i) => (
+                <button 
+                  key={i}
+                  onClick={() => selectLocation(res)}
+                  className="w-full p-4 text-left hover:bg-white/10 border-b border-white/5 last:border-none flex items-start gap-4 transition-colors"
+                >
+                  <MapPin className="w-5 h-5 mt-1 text-blue-400" />
+                  <div>
+                    <p className="font-bold text-white text-base line-clamp-1">{res.name}</p>
+                    <p className="text-xs text-slate-400 font-medium">{res.lat}, {res.lon}</p>
+                  </div>
+                </button>
+              ))}
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </div>
+
+      {/* Status & Active Pill Container */}
+      <div className="absolute top-24 left-1/2 -translate-x-1/2 z-50 flex flex-col items-center pointer-events-none gap-4">
         <AnimatePresence>
           {activeSim && (
             <motion.div 
@@ -163,32 +189,6 @@ function App() {
                   <X className="w-5 h-5" />
                 </button>
               </div>
-            </motion.div>
-          )}
-        </AnimatePresence>
-
-        {/* Search Results Dropdown */}
-        <AnimatePresence>
-          {results.length > 0 && (
-            <motion.div 
-              initial={{ opacity: 0, y: -10 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -10 }}
-              className="w-full max-w-2xl glass-deeper rounded-2xl overflow-hidden shadow-2xl pointer-events-auto border border-white/5"
-            >
-              {results.map((res, i) => (
-                <button 
-                  key={i}
-                  onClick={() => selectLocation(res)}
-                  className="w-full p-4 text-left hover:bg-white/10 border-b border-white/5 last:border-none flex items-start gap-4 transition-colors"
-                >
-                  <MapPin className="w-5 h-5 mt-1 text-blue-400" />
-                  <div>
-                    <p className="font-bold text-white text-base line-clamp-1">{res.name}</p>
-                    <p className="text-xs text-slate-400 font-medium">{res.lat}, {res.lon}</p>
-                  </div>
-                </button>
-              ))}
             </motion.div>
           )}
         </AnimatePresence>
