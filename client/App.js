@@ -214,6 +214,10 @@ export default function App() {
             onClose={() => setShowSettings(false)}
             initialIp={serverIp}
             initialPort={serverPort}
+            status={status}
+            deviceInfo={deviceInfo}
+            connectionType={connectionType}
+            rsdAddress={rsdAddress}
             onSave={(ip, port) => { 
                 logEvent.add(`Config manuelle: ${ip}:${port}`);
                 saveSettings(ip, port); 

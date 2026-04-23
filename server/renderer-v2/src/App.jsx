@@ -8,7 +8,7 @@ import { useStorage } from './hooks/useStorage';
 import { useSearch } from './hooks/useSearch';
 
 function App() {
-  const [status, setStatus] = useState({ state: 'starting', message: 'Initialisation...', type: null });
+  const [status, setStatus] = useState({ state: 'starting', message: 'Initialisation...', type: null, device: null });
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [qrOpen, setQrOpen] = useState(false);
@@ -47,13 +47,19 @@ function App() {
   useEffect(() => {
     window.gps.getStatus().then(data => {
       if (data.tunnelReady) {
-        setStatus({ state: 'ready', message: 'iPhone connecté', type: data.connectionType });
+        setStatus({ state: 'ready', message: 'iPhone connecté', type: data.connectionType, device: data.deviceInfo });
       }
     });
 
     const removeListener = window.gps.onStatus((data) => {
       if (data.service === 'tunneld') {
-        setStatus(prev => ({ ...prev, state: data.state, message: data.message, type: data.type || prev.type }));
+        setStatus(prev => ({ 
+          ...prev, 
+          state: data.state, 
+          message: data.message, 
+          type: data.type || prev.type,
+          device: data.device || prev.device
+        }));
       } else if (data.service === 'client-log') {
         setClientLogs(prev => [data.data, ...prev].slice(0, 50));
       } else if (data.service === 'server-log') {
@@ -116,6 +122,38 @@ function App() {
                 <button onClick={() => setSidebarOpen(false)} className="p-2 hover:bg-white/10 rounded-xl transition-colors"><X className="w-6 h-6" /></button>
               </div>
               <div className="flex-1 overflow-y-auto space-y-8 pr-2 custom-scrollbar">
+                {/* DEVICE INFO SECTION */}
+                <section>
+                  <div className="flex items-center gap-2 text-sm font-semibold text-slate-400 mb-3 px-2">
+                    <Monitor className="w-4 h-4 text-emerald-400" /> <span>APPAREIL</span>
+                  </div>
+                  <div className="mx-2 p-4 rounded-2xl bg-white/5 border border-white/5 space-y-3">
+                    <div className="flex justify-between items-center">
+                      <span className="text-xs text-slate-500 uppercase tracking-wider">Modèle</span>
+                      <span className="text-sm font-bold text-white">{status.device?.type || 'iPhone'}</span>
+                    </div>
+                    <div className="flex justify-between items-center">
+                      <span className="text-xs text-slate-500 uppercase tracking-wider">IP / RSD</span>
+                      <span className="text-sm font-mono text-blue-300">{status.type === 'USB' ? 'USB Native' : (status.device?.ip || '192.168.x.x')}</span>
+                    </div>
+                    <div className="flex justify-between items-center">
+                      <span className="text-xs text-slate-500 uppercase tracking-wider">iOS Version</span>
+                      <span className="text-sm font-bold text-slate-300">{status.device?.version || 'N/A'}</span>
+                    </div>
+                    <div className="flex justify-between items-center">
+                      <span className="text-xs text-slate-500 uppercase tracking-wider">Appairé</span>
+                      <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${status.device?.paired ? 'bg-emerald-500/20 text-emerald-400' : 'bg-amber-500/20 text-amber-400'}`}>
+                        {status.device?.paired ? 'OUI' : 'NON (DVT)'}
+                      </span>
+                    </div>
+                    <div className="flex justify-between items-center pt-2 border-t border-white/5">
+                      <span className="text-xs text-slate-500 uppercase tracking-wider">Connexion</span>
+                      <span className="text-xs font-bold text-emerald-400 flex items-center gap-1">
+                        <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" /> {status.type || 'Attente...'}
+                      </span>
+                    </div>
+                  </div>
+                </section>
                 {/* FAVORIS SECTION */}
                 <section>
                   <div className="flex items-center gap-2 text-sm font-semibold text-slate-400 mb-3 px-2">

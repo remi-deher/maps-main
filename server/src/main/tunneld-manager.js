@@ -118,7 +118,11 @@ module.exports = {
   getRsdAddress: () => state.address,
   getRsdPort: () => state.port,
   getConnectionType: () => state.type,
+  getDeviceInfo: () => service.deviceInfo,
   stopHeartbeats: () => service.stopHeartbeats(),
   setOnTunnelRestored,
-  setOnStatusChange: (cb) => { _onStatusChangeCb = cb },
+  setOnStatusChange: (cb) => { 
+    _onStatusChangeCb = cb
+    service.on('device-info-updated', () => { if (_onStatusChangeCb) _onStatusChangeCb(state.isConnected) })
+  },
 }

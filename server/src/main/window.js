@@ -49,7 +49,7 @@ app.whenReady().then(() => {
   
   // Initialisation des services
   gps = new GpsSimulator(tunnel)
-  companion = new companionServer()
+  companion = new companionServer(tunnel)
   
   // Enregistre les handlers IPC
   registerIpcHandlers(tunnel, gps, companion)

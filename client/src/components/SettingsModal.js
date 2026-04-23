@@ -1,10 +1,15 @@
+'use strict'
+
 import React, { useState } from 'react';
 import { StyleSheet, Text, View, TextInput, TouchableOpacity, Modal, Dimensions } from 'react-native';
 import { COLORS } from '../constants/theme';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
-export default function SettingsModal({ visible, onClose, initialIp, initialPort, onSave }) {
+export default function SettingsModal({ 
+  visible, onClose, initialIp, initialPort, onSave, 
+  status, deviceInfo, connectionType, rsdAddress 
+}) {
   const [ip, setIp] = useState(initialIp);
   const [port, setPort] = useState(initialPort);
 
@@ -38,6 +43,40 @@ export default function SettingsModal({ visible, onClose, initialIp, initialPort
             />
           </View>
 
+          {/* SECTION STATUS CONNEXION */}
+          <View style={styles.statusBox}>
+            <Text style={styles.statusLabel}>ETAT DE LA CONNEXION</Text>
+            
+            <View style={styles.statusRow}>
+              <View style={[styles.statusDot, { backgroundColor: status === 'Connecté' ? COLORS.success : COLORS.error }]} />
+              <Text style={styles.statusText}>{status}</Text>
+              <Text style={styles.connectionType}>{connectionType ? `(${connectionType})` : ''}</Text>
+            </View>
+
+            {status === 'Connecté' && (
+              <View style={styles.detailsBox}>
+                <View style={styles.detailRow}>
+                  <Text style={styles.detailLabel}>RSD Serveur:</Text>
+                  <Text style={styles.detailValue}>{rsdAddress || 'N/A'}</Text>
+                </View>
+                <View style={styles.detailRow}>
+                  <Text style={styles.detailLabel}>Modèle:</Text>
+                  <Text style={styles.detailValue}>{deviceInfo?.type || 'iPhone'}</Text>
+                </View>
+                <View style={styles.detailRow}>
+                  <Text style={styles.detailLabel}>iOS:</Text>
+                  <Text style={styles.detailValue}>{deviceInfo?.version || '?'}</Text>
+                </View>
+                <View style={styles.detailRow}>
+                  <Text style={styles.detailLabel}>Appairage:</Text>
+                  <Text style={[styles.detailValue, { color: deviceInfo?.paired ? COLORS.success : COLORS.warning }]}>
+                    {deviceInfo?.paired ? 'VALIDE' : 'NON (DVT)'}
+                  </Text>
+                </View>
+              </View>
+            )}
+          </View>
+
           <View style={styles.actions}>
             <TouchableOpacity style={styles.cancelBtn} onPress={onClose}>
               <Text style={styles.cancelText}>ANNULER</Text>
@@ -56,12 +95,33 @@ export default function SettingsModal({ visible, onClose, initialIp, initialPort
 }
 
 const styles = StyleSheet.create({
-  overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.7)', justifyContent: 'center', alignItems: 'center' },
+  overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.8)', justifyContent: 'center', alignItems: 'center' },
   content: { width: SCREEN_WIDTH * 0.85, backgroundColor: COLORS.surface, borderRadius: 30, padding: 25 },
   title: { fontSize: 22, fontWeight: '900', color: COLORS.text, marginBottom: 20, textAlign: 'center' },
   inputGroup: { marginBottom: 15 },
   label: { fontSize: 10, color: COLORS.textMuted, fontWeight: '900', marginBottom: 5, marginLeft: 5 },
   input: { backgroundColor: COLORS.background, borderRadius: 15, padding: 15, color: COLORS.text, fontSize: 16 },
+  
+  statusBox: { 
+    backgroundColor: COLORS.background, 
+    borderRadius: 20, 
+    padding: 15, 
+    marginTop: 5, 
+    marginBottom: 20,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.05)'
+  },
+  statusLabel: { fontSize: 9, color: COLORS.textMuted, fontWeight: '900', marginBottom: 8 },
+  statusRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  statusDot: { width: 8, height: 8, borderRadius: 4 },
+  statusText: { color: COLORS.text, fontSize: 14, fontWeight: '800' },
+  connectionType: { color: COLORS.primary, fontSize: 12, fontWeight: '600' },
+  
+  detailsBox: { marginTop: 12, borderTopWidth: 1, borderTopColor: 'rgba(255,255,255,0.05)', paddingTop: 10, gap: 4 },
+  detailRow: { flexDirection: 'row', justifyContent: 'space-between' },
+  detailLabel: { color: COLORS.textMuted, fontSize: 11 },
+  detailValue: { color: COLORS.textSecondary, fontSize: 11, fontWeight: '700' },
+
   actions: { flexDirection: 'row', gap: 10, marginTop: 10 },
   cancelBtn: { flex: 1, padding: 15, alignItems: 'center' },
   saveBtn: { flex: 2, backgroundColor: COLORS.primary, padding: 15, borderRadius: 15, alignItems: 'center' },

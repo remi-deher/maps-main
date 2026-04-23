@@ -8,6 +8,9 @@ export function useSocket(ip, port, isMaintaining) {
   const [favorites, setFavorites] = useState([]);
   const [recentHistory, setRecentHistory] = useState([]);
   const [simulatedCoords, setSimulatedCoords] = useState(null);
+  const [deviceInfo, setDeviceInfo] = useState(null);
+  const [connectionType, setConnectionType] = useState(null);
+  const [rsdAddress, setRsdAddress] = useState(null);
   
   const ws = useRef(null);
   const isConnecting = useRef(false);
@@ -64,6 +67,9 @@ export function useSocket(ip, port, isMaintaining) {
           if (payload.type === 'STATUS') {
             if (payload.data.favorites) setFavorites(payload.data.favorites);
             if (payload.data.recentHistory) setRecentHistory(payload.data.recentHistory);
+            if (payload.data.deviceInfo) setDeviceInfo(payload.data.deviceInfo);
+            if (payload.data.connectionType) setConnectionType(payload.data.connectionType);
+            if (payload.data.rsdAddress) setRsdAddress(payload.data.rsdAddress);
           } else if (payload.type === 'LOCATION') {
             setSimulatedCoords({
               latitude: payload.data.lat,
@@ -174,5 +180,5 @@ export function useSocket(ip, port, isMaintaining) {
     }
   };
 
-  return { status, favorites, recentHistory, simulatedCoords, sendAction, connect };
+  return { status, favorites, recentHistory, simulatedCoords, deviceInfo, connectionType, rsdAddress, sendAction, connect };
 }

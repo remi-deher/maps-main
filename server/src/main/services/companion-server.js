@@ -11,8 +11,9 @@ const favoritesManager = require('./favorites-manager')
  * CompanionServer - Gere la communication WebSocket avec l'application iOS
  */
 class CompanionServer extends EventEmitter {
-  constructor() {
+  constructor(tunnelManager) {
     super()
+    this.tunnel = tunnelManager
     this.wss = null
     this.port = null
     this.clients = new Set()
@@ -38,6 +39,10 @@ class CompanionServer extends EventEmitter {
   _refreshStatus() {
     this.status = {
       tunnelActive: this.status?.tunnelActive || false,
+      rsdAddress: this.tunnel?.getRsdAddress() || null,
+      rsdPort: this.tunnel?.getRsdPort() || null,
+      connectionType: this.tunnel?.getConnectionType() || null,
+      deviceInfo: this.tunnel?.getDeviceInfo() || null,
       maintainActive: this.status?.maintainActive || false,
       lastHeartbeat: this.status?.lastHeartbeat || null,
       favorites: favoritesManager.getFavorites(),

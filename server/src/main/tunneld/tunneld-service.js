@@ -8,8 +8,8 @@ const ProcessRunner = require('../utils/process-runner')
 const nativeBonjour = require('./native-bonjour')
 
 /**
- * TunneldService - Gère le démon pymobiledevice3 remote tunneld
- * Supporte USB et WiFi via une découverte unifiée.
+ * TunneldService - Gere le demon pymobiledevice3 remote tunneld
+ * Supporte USB et WiFi via une decouverte unifiee.
  */
 class TunneldService extends EventEmitter {
   constructor() {
@@ -19,6 +19,7 @@ class TunneldService extends EventEmitter {
     this.restartTimer = null
     this.fallbackTimer = null
     this.activeConnection = null // { address, port, type, id }
+    this.deviceInfo = { name: 'iPhone', version: 'Inconnue', type: 'Inconnu', paired: false }
     this._isQuitting = false
 
     // Liaison avec le runner principal
@@ -26,7 +27,6 @@ class TunneldService extends EventEmitter {
     this.runner.on('stderr', (text) => this._handleData(text))
     this.runner.on('exit', ({ code, signal }) => {
       if (this._isQuitting || this.restartTimer) return
-      dbg(`[tunneld] Démon tunnel arrêté (code ${code}, signal ${signal})`)
       dbg(`[tunneld] Demon tunnel arrete (code ${code}, signal ${signal})`)
       this.emit('disconnection', 'Demon tunnel arrete')
       this._scheduleRestart(TUNNEL_RESTART_DELAY)
@@ -70,6 +70,16 @@ class TunneldService extends EventEmitter {
   _handleData(text) {
     if (!text) return
 
+    // Detection d'infos device (TcpLockdownClient ou autre prompt)
+    // Format: <TcpLockdownClient ID:192.168.1.105 VERSION:26.5 TYPE:iPhone17,2 PAIRED:False>
+    const matchInfo = text.match(/VERSION:([\d.]+) TYPE:([^\s,>]+) PAIRED:(\w+)/)
+    if (matchInfo) {
+      this.deviceInfo.version = matchInfo[1]
+      this.deviceInfo.type = matchInfo[2]
+      this.deviceInfo.paired = matchInfo[3].toLowerCase() === 'true'
+      this.emit('device-info-updated', this.deviceInfo)
+    }
+
     // Format flexible pour capturer IP et Port (incluant le % pour le scope ID IPv6)
     const matchRsd = text.match(/--rsd\s+([\w:.%]+)\s+(\d+)/)
     
@@ -89,12 +99,17 @@ class TunneldService extends EventEmitter {
       if (this.activeConnection && this.activeConnection.address === address && this.activeConnection.port === port) return
 
       dbg(`[tunneld] Connexion detectee : ${type} (${address}:${port})`)
-      sendStatus('tunneld', 'ready', `Tunnel actif (${type}) -> ${address}:${port}`, { type })
       
       this._startHeartbeat(deviceId, type === 'WiFi')
 
       this.activeConnection = { address, port, type, id: deviceId }
       this.emit('connection', this.activeConnection)
+
+      // Mise a jour du statut avec infos device
+      sendStatus('tunneld', 'ready', `Tunnel actif (${type}) -> ${address}:${port}`, { 
+        type, 
+        device: this.deviceInfo 
+      })
     }
 
     // Detection de deconnexion
@@ -116,6 +131,10 @@ class TunneldService extends EventEmitter {
     this.activeConnection = null
   }
 
+  stopHeartbeats() {
+    this._stopAllHeartbeats()
+  }
+
   destroy() {
     this._isQuitting = true
     this.stop()
@@ -129,6 +148,10 @@ class TunneldService extends EventEmitter {
     if (isWiFi) args.push('--mobdev2')
 
     const hbRunner = new ProcessRunner(`hb-${udid.slice(0,8)}`)
+    
+    // On ecoute aussi les sorties du heartbeat pour choper les infos device
+    hbRunner.on('stdout', (t) => this._handleData(t))
+    
     hbRunner.spawn(PYTHON, args)
     this.heartbeatRunners.set(udid, hbRunner)
 
