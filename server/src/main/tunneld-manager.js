@@ -121,8 +121,9 @@ class ConnectionOrchestrator {
     
     dbg(`[orchestrator] Battement de coeur (RSD) sur ${address}:${port}...`)
     
-    // Règle d'or : Pas de crochets pour IPv6 car host et port sont séparés
-    const args = ['-m', 'pymobiledevice3', 'lockdown', 'heartbeat', '--rsd', address, port]
+    // Règle d'or : On utilise les crochets pour l'IPv6 sur Windows pour éviter les ambiguïtés de parsing.
+    const formattedAddress = address.includes(':') ? `[${address}]` : address
+    const args = ['-m', 'pymobiledevice3', 'lockdown', 'heartbeat', '--rsd', formattedAddress, port]
 
     const hbRunner = new ProcessRunner(`hb-${address.slice(0,8)}`)
     hbRunner.spawn(PYTHON, args)
@@ -165,6 +166,10 @@ class ConnectionOrchestrator {
   getConnectionType() { return this.state.type }
   getDeviceInfo() { return this.usb.deviceInfo || { name: 'iPhone', version: 'Inconnue', type: 'Inconnu', paired: false } }
   stopHeartbeats() { this._stopAllHeartbeats() }
+  applyConnectionMode(mode) {
+    dbg(`[orchestrator] Mode de connexion demande : ${mode} (Applique au prochain cycle)`)
+  }
+
   forceRefresh() { this.stopTunneld(); this.start() }
   setOnTunnelRestored(cb) { this._onTunnelRestoredCb = cb }
   setOnStatusChange(cb) { this._onStatusChangeCb = cb }

@@ -91,12 +91,13 @@ class GpsSimulator extends EventEmitter {
       const rsdAddress = this.tunnel.getRsdAddress()
       const rsdPort = this.tunnel.getRsdPort()
       
-      // IMPORT : Sur Windows, l'IPv6 Link-Local avec Scope ID (%xx) ne doit PAS avoir de crochets 
-      // si l'hôte et le port sont passés en arguments séparés.
+      // IMPORT : Sur Windows, l'IPv6 Link-Local avec Scope ID (%xx) nécessite souvent des crochets 
+      // pour être correctement parsée par les couches asyncio de Python.
+      const formattedAddress = rsdAddress.includes(':') ? `[${rsdAddress}]` : rsdAddress
       const args = [
         '-m', 'pymobiledevice3',
         'developer', 'dvt', 'simulate-location', command,
-        '--rsd', rsdAddress, rsdPort,
+        '--rsd', formattedAddress, rsdPort,
       ]
       if (extraArgs.length > 0) args.push('--', ...extraArgs)
 
