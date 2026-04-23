@@ -39,19 +39,22 @@ class PymobiledeviceBridge:
         logger.info(f"Tentative de connexion RSD/DVT vers {host}:{port}")
         
         try:
-            # 1. RESOLUTION MANUELLE DU TUPLE IPV6
-            addr_info = socket.getaddrinfo(host, port, socket.AF_INET6, socket.SOCK_STREAM)
-            resolved_addr = addr_info[0][4] 
-            logger.info(f"Adresse resolue: {resolved_addr}")
+            # 1. DETECTION DE LA FAMILLE (IPv4 ou IPv6)
+            family = socket.AF_INET6 if ':' in host else socket.AF_INET
             
-            # 2. CONNEXION MANUELLE VIA SOCKET
+            # 2. RESOLUTION MANUELLE DU TUPLE
+            addr_info = socket.getaddrinfo(host, port, family, socket.AF_INET6 if family == socket.AF_INET6 else socket.AF_INET)
+            resolved_addr = addr_info[0][4] 
+            logger.info(f"Adresse resolue ({'IPv6' if family == socket.AF_INET6 else 'IPv4'}): {resolved_addr}")
+            
+            # 3. CONNEXION MANUELLE VIA SOCKET
             loop = asyncio.get_running_loop()
-            sock = socket.socket(socket.AF_INET6, socket.SOCK_STREAM)
+            sock = socket.socket(family, socket.SOCK_STREAM)
             sock.setblocking(False)
             await loop.sock_connect(sock, resolved_addr)
             logger.info("Socket connectee.")
 
-            # 3. CREATION DU SERVICE RSD ET MONKEYPATCHING
+            # 4. CREATION DU SERVICE RSD ET MONKEYPATCHING
             rsd = RemoteServiceDiscoveryService(host, port)
             reader, writer = await asyncio.open_connection(sock=sock)
             
@@ -59,17 +62,16 @@ class PymobiledeviceBridge:
             rsd.service._reader = reader
             rsd.service._writer = writer
             
-            # On doit faire le handshake HTTP2 manuellement puisque rsd.connect va echouer sinon
+            # Handshake HTTP2
             await rsd.service._do_handshake()
             
-            # Monkeypatch connect pour eviter qu'il ne tente de re-ouvrir la socket
+            # Monkeypatch
             async def fake_connect():
                 pass
             rsd.service.connect = fake_connect
             
-            # On lance la connexion RSD (qui va maintenant utiliser notre socket deja prete)
             await rsd.connect()
-            logger.info("Connexion RSD etablie via injection de socket.")
+            logger.info(f"Connexion RSD etablie sur {host}")
             
         except Exception as e:
             logger.error(f"Echec connexion RSD: {e}")
