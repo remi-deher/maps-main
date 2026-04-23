@@ -98,6 +98,9 @@ class ConnectionOrchestrator extends EventEmitter {
     if (this._isQuitting) return
     dbg('[orchestrator] Demarrage du moteur de decouverte...')
     
+    // On lance le Pont Python pour les heartbeats et la simulation
+    gpsBridge.start()
+
     this.daemon.start()
     this.wifi.start()
 
