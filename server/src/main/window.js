@@ -25,11 +25,18 @@ function createWindow() {
   const isDev = process.env.NODE_ENV === 'development' || !app.isPackaged
 
   if (isDev) {
-    mainWindow.loadURL('http://localhost:3000')
-    // Optionnel : ouvrir les outils de développement automatiquement
-    // mainWindow.webContents.openDevTools()
+    mainWindow.loadURL('http://localhost:3000').catch(() => {
+      // Si le serveur de dev n'est pas lancé, on charge le build local
+      const prodPath = path.join(__dirname, '..', '..', 'dist-web', 'index.html')
+      mainWindow.loadFile(prodPath)
+    })
   } else {
-    mainWindow.loadFile(path.join(__dirname, '..', '..', 'dist', 'index.html'))
+    const prodPath = path.join(__dirname, '..', '..', 'dist-web', 'index.html')
+    const fallbackPath = path.join(app.getAppPath(), 'dist-web', 'index.html')
+    
+    mainWindow.loadFile(prodPath).catch(() => {
+      mainWindow.loadFile(fallbackPath)
+    })
   }
 
   // Injecter la référence fenêtre dans le logger

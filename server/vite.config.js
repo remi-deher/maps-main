@@ -7,7 +7,7 @@ export default defineConfig({
   root: path.resolve(__dirname, 'renderer-v2'),
   base: './',
   build: {
-    outDir: path.resolve(__dirname, 'dist'),
+    outDir: path.resolve(__dirname, 'dist-web'),
     emptyOutDir: true,
   },
   resolve: {
