@@ -5,11 +5,12 @@ const path = require('path')
 const { setWindow, dbg } = require('./logger')
 const tunnel = require('./tunneld-manager')
 const GpsSimulator = require('./services/gps-simulator')
-const companion = require('./services/companion-server')
+const companionServer = require('./services/companion-server')
 const { registerIpcHandlers } = require('./ipc/registry')
 
 let mainWindow
 let gps
+let companion
 
 function createWindow() {
   mainWindow = new BrowserWindow({
@@ -48,6 +49,7 @@ app.whenReady().then(() => {
   
   // Initialisation des services
   gps = new GpsSimulator(tunnel)
+  companion = new companionServer(tunnel)
   
   // Enregistre les handlers IPC
   registerIpcHandlers(tunnel, gps, companion)
@@ -63,26 +65,52 @@ app.whenReady().then(() => {
   // Liaison Tunnel -> Companion
   tunnel.setOnStatusChange((active) => companion.updateTunnelStatus(active))
 
-  // Liaison GPS -> Companion (Broadcast de la position vers l'iPhone)
   gps.on('location-changed', ({ lat, lon, name }) => {
     tunnel.stopHeartbeats() // On arrête les heartbeats pour laisser la simulation prioritaire
     companion.broadcastLocation(lat, lon, name)
   })
 
+  gps.on('log', (msg) => {
+    if (mainWindow) mainWindow.webContents.send('status-update', { service: 'server-log', state: 'new', data: msg })
+  })
+
   // Liaison Companion -> GPS (Demande de l'iPhone vers le PC)
   companion.on('request-location', ({ lat, lon }) => {
     gps.setLocation(lat, lon, "Position iPhone")
+    // Notifier le renderer pour mettre à jour la carte sur le PC
+    if (mainWindow) {
+        mainWindow.webContents.send('status-update', { 
+            service: 'location', 
+            state: 'active', 
+            data: { lat, lon, name: "iPhone Remote" } 
+        })
+    }
   })
 
   // Liaison Companion -> Tunnel (Aide à la découverte WiFi)
+  let lastIpDetected = null
+  let lastIpTime = 0
   companion.on('iphone-ip-detected', (ip) => {
-    dbg(`[main] Aide à la découverte : iPhone détecté sur ${ip}. Tentative RSD...`)
+    const now = Date.now()
+    if (lastIpDetected === ip && (now - lastIpTime) < 30000) return // Ignorer si moins de 30s
+    
+    lastIpDetected = ip
+    lastIpTime = now
+    dbg(`[main] Aide a la decouverte : iPhone detecte sur ${ip}. Tentative RSD...`)
     tunnel.setWifiIpOverride(ip)
   })
 
-  // Liaison Companion -> Renderer (Synchro Favoris temps réel)
+  // Liaison Companion -> Renderer (Synchro Favoris & Historique temps réel)
   companion.on('favorites-updated', (favs) => {
     if (mainWindow) mainWindow.webContents.send('status-update', { service: 'favorites', state: 'updated', data: favs })
+  })
+
+  companion.on('history-updated', (history) => {
+    if (mainWindow) mainWindow.webContents.send('status-update', { service: 'history', state: 'updated', data: history })
+  })
+
+  companion.on('client-log', (log) => {
+    if (mainWindow) mainWindow.webContents.send('status-update', { service: 'client-log', state: 'new', data: log })
   })
 
   companion.start(initialSettings.companionPort) // Démarrer le serveur WebSocket

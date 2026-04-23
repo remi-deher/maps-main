@@ -1,199 +1,198 @@
 'use strict'
 
-const { spawn } = require('child_process')
 const { EventEmitter } = require('events')
 const { dbg, sendStatus } = require('../logger')
 const { PYTHON } = require('../python-resolver')
 const { TUNNEL_RESTART_DELAY } = require('../constants')
+const ProcessRunner = require('../utils/process-runner')
 const nativeBonjour = require('./native-bonjour')
 
 /**
- * TunneldService - Gère le démon pymobiledevice3 remote tunneld
- * Supporte USB et WiFi via une découverte unifiée.
+ * TunneldService - Gere le demon pymobiledevice3 remote tunneld
+ * Supporte USB et WiFi via une decouverte unifiee.
  */
 class TunneldService extends EventEmitter {
   constructor() {
     super()
-    this.process = null
+    this.runner = new ProcessRunner('tunneld')
+    this.heartbeatRunners = new Map() // udid/rsd -> ProcessRunner
     this.restartTimer = null
     this.fallbackTimer = null
-    this._isQuitting = false
-    this.devices = new Map() // udid -> connectionInfo
-    this.heartbeatProcesses = new Map() // udid -> process
     this.activeConnection = null // { address, port, type, id }
-  }
+    this.deviceInfo = { name: 'iPhone', version: 'Inconnue', type: 'Inconnu', paired: false, ip: null }
+    this._isQuitting = false
 
-  start(manualIp = null) {
-    if (this._isQuitting) return
-    this.stop()
-
-    this._manualIp = manualIp
-    dbg('[tunneld-service] lancement du démon tunneld...')
-    sendStatus('tunneld', 'starting', 'Initialisation du démon tunnel...')
-
-    // On lance tunneld. Sur Windows, il surveille usbmux et Bonjour.
-    this.process = spawn(PYTHON, ['-m', 'pymobiledevice3', 'remote', 'tunneld'], {
-      stdio: ['ignore', 'pipe', 'pipe'],
-    })
-
-    // Fallback : Si après 10s on n'a rien trouvé, on tente dns-sd + manuel
-    this.fallbackTimer = setTimeout(() => this._triggerNativeFallback(this._manualIp), 10000)
-
-    const onData = (data) => {
-      const text = data.toString().trim()
-      if (!text) return
-      dbg(`[tunneld] ${text}`)
-
-      // Format flexible pour capturer IP et Port même avec des prefixes/couleurs
-      const matchRsd = text.match(/--rsd\s+([\w:.]+)\s+(\d+)/)
-      
-      if (matchRsd) {
-        const address = matchRsd[1]
-        const port = matchRsd[2]
-
-        // On cherche l'ID de l'appareil dans toute la ligne
-        // format : [start-tunnel-task-usbmux-UDID-TYPE]
-        // L'UDID peut contenir des tirets, donc on prend tout jusqu'au dernier tiret
-        const matchId = text.match(/\[start-tunnel-task-usbmux-(.+)-([^-]+)\]/)
-        const deviceId = matchId ? matchId[1] : 'unknown'
-        const typeRaw = matchId ? matchId[2] : ''
-        
-        const isUSB = typeRaw.toLowerCase().includes('usb')
-        const type = isUSB ? 'USB' : 'WiFi'
-
-        // On a trouvé, on annule le fallback
-        if (this.fallbackTimer) { clearTimeout(this.fallbackTimer); this.fallbackTimer = null }
-
-        // Anti-doublon : Si on est déjà connecté sur cette IP/Port, on ignore
-        if (this.activeConnection && this.activeConnection.address === address && this.activeConnection.port === port) return
-
-        dbg(`[tunneld] Connexion détectée : ${type} (${address}:${port})`)
-        sendStatus('tunneld', 'ready', `iPhone détecté via ${type} (${address}:${port})`, { type })
-        
-        // Démarrage du heartbeat pour garder l'iPhone réveillé
-        this._startHeartbeat(deviceId, type === 'WiFi')
-
-        this.activeConnection = { address, port, type, id: deviceId }
-        this.emit('connection', this.activeConnection)
-      }
-
-      // Détection de déconnexion plus robuste
-      if (text.includes('Disconnected from tunnel') || 
-          text.includes('terminating') || 
-          text.includes('Tunnel task failed')) {
-        dbg(`[tunneld-service] !!! DECONNEXION DETECTEE !!! Motif : ${text}`)
-        this._stopAllHeartbeats()
-        this.activeConnection = null
-        this.emit('disconnection', text)
-      }
-
-      // Détection d'erreurs fatales
-      if (text.toLowerCase().includes('error') && text.includes('usbmux')) {
-        this.emit('error', text)
-      }
-    }
-
-    this.process.stdout.on('data', onData)
-    this.process.stderr.on('data', onData)
-
-    this.process.on('exit', (code, signal) => {
+    // Liaison avec le runner principal
+    this.runner.on('stdout', (text) => this._handleData(text))
+    this.runner.on('stderr', (text) => this._handleData(text))
+    this.runner.on('exit', ({ code, signal }) => {
       if (this._isQuitting || this.restartTimer) return
-      dbg(`[tunneld] Arrêt du processus (code ${code}, signal ${signal})`)
-      this.emit('disconnection', 'Démon tunnel arrêté')
+      dbg(`[tunneld] Demon tunnel arrete (code ${code}, signal ${signal})`)
+      this.emit('disconnection', 'Demon tunnel arrete')
       this._scheduleRestart(TUNNEL_RESTART_DELAY)
     })
   }
 
-  _startHeartbeat(udid, isWiFi) {
-    if (this.heartbeatProcesses.has(udid)) return
+  async start(manualIp = null) {
+    if (this._isQuitting) return
+    if (this.runner.isRunning && this._manualIp === manualIp) return
+    if (this._isStarting) return
+    this._isStarting = true
+
+    try {
+      if (this.runner.isRunning) {
+        this.stop()
+        await new Promise(resolve => setTimeout(resolve, 1500))
+      }
+
+      this._manualIp = manualIp
+      dbg('[tunneld-service] lancement du demon tunneld...')
+      sendStatus('tunneld', 'starting', 'Initialisation du demon tunnel...')
+
+      this.runner.spawn(PYTHON, ['-m', 'pymobiledevice3', 'remote', 'tunneld'])
+
+      if (this.fallbackTimer) clearTimeout(this.fallbackTimer)
+      this.fallbackTimer = setTimeout(() => this._triggerNativeFallback(this._manualIp), 10000)
+    } finally {
+      setTimeout(() => { this._isStarting = false }, 2000)
+    }
+  }
+
+  _handleData(text) {
+    if (!text) return
+
+    // Detection d'infos device
+    const matchId = text.match(/ID:([\w:.]+)/)
+    const matchVer = text.match(/VERSION:([\d.]+)/)
+    const matchType = text.match(/TYPE:([^ >]+)/)
+    const matchPaired = text.match(/PAIRED:(\w+)/)
+
+    if (matchId || matchVer || matchType || matchPaired) {
+      if (matchId) this.deviceInfo.ip = matchId[1]
+      if (matchVer) this.deviceInfo.version = matchVer[1]
+      if (matchType) this.deviceInfo.type = matchType[1].replace(/[,>]$/, '')
+      if (matchPaired) this.deviceInfo.paired = matchPaired[1].toLowerCase().includes('true')
+      this.emit('device-info-updated', this.deviceInfo)
+    }
+
+    // Format flexible pour capturer IP et Port
+    const matchRsd = text.match(/--rsd\s+([\w:.%]+)\s+(\d+)/)
     
-    dbg(`[tunneld-service] Démarrage du battement de coeur (heartbeat) pour ${udid}...`)
-    const args = ['-m', 'pymobiledevice3', 'lockdown', 'heartbeat', '--udid', udid]
-    if (isWiFi) args.push('--mobdev2')
+    if (matchRsd) {
+      const address = matchRsd[1]
+      const port = matchRsd[2]
 
-    const proc = spawn(PYTHON, args)
-    this.heartbeatProcesses.set(udid, proc)
+      const matchIdTask = text.match(/\[start-tunnel-task-usbmux-(.+)-([^-]+)\]/)
+      const deviceId = matchIdTask ? matchIdTask[1] : 'native'
+      const typeRaw = matchIdTask ? matchIdTask[2] : ''
+      const isUSB = typeRaw.toLowerCase().includes('usb')
+      const type = isUSB ? 'USB' : 'WiFi'
 
-    proc.on('exit', () => {
-      if (this.heartbeatProcesses.get(udid) === proc) {
-        this.heartbeatProcesses.delete(udid)
+      if (this.fallbackTimer) { clearTimeout(this.fallbackTimer); this.fallbackTimer = null }
+      if (this.activeConnection && this.activeConnection.address === address && this.activeConnection.port === port) return
+
+      dbg(`[tunneld] Connexion detectee : ${type} (${address}:${port})`)
+      
+      // On lance le heartbeat via RSD pour eviter le prompt "Choose device"
+      this._startRsdHeartbeat(address, port, deviceId)
+
+      this.activeConnection = { address, port, type, id: deviceId }
+      this.emit('connection', this.activeConnection)
+      
+      sendStatus('tunneld', 'ready', `Tunnel actif (${type}) -> ${address}:${port}`, { 
+        type, 
+        device: this.deviceInfo 
+      })
+    }
+
+    if (text.includes('Disconnected from tunnel') || text.includes('Tunnel task failed')) {
+      dbg(`[tunneld-service] Deconnexion detectee : ${text}`)
+      this._stopAllHeartbeats()
+      this.activeConnection = null
+      this.emit('disconnection', text)
+    }
+  }
+
+  _startRsdHeartbeat(address, port, udid) {
+    const key = `${address}:${port}`
+    if (this.heartbeatRunners.has(key)) return
+    
+    dbg(`[tunneld-service] Battement de coeur (RSD) sur ${key}...`)
+    
+    // Nettoyage Scope ID
+    const rsdAddress = address.split('%')[0]
+    const isIPv6 = rsdAddress.includes(':')
+    const formattedHost = isIPv6 ? `[${rsdAddress}]` : rsdAddress
+    const args = ['-m', 'pymobiledevice3', 'lockdown', 'heartbeat', '--rsd', formattedHost, port]
+
+    const hbRunner = new ProcessRunner(`hb-${udid.slice(0,8)}`)
+    hbRunner.on('stdout', (t) => this._handleData(t))
+    hbRunner.spawn(PYTHON, args)
+    this.heartbeatRunners.set(key, hbRunner)
+
+    hbRunner.on('exit', () => {
+      if (this.heartbeatRunners.get(key) === hbRunner) {
+        this.heartbeatRunners.delete(key)
       }
     })
   }
 
+  stop() {
+    this.runner.stop()
+    this._stopAllHeartbeats()
+    if (this.fallbackTimer) clearTimeout(this.fallbackTimer)
+    if (this.restartTimer) clearTimeout(this.restartTimer)
+    this.activeConnection = null
+  }
+
+  stopHeartbeats() { this._stopAllHeartbeats() }
+  destroy() { this._isQuitting = true; this.stop() }
+
   _stopAllHeartbeats() {
-    for (const [udid, proc] of this.heartbeatProcesses) {
-      dbg(`[tunneld-service] Arrêt heartbeat pour ${udid}`)
-      try { proc.kill() } catch (_) {}
+    for (const [key, runner] of this.heartbeatRunners) {
+      dbg(`[tunneld-service] Arret heartbeat ${key}`)
+      runner.stop()
     }
-    this.heartbeatProcesses.clear()
+    this.heartbeatRunners.clear()
   }
 
   async _triggerNativeFallback(manualIp = null) {
     if (this._isQuitting || this.activeConnection) return
-    dbg('[tunneld-service] Aucun appareil détecté via tunneld. Test via Bonjour Natif (dns-sd)...')
-    sendStatus('tunneld', 'info', 'Recherche approfondie via Bonjour Natif...')
     
     let targetData = null
-    const instances = await nativeBonjour.scan(5000)
-    
-    if (instances.length > 0) {
-      targetData = await nativeBonjour.resolve(instances[0])
+
+    // PRIORITE : Si on a une IP manuelle (souvent IPv4 via WebSocket), on tente la resolution directe.
+    // L'IPv4 est BEAUCOUP plus stable que l'IPv6 Link-Local sur Windows pour pymobiledevice3.
+    if (manualIp) {
+      dbg(`[tunneld-service] Tentative prioritaire sur l'IP detectee (WebSocket) : ${manualIp}...`)
+      targetData = await nativeBonjour.resolve({ name: 'Manual', address: manualIp })
     }
-    
-    // DERNIER RECOURS : Si on n'a rien trouvé via Bonjour, on tente l'IP manuelle si elle existe
-    if (!targetData && manualIp) {
-      dbg(`[tunneld-service] Échec Bonjour. Tentative forcée sur l'IP manuelle : ${manualIp}...`)
-      sendStatus('tunneld', 'info', `Tentative forcée sur ${manualIp}...`)
-      const port = await nativeBonjour._probeIPv6(manualIp) // _probeIPv6 gère aussi l'IPv4
-      if (port) {
-        targetData = { address: manualIp, port }
+
+    // FALLBACK : Si pas d'IP manuelle ou echec, on scanne le réseau
+    if (!targetData) {
+      dbg('[tunneld-service] Recherche d\'appareils via Bonjour Natif (dns-sd)...')
+      const instances = await nativeBonjour.scan(4000)
+      if (instances.length > 0) {
+        dbg(`[tunneld-service] Appareil trouve via Bonjour : ${instances[0].name}. Resolution...`)
+        targetData = await nativeBonjour.resolve(instances[0])
       }
     }
 
-    if (targetData && targetData.port) {
-      if (this.activeConnection) return
-      
-      const address = targetData.address || 'fe80::1'
-      dbg(`[tunneld-service] Appareil trouvé et résolu ! ${address}:${targetData.port}`)
-      sendStatus('tunneld', 'ready', `iPhone synchronisé via ${targetData.address}`, { type: 'WiFi' })
-      this.emit('connection', { address, port: targetData.port, type: 'WiFi' })
-    } else if (instances.length > 0) {
-      dbg('[tunneld-service] iPhone trouvé mais le tunnel RSD n\'est pas encore prêt.')
-      sendStatus('tunneld', 'starting', 'iPhone détecté... Initialisation du tunnel (Déverrouillez-le)')
-    } else {
-      dbg('[tunneld-service] Aucun appareil détecté sur le réseau ou en USB.')
-      sendStatus('tunneld', 'stopped', 'iPhone non détecté (Vérifiez la connexion ou déverrouillez)')
+    if (targetData && !this.activeConnection) {
+      dbg(`[tunneld-service] Succes via Fallback : ${targetData.address}:${targetData.port}`)
+      this._handleData(`--rsd ${targetData.address} ${targetData.port} [start-tunnel-task-usbmux-native-WiFi]`)
+    } else if (!this.activeConnection) {
+      dbg('[tunneld-service] Echec fallback. Relance du cycle dans 5s...')
+      this._scheduleRestart(5000)
     }
   }
 
   _scheduleRestart(delay) {
-    if (this._isQuitting || this.restartTimer) return
+    if (this.restartTimer) return
     this.restartTimer = setTimeout(() => {
       this.restartTimer = null
-      this.start()
+      this.start(this._manualIp)
     }, delay)
-  }
-
-  stop() {
-    this.activeConnection = null
-    this._stopAllHeartbeats()
-    if (this.fallbackTimer) { clearTimeout(this.fallbackTimer); this.fallbackTimer = null }
-    if (this.restartTimer) { clearTimeout(this.restartTimer); this.restartTimer = null }
-    if (this.process) {
-      this.process.removeAllListeners()
-      try { this.process.kill('SIGTERM') } catch (_) {}
-      this.process = null
-    }
-  }
-
-  stopHeartbeats() {
-    this._stopAllHeartbeats()
-  }
-
-  destroy() {
-    this._isQuitting = true
-    this.stop()
   }
 }
 

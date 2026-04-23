@@ -23,12 +23,14 @@ export function useLocation() {
         return false;
       }
       await Location.startLocationUpdatesAsync(LOCATION_TASK_NAME, {
-        accuracy: Location.Accuracy.Balanced,
-        distanceInterval: 1,
-        deferredUpdatesInterval: 5000,
+        accuracy: Location.Accuracy.BestForNavigation,
+        distanceInterval: 0.1,
+        deferredUpdatesInterval: 500, // Très fréquent pour forcer l'éveil iOS
+        pausesLocationUpdatesAutomatically: false,
+        showsBackgroundLocationIndicator: true,
         foregroundService: { 
-          notificationTitle: "GPS Mock Active", 
-          notificationBody: "Maintien de la connexion...", 
+          notificationTitle: "GPS Mock Actif", 
+          notificationBody: "Bouclier de connexion en cours...", 
           notificationColor: "#6366f1" 
         }
       });
@@ -38,21 +40,45 @@ export function useLocation() {
   };
 
   const searchAddress = async (query) => {
+    if (!query || query.length < 3) return null;
     setIsSearching(true);
     try {
-      const results = await Location.geocodeAsync(query);
-      return results.length > 0 ? {
-        latitude: results[0].latitude,
-        longitude: results[0].longitude,
-        name: query
-      } : null;
+      const response = await fetch(`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(query)}&format=json&limit=1`);
+      const data = await response.json();
+      
+      if (data && data.length > 0) {
+        return {
+          latitude: parseFloat(data[0].lat),
+          longitude: parseFloat(data[0].lon),
+          name: data[0].display_name.split(',')[0] // Nom court pour l'UI
+        };
+      }
+      Alert.alert("Lieu introuvable", "Essayez d'être plus précis.");
+      return null;
     } catch (e) {
-      Alert.alert("Erreur", "Lieu introuvable.");
+      Alert.alert("Erreur réseau", "Impossible de contacter le service de recherche.");
       return null;
     } finally {
       setIsSearching(false);
     }
   };
 
-  return { isMaintaining, isSearching, requestPermissions, toggleBackground, searchAddress };
+  const reverseGeocode = async (lat, lon) => {
+    try {
+      const response = await fetch(`https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lon}&format=json&addressdetails=1`);
+      const data = await response.json();
+      if (data && data.address) {
+        const addr = data.address;
+        const main = addr.road || addr.pedestrian || addr.suburb || addr.neighbourhood || addr.city_district || '';
+        const city = addr.city || addr.town || addr.village || '';
+        if (main && city) return `${main}, ${city}`;
+        return data.display_name.split(',')[0] + ', ' + (addr.city || addr.country);
+      }
+      return `${lat.toFixed(4)}, ${lon.toFixed(4)}`;
+    } catch (e) {
+      return `${lat.toFixed(4)}, ${lon.toFixed(4)}`;
+    }
+  };
+
+  return { isMaintaining, isSearching, requestPermissions, toggleBackground, searchAddress, reverseGeocode };
 }

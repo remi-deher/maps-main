@@ -40,11 +40,11 @@ class ConnectionState {
     if (port) this.lastKnownRsdPort = port
 
     if (prevType && prevType !== type) {
-      dbg(`[state] basculement ${prevType} → ${type}`)
+      dbg(`[state] basculement ${prevType} -> ${type}`)
     }
 
-    dbg(`[state] RSD actif (${type}) → ${address}:${port}`)
-    sendStatus('tunneld', 'ready', `Tunnel actif (${type}) → ${address}:${port}`, { type })
+    dbg(`[state] RSD actif (${type}) -> ${address}:${port}`)
+    sendStatus('tunneld', 'ready', `Tunnel actif (${type}) -> ${address}:${port}`, { type })
 
     if (this.onRestoredCb) this.onRestoredCb()
     return true
@@ -56,8 +56,8 @@ class ConnectionState {
     this.port = null
     this.type = null
     
-    dbg(`[state] déconnexion (${reason}) — était ${wasType || 'inconnu'}`)
-    sendStatus('tunneld', 'stopped', 'iPhone déconnecté — simulation GPS maintenue')
+    dbg(`[state] deconnexion (${reason}) — etait ${wasType || 'inconnu'}`)
+    sendStatus('tunneld', 'stopped', 'iPhone deconnecte — simulation GPS maintenue')
   }
 
   reset() {

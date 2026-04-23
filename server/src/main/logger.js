@@ -3,6 +3,7 @@
 const { app } = require('electron')
 const fs = require('fs')
 const path = require('path')
+const Encoder = require('./utils/encoder')
 
 let _mainWindow = null
 let _logStream = null
@@ -44,31 +45,11 @@ function setWindow(win) {
 }
 
 /**
- * Nettoie les caractères mal encodés sur Windows (UTF-8 vs CP850)
- * @param {string} str 
- */
-function sanitize(str) {
-  if (typeof str !== 'string') return str
-  return str
-    .replace(/d\u251c\u00aemon/g, 'demon')
-    .replace(/r\u251c\u00aetabli/g, 'retabli')
-    .replace(/\u251c\u00ae/g, 'e')
-    .replace(/\u251c\u00e0/g, 'a')
-    .replace(/\u251c\u2502/g, 'o')
-    .replace(/\u251c\u2557/g, 'u')
-    .replace(/\u251c\u00ea/g, 'e')
-    .replace(/\u251c\u2524/g, 'a')
-    .replace(/\u00d4\u2020\u00ae/g, '->') // ÔåÆ -> ->
-    .replace(/\u2014/g, '->')
-    .replace(/\u2026/g, '...')
-}
-
-/**
  * Log horodaté dans la console + envoi vers le renderer via IPC debug-log
  * @param {string} msg
  */
 function dbg(msg) {
-  const cleanMsg = sanitize(msg)
+  const cleanMsg = Encoder.decode(msg)
   const d = new Date()
   const time = d.toLocaleTimeString('fr-FR')
   const logLine = `[${time}] ${cleanMsg}\n`
@@ -92,8 +73,9 @@ function dbg(msg) {
  * @param {object} [data] Données supplémentaires
  */
 function sendStatus(service, state, message, data = {}) {
+  const cleanMsg = Encoder.decode(message)
   if (_mainWindow && !_mainWindow.isDestroyed()) {
-    _mainWindow.webContents.send('status-update', { service, state, message, ...data })
+    _mainWindow.webContents.send('status-update', { service, state, message: cleanMsg, ...data })
   }
 }
 

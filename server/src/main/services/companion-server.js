@@ -1,36 +1,72 @@
 'use strict'
 
-const { WebSocketServer } = require('ws')
+const WebSocket = require('ws')
+const { WebSocketServer } = WebSocket
 const os = require('os')
 const { EventEmitter } = require('events')
 const { dbg, sendStatus } = require('../logger')
-const settings = require('./settings-manager')
+const favoritesManager = require('./favorites-manager')
 
 /**
- * CompanionServer - Gère la communication WebSocket avec l'application iOS
+ * CompanionServer - Gere la communication WebSocket avec l'application iOS
  */
 class CompanionServer extends EventEmitter {
-  constructor() {
+  constructor(tunnelManager) {
     super()
+    this.tunnel = tunnelManager
     this.wss = null
     this.port = null
     this.clients = new Set()
+    this.status = {}
+    
+    // Initialisation du statut
+    this._refreshStatus()
+
+    // Ecouter les mises a jour des favoris/historique
+    favoritesManager.on('favorites-updated', (favs) => {
+      this.status.favorites = favs
+      this._broadcast({ type: 'STATUS', data: this.status })
+      this.emit('favorites-updated', favs)
+    })
+
+    favoritesManager.on('history-updated', (history) => {
+      this.status.recentHistory = history
+      this._broadcast({ type: 'STATUS', data: this.status })
+      this.emit('history-updated', history)
+    })
+
+    // Ecouter les mises a jour du tunnel/appareil
+    if (this.tunnel) {
+      this.tunnel.setOnStatusChange(() => {
+        this._refreshStatus()
+        this._broadcast({ type: 'STATUS', data: this.status })
+      })
+    }
+  }
+
+  _refreshStatus() {
     this.status = {
-      tunnelActive: false,
-      maintainActive: false,
-      lastHeartbeat: null,
-      favorites: settings.get('favorites') || []
+      tunnelActive: !!this.tunnel?.getRsdAddress(),
+      rsdAddress: this.tunnel?.getRsdAddress() || null,
+      rsdPort: this.tunnel?.getRsdPort() || null,
+      connectionType: this.tunnel?.getConnectionType() || null,
+      deviceInfo: this.tunnel?.getDeviceInfo() || null,
+      maintainActive: this.status?.maintainActive || false,
+      lastHeartbeat: this.status?.lastHeartbeat || null,
+      favorites: favoritesManager.getFavorites(),
+      recentHistory: favoritesManager.getHistory()
     }
   }
 
   /**
-   * Démarre le serveur WebSocket
+   * Demarre le serveur WebSocket
    */
   start(port = 8080) {
-    // Si le serveur tourne déjà sur le même port, on ne fait rien
-    if (this.wss && this.port === port) return
+    if (this.wss && this.port === port) {
+      dbg(`[companion-server] Serveur deja actif sur le port ${port}`)
+      return
+    }
     
-    // Si on change de port, on ferme l'ancien
     if (this.wss) {
       dbg(`[companion-server] Changement de port ${this.port} -> ${port}`)
       this.stop()
@@ -40,32 +76,33 @@ class CompanionServer extends EventEmitter {
       this.port = port
       this.wss = new WebSocketServer({ port })
       const ip = this._getLocalIp()
-      dbg(`[companion-server] Serveur démarré sur ${ip}:${port}`)
-      sendStatus('companion', 'info', `Prêt pour connexion iPhone sur ${ip}:${port}`)
+      dbg(`[companion-server] Serveur demarre sur ${ip}:${port}`)
+      sendStatus('companion', 'info', `Pret pour connexion iPhone sur ${ip}:${port}`)
 
       this.wss.on('connection', (ws, req) => {
         let clientIp = req.socket.remoteAddress
         if (clientIp.startsWith('::ffff:')) clientIp = clientIp.substring(7)
         
-        dbg(`[companion-server] Nouveau client connecté : ${clientIp}`)
+        dbg(`[companion-server] Nouveau client connecte : ${clientIp}`)
         this.emit('iphone-ip-detected', clientIp)
         
         this.clients.add(ws)
-
-        // Envoyer l'état actuel au nouveau client
+        this._refreshStatus() // S'assurer que le statut est a jour avant l'envoi
         ws.send(JSON.stringify({ type: 'STATUS', data: this.status }))
 
         ws.on('message', (message) => {
           try {
             const payload = JSON.parse(message)
-            this._handleMessage(ws, payload)
+            if (payload && payload.type) {
+              this._handleMessage(ws, payload)
+            }
           } catch (e) {
-            dbg(`[companion-server] Erreur message: ${e.message}`)
+            dbg(`[companion-server] Erreur traitement message: ${e.message}`)
           }
         })
 
         ws.on('close', () => {
-          dbg('[companion-server] Client déconnecté')
+          dbg('[companion-server] Client deconnecte')
           this.clients.delete(ws)
           this._checkActivity()
         })
@@ -75,24 +112,25 @@ class CompanionServer extends EventEmitter {
           this.clients.delete(ws)
         })
       })
+
+      this.wss.on('error', (err) => {
+        dbg(`[companion-server] Erreur CRITIQUE serveur: ${err.message}`)
+        sendStatus('companion', 'error', `Erreur serveur : ${err.message}`)
+      })
+
     } catch (e) {
-      dbg(`[companion-server] Erreur démarrage sur port ${port}: ${e.message}`)
+      dbg(`[companion-server] Erreur demarrage sur port ${port}: ${e.message}`)
       sendStatus('companion', 'error', `Erreur serveur compagnon : ${e.message}`)
     }
   }
 
-  /**
-   * Met à jour le statut du tunnel et informe les clients iOS
-   */
   updateTunnelStatus(active) {
+    this._refreshStatus()
     this.status.tunnelActive = active
     this._broadcast({ type: 'STATUS', data: this.status })
     this._updateFrontend()
   }
 
-  /**
-   * Envoie la position simulée actuelle aux clients connectés
-   */
   broadcastLocation(lat, lon, name = '') {
     this._broadcast({ 
       type: 'LOCATION', 
@@ -100,125 +138,114 @@ class CompanionServer extends EventEmitter {
     })
   }
 
-  /**
-   * Retourne l'URL de connexion WebSocket pour le QR Code
-   */
   getConnectionInfo() {
     return {
       ip: this._getLocalIp(),
-      port: this.port,
-      url: `ws://${this._getLocalIp()}:${this.port}`
+      port: this.port || 8080,
+      url: `ws://${this._getLocalIp()}:${this.port || 8080}`
     }
   }
 
   _handleMessage(ws, payload) {
-    if (payload.type === 'HEARTBEAT') {
-      this.status.maintainActive = payload.data.isMaintaining
-      this.status.lastHeartbeat = Date.now()
-      this._updateFrontend()
+    switch (payload.type) {
+      case 'HEARTBEAT': {
+        if (payload.data) {
+          this.status.maintainActive = payload.data.isMaintaining || false
+        }
+        this.status.lastHeartbeat = Date.now()
+        this._updateFrontend()
+        ws.send(JSON.stringify({ type: 'PONG', timestamp: Date.now() }))
+        break
+      }
       
-      // Répondre au heartbeat
-      ws.send(JSON.stringify({ type: 'PONG', timestamp: Date.now() }))
-    } 
-    else if (payload.type === 'SET_LOCATION') {
-      const { lat, lon } = payload.data
-      dbg(`[companion-server] iPhone demande position: ${lat}, ${lon}`)
-      this.emit('request-location', { lat, lon })
-    }
-    else if (payload.type === 'ADD_FAVORITE') {
-      const fav = payload.data;
-      let favs = settings.get('favorites') || [];
-      // Éviter les doublons par coordonnées
-      if (!favs.some(f => Math.abs(f.lat - fav.lat) < 0.0001 && Math.abs(f.lon - fav.lon) < 0.0001)) {
-        favs = [fav, ...favs];
-        settings.save({ favorites: favs });
-        this.status.favorites = favs;
-        this._broadcast({ type: 'STATUS', data: this.status });
-        this.emit('favorites-updated', favs);
+      case 'SET_LOCATION': {
+        const { lat, lon, name } = payload.data || {}
+        if (lat && lon) {
+          dbg(`[companion-server] iPhone demande position: ${lat}, ${lon} (${name || 'sans nom'})`)
+          this.emit('request-location', { lat, lon, name })
+          if (name) favoritesManager.addToHistory({ lat, lon, name })
+        }
+        break
+      }
+      
+      case 'ADD_HISTORY': {
+        if (payload.data) favoritesManager.addToHistory(payload.data)
+        break
+      }
+      
+      case 'ADD_FAVORITE': {
+        if (payload.data) favoritesManager.addFavorite(payload.data)
+        break
+      }
+      
+      case 'REMOVE_FAVORITE': {
+        if (payload.data) favoritesManager.removeFavorite(payload.data.lat, payload.data.lon)
+        break
+      }
+      
+      case 'RENAME_FAVORITE': {
+        if (payload.data) favoritesManager.renameFavorite(payload.data.lat, payload.data.lon, payload.data.newName)
+        break
+      }
+      
+      case 'CLIENT_LOG': {
+        this.emit('client-log', payload.data)
+        break
       }
     }
-    else if (payload.type === 'REMOVE_FAVORITE') {
-      const { lat, lon } = payload.data;
-      let favs = settings.get('favorites') || [];
-      favs = favs.filter(f => Math.abs(f.lat - lat) > 0.0001 || Math.abs(f.lon - lon) > 0.0001);
-      settings.save({ favorites: favs });
-      this.status.favorites = favs;
-      this._broadcast({ type: 'STATUS', data: this.status });
-      this.emit('favorites-updated', favs);
+  }
+
+  // Facades pour appeler la logique metier via le dashboard (ou autres)
+  addFavorite(fav) { return favoritesManager.addFavorite(fav) }
+  removeFavorite(lat, lon) { return favoritesManager.removeFavorite(lat, lon) }
+  renameFavorite(lat, lon, newName) { return favoritesManager.renameFavorite(lat, lon, newName) }
+
+  stop() {
+    if (this.wss) {
+      dbg('[companion-server] Arret du serveur WebSocket...')
+      this.wss.close()
+      this.wss = null
     }
   }
 
   _broadcast(data) {
+    if (!this.wss) return
     const message = JSON.stringify(data)
     for (const client of this.clients) {
-      if (client.readyState === 1) { // OPEN
+      if (client.readyState === 1) { // WebSocket.OPEN
         client.send(message)
       }
+    }
+  }
+
+  _updateFrontend() {
+    if (this.clients.size > 0) {
+      if (this.status.maintainActive) {
+        sendStatus('companion', 'ready', 'iPhone connecte & actif')
+      } else {
+        sendStatus('companion', 'info', 'iPhone connecte (en attente)')
+      }
+    } else {
+      sendStatus('companion', 'info', 'En attente de connexion iPhone...')
     }
   }
 
   _checkActivity() {
     if (this.clients.size === 0) {
       this.status.maintainActive = false
-      this.status.lastHeartbeat = null
       this._updateFrontend()
     }
   }
 
-  _updateFrontend() {
-    const count = this.clients.size
-    if (count === 0) {
-      sendStatus('companion', 'stopped', 'iPhone déconnecté')
-      return
-    }
-
-    const label = this.status.maintainActive ? 'MAINTENANCE ACTIVE' : 'CONNECTÉ'
-    const state = this.status.maintainActive ? 'ready' : 'starting'
-    sendStatus('companion', state, `iPhone ${label} (${count})`)
-  }
-
   _getLocalIp() {
-    // Priorité à l'IP forcée dans les réglages
-    const manualIp = settings.get('wifiIp')
-    if (manualIp) return manualIp
-
     const interfaces = os.networkInterfaces()
-    let fallbackIp = '127.0.0.1'
-    
-    // On parcourt les interfaces par ordre de probabilité
     for (const name of Object.keys(interfaces)) {
-      const lowerName = name.toLowerCase()
-      
-      // Ignorer les interfaces virtuelles connues
-      if (lowerName.includes('virtualbox') || 
-          lowerName.includes('vmware') || 
-          lowerName.includes('vbox') || 
-          lowerName.includes('vethernet') || 
-          lowerName.includes('wsl')) {
-        continue
-      }
-
       for (const iface of interfaces[name]) {
-        if (iface.family === 'IPv4' && !iface.internal) {
-          // Si on trouve une IP qui ressemble à une IP locale standard, on la prend direct
-          if (iface.address.startsWith('192.168.') || iface.address.startsWith('10.')) {
-            return iface.address
-          }
-          fallbackIp = iface.address
-        }
+        if (iface.family === 'IPv4' && !iface.internal) return iface.address
       }
     }
-    return fallbackIp
-  }
-
-  stop() {
-    if (this.wss) {
-      dbg(`[companion-server] Arrêt du serveur sur port ${this.port}`)
-      this.wss.close()
-      this.wss = null
-      this.clients.clear()
-    }
+    return '127.0.0.1'
   }
 }
 
-module.exports = new CompanionServer()
+module.exports = CompanionServer

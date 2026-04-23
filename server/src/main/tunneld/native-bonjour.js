@@ -3,6 +3,7 @@
 const { spawn } = require('child_process')
 const { EventEmitter } = require('events')
 const { dbg } = require('../logger')
+const Encoder = require('../utils/encoder')
 
 /**
  * NativeBonjour - Utilise l'outil dns-sd.exe de Windows (Apple Bonjour)
@@ -29,7 +30,7 @@ class NativeBonjour extends EventEmitter {
       const foundInstances = []
       
       this.browseProcess.stdout.on('data', (data) => {
-        const lines = data.toString().split('\n')
+        const lines = Encoder.decode(data).split('\n')
         for (const line of lines) {
           // Format expected: "Timestamp A/R Flags if Domain Service Type Instance Name"
           // On cherche la colonne "Instance Name"
@@ -39,11 +40,11 @@ class NativeBonjour extends EventEmitter {
             const instanceName = parts.slice(6).join(' ').trim()
             
             if (instanceName && !foundInstances.some(i => i.name === instanceName)) {
-              // Extraction de l'IPv6 si présente (format mac@ipv6)
+              // Extraction de l'IPv6 si presente (format mac@ipv6)
               const ipv6Match = instanceName.match(/@([\w:]+)/)
               const address = ipv6Match ? `${ipv6Match[1]}%${iface}` : null
               
-              dbg(`[native-bonjour] Instance trouvée : ${instanceName} sur iFace ${iface}`)
+              dbg(`[native-bonjour] Instance trouvee : ${instanceName} sur iFace ${iface}`)
               foundInstances.push({ name: instanceName, address })
             }
           }
@@ -58,21 +59,25 @@ class NativeBonjour extends EventEmitter {
     })
   }
 
-  /**
-   * Résout une instance pour obtenir le port et l'IP
-   */
   async resolve(instanceObj) {
     const { name, address } = instanceObj
-    dbg(`[native-bonjour] résolution de l'instance : ${name}`)
+    dbg(`[native-bonjour] resolution de l'instance : ${name} (${address || 'auto'})`)
     
-    // 1. Tentative via dns-sd -L
+    // 1. Si c'est une resolution manuelle (sans nom d'instance reel), on va direct au scan de ports
+    if (name === 'Manual' && address) {
+      dbg(`[native-bonjour] Resolution manuelle sur ${address}...`)
+      const port = await this._probeAddress(address)
+      if (port) return { port, address }
+      return null
+    }
+
+    // 2. Tentative via dns-sd -L (pour les instances Bonjour reelles)
     const nativeResult = await new Promise((resolve) => {
       const resolveProc = spawn('dns-sd', ['-L', name, '_apple-mobdev2._tcp'], { shell: true })
       let found = null
 
       resolveProc.stdout.on('data', (data) => {
-        const text = data.toString()
-        // Format: "reached at [hostname]:[port]"
+        const text = Encoder.decode(data)
         const match = text.match(/reached at (.*?):(\d+)/)
         if (match) {
           found = { host: match[1].replace(/\.$/, ''), port: match[2] }
@@ -83,12 +88,16 @@ class NativeBonjour extends EventEmitter {
       setTimeout(() => { resolveProc.kill(); resolve(found) }, 4000)
     })
 
-    if (nativeResult) return { port: nativeResult.port, address: nativeResult.host }
+    if (nativeResult) {
+      // On prefere l'adresse IPv6 extraite du nom si presente, sinon on prend le host resolu
+      const finalAddress = address || nativeResult.host
+      return { port: nativeResult.port, address: finalAddress }
+    }
 
-    // 2. Fallback : Scan de ports sur l'IPv6 extraite
+    // 3. Fallback : Scan de ports sur l'adresse (IPv6 ou IPv4)
     if (address) {
       dbg(`[native-bonjour] Fallback : scan de ports sur ${address}...`)
-      const port = await this._probeIPv6(address)
+      const port = await this._probeAddress(address)
       if (port) return { port, address }
     }
 
@@ -96,9 +105,9 @@ class NativeBonjour extends EventEmitter {
   }
 
   /**
-   * Scan léger sur l'IPv6 (Link-Local)
+   * Scan léger de ports sur une adresse (IPv4 ou IPv6)
    */
-  async _probeIPv6(address) {
+  async _probeAddress(address) {
     const net = require('net')
     // On scanne les plages probables (53400+ et 62000+)
     const ports = [53248, ...Array.from({ length: 60 }, (_, i) => 53400 + i), ...Array.from({ length: 60 }, (_, i) => 62000 + i)]

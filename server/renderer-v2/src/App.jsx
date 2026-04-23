@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { MapPin, Settings, History, Star, QrCode, Monitor, Search, X, Navigation, RotateCcw } from 'lucide-react';
+import { MapPin, Settings, History, Star, QrCode, Monitor, Search, X, Navigation, RotateCcw, Edit2, Trash2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import MapView from './components/MapView';
 import SettingsModal from './components/SettingsModal';
@@ -8,13 +8,14 @@ import { useStorage } from './hooks/useStorage';
 import { useSearch } from './hooks/useSearch';
 
 function App() {
-  const [status, setStatus] = useState({ state: 'starting', message: 'Initialisation...', type: null });
+  const [status, setStatus] = useState({ state: 'starting', message: 'Initialisation...', type: null, device: null });
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [qrOpen, setQrOpen] = useState(false);
   const [selectedPos, setSelectedPos] = useState(null);
   const [activeSim, setActiveSim] = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
+  const [clientLogs, setClientLogs] = useState([]);
   
   const searchInputRef = useRef(null);
   const { history, favorites, addToHistory, addFavorite, removeFavorite } = useStorage();
@@ -22,24 +23,47 @@ function App() {
   const isFavorite = (lat, lon) => favorites.some(f => Math.abs(f.lat - lat) < 0.0001 && Math.abs(f.lon - lon) < 0.0001);
   const toggleFavorite = async (pos) => {
     if (isFavorite(pos.lat, pos.lon)) {
-      const idx = favorites.findIndex(f => Math.abs(f.lat - pos.lat) < 0.0001 && Math.abs(f.lon - pos.lon) < 0.0001);
-      if (idx !== -1) await removeFavorite(idx);
+      await window.gps.removeFavorite(pos.lat, pos.lon);
     } else {
-      await addFavorite({ name: pos.name || "Lieu favori", lat: pos.lat, lon: pos.lon });
+      await window.gps.addFavorite({ name: pos.name || "Lieu favori", lat: pos.lat, lon: pos.lon });
     }
   };
+
+  const renameFavorite = async (fav) => {
+    const newName = prompt("Nouveau nom pour ce lieu :", fav.name);
+    if (newName && newName.trim()) {
+      await window.gps.renameFavorite(fav.lat, fav.lon, newName.trim());
+    }
+  };
+
+  const handleDeleteFavorite = async (fav) => {
+    if (confirm(`Supprimer "${fav.name}" des favoris ?`)) {
+      await window.gps.removeFavorite(fav.lat, fav.lon);
+    }
+  };
+
   const { search, results, loading, reverseGeocode, setResults } = useSearch();
 
   useEffect(() => {
     window.gps.getStatus().then(data => {
       if (data.tunnelReady) {
-        setStatus({ state: 'ready', message: 'iPhone connecté', type: data.connectionType });
+        setStatus({ state: 'ready', message: 'iPhone connecté', type: data.connectionType, device: data.deviceInfo });
       }
     });
 
     const removeListener = window.gps.onStatus((data) => {
       if (data.service === 'tunneld') {
-        setStatus(prev => ({ ...prev, state: data.state, message: data.message, type: data.type || prev.type }));
+        setStatus(prev => ({ 
+          ...prev, 
+          state: data.state, 
+          message: data.message, 
+          type: data.type || prev.type,
+          device: data.device || prev.device
+        }));
+      } else if (data.service === 'client-log') {
+        setClientLogs(prev => [data.data, ...prev].slice(0, 50));
+      } else if (data.service === 'server-log') {
+        setClientLogs(prev => [{ timestamp: new Date().toLocaleTimeString(), message: `[SRV] ${data.data}`, type: 'info' }, ...prev].slice(0, 50));
       }
     });
 
@@ -97,18 +121,104 @@ function App() {
                 <h2 className="text-2xl font-bold bg-gradient-to-r from-blue-400 to-emerald-400 bg-clip-text text-transparent">Global Mock</h2>
                 <button onClick={() => setSidebarOpen(false)} className="p-2 hover:bg-white/10 rounded-xl transition-colors"><X className="w-6 h-6" /></button>
               </div>
-              <div className="flex-1 overflow-y-auto space-y-6">
+              <div className="flex-1 overflow-y-auto space-y-8 pr-2 custom-scrollbar">
+                {/* DEVICE INFO SECTION */}
                 <section>
                   <div className="flex items-center gap-2 text-sm font-semibold text-slate-400 mb-3 px-2">
-                    <History className="w-4 h-4" /> <span>RÉCENTS</span>
+                    <Monitor className="w-4 h-4 text-emerald-400" /> <span>APPAREIL</span>
+                  </div>
+                  <div className="mx-2 p-4 rounded-2xl bg-white/5 border border-white/5 space-y-3">
+                    <div className="flex justify-between items-center">
+                      <span className="text-xs text-slate-500 uppercase tracking-wider">Modèle</span>
+                      <span className="text-sm font-bold text-white">{status.device?.type || 'iPhone'}</span>
+                    </div>
+                    <div className="flex justify-between items-center">
+                      <span className="text-xs text-slate-500 uppercase tracking-wider">IP / RSD</span>
+                      <span className="text-sm font-mono text-blue-300">{status.type === 'USB' ? 'USB Native' : (status.device?.ip || '192.168.x.x')}</span>
+                    </div>
+                    <div className="flex justify-between items-center">
+                      <span className="text-xs text-slate-500 uppercase tracking-wider">iOS Version</span>
+                      <span className="text-sm font-bold text-slate-300">{status.device?.version || 'N/A'}</span>
+                    </div>
+                    <div className="flex justify-between items-center">
+                      <span className="text-xs text-slate-500 uppercase tracking-wider">Appairé</span>
+                      <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${status.device?.paired ? 'bg-emerald-500/20 text-emerald-400' : 'bg-amber-500/20 text-amber-400'}`}>
+                        {status.device?.paired ? 'OUI' : 'NON (DVT)'}
+                      </span>
+                    </div>
+                    <div className="flex justify-between items-center pt-2 border-t border-white/5">
+                      <span className="text-xs text-slate-500 uppercase tracking-wider">Connexion</span>
+                      <span className="text-xs font-bold text-emerald-400 flex items-center gap-1">
+                        <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" /> {status.type || 'Attente...'}
+                      </span>
+                    </div>
+                  </div>
+                </section>
+                {/* FAVORIS SECTION */}
+                <section>
+                  <div className="flex items-center gap-2 text-sm font-semibold text-slate-400 mb-3 px-2">
+                    <Star className="w-4 h-4 text-amber-400" /> <span>FAVORIS</span>
+                  </div>
+                  <div className="space-y-1">
+                    {favorites.length > 0 ? favorites.map((fav, i) => (
+                      <div key={`fav-${i}`} className="group flex items-center gap-2 p-1">
+                        <button 
+                          onClick={() => {selectLocation(fav); setSidebarOpen(false);}} 
+                          className="flex-1 p-3 rounded-xl hover:bg-white/5 transition-colors text-left flex items-center justify-between min-w-0"
+                        >
+                          <div className="flex-1 min-w-0">
+                            <p className="font-medium line-clamp-1">{fav.name}</p>
+                            <p className="text-xs text-slate-500">{fav.lat.toFixed(4)}, {fav.lon.toFixed(4)}</p>
+                          </div>
+                          <Star className="w-4 h-4 text-amber-400 opacity-40 group-hover:opacity-100 transition-opacity" fill="currentColor" />
+                        </button>
+                        <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity pr-2">
+                          <button onClick={() => renameFavorite(fav)} className="p-2 hover:bg-blue-500/20 rounded-lg text-blue-400 transition-colors">
+                            <Edit2 className="w-4 h-4" />
+                          </button>
+                          <button onClick={() => handleDeleteFavorite(fav)} className="p-2 hover:bg-rose-500/20 rounded-lg text-rose-400 transition-colors">
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
+                      </div>
+                    )) : <p className="p-4 text-center text-slate-600 italic text-sm">Aucun favori</p>}
+                  </div>
+                </section>
+
+                {/* RÉCENTS SECTION */}
+                <section>
+                  <div className="flex items-center gap-2 text-sm font-semibold text-slate-400 mb-3 px-2">
+                    <History className="w-4 h-4 text-blue-400" /> <span>HISTORIQUE RÉCENT</span>
                   </div>
                   <div className="space-y-1">
                     {history.length > 0 ? history.map((item, i) => (
-                      <button key={i} onClick={() => {selectLocation(item); setSidebarOpen(false);}} className="w-full p-3 rounded-xl hover:bg-white/5 transition-colors text-left group">
+                      <button key={`hist-${i}`} onClick={() => {selectLocation(item); setSidebarOpen(false);}} className="w-full p-3 rounded-xl hover:bg-white/5 transition-colors text-left group">
                         <p className="font-medium line-clamp-1">{item.name || "Position"}</p>
-                        <p className="text-xs text-slate-500">{item.lat}, {item.lon}</p>
+                        <p className="text-xs text-slate-500">{item.lat.toFixed(4)}, {item.lon.toFixed(4)}</p>
                       </button>
                     )) : <p className="p-4 text-center text-slate-600 italic text-sm">Aucun historique</p>}
+                  </div>
+                </section>
+
+                {/* DEBUG CONSOLE CLIENT */}
+                <section className="mt-auto pt-6">
+                  <div className="flex items-center justify-between text-sm font-semibold text-slate-400 mb-3 px-2">
+                    <div className="flex items-center gap-2">
+                      <Monitor className="w-4 h-4" /> <span>CONSOLE DISTANTE (iOS)</span>
+                    </div>
+                    <button onClick={() => setClientLogs([])} className="text-[10px] hover:text-white transition-colors">EFFACER</button>
+                  </div>
+                  <div className="bg-black/40 rounded-xl p-3 h-48 overflow-y-auto border border-white/5 font-mono text-[10px]">
+                    {clientLogs.length > 0 ? clientLogs.map((log, i) => (
+                      <div key={i} className="mb-1.5 flex gap-2">
+                        <span className="text-slate-500">[{log.timestamp}]</span>
+                        <span className={
+                          log.type === 'error' ? 'text-rose-400' : 
+                          log.type === 'success' ? 'text-emerald-400' : 
+                          'text-blue-300'
+                        }>{log.message}</span>
+                      </div>
+                    )) : <p className="text-slate-600 italic">En attente de logs...</p>}
                   </div>
                 </section>
               </div>
@@ -137,6 +247,9 @@ function App() {
               <p className="text-xs text-slate-400 font-mono">{selectedPos.lat}, {selectedPos.lon}</p>
             </div>
             <div className="flex gap-2">
+              <button onClick={() => toggleFavorite(selectedPos)} className={`p-3 glass hover:bg-white/10 rounded-2xl transition-colors ${isFavorite(selectedPos.lat, selectedPos.lon) ? 'text-amber-400' : 'text-slate-400'}`}>
+                <Star className="w-5 h-5" fill={isFavorite(selectedPos.lat, selectedPos.lon) ? "currentColor" : "none"} />
+              </button>
               <button onClick={resetLocation} className="p-3 glass hover:bg-white/10 rounded-2xl transition-colors text-slate-400"><RotateCcw className="w-5 h-5" /></button>
               <button onClick={teleport} className="bg-blue-600 hover:bg-blue-500 text-white px-6 py-3 rounded-2xl font-bold flex items-center gap-2 transition-all active:scale-95 shadow-lg shadow-blue-900/20"><Navigation className="w-5 h-5" /> Allez ici</button>
             </div>

@@ -12,17 +12,18 @@ import { logEvent } from './src/services/logger';
 import Omnibar from './src/components/Omnibar';
 import SettingsModal from './src/components/SettingsModal';
 import DebugModal from './src/components/DebugModal';
-import { ActionPanel, FavoritesPanel } from './src/components/Panels';
+import { ActionPanel, FavoritesPanel, QuickFavorites } from './src/components/Panels';
 
 export default function App() {
   // Hooks de logique
   const { serverIp, serverPort, saveSettings } = useStorage();
-  const { isMaintaining, requestPermissions, toggleBackground, searchAddress } = useLocation();
-  const { status, favorites, simulatedCoords, sendAction, connect } = useSocket(serverIp, serverPort, isMaintaining);
+  const { isMaintaining, requestPermissions, toggleBackground, searchAddress, reverseGeocode } = useLocation();
+  const { status, favorites, recentHistory, simulatedCoords, sendAction, connect } = useSocket(serverIp, serverPort, isMaintaining);
   
   // États UI locaux
   const [searchQuery, setSearchQuery] = useState('');
   const [pendingCoords, setPendingCoords] = useState(null);
+  const [simulatedAddress, setSimulatedAddress] = useState(null);
   const [showScanner, setShowScanner] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [showDebug, setShowDebug] = useState(false);
@@ -36,6 +37,15 @@ export default function App() {
     requestPermissions();
     requestCameraPermission();
   }, []);
+
+  // Géocodage inverse automatique pour la Pill
+  useEffect(() => {
+    if (simulatedCoords) {
+      reverseGeocode(simulatedCoords.latitude, simulatedCoords.longitude).then(setSimulatedAddress);
+    } else {
+      setSimulatedAddress(null);
+    }
+  }, [simulatedCoords]);
 
   // Actions
   const handleTeleport = (coords) => {
@@ -64,6 +74,17 @@ export default function App() {
     } else {
       logEvent.add("Ajout favori...");
       sendAction('ADD_FAVORITE', { lat: coords.latitude, lon: coords.longitude, name: coords.name || "Lieu favori" });
+    }
+  };
+  
+  const centerOnSimulation = () => {
+    if (simulatedCoords) {
+      logEvent.add("Centrage sur position simulée");
+      mapRef.current?.animateToRegion({
+        ...simulatedCoords,
+        latitudeDelta: 0.005,
+        longitudeDelta: 0.005
+      }, 500);
     }
   };
 
@@ -98,8 +119,14 @@ export default function App() {
           <MapView
             ref={mapRef}
             style={StyleSheet.absoluteFill}
+            mapType="hybrid"
             initialRegion={{ latitude: 48.8566, longitude: 2.3522, latitudeDelta: 0.01, longitudeDelta: 0.01 }}
-            onLongPress={(e) => setPendingCoords({ ...e.nativeEvent.coordinate, name: "Position sélectionnée" })}
+            onLongPress={async (e) => {
+              const coords = e.nativeEvent.coordinate;
+              setPendingCoords({ ...coords, name: "Recherche..." });
+              const address = await reverseGeocode(coords.latitude, coords.longitude);
+              setPendingCoords({ ...coords, name: address });
+            }}
           >
             {simulatedCoords && (
               <Marker coordinate={simulatedCoords}>
@@ -120,6 +147,11 @@ export default function App() {
                 onSearchSubmit={handleSearch}
                 onScannerPress={() => setShowScanner(true)}
                 onSettingsPress={() => setShowSettings(true)}
+                onSuggestionSelect={(coords) => {
+                  setPendingCoords(coords);
+                  mapRef.current?.animateToRegion({ ...coords, latitudeDelta: 0.01, longitudeDelta: 0.01 }, 800);
+                  setSearchQuery('');
+                }}
                 status={status}
                 isMaintaining={isMaintaining}
             />
@@ -132,7 +164,31 @@ export default function App() {
             <TouchableOpacity style={[styles.floatBtn, SHADOWS.light]} onPress={() => setIsFavsOpen(true)}>
               <Text style={{fontSize: 22}}>⭐</Text>
             </TouchableOpacity>
+            {simulatedCoords && (
+              <TouchableOpacity style={[styles.floatBtn, SHADOWS.light]} onPress={centerOnSimulation}>
+                <Text style={{fontSize: 22}}>🎯</Text>
+              </TouchableOpacity>
+            )}
           </View>
+
+          <QuickFavorites 
+            favorites={favorites} 
+            onTeleport={handleTeleport} 
+            visible={!pendingCoords && !isFavsOpen} 
+          />
+
+          {simulatedCoords && (
+            <TouchableOpacity 
+              style={[styles.simPill, SHADOWS.premium]} 
+              activeOpacity={0.8}
+              onPress={centerOnSimulation}
+            >
+              <View style={styles.simPillIcon}><Text style={{fontSize: 12}}>🚀</Text></View>
+              <Text style={styles.simPillText} numberOfLines={1}>
+                {simulatedAddress || "Simulation en cours..."}
+              </Text>
+            </TouchableOpacity>
+          )}
 
           <ActionPanel 
             visible={!!pendingCoords} 
@@ -140,14 +196,17 @@ export default function App() {
             isFavorite={pendingCoords && favorites.some(f => Math.abs(f.lat - pendingCoords.latitude) < 0.0001 && Math.abs(f.lon - pendingCoords.longitude) < 0.0001)}
             onTeleport={handleTeleport}
             onToggleFavorite={handleToggleFavorite}
+            onClose={() => setPendingCoords(null)}
           />
 
           <FavoritesPanel 
             visible={isFavsOpen}
             favorites={favorites}
+            history={recentHistory}
             onClose={() => setIsFavsOpen(false)}
             onTeleport={handleTeleport}
             onRemove={(f) => sendAction('REMOVE_FAVORITE', { lat: f.lat, lon: f.lon })}
+            onRename={(lat, lon, newName) => sendAction('RENAME_FAVORITE', { lat, lon, newName })}
           />
 
           <SettingsModal 
@@ -155,6 +214,10 @@ export default function App() {
             onClose={() => setShowSettings(false)}
             initialIp={serverIp}
             initialPort={serverPort}
+            status={status}
+            deviceInfo={deviceInfo}
+            connectionType={connectionType}
+            rsdAddress={rsdAddress}
             onSave={(ip, port) => { 
                 logEvent.add(`Config manuelle: ${ip}:${port}`);
                 saveSettings(ip, port); 
@@ -184,5 +247,25 @@ const styles = StyleSheet.create({
   dot: { width: 12, height: 12, borderRadius: 6, backgroundColor: COLORS.primary, borderWidth: 2, borderColor: '#fff' },
   floatingActions: { position: 'absolute', top: 160, right: 15, gap: 10 },
   floatBtn: { width: 54, height: 54, borderRadius: 27, backgroundColor: COLORS.surface, justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)' },
-  activeFloat: { borderColor: COLORS.primary, backgroundColor: 'rgba(99,102,241,0.3)' }
+  activeFloat: { borderColor: COLORS.primary, backgroundColor: 'rgba(99,102,241,0.3)' },
+  simPill: {
+    position: 'absolute',
+    bottom: 40,
+    left: 20,
+    right: 20,
+    backgroundColor: 'rgba(15, 23, 42, 0.95)',
+    borderRadius: 20,
+    padding: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(99, 102, 241, 0.4)',
+    zIndex: 90
+  },
+  simPillIcon: {
+    width: 28, height: 28, borderRadius: 14, backgroundColor: 'rgba(99, 102, 241, 0.2)',
+    justifyContent: 'center', alignItems: 'center'
+  },
+  simPillText: { color: COLORS.text, fontSize: 14, fontWeight: '700', flex: 1 }
 });
