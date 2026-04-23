@@ -70,7 +70,7 @@ class ProcessRunner extends EventEmitter {
     })
 
     this.process.on('exit', (code, signal) => {
-      dbg(`[${this.name}] processus arrêté (code: ${code}, signal: ${signal})`)
+      dbg(`[${this.name}] processus arrete (code: ${code}, signal: ${signal})`)
       this.emit('exit', { code, signal })
       this.process = null
     })
@@ -83,7 +83,7 @@ class ProcessRunner extends EventEmitter {
       try {
         this.process.kill('SIGTERM')
       } catch (e) {
-        dbg(`[${this.name}] erreur lors de l'arrêt: ${e.message}`)
+        dbg(`[${this.name}] erreur lors de l'arret: ${e.message}`)
       }
       this.process = null
     }

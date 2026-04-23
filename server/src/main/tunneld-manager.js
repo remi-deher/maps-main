@@ -40,7 +40,7 @@ service.on('disconnection', (reason) => {
   
   // Si on a perdu le WiFi, on relance immédiatement une recherche agressive
   if (wasWiFi && !_isQuitting) {
-    dbg('[tunneld-manager] WiFi déconnecté. Relance immédiate de la découverte...')
+    dbg('[tunneld-manager] WiFi deconnecte. Relance immediate de la decouverte...')
     service.start()
   }
   if (_onStatusChangeCb) _onStatusChangeCb(false)

@@ -96,7 +96,7 @@ app.whenReady().then(() => {
     
     lastIpDetected = ip
     lastIpTime = now
-    dbg(`[main] Aide à la découverte : iPhone détecté sur ${ip}. Tentative RSD...`)
+    dbg(`[main] Aide a la decouverte : iPhone detecte sur ${ip}. Tentative RSD...`)
     tunnel.setWifiIpOverride(ip)
   })
 
