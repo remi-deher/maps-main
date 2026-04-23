@@ -30,15 +30,18 @@ class GpsSimulator extends EventEmitter {
     }
 
     if (this.restorationTimer) {
-      clearTimeout(this.restorationTimer)
-      this.restorationTimer = null
+      dbg('[gps-sim] Tunnel en cours de stabilisation — position mise en attente')
+      this.lastCoords = { lat, lon, name }
+      return { success: false, error: 'Tunnel stabilizing, queued' }
     }
 
     const rsdAddress = this.tunnel.getRsdAddress()
     const rsdPort = this.tunnel.getRsdPort()
 
     if (!rsdAddress || !rsdPort) {
-      throw new Error('Tunnel non disponible. iPhone connecté ?')
+      dbg('[gps-sim] Tunnel non prêt — position mise en attente pour le rétablissement')
+      this.lastCoords = { lat, lon, name }
+      return { success: false, error: 'Tunnel not ready, queued' }
     }
 
     this._isLaunching = true
