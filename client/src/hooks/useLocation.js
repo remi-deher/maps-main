@@ -40,16 +40,23 @@ export function useLocation() {
   };
 
   const searchAddress = async (query) => {
+    if (!query || query.length < 3) return null;
     setIsSearching(true);
     try {
-      const results = await Location.geocodeAsync(query);
-      return results.length > 0 ? {
-        latitude: results[0].latitude,
-        longitude: results[0].longitude,
-        name: query
-      } : null;
+      const response = await fetch(`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(query)}&format=json&limit=1`);
+      const data = await response.json();
+      
+      if (data && data.length > 0) {
+        return {
+          latitude: parseFloat(data[0].lat),
+          longitude: parseFloat(data[0].lon),
+          name: data[0].display_name.split(',')[0] // Nom court pour l'UI
+        };
+      }
+      Alert.alert("Lieu introuvable", "Essayez d'être plus précis.");
+      return null;
     } catch (e) {
-      Alert.alert("Erreur", "Lieu introuvable.");
+      Alert.alert("Erreur réseau", "Impossible de contacter le service de recherche.");
       return null;
     } finally {
       setIsSearching(false);
