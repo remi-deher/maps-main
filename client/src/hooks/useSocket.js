@@ -157,6 +157,17 @@ export function useSocket(ip, port, isMaintaining) {
     };
   }, [isMaintaining]);
 
+  // Effet 4 : Relais des logs vers le serveur
+  useEffect(() => {
+    const unsubscribeLogs = logEvent.subscribe((history) => {
+      const latest = history[0];
+      if (latest && ws.current?.readyState === WebSocket.OPEN) {
+        ws.current.send(JSON.stringify({ type: 'CLIENT_LOG', data: latest }));
+      }
+    });
+    return () => unsubscribeLogs();
+  }, []);
+
   const sendAction = (type, data) => {
     if (ws.current?.readyState === WebSocket.OPEN) {
       ws.current.send(JSON.stringify({ type, data }));

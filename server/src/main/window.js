@@ -104,6 +104,10 @@ app.whenReady().then(() => {
     if (mainWindow) mainWindow.webContents.send('status-update', { service: 'history', state: 'updated', data: history })
   })
 
+  companion.on('client-log', (log) => {
+    if (mainWindow) mainWindow.webContents.send('status-update', { service: 'client-log', state: 'new', data: log })
+  })
+
   companion.start(initialSettings.companionPort) // Démarrer le serveur WebSocket
   
   tunnel.startTunneld(initialSettings)

@@ -15,6 +15,7 @@ function App() {
   const [selectedPos, setSelectedPos] = useState(null);
   const [activeSim, setActiveSim] = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
+  const [clientLogs, setClientLogs] = useState([]);
   
   const searchInputRef = useRef(null);
   const { history, favorites, addToHistory, addFavorite, removeFavorite } = useStorage();
@@ -53,6 +54,8 @@ function App() {
     const removeListener = window.gps.onStatus((data) => {
       if (data.service === 'tunneld') {
         setStatus(prev => ({ ...prev, state: data.state, message: data.message, type: data.type || prev.type }));
+      } else if (data.service === 'client-log') {
+        setClientLogs(prev => [data.data, ...prev].slice(0, 50));
       }
     });
 
@@ -154,6 +157,28 @@ function App() {
                         <p className="text-xs text-slate-500">{item.lat.toFixed(4)}, {item.lon.toFixed(4)}</p>
                       </button>
                     )) : <p className="p-4 text-center text-slate-600 italic text-sm">Aucun historique</p>}
+                  </div>
+                </section>
+
+                {/* DEBUG CONSOLE CLIENT */}
+                <section className="mt-auto pt-6">
+                  <div className="flex items-center justify-between text-sm font-semibold text-slate-400 mb-3 px-2">
+                    <div className="flex items-center gap-2">
+                      <Monitor className="w-4 h-4" /> <span>CONSOLE DISTANTE (iOS)</span>
+                    </div>
+                    <button onClick={() => setClientLogs([])} className="text-[10px] hover:text-white transition-colors">EFFACER</button>
+                  </div>
+                  <div className="bg-black/40 rounded-xl p-3 h-48 overflow-y-auto border border-white/5 font-mono text-[10px]">
+                    {clientLogs.length > 0 ? clientLogs.map((log, i) => (
+                      <div key={i} className="mb-1.5 flex gap-2">
+                        <span className="text-slate-500">[{log.timestamp}]</span>
+                        <span className={
+                          log.type === 'error' ? 'text-rose-400' : 
+                          log.type === 'success' ? 'text-emerald-400' : 
+                          'text-blue-300'
+                        }>{log.message}</span>
+                      </div>
+                    )) : <p className="text-slate-600 italic">En attente de logs...</p>}
                   </div>
                 </section>
               </div>

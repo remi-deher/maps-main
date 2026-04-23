@@ -143,7 +143,13 @@ class GpsSimulator extends EventEmitter {
 
       dbg(`[gps-sim] spawn: ${PYTHON} ${args.join(' ')}`)
       const spawnTime = Date.now()
-      const proc = spawn(PYTHON, args)
+      
+      const proc = spawn(PYTHON, args, {
+        env: { ...process.env, PYTHONIOENCODING: 'utf-8', PYTHONUNBUFFERED: '1' }
+      })
+      proc.stdout.setEncoding('utf8')
+      proc.stderr.setEncoding('utf8')
+
       if (command === 'set') {
         this.process = proc
         dbg(`[gps-sim] Nouveau processus simulation PID: ${proc.pid}`)

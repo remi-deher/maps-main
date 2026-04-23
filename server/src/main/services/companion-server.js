@@ -143,6 +143,9 @@ class CompanionServer extends EventEmitter {
     else if (payload.type === 'RENAME_FAVORITE') {
       this.renameFavorite(payload.data.lat, payload.data.lon, payload.data.newName)
     }
+    else if (payload.type === 'CLIENT_LOG') {
+      this.emit('client-log', payload.data);
+    }
   }
 
   addFavorite(fav) {
