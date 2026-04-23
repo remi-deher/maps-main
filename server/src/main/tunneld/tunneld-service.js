@@ -69,8 +69,8 @@ class TunneldService extends EventEmitter {
   _handleData(text) {
     if (!text) return
 
-    // Format flexible pour capturer IP et Port
-    const matchRsd = text.match(/--rsd\s+([\w:.]+)\s+(\d+)/)
+    // Format flexible pour capturer IP et Port (incluant le % pour le scope ID IPv6)
+    const matchRsd = text.match(/--rsd\s+([\w:.%]+)\s+(\d+)/)
     
     if (matchRsd) {
       const address = matchRsd[1]
