@@ -19,7 +19,7 @@ class TunneldService extends EventEmitter {
     this.restartTimer = null
     this.fallbackTimer = null
     this.activeConnection = null // { address, port, type, id }
-    this.deviceInfo = { name: 'iPhone', version: 'Inconnue', type: 'Inconnu', paired: false }
+    this.deviceInfo = { name: 'iPhone', version: 'Inconnue', type: 'Inconnu', paired: false, ip: null }
     this._isQuitting = false
 
     // Liaison avec le runner principal
@@ -72,11 +72,12 @@ class TunneldService extends EventEmitter {
 
     // Detection d'infos device (TcpLockdownClient ou autre prompt)
     // Format: <TcpLockdownClient ID:192.168.1.105 VERSION:26.5 TYPE:iPhone17,2 PAIRED:False>
-    const matchInfo = text.match(/VERSION:([\d.]+) TYPE:([^\s,>]+) PAIRED:(\w+)/)
+    const matchInfo = text.match(/ID:([\w:.]+) VERSION:([\d.]+) TYPE:([^ ]+) PAIRED:(\w+)/)
     if (matchInfo) {
-      this.deviceInfo.version = matchInfo[1]
-      this.deviceInfo.type = matchInfo[2]
-      this.deviceInfo.paired = matchInfo[3].toLowerCase() === 'true'
+      this.deviceInfo.ip = matchInfo[1]
+      this.deviceInfo.version = matchInfo[2]
+      this.deviceInfo.type = matchInfo[3].replace(/[,>]$/, '') // Nettoyage virgule finale
+      this.deviceInfo.paired = matchInfo[4].toLowerCase().includes('true')
       this.emit('device-info-updated', this.deviceInfo)
     }
 
