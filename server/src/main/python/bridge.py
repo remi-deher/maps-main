@@ -3,7 +3,7 @@ import json
 import sys
 import logging
 from pymobiledevice3.remote.remote_service_discovery import RemoteServiceDiscoveryService
-from pymobiledevice3.services.dvt.dvt_secure_transport import DvtSecureTransport
+from pymobiledevice3.services.dvt.instruments.dvt_provider import DvtProvider
 from pymobiledevice3.services.dvt.instruments.location_simulation import LocationSimulation
 
 # Configuration logs
@@ -12,29 +12,27 @@ logger = logging.getLogger('bridge')
 
 class PymobiledeviceBridge:
     def __init__(self):
-        self.connections = {}  # Cache: (host, port) -> LocationSimulation
+        self.providers = {}  # Cache: (host, port) -> DvtProvider
 
-    async def get_simulation_service(self, host, port):
+    async def get_dvt_provider(self, host, port):
         key = (host, port)
-        if key in self.connections:
-            try:
-                # Test de connexion rapide
-                return self.connections[key]
-            except Exception:
-                logger.info(f"Connexion perdue pour {host}:{port}, reconnexion...")
-                del self.connections[key]
+        if key in self.providers:
+            provider = self.providers[key]
+            if provider.dtx and not provider.dtx.transport.writer.is_closing():
+                return provider
+            else:
+                logger.info(f"Connexion DTX perdue pour {host}:{port}, nettoyage...")
+                await provider.close()
+                del self.providers[key]
 
-        logger.info(f"Nouvelle connexion RSD vers {host}:{port}")
+        logger.info(f"Nouvelle connexion RSD/DVT vers {host}:{port}")
         rsd = RemoteServiceDiscoveryService(host, port)
         await rsd.connect()
         
-        # Pour iOS 17+, on utilise DVT via le tunnel QUIC géré par rsd
-        dvt = DvtSecureTransport(rsd)
-        await dvt.connect()
-        
-        sim = LocationSimulation(dvt)
-        self.connections[key] = sim
-        return sim
+        provider = DvtProvider(rsd)
+        await provider.connect()
+        self.providers[key] = provider
+        return provider
 
     async def handle_command(self, reader, writer):
         data = await reader.read(4096)
@@ -50,15 +48,17 @@ class PymobiledeviceBridge:
             logger.info(f"Action recue: {action} pour {host}")
 
             if action == 'set_location':
-                lat = request.get('lat')
-                lon = request.get('lon')
-                sim = await self.get_simulation_service(host, port)
-                sim.set_location(lat, lon)
+                lat = float(request.get('lat'))
+                lon = float(request.get('lon'))
+                provider = await self.get_dvt_provider(host, port)
+                async with LocationSimulation(provider) as sim:
+                    await sim.set(lat, lon)
                 response = {"success": True}
             
             elif action == 'clear_location':
-                sim = await self.get_simulation_service(host, port)
-                sim.clear_location()
+                provider = await self.get_dvt_provider(host, port)
+                async with LocationSimulation(provider) as sim:
+                    await sim.clear()
                 response = {"success": True}
                 
             elif action == 'ping':
@@ -78,8 +78,13 @@ class PymobiledeviceBridge:
 
 async def main():
     bridge = PymobiledeviceBridge()
-    # On ecoute sur ::1 (IPv6 Local) pour respecter le souhait "No IPv4"
-    server = await asyncio.start_server(bridge.handle_command, '::1', 49000)
+    # On ecoute sur ::1 (IPv6 Local)
+    try:
+        server = await asyncio.start_server(bridge.handle_command, '::1', 49000)
+    except Exception as e:
+        logger.error(f"Impossible de demarrer le serveur sur ::1: {e}")
+        # Fallback sur 127.0.0.1 si IPv6 Loopback echoue sur cette machine
+        server = await asyncio.start_server(bridge.handle_command, '127.0.0.1', 49000)
     
     addr = server.sockets[0].getsockname()
     print(f"BRIDGE_READY on {addr}")
@@ -89,4 +94,7 @@ async def main():
         await server.serve_forever()
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    try:
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        pass

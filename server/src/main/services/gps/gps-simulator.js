@@ -21,8 +21,7 @@ class GpsSimulator extends EventEmitter {
     this._isQuitting = false
     this._isLaunching = false
 
-    // Relayer les logs
-    this.commander.runner.on('log', (msg) => this.emit('log', msg))
+    this._isLaunching = false
   }
 
   async setLocation(lat, lon, name = null) {
