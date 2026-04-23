@@ -18,7 +18,11 @@ export default function App() {
   // Hooks de logique
   const { serverIp, serverPort, saveSettings } = useStorage();
   const { isMaintaining, requestPermissions, toggleBackground, searchAddress, reverseGeocode } = useLocation();
-  const { status, favorites, recentHistory, simulatedCoords, sendAction, connect } = useSocket(serverIp, serverPort, isMaintaining);
+  const { 
+    status, favorites, recentHistory, simulatedCoords, 
+    deviceInfo, connectionType, rsdAddress, 
+    sendAction, connect 
+  } = useSocket(serverIp, serverPort, isMaintaining);
   
   // États UI locaux
   const [searchQuery, setSearchQuery] = useState('');

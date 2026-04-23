@@ -88,7 +88,7 @@ function setWifiIpOverride(ip, port) {
   }
 
   // Si on a déjà tenté cette IP récemment et que le service tourne, on attend
-  if (_manualIp === ip && service.isRunning) {
+  if (_manualIp === ip && service.runner?.isRunning) {
     return
   }
   
