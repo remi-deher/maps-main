@@ -14,6 +14,7 @@ class PymobiledeviceBridge:
     def __init__(self):
         self.providers = {}  # Cache: (host, port) -> DvtProvider
 
+<<<<<<< HEAD
     async def get_dvt_provider(self, host, port):
         key = (host, port)
         if key in self.providers:
@@ -24,6 +25,29 @@ class PymobiledeviceBridge:
                 logger.info(f"Connexion DTX perdue pour {host}:{port}, nettoyage...")
                 await provider.close()
                 del self.providers[key]
+=======
+    def _clean_host(self, host):
+        """Retire les crochets si presents pour asyncio"""
+        if not host: return host
+        return host.replace('[', '').replace(']', '')
+
+    async def get_dvt_provider(self, host, port):
+        host = self._clean_host(host)
+        key = (host, port)
+        
+        if key in self.providers:
+            provider = self.providers[key]
+            try:
+                # On verifie si le transport est toujours vivant
+                if provider.dtx and not provider.dtx.transport.writer.is_closing():
+                    return provider
+            except Exception:
+                pass
+            
+            logger.info(f"Connexion DTX perdue pour {host}:{port}, nettoyage...")
+            await provider.close()
+            del self.providers[key]
+>>>>>>> main
 
         logger.info(f"Nouvelle connexion RSD/DVT vers {host}:{port}")
         rsd = RemoteServiceDiscoveryService(host, port)
@@ -42,7 +66,11 @@ class PymobiledeviceBridge:
         try:
             request = json.loads(data.decode())
             action = request.get('action')
+<<<<<<< HEAD
             host = request.get('rsd_host')
+=======
+            host = self._clean_host(request.get('rsd_host'))
+>>>>>>> main
             port = request.get('rsd_port')
             
             logger.info(f"Action recue: {action} pour {host}")
@@ -61,6 +89,15 @@ class PymobiledeviceBridge:
                     await sim.clear()
                 response = {"success": True}
                 
+<<<<<<< HEAD
+=======
+            elif action == 'heartbeat':
+                # Pour le heartbeat, on se contente de verifier/maintenir le DvtProvider
+                provider = await self.get_dvt_provider(host, port)
+                # On peut aussi faire un appel DTX vide pour confirmer
+                response = {"success": True, "status": "alive"}
+
+>>>>>>> main
             elif action == 'ping':
                 response = {"success": True, "pong": True}
             
@@ -78,12 +115,19 @@ class PymobiledeviceBridge:
 
 async def main():
     bridge = PymobiledeviceBridge()
+<<<<<<< HEAD
     # On ecoute sur ::1 (IPv6 Local)
     try:
         server = await asyncio.start_server(bridge.handle_command, '::1', 49000)
     except Exception as e:
         logger.error(f"Impossible de demarrer le serveur sur ::1: {e}")
         # Fallback sur 127.0.0.1 si IPv6 Loopback echoue sur cette machine
+=======
+    # On ecoute sur ::1 ou 127.0.0.1
+    try:
+        server = await asyncio.start_server(bridge.handle_command, '::1', 49000)
+    except Exception:
+>>>>>>> main
         server = await asyncio.start_server(bridge.handle_command, '127.0.0.1', 49000)
     
     addr = server.sockets[0].getsockname()
