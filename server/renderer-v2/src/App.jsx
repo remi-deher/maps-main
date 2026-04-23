@@ -105,16 +105,21 @@ function App() {
             <input 
               ref={searchInputRef}
               type="text" 
-              value={searchQuery}
+              defaultValue={searchQuery}
+              onFocus={() => console.log('Input Focused')}
               onChange={(e) => setSearchQuery(e.target.value)}
               onKeyDown={(e) => {
-                if (e.key === 'Enter') search(searchQuery);
+                if (e.key === 'Enter') search(e.target.value);
               }}
               placeholder="Rechercher un lieu..."
-              spellCheck={false}
-              autoComplete="off"
+              autoFocus
               className="w-full bg-transparent border-none outline-none text-lg pl-10 text-white font-bold placeholder:text-slate-400"
-              style={{ userSelect: 'text' }}
+              style={{ 
+                userSelect: 'text', 
+                WebkitUserSelect: 'text',
+                WebkitAppRegion: 'no-drag !important',
+                pointerEvents: 'auto'
+              }}
             />
           </div>
 
