@@ -1,183 +1,165 @@
 'use strict'
 
 /**
- * tunneld-manager.js (L'Orchestrateur Maître)
- * 
- * Hiérarchie de connexion :
- * 1. USB (UsbConnector)
- * 2. Bonjour WiFi IPv6 (BonjourConnector)
- * 3. TunnelId Fallback (TunneldConnector)
+ * tunneld-manager.js (L'Orchestrateur Maître - Version Landsat 9)
+ * Gère la hiérarchie : USB > Bonjour > TunnelId
+ * Utilise TunneldDaemon pour éviter les conflits de ports.
  */
 
-const { dbg } = require('./logger')
-const ConnectionState = require('./tunneld/connection-state')
-const UsbConnector = require('./services/connectors/usb-connector')
-const BonjourConnector = require('./services/connectors/wifi-connector')
-const TunneldConnector = require('./services/connectors/tunneld-connector')
+const { dbg, sendStatus } = require('./logger')
+const wifiConnector = require('./services/connectors/wifi-connector')
+const tunneldDaemon = require('./services/tunneld-daemon')
+const gpsBridge = require('./services/gps/gps-bridge')
 const { PYTHON } = require('./python-resolver')
 const ProcessRunner = require('./utils/process-runner')
+const { EventEmitter } = require('events')
 
-class ConnectionOrchestrator {
+class ConnectionOrchestrator extends EventEmitter {
   constructor() {
-    this.usb = new UsbConnector()
-    this.bonjour = new BonjourConnector()
-    this.tunneld = new TunneldConnector()
-    this.heartbeatRunners = new Map()
+    super()
+    this.wifi = wifiConnector
+    this.daemon = tunneldDaemon
     
-    this.state = new ConnectionState(() => {
-      if (this._onTunnelRestoredCb) this._onTunnelRestoredCb()
-      if (this._onStatusChangeCb) this._onStatusChangeCb(true)
-    })
-
+    this.activeConnection = null
+    this.heartbeatRunners = new Map()
+    this._isQuitting = false
     this._onTunnelRestoredCb = null
     this._onStatusChangeCb = null
-    this._isQuitting = false
 
     this._initListeners()
   }
 
   _initListeners() {
-    // Événements USB (Priorité 1)
-    this.usb.on('connection', (conn) => {
-      dbg(`[orchestrator] USB Prioritaire detecte.`)
-      this.bonjour.stop()
-      this.tunneld.stop()
-      this._handleNewConnection(conn, 'USB')
-    })
-    this.usb.on('disconnection', () => this._handleDisconnection('USB'))
-
-    // Événements Bonjour (Priorité 2)
-    this.bonjour.on('connection', (conn) => {
-      if (this.usb.activeConnection) return // USB gagne
-      dbg(`[orchestrator] WiFi Bonjour detecte.`)
-      this.tunneld.stop()
-      this._handleNewConnection(conn, 'WiFi')
+    // Événements du Démon (USB & TunnelId)
+    this.daemon.on('connection', (conn) => {
+      // Priorité 1 : USB
+      if (conn.type === 'USB') {
+        dbg('[orchestrator] Priorite USB detectee via Demon')
+        this._handleNewConnection(conn)
+      } 
+      // Priorité 3 : TunnelId (uniquement si rien d'autre)
+      else if (!this.activeConnection) {
+        dbg('[orchestrator] Fallback TunnelId detecte via Demon')
+        this._handleNewConnection(conn)
+      }
     })
 
-    // Événements Tunneld (Priorité 3)
-    this.tunneld.on('connection', (conn) => {
-      if (this.usb.activeConnection || this.bonjour.activeConnection) return // USB ou Bonjour gagnent
-      this._handleNewConnection(conn, conn.type)
+    this.daemon.on('disconnection', () => this._handleDisconnection('Demon'))
+
+    // Événements WiFi Bonjour (Priorité 2)
+    this.wifi.on('connection', (conn) => {
+      if (this.activeConnection?.type === 'USB') return
+      dbg('[orchestrator] Connexion WiFi (Bonjour) detectee')
+      this._handleNewConnection(conn)
     })
+
+    this.wifi.on('disconnection', () => this._handleDisconnection('WiFi'))
+  }
+
+  _handleNewConnection(conn) {
+    if (this.activeConnection?.address === conn.address && this.activeConnection?.port === conn.port) return
+
+    this.activeConnection = conn
+    dbg(`[orchestrator] Nouvelle connexion active : ${conn.type} (${conn.address}:${conn.port})`)
+
+    sendStatus({
+      service: 'tunneld',
+      state: 'ready',
+      message: `Connecté via ${conn.type}`,
+      type: conn.type,
+      device: conn.deviceInfo || { name: 'iPhone' }
+    })
+
+    this._startHeartbeat(conn.address, conn.port)
+    
+    if (this._onTunnelRestoredCb) this._onTunnelRestoredCb()
+    if (this._onStatusChangeCb) this._onStatusChangeCb(true)
+    this.emit('ready', conn)
+  }
+
+  _handleDisconnection(source) {
+    if (!this.activeConnection) return
+    
+    dbg(`[orchestrator] Deconnexion detectee via ${source}`)
+    this.activeConnection = null
+    this._stopAllHeartbeats()
+    
+    sendStatus({
+      service: 'tunneld',
+      state: 'scanning',
+      message: 'Connexion perdue, recherche...'
+    })
+
+    if (this._onStatusChangeCb) this._onStatusChangeCb(false)
+    this.emit('lost')
   }
 
   start() {
     if (this._isQuitting) return
-    dbg('[orchestrator] Demarrage de la sequence de decouverte...')
+    dbg('[orchestrator] Demarrage du moteur de decouverte...')
     
-    // 1. On lance toujours l'USB (il ecoute passivement)
-    this.usb.start()
+    this.daemon.start()
+    this.wifi.start()
 
-    // 2. Apres 5s, si rien en USB, on lance Bonjour
-    setTimeout(() => {
-      if (!this.state.isConnected && !this._isQuitting) {
-        this.bonjour.start()
-      }
-    }, 5000)
-
-    // 3. Apres 15s, si toujours rien, on lance le Fallback TunnelId
-    setTimeout(() => {
-      if (!this.state.isConnected && !this._isQuitting) {
-        this.tunneld.start()
-      }
-    }, 15000)
-  }
-
-  _handleNewConnection(conn, type) {
-    this.state.setConnected(conn.address, conn.port, type)
-    if (conn.deviceInfo) {
-        // Optionnel : mise à jour des infos device
-    }
-    this._startRsdHeartbeat(conn.address, conn.port)
-  }
-
-  _handleDisconnection(source) {
-    dbg(`[orchestrator] Deconnexion detectee via ${source}`)
-    this.state.setDisconnected(`Deconnecte de ${source}`)
-    this._stopAllHeartbeats()
-    if (this._onStatusChangeCb) this._onStatusChangeCb(false)
-    
-    if (this._isQuitting) return
-
-    if (source === 'USB') {
-      dbg('[orchestrator] Chute de la Priorite 1 (USB) -> Basculement immediat sur Priorite 2 (Bonjour)')
-      this.bonjour.start()
-      
-      // On lance aussi le timer pour le fallback TunnelId plus tard
-      setTimeout(() => {
-        if (!this.state.isConnected && !this._isQuitting) {
-          this.tunneld.start()
-        }
-      }, 10000)
-    } else {
-      // Pour les autres deconnexions, on relance le cycle normal
-      this.start()
-    }
-  }
-
-  _startRsdHeartbeat(address, port) {
-    const key = `${address}:${port}`
-    if (this.heartbeatRunners.has(key)) return
-    
-    dbg(`[orchestrator] Battement de coeur (RSD) sur ${address}:${port}...`)
-    
-    // Règle d'or : On utilise les crochets pour l'IPv6 sur Windows pour éviter les ambiguïtés de parsing.
-    const formattedAddress = address.includes(':') ? `[${address}]` : address
-    const args = ['-m', 'pymobiledevice3', 'lockdown', 'heartbeat', '--rsd', formattedAddress, port]
-
-    const hbRunner = new ProcessRunner(`hb-${address.slice(0,8)}`)
-    hbRunner.spawn(PYTHON, args)
-    this.heartbeatRunners.set(key, hbRunner)
-
-    hbRunner.on('exit', () => {
-      if (this.heartbeatRunners.get(key) === hbRunner) {
-        this.heartbeatRunners.delete(key)
-      }
+    sendStatus({
+      service: 'tunneld',
+      state: 'scanning',
+      message: 'Recherche d\'un iPhone...'
     })
   }
 
+  _startHeartbeat(address, port) {
+    this._stopAllHeartbeats()
+    
+    dbg(`[orchestrator] Battement de coeur (Bridge) sur ${address}:${port}...`)
+    
+    // On lance une boucle de heartbeat via le pont
+    const hbInterval = setInterval(async () => {
+      if (!this.activeConnection || this.activeConnection.address !== address) {
+        clearInterval(hbInterval)
+        return
+      }
+
+      const result = await gpsBridge.sendCommand('heartbeat', address, port)
+      if (!result.success) {
+        dbg(`[orchestrator] Echec heartbeat pont : ${result.error}`)
+      }
+    }, 10000)
+
+    this.heartbeatRunners.set('active', { stop: () => clearInterval(hbInterval) })
+  }
+
   _stopAllHeartbeats() {
-    for (const [key, runner] of this.heartbeatRunners) {
-      runner.stop()
+    for (const hb of this.heartbeatRunners.values()) {
+      hb.stop()
     }
     this.heartbeatRunners.clear()
   }
 
-  // --- API Façade pour le reste de l'app ---
-  startTunneld() { this.start() }
-  stopTunneld() { 
-    this.usb.stop()
-    this.bonjour.stop()
-    this.tunneld.stop()
+  stopTunneld() {
+    this.daemon.stop()
+    this.wifi.stop()
     this._stopAllHeartbeats()
-    this.state.reset()
+    this.activeConnection = null
   }
+
   setQuitting() {
     this._isQuitting = true
-    this.usb.destroy()
-    this.bonjour.destroy()
-    this.tunneld.destroy()
-    this._stopAllHeartbeats()
+    this.stopTunneld()
   }
 
-  // Ces méthodes restent pour la compatibilité avec GpsSimulator et CompanionServer
-  getRsdAddress() { return this.state.address }
-  getRsdPort() { return this.state.port }
-  getConnectionType() { return this.state.type }
-  getDeviceInfo() { return this.usb.deviceInfo || { name: 'iPhone', version: 'Inconnue', type: 'Inconnu', paired: false } }
-  stopHeartbeats() { this._stopAllHeartbeats() }
-  applyConnectionMode(mode) {
-    dbg(`[orchestrator] Mode de connexion demande : ${mode} (Applique au prochain cycle)`)
-  }
-
+  // API Façade
+  getRsdAddress() { return this.activeConnection?.address }
+  getRsdPort() { return this.activeConnection?.port }
+  getConnectionType() { return this.activeConnection?.type }
+  getDeviceInfo() { return this.activeConnection?.deviceInfo || { name: 'iPhone', version: 'Inconnue' } }
+  
   forceRefresh() { this.stopTunneld(); this.start() }
+  startTunneld() { this.start() }
+  applyConnectionMode(mode) { dbg(`[orchestrator] Mode : ${mode} (Auto)`) }
+  setWifiIpOverride(ip) { dbg(`[orchestrator] IP Info : ${ip}`) }
   setOnTunnelRestored(cb) { this._onTunnelRestoredCb = cb }
   setOnStatusChange(cb) { this._onStatusChangeCb = cb }
-  
-  // Cette méthode est maintenant décorrélée de l'initialisation du tunnel
-  setWifiIpOverride(ip) {
-    dbg(`[orchestrator] Info WebSocket recue : iPhone sur ${ip} (Stocke pour info uniquement)`)
-  }
 }
 
 module.exports = new ConnectionOrchestrator()
