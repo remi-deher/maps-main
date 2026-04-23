@@ -201,4 +201,4 @@ class CompanionServer extends EventEmitter {
   }
 }
 
-module.exports = new CompanionServer()
+module.exports = CompanionServer

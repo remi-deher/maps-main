@@ -5,11 +5,12 @@ const path = require('path')
 const { setWindow, dbg } = require('./logger')
 const tunnel = require('./tunneld-manager')
 const GpsSimulator = require('./services/gps-simulator')
-const companion = require('./services/companion-server')
+const companionServer = require('./services/companion-server')
 const { registerIpcHandlers } = require('./ipc/registry')
 
 let mainWindow
 let gps
+let companion
 
 function createWindow() {
   mainWindow = new BrowserWindow({
@@ -48,6 +49,7 @@ app.whenReady().then(() => {
   
   // Initialisation des services
   gps = new GpsSimulator(tunnel)
+  companion = new companionServer()
   
   // Enregistre les handlers IPC
   registerIpcHandlers(tunnel, gps, companion)

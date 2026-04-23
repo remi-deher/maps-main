@@ -168,4 +168,4 @@ class TunneldService extends EventEmitter {
   }
 }
 
-module.exports = new TunneldService()
+module.exports = TunneldService
