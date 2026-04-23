@@ -1,14 +1,18 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { X, Smartphone } from 'lucide-react';
+import { X, Smartphone, Globe, Hash } from 'lucide-react';
 
 function QrModal({ isOpen, onClose }) {
   const [qrData, setQrData] = useState(null);
+  const [connInfo, setConnInfo] = useState(null);
 
   useEffect(() => {
     if (isOpen) {
       window.gps.getCompanionQr().then(res => {
-        if (res.success) setQrData(res.dataUrl);
+        if (res.success) {
+          setQrData(res.dataUrl);
+          setConnInfo({ ip: res.ip, port: res.port });
+        }
       });
     }
   }, [isOpen]);
@@ -39,22 +43,39 @@ function QrModal({ isOpen, onClose }) {
         </div>
 
         <h2 className="text-xl font-bold mb-2">Connecter l'iPhone</h2>
-        <p className="text-slate-400 text-sm mb-8">Scannez ce QR Code avec l'application mobile pour configurer la connexion.</p>
+        <p className="text-slate-400 text-sm mb-8">Scannez ce QR Code pour configurer automatiquement la connexion.</p>
 
-        <div className="bg-white p-4 rounded-3xl inline-block shadow-2xl">
+        <div className="bg-white p-4 rounded-3xl inline-block shadow-2xl mb-8">
           {qrData ? (
             <img src={qrData} alt="QR Code" className="w-48 h-48" />
           ) : (
-            <div className="w-48 h-48 flex items-center justify-center text-slate-900">
+            <div className="w-48 h-48 flex items-center justify-center text-slate-900 font-bold">
               Génération...
             </div>
           )}
         </div>
 
-        <div className="mt-8 p-4 bg-white/5 rounded-2xl border border-white/5">
-          <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest mb-1">Configuration Réseau</p>
-          <p className="text-sm text-blue-400">Scan via l'App Mobile</p>
+        {/* Bloc de vérification IP / Port */}
+        <div className="grid grid-cols-2 gap-3">
+          <div className="bg-white/5 border border-white/10 rounded-2xl p-3 text-left">
+            <div className="flex items-center gap-2 text-blue-400 mb-1">
+              <Globe className="w-3 h-3" />
+              <span className="text-[10px] font-bold uppercase tracking-wider">Adresse IP</span>
+            </div>
+            <p className="text-sm font-mono text-white truncate">{connInfo?.ip || 'Détection...'}</p>
+          </div>
+          <div className="bg-white/5 border border-white/10 rounded-2xl p-3 text-left">
+            <div className="flex items-center gap-2 text-emerald-400 mb-1">
+              <Hash className="w-3 h-3" />
+              <span className="text-[10px] font-bold uppercase tracking-wider">Port</span>
+            </div>
+            <p className="text-sm font-mono text-white">{connInfo?.port || '....'}</p>
+          </div>
         </div>
+
+        <p className="mt-6 text-[10px] text-slate-500 italic">
+          Assurez-vous que l'iPhone est sur le même réseau Wi-Fi.
+        </p>
       </motion.div>
     </div>
   );

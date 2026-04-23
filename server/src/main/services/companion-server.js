@@ -179,14 +179,32 @@ class CompanionServer extends EventEmitter {
 
   _getLocalIp() {
     const interfaces = os.networkInterfaces()
+    let fallbackIp = '127.0.0.1'
+    
+    // On parcourt les interfaces par ordre de probabilité
     for (const name of Object.keys(interfaces)) {
+      const lowerName = name.toLowerCase()
+      
+      // Ignorer les interfaces virtuelles connues
+      if (lowerName.includes('virtualbox') || 
+          lowerName.includes('vmware') || 
+          lowerName.includes('vbox') || 
+          lowerName.includes('vethernet') || 
+          lowerName.includes('wsl')) {
+        continue
+      }
+
       for (const iface of interfaces[name]) {
         if (iface.family === 'IPv4' && !iface.internal) {
-          return iface.address
+          // Si on trouve une IP qui ressemble à une IP locale standard, on la prend direct
+          if (iface.address.startsWith('192.168.') || iface.address.startsWith('10.')) {
+            return iface.address
+          }
+          fallbackIp = iface.address
         }
       }
     }
-    return '127.0.0.1'
+    return fallbackIp
   }
 
   stop() {
