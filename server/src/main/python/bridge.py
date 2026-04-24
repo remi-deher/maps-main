@@ -13,6 +13,7 @@ class PymobiledeviceBridge:
         self.current_process = None
         self.current_params = None
         self.output_task = None
+        self.lock = asyncio.Lock()
 
     def _clean_host(self, host):
         if not host: return host
@@ -26,6 +27,9 @@ class PymobiledeviceBridge:
                 if not line: break
                 msg = line.decode().strip()
                 if msg:
+                    # On ignore les erreurs de connexion reset qui polluent les logs lors du kill
+                    if "10054" in msg or "ConnectionResetError" in msg:
+                        continue
                     logger.info(f"[{prefix}] {msg}")
         except asyncio.CancelledError:
             pass
@@ -107,34 +111,35 @@ class PymobiledeviceBridge:
             return {"success": False, "error": str(e)}
 
     async def handle_command(self, reader, writer):
-        try:
-            line = await reader.read(4096)
-            if not line: return
-            
-            request = json.loads(line.decode())
-            action = request.get('action')
-            host = self._clean_host(request.get('rsd_host'))
-            port = request.get('rsd_port')
-            
-            if action == 'set_location':
-                lat, lon = float(request.get('lat')), float(request.get('lon'))
-                response = await self.set_location(host, port, lat, lon)
-            elif action == 'clear_location':
-                await self.stop_current_sim()
-                response = {"success": True}
-            elif action == 'heartbeat':
-                status = "alive" if self.current_process and self.current_process.returncode is None else "idle"
-                response = {"success": True, "status": status}
-            else:
-                response = {"success": False, "error": "Action inconnue"}
+        async with self.lock:
+            try:
+                line = await reader.read(4096)
+                if not line: return
+                
+                request = json.loads(line.decode())
+                action = request.get('action')
+                host = self._clean_host(request.get('rsd_host'))
+                port = request.get('rsd_port')
+                
+                if action == 'set_location':
+                    lat, lon = float(request.get('lat')), float(request.get('lon'))
+                    response = await self.set_location(host, port, lat, lon)
+                elif action == 'clear_location':
+                    await self.stop_current_sim()
+                    response = {"success": True}
+                elif action == 'heartbeat':
+                    status = "alive" if self.current_process and self.current_process.returncode is None else "idle"
+                    response = {"success": True, "status": status}
+                else:
+                    response = {"success": False, "error": "Action inconnue"}
 
-            writer.write(json.dumps(response).encode())
-            await writer.drain()
-        except Exception as e:
-            logger.error(f"Erreur handler: {e}")
-        finally:
-            writer.close()
-            await writer.wait_closed()
+                writer.write(json.dumps(response).encode())
+                await writer.drain()
+            except Exception as e:
+                logger.error(f"Erreur handler: {e}")
+            finally:
+                writer.close()
+                await writer.wait_closed()
 
 async def main():
     bridge = PymobiledeviceBridge()
