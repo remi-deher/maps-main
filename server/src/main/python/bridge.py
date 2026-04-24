@@ -87,12 +87,19 @@ class PymobiledeviceBridge:
                 creationflags=0x08000000 if os.name == 'nt' else 0
             )
             
-            # Lancer le logging en arrière-plan pour voir les erreurs du CLI
+            # Lancer le logging en arrière-plan
             self.output_task = asyncio.gather(
                 self._log_output("CLI-OUT", self.current_process.stdout),
                 self._log_output("CLI-ERR", self.current_process.stderr)
             )
-            
+
+            # --- AMÉLIORATION : Attendre de voir si le CLI arrive à se connecter ---
+            # On attend 3s. Si le process meurt durant ce laps de temps, c'est un échec de connexion.
+            for _ in range(15): # 15 x 200ms = 3s
+                await asyncio.sleep(0.2)
+                if self.current_process.returncode is not None:
+                    return {"success": False, "error": "L'iPhone a refuse la connexion (RSD/DVT error)"}
+
             self.current_params = new_params
             return {"success": True}
         except Exception as e:

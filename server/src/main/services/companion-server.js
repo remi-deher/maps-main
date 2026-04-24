@@ -89,7 +89,7 @@ class CompanionServer extends EventEmitter {
             try {
               const payload = JSON.parse(body)
               const { lat, lon, name } = payload
-              if (lat && lon) {
+              if (lat !== undefined && lon !== undefined) {
                 dbg(`[companion-server] ⚠️ DÉRIVE DÉTECTÉE sur l'iPhone (${lat}, ${lon}). Relance automatique...`)
                 sendStatus('companion', 'info', `Secours : Simulation relancée (${name || 'Background'})`)
                 this.emit('request-location', { lat, lon, name })
@@ -202,7 +202,7 @@ class CompanionServer extends EventEmitter {
       
       case 'SET_LOCATION': {
         const { lat, lon, name } = payload.data || {}
-        if (lat && lon) {
+        if (lat !== undefined && lon !== undefined) {
           dbg(`[companion-server] iPhone demande position: ${lat}, ${lon} (${name || 'sans nom'})`)
           this.emit('request-location', { lat, lon, name })
           if (name) favoritesManager.addToHistory({ lat, lon, name })

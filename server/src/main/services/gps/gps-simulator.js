@@ -51,6 +51,14 @@ class GpsSimulator extends EventEmitter {
         this.lastCoords = { lat, lon, name }
         this.emit('location-changed', { lat, lon, name })
         this.watchdog.start(rsdAddress, rsdPort)
+      } else {
+        // --- AMÉLIORATION : Gestion des erreurs de connexion ---
+        if (result.error && (result.error.includes('refuse') || result.error.includes('timeout') || result.error.includes('socket'))) {
+          dbg(`[gps-simulator] ⚠️ Erreur critique de connexion detectee. Déclenchement d'un rafraîchissement forcé du tunnel...`)
+          this.tunnel.forceRefresh()
+          // On garde les coords pour la restauration automatique qui suivra le refresh
+          this.lastCoords = { lat, lon, name }
+        }
       }
       return result
     } finally {
@@ -99,17 +107,21 @@ class GpsSimulator extends EventEmitter {
   onTunnelRestored() {
     if (!this.lastCoords || this._isQuitting || this.restorationTimer) return
     
-    dbg('[gps-simulator] Tentative de restauration automatique de la position...')
+    dbg('[gps-simulator] ⚠️ Perte de simulation détectée. Déclenchement du rafraîchissement tunnel...')
+    
+    // On force la recherche du tunnel
+    this.tunnel.forceRefresh()
+
     if (this.restorationTimer) clearTimeout(this.restorationTimer)
     
     this.restorationTimer = setTimeout(async () => {
       this.restorationTimer = null
       if (this.lastCoords && !this._isQuitting) {
         const { lat, lon, name } = this.lastCoords
-        dbg(`[gps-simulator] Restauration vers ${lat}, ${lon} (${name})`)
+        dbg(`[gps-simulator] 🔄 Restauration automatique vers ${lat}, ${lon} (${name})`)
         await this.setLocation(lat, lon, name)
       }
-    }, 5000)
+    }, 6000) // Un peu plus long pour laisser le temps au tunnel de remonter
   }
 
   stop() {
