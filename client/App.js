@@ -1,8 +1,9 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { StyleSheet, View, TouchableWithoutFeedback, Keyboard, KeyboardAvoidingView, Platform, TouchableOpacity, Text, Animated, Easing } from 'react-native';
 import MapView, { Marker } from 'react-native-maps';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import * as Battery from 'expo-battery';
+import * as Location from 'expo-location';
 
 // Modules locaux
 import { COLORS, SHADOWS } from './src/constants/theme';

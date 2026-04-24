@@ -96,7 +96,7 @@ if (!TaskManager.isTaskDefined(LOCATION_TASK_NAME)) {
           type: 'TICK', 
           timestamp: Date.now(), 
           drift: dist,
-          isMocked: dist < 100 
+          isMocked: dist < 200 
         });
 
       } catch (e) {
