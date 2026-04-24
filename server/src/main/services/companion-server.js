@@ -50,7 +50,11 @@ class CompanionServer extends EventEmitter {
   }
 
   _refreshStatus() {
+    // On considère la simulation active si le tunnel est prêt ET qu'une position a été injectée
+    const isRunning = !!(this.tunnel?.getRsdAddress() && this.status?.lastInjectedLocation);
+    
     this.status = {
+      state: isRunning ? 'running' : 'idle',
       tunnelActive: !!this.tunnel?.getRsdAddress(),
       rsdAddress: this.tunnel?.getRsdAddress() || null,
       rsdPort: this.tunnel?.getRsdPort() || null,
@@ -58,6 +62,7 @@ class CompanionServer extends EventEmitter {
       deviceInfo: this.tunnel?.getDeviceInfo() || null,
       maintainActive: this.status?.maintainActive || false,
       lastHeartbeat: this.status?.lastHeartbeat || null,
+      lastInjectedLocation: this.status?.lastInjectedLocation || null,
       favorites: favoritesManager.getFavorites(),
       recentHistory: favoritesManager.getHistory()
     }
@@ -204,6 +209,8 @@ class CompanionServer extends EventEmitter {
         const { lat, lon, name } = payload.data || {}
         if (lat !== undefined && lon !== undefined) {
           dbg(`[companion-server] iPhone demande position: ${lat}, ${lon} (${name || 'sans nom'})`)
+          this.status.lastInjectedLocation = { lat, lon, name }
+          this._refreshStatus()
           this.emit('request-location', { lat, lon, name })
           if (name) favoritesManager.addToHistory({ lat, lon, name })
           
@@ -235,6 +242,12 @@ class CompanionServer extends EventEmitter {
       
       case 'CLIENT_LOG': {
         this.emit('client-log', payload.data)
+        break
+      }
+
+      case 'GET_STATUS': {
+        this._refreshStatus()
+        ws.send(JSON.stringify({ type: 'STATUS', data: this.status }))
         break
       }
     }

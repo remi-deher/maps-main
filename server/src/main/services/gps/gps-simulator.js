@@ -54,10 +54,12 @@ class GpsSimulator extends EventEmitter {
       } else {
         // --- AMÉLIORATION : Gestion des erreurs de connexion ---
         if (result.error && (result.error.includes('refuse') || result.error.includes('timeout') || result.error.includes('socket'))) {
-          dbg(`[gps-simulator] ⚠️ Erreur critique de connexion detectee. Déclenchement d'un rafraîchissement forcé du tunnel...`)
+          dbg(`[gps-simulator] ⚠️ Erreur critique de connexion (WiFi/RSD). Tentative de rafraîchissement tunnel...`)
           this.tunnel.forceRefresh()
           // On garde les coords pour la restauration automatique qui suivra le refresh
           this.lastCoords = { lat, lon, name }
+        } else {
+          dbg(`[gps-simulator] ❌ Echec simulation: ${result.error}`)
         }
       }
       return result
@@ -69,7 +71,8 @@ class GpsSimulator extends EventEmitter {
   _resetJitter() {
     if (this.jitterTimer) clearTimeout(this.jitterTimer)
     if (this._isQuitting) return
-    this.jitterTimer = setTimeout(() => this._applyJitter(), 120000)
+    // On passe à 30s pour plus de stabilité sur WiFi
+    this.jitterTimer = setTimeout(() => this._applyJitter(), 30000)
   }
 
   async _applyJitter() {
@@ -84,7 +87,12 @@ class GpsSimulator extends EventEmitter {
     dbg(`[gps-simulator] Envoi Micro-Jitter de maintien d'activite (${jitterLat.toFixed(7)})`)
     
     try {
-      await this.commander.execute('set', rsdAddress, rsdPort, [String(jitterLat), String(this.lastCoords.lon)])
+      const result = await this.commander.execute('set', rsdAddress, rsdPort, [String(jitterLat), String(this.lastCoords.lon)])
+      if (result.success) {
+        // Mise à jour de l'état pour que le client reste synchrone (évite la dérive fantôme)
+        this.lastCoords.lat = jitterLat
+        this.emit('location-changed', { lat: jitterLat, lon: this.lastCoords.lon, name: this.lastCoords.name })
+      }
     } catch (e) {
       dbg(`[gps-simulator] Echec Jitter: ${e.message}`)
     }
@@ -107,7 +115,7 @@ class GpsSimulator extends EventEmitter {
   onTunnelRestored() {
     if (!this.lastCoords || this._isQuitting || this.restorationTimer) return
     
-    dbg('[gps-simulator] ⚠️ Perte de simulation détectée. Déclenchement du rafraîchissement tunnel...')
+    dbg(`[gps-simulator] ⚠️ Perte de simulation détectée (Tunnel down). Coordonnées sauvegardées : ${this.lastCoords.lat}, ${this.lastCoords.lon}`)
     
     // On force la recherche du tunnel
     this.tunnel.forceRefresh()

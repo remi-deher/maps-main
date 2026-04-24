@@ -74,14 +74,15 @@ export function useSocket(ip, port, isMaintaining) {
   // Couche 2 : Replay des dernières coords
   // ─────────────────────────────────────────
 
-  const replayLastCoords = useCallback(async () => {
+  const replayLastCoords = useCallback(async (force = false) => {
     try {
       const raw = await AsyncStorage.getItem('MOCK_LOCATION');
       if (!raw) return;
       const saved = JSON.parse(raw);
       const age = Date.now() - (saved.savedAt || 0);
       
-      if (age > COORDS_TTL_MS) {
+      // Option C : On ignore le TTL si c'est une restauration forcée (serveur vide)
+      if (!force && age > COORDS_TTL_MS) {
         logEvent.add('Coords expirées (TTL > 30min), pas de replay');
         return;
       }
@@ -89,7 +90,7 @@ export function useSocket(ip, port, isMaintaining) {
       if (ws.current?.readyState === WebSocket.OPEN) {
         const { latitude, longitude, name } = saved;
         ws.current.send(JSON.stringify({ type: 'SET_LOCATION', data: { lat: latitude, lon: longitude, name } }));
-        logEvent.add(`🔄 Replay : ${latitude.toFixed(4)}, ${longitude.toFixed(4)}`);
+        logEvent.add(`🔄 Restauration ${force ? '(Forcée)' : '(Auto)'} : ${latitude.toFixed(4)}, ${longitude.toFixed(4)}`);
       }
     } catch (e) {
       logEvent.add(`Erreur replay : ${e.message}`, 'error');
@@ -124,8 +125,8 @@ export function useSocket(ip, port, isMaintaining) {
         updateStatus('Connecté');
         logEvent.add('WS connecté', 'success');
 
-        // Couche 2 : Replay immédiat
-        await replayLastCoords();
+        // Au démarrage, on demande l'état au serveur
+        ws.current.send(JSON.stringify({ type: 'GET_STATUS' }));
       };
 
       ws.current.onmessage = (e) => {
@@ -145,6 +146,13 @@ export function useSocket(ip, port, isMaintaining) {
             if (payload.data.deviceInfo)    setDeviceInfo(payload.data.deviceInfo);
             if (payload.data.connectionType) setConnectionType(payload.data.connectionType);
             if (payload.data.rsdAddress)    setRsdAddress(payload.data.rsdAddress);
+
+            if (payload.data.state === 'idle') {
+               logEvent.add("ℹ️ Serveur vierge détecté. Déclenchement restauration Option C...");
+               replayLastCoords(true); // Restauration forcée sans TTL
+            } else {
+               logEvent.add(`✅ Simulation déjà active sur le serveur (${payload.data.state})`);
+            }
           } else if (payload.type === 'LOCATION') {
             const coords = {
               latitude:  payload.data.lat,
@@ -297,6 +305,7 @@ export function useSocket(ip, port, isMaintaining) {
 
     const unsubBus = eventBus.subscribe((ev) => {
       if (ev.type === 'TICK' && isMaintaining) sendHeartbeat();
+      if (ev.type === 'LOG') logEvent.add(ev.message);
     });
 
     const timer = setInterval(() => {

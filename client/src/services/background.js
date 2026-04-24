@@ -47,22 +47,33 @@ if (!TaskManager.isTaskDefined(LOCATION_TASK_NAME)) {
         // 3. Si dérive > 100m, la simulation est probablement tombée
         // iOS nous renvoie notre vraie position au lieu de la simulée.
         if (dist > 100) {
-           const configJson = await AsyncStorage.getItem('SERVER_CONFIG');
-           if (configJson) {
-             const { ip, port } = JSON.parse(configJson);
-             
-             // On utilise HTTP POST car le WebSocket est suspendu en arrière-plan
-             fetch(`http://${ip}:${port}/relance`, {
-               method: 'POST',
-               headers: { 'Content-Type': 'application/json' },
-               body: JSON.stringify({
-                 lat: mockCoords.latitude,
-                 lon: mockCoords.longitude,
-                 name: `Relance Auto (Dérive: ${Math.round(dist)}m)`
-               })
-             }).catch(() => {
-               // Erreur réseau (PC éteint ou WiFi coupé), on ignore silencieusement
-             });
+           const now = Date.now();
+           const lastRelance = await AsyncStorage.getItem('LAST_RELANCE_TIME');
+           
+           if (!lastRelance || (now - parseInt(lastRelance)) > 10000) {
+             const configJson = await AsyncStorage.getItem('SERVER_CONFIG');
+             if (configJson) {
+               const { ip, port } = JSON.parse(configJson);
+               
+               await AsyncStorage.setItem('LAST_RELANCE_TIME', now.toString());
+               
+               // On utilise HTTP POST car le WebSocket est suspendu en arrière-plan
+               fetch(`http://${ip}:${port}/relance`, {
+                 method: 'POST',
+                 headers: { 'Content-Type': 'application/json' },
+                 body: JSON.stringify({
+                   lat: mockCoords.latitude,
+                   lon: mockCoords.longitude,
+                   name: `Relance Auto (Dérive: ${Math.round(dist)}m)`
+                 })
+               }).then(() => {
+                 eventBus.emit({ type: 'LOG', message: `✅ Relance auto envoyée (Dérive: ${Math.round(dist)}m)` });
+               }).catch(() => {
+                 // Erreur réseau (PC éteint ou WiFi coupé), on ignore silencieusement
+               });
+             } else {
+               eventBus.emit({ type: 'LOG', message: `⏳ Relance ignorée (Cooldown actif)` });
+             }
            }
         }
         

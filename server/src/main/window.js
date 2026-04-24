@@ -104,7 +104,6 @@ app.whenReady().then(() => {
   tunnel.setOnStatusChange((active) => companion.updateTunnelStatus(active))
 
   gps.on('location-changed', ({ lat, lon, name }) => {
-    tunnel.stopHeartbeats() 
     companion.broadcastLocation(lat, lon, name)
   })
 
