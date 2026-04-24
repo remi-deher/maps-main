@@ -8,6 +8,7 @@ export default function Omnibar({
   onSearchSubmit, 
   onScannerPress, 
   onSettingsPress,
+  onDebugPress,
   onSuggestionSelect,
   status,
   isMaintaining,
@@ -62,6 +63,9 @@ export default function Omnibar({
         <TouchableOpacity style={styles.btn} onPress={onSettingsPress} activeOpacity={0.7}>
           <Text style={{fontSize: 20}}>⚙️</Text>
         </TouchableOpacity>
+        <TouchableOpacity style={styles.btn} onPress={onDebugPress} activeOpacity={0.7}>
+          <Text style={{fontSize: 20}}>📜</Text>
+        </TouchableOpacity>
         <TextInput
           style={styles.input}
           placeholder="Rechercher..."
@@ -96,20 +100,22 @@ export default function Omnibar({
         </View>
       )}
       
-      <Animated.View style={[
-        styles.pill, 
-        SHADOWS.light,
-        { 
-          backgroundColor: status === 'Connecté' ? COLORS.success : COLORS.error,
-          transform: [{ scale: pillAnim }, { translateY: pillAnim.interpolate({ inputRange: [0.8, 1], outputRange: [-5, 0] }) }],
-          opacity: pillAnim
-        }
-      ]}>
-        <View style={styles.statusDot} />
-        <Text style={styles.pillText}>
-          {status} {isMaintaining && '• 🛡️'} {isLowPowerMode && '• 🔋 LOW POWER'}
-        </Text>
-      </Animated.View>
+      <TouchableOpacity onPress={onDebugPress} activeOpacity={0.8}>
+        <Animated.View style={[
+          styles.pill, 
+          SHADOWS.light,
+          { 
+            backgroundColor: status === 'Connecté' ? COLORS.success : COLORS.error,
+            transform: [{ scale: pillAnim }, { translateY: pillAnim.interpolate({ inputRange: [0.8, 1], outputRange: [-5, 0] }) }],
+            opacity: pillAnim
+          }
+        ]}>
+          <View style={styles.statusDot} />
+          <Text style={styles.pillText}>
+            {status} {isMaintaining && '• 🛡️'} {isLowPowerMode && '• 🔋'}
+          </Text>
+        </Animated.View>
+      </TouchableOpacity>
     </SafeAreaView>
   );
 }

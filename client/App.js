@@ -34,6 +34,7 @@ export default function App() {
   const [showDebug, setShowDebug] = useState(false);
   const [isFavsOpen, setIsFavsOpen] = useState(false);
   const [isLowPowerMode, setIsLowPowerMode] = useState(false);
+  const [mapType, setMapType] = useState('hybrid');
 
   const mapRef = useRef(null);
   const [cameraPermission, requestCameraPermission] = useCameraPermissions();
@@ -96,15 +97,24 @@ export default function App() {
     }
   };
   
-  const centerOnSimulation = () => {
+  const centerOnLocation = async () => {
     if (simulatedCoords) {
       logEvent.add("Centrage sur position simulée");
-      mapRef.current?.animateToRegion({
-        ...simulatedCoords,
-        latitudeDelta: 0.005,
-        longitudeDelta: 0.005
+      mapRef.current?.animateToRegion({ ...simulatedCoords, latitudeDelta: 0.005, longitudeDelta: 0.005 }, 500);
+    } else {
+      logEvent.add("Centrage sur position réelle");
+      const loc = await Location.getCurrentPositionAsync({});
+      mapRef.current?.animateToRegion({ 
+        latitude: loc.coords.latitude, 
+        longitude: loc.coords.longitude, 
+        latitudeDelta: 0.005, 
+        longitudeDelta: 0.005 
       }, 500);
     }
+  };
+
+  const toggleMapType = () => {
+    setMapType(prev => prev === 'hybrid' ? 'standard' : 'hybrid');
   };
 
   const handleScannerResult = ({ data }) => {
@@ -138,7 +148,7 @@ export default function App() {
           <MapView
             ref={mapRef}
             style={StyleSheet.absoluteFill}
-            mapType="hybrid"
+            mapType={mapType}
             initialRegion={{ latitude: 48.8566, longitude: 2.3522, latitudeDelta: 0.01, longitudeDelta: 0.01 }}
             onLongPress={async (e) => {
               const coords = e.nativeEvent.coordinate;
@@ -155,17 +165,14 @@ export default function App() {
             {pendingCoords && <Marker coordinate={pendingCoords} pinColor={COLORS.error} />}
           </MapView>
 
-          <TouchableOpacity 
-            activeOpacity={0.9} 
-            onPress={() => setShowDebug(true)}
-            style={styles.omnibarContainer}
-          >
+          <View style={styles.omnibarContainer}>
             <Omnibar 
                 searchQuery={searchQuery}
                 onSearchChange={setSearchQuery}
                 onSearchSubmit={handleSearch}
                 onScannerPress={() => setShowScanner(true)}
                 onSettingsPress={() => setShowSettings(true)}
+                onDebugPress={() => setShowDebug(true)}
                 onSuggestionSelect={(coords) => {
                   setPendingCoords(coords);
                   mapRef.current?.animateToRegion({ ...coords, latitudeDelta: 0.01, longitudeDelta: 0.01 }, 800);
@@ -175,7 +182,7 @@ export default function App() {
                 isMaintaining={isMaintaining}
                 isLowPowerMode={isLowPowerMode}
             />
-          </TouchableOpacity>
+          </View>
 
           <View style={styles.floatingActions}>
             <TouchableOpacity style={[styles.floatBtn, isMaintaining && styles.activeFloat, SHADOWS.light]} onPress={toggleBackground}>
@@ -184,11 +191,12 @@ export default function App() {
             <TouchableOpacity style={[styles.floatBtn, SHADOWS.light]} onPress={() => setIsFavsOpen(true)}>
               <Text style={{fontSize: 22}}>⭐</Text>
             </TouchableOpacity>
-            {simulatedCoords && (
-              <TouchableOpacity style={[styles.floatBtn, SHADOWS.light]} onPress={centerOnSimulation}>
-                <Text style={{fontSize: 22}}>🎯</Text>
-              </TouchableOpacity>
-            )}
+            <TouchableOpacity style={[styles.floatBtn, SHADOWS.light]} onPress={toggleMapType}>
+              <Text style={{fontSize: 22}}>{mapType === 'hybrid' ? '🗺️' : '🛰️'}</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={[styles.floatBtn, SHADOWS.light]} onPress={centerOnLocation}>
+              <Text style={{fontSize: 22}}>🎯</Text>
+            </TouchableOpacity>
           </View>
 
           <QuickFavorites 

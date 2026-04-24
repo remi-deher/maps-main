@@ -1,5 +1,6 @@
 import React, { useEffect, useRef } from 'react';
-import { StyleSheet, View, Text, TouchableOpacity, Animated, Dimensions, ScrollView, SafeAreaView, Pressable } from 'react-native';
+import { StyleSheet, View, Text, TouchableOpacity, Animated, Dimensions, ScrollView, SafeAreaView, Pressable, Alert } from 'react-native';
+import { TrueSheet } from '@lodev09/react-native-true-sheet';
 import { COLORS, SHADOWS } from '../constants/theme';
 
 const { height: SCREEN_HEIGHT } = Dimensions.get('window');
@@ -26,7 +27,7 @@ export function QuickFavorites({ favorites, onTeleport, visible }) {
     Animated.spring(anim, { toValue: visible ? 1 : 0, useNativeDriver: true }).start();
   }, [visible]);
 
-  if (!visible || favorites.length === 0) return null;
+  if (!visible || !favorites || favorites.length === 0) return null;
 
   return (
     <Animated.View style={[styles.quickContainer, { opacity: anim, transform: [{ translateY: anim.interpolate({ inputRange: [0, 1], outputRange: [10, 0] }) }] }]}>
@@ -43,25 +44,24 @@ export function QuickFavorites({ favorites, onTeleport, visible }) {
 }
 
 export function ActionPanel({ visible, coords, isFavorite, onTeleport, onToggleFavorite, onClose }) {
-  const anim = useRef(new Animated.Value(0)).current;
+  const sheet = useRef(null);
 
   useEffect(() => {
-    Animated.spring(anim, { 
-      toValue: visible ? 1 : 0, 
-      useNativeDriver: true,
-      friction: 8,
-      tension: 40
-    }).start();
+    if (visible) {
+      sheet.current?.present();
+    } else {
+      sheet.current?.dismiss();
+    }
   }, [visible]);
 
-  if (!visible && anim._value === 0) return null;
-
   return (
-    <Animated.View style={[styles.sheetContainer, SHADOWS.premium, { 
-      transform: [{ translateY: anim.interpolate({ inputRange: [0, 1], outputRange: [300, 0] }) }] 
-    }]}>
-      <View style={styles.sheetHandle} />
-      
+    <TrueSheet
+      ref={sheet}
+      sizes={['auto']}
+      cornerRadius={32}
+      blurTint="dark"
+      onDismiss={onClose}
+    >
       <View style={styles.sheetContent}>
         <View style={styles.sheetHeader}>
           <View style={{flex: 1}}>
@@ -71,9 +71,6 @@ export function ActionPanel({ visible, coords, isFavorite, onTeleport, onToggleF
           <ScaleButton onPress={() => onToggleFavorite(coords)} style={[styles.sheetFavBtn, isFavorite && styles.sheetFavBtnActive]}>
             <Text style={{fontSize: 24, color: isFavorite ? '#fff' : COLORS.textSecondary}}>{isFavorite ? '★' : '☆'}</Text>
           </ScaleButton>
-          <TouchableOpacity onPress={onClose} style={styles.sheetClose}>
-            <Text style={{color: COLORS.textMuted, fontSize: 18}}>✕</Text>
-          </TouchableOpacity>
         </View>
 
         <View style={styles.sheetActions}>
@@ -82,15 +79,19 @@ export function ActionPanel({ visible, coords, isFavorite, onTeleport, onToggleF
           </ScaleButton>
         </View>
       </View>
-    </Animated.View>
+    </TrueSheet>
   );
 }
 
 export function FavoritesPanel({ visible, favorites, history, onClose, onTeleport, onRemove, onRename }) {
-  const anim = useRef(new Animated.Value(0)).current;
+  const sheet = useRef(null);
 
   useEffect(() => {
-    Animated.spring(anim, { toValue: visible ? 1 : 0, useNativeDriver: false, friction: 8 }).start();
+    if (visible) {
+      sheet.current?.present();
+    } else {
+      sheet.current?.dismiss();
+    }
   }, [visible]);
 
   const handleRename = (fav) => {
@@ -114,52 +115,60 @@ export function FavoritesPanel({ visible, favorites, history, onClose, onTelepor
   };
 
   return (
-    <Animated.View style={[styles.favOverlay, { 
-      transform: [{ translateY: anim.interpolate({ inputRange: [0, 1], outputRange: [SCREEN_HEIGHT, 0] }) }]
-    }]}>
-      <SafeAreaView style={styles.panelHeader}>
-        <Text style={styles.panelTitle}>Lieux</Text>
-        <TouchableOpacity onPress={onClose} style={styles.closeBtn}><Text style={styles.closeText}>✕</Text></TouchableOpacity>
-      </SafeAreaView>
-      
-      <ScrollView style={styles.list} showsVerticalScrollIndicator={false}>
-        {/* SECTION FAVORIS */}
-        <Text style={styles.sectionTitle}>Favoris ⭐</Text>
-        {favorites.length > 0 ? favorites.map((fav, i) => (
-          <View key={`fav-${i}`} style={[styles.item, SHADOWS.light]}>
-            <TouchableOpacity style={styles.itemMain} onPress={() => onTeleport({ latitude: fav.lat, longitude: fav.lon, name: fav.name })}>
-              <Text style={styles.itemName}>{fav.name}</Text>
-              <Text style={styles.itemCoords}>{fav.lat.toFixed(4)}, {fav.lon.toFixed(4)}</Text>
-            </TouchableOpacity>
-            <View style={styles.itemActions}>
-              <TouchableOpacity onPress={() => handleRename(fav)} style={styles.editBtn}>
-                <Text style={{fontSize: 16}}>✏️</Text>
-              </TouchableOpacity>
-              <TouchableOpacity onPress={() => onRemove(fav)} style={styles.deleteBtn}>
-                <Text style={{fontSize: 16}}>🗑️</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        )) : <Text style={styles.empty}>Aucun favori enregistré.</Text>}
-
-        {/* SECTION RÉCENTS */}
-        <Text style={[styles.sectionTitle, { marginTop: 30 }]}>Historique Récents 🕒</Text>
-        {history && history.length > 0 ? history.map((item, i) => (
-          <TouchableOpacity 
-            key={`hist-${i}`} 
-            style={[styles.item, styles.itemHistory, SHADOWS.light]} 
-            onPress={() => onTeleport({ latitude: item.lat, longitude: item.lon, name: item.name })}
-          >
-            <View style={styles.itemMain}>
-              <Text style={styles.itemName}>{item.name}</Text>
-              <Text style={styles.itemCoords}>{item.lat.toFixed(4)}, {item.lon.toFixed(4)}</Text>
-            </View>
-            <Text style={{fontSize: 16}}>📍</Text>
+    <TrueSheet
+      ref={sheet}
+      sizes={['50%', '90%']}
+      cornerRadius={32}
+      blurTint="dark"
+      onDismiss={onClose}
+    >
+      <SafeAreaView style={styles.panelSafe}>
+        <View style={styles.panelHeader}>
+          <Text style={styles.panelTitle}>Mes Lieux</Text>
+          <TouchableOpacity onPress={() => sheet.current?.dismiss()} style={styles.closeBtn}>
+            <Text style={styles.closeText}>✕</Text>
           </TouchableOpacity>
-        )) : <Text style={styles.empty}>Aucun historique récent.</Text>}
-        <View style={{height: 50}} />
-      </ScrollView>
-    </Animated.View>
+        </View>
+        
+        <ScrollView style={styles.list} showsVerticalScrollIndicator={false}>
+          {/* SECTION FAVORIS */}
+          <Text style={styles.sectionTitle}>Favoris ⭐</Text>
+          {favorites && favorites.length > 0 ? favorites.map((fav, i) => (
+            <View key={`fav-${i}`} style={styles.item}>
+              <TouchableOpacity style={styles.itemMain} onPress={() => onTeleport({ latitude: fav.lat, longitude: fav.lon, name: fav.name })}>
+                <Text style={styles.itemName}>{fav.name}</Text>
+                <Text style={styles.itemCoords}>{fav.lat.toFixed(4)}, {fav.lon.toFixed(4)}</Text>
+              </TouchableOpacity>
+              <View style={styles.itemActions}>
+                <TouchableOpacity onPress={() => handleRename(fav)} style={styles.editBtn}>
+                  <Text style={{fontSize: 16}}>✏️</Text>
+                </TouchableOpacity>
+                <TouchableOpacity onPress={() => onRemove(fav)} style={styles.deleteBtn}>
+                  <Text style={{fontSize: 16}}>🗑️</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          )) : <Text style={styles.empty}>Aucun favori enregistré.</Text>}
+
+          {/* SECTION RÉCENTS */}
+          <Text style={[styles.sectionTitle, { marginTop: 30 }]}>Historique Récents 🕒</Text>
+          {history && history.length > 0 ? history.map((item, i) => (
+            <TouchableOpacity 
+              key={`hist-${i}`} 
+              style={[styles.item, styles.itemHistory]} 
+              onPress={() => onTeleport({ latitude: item.lat, longitude: item.lon, name: item.name })}
+            >
+              <View style={styles.itemMain}>
+                <Text style={styles.itemName}>{item.name}</Text>
+                <Text style={styles.itemCoords}>{item.lat.toFixed(4)}, {item.lon.toFixed(4)}</Text>
+              </View>
+              <Text style={{fontSize: 16}}>📍</Text>
+            </TouchableOpacity>
+          )) : <Text style={styles.empty}>Aucun historique récent.</Text>}
+          <View style={{height: 100}} />
+        </ScrollView>
+      </SafeAreaView>
+    </TrueSheet>
   );
 }
 
@@ -174,21 +183,10 @@ const styles = StyleSheet.create({
   quickEmoji: { fontSize: 14 },
   quickText: { color: COLORS.text, fontSize: 12, fontWeight: '700', maxWidth: 120 },
 
-  sheetContainer: { 
-    position: 'absolute', bottom: 0, left: 0, right: 0, zIndex: 100,
-    backgroundColor: 'rgba(15, 23, 42, 0.98)', 
-    borderTopLeftRadius: 32, borderTopRightRadius: 32,
-    borderTopWidth: 1, borderTopColor: 'rgba(255,255,255,0.1)',
-    paddingBottom: 40
-  },
-  sheetHandle: {
-    width: 40, height: 5, backgroundColor: 'rgba(255,255,255,0.2)',
-    borderRadius: 3, alignSelf: 'center', marginTop: 12, marginBottom: 8
-  },
-  sheetContent: { padding: 24 },
+  sheetContent: { padding: 24, paddingBottom: 40 },
   sheetHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 24, gap: 12 },
   sheetTitle: { color: COLORS.text, fontWeight: '900', fontSize: 24, flex: 1 },
-  sheetCoords: { color: COLORS.textSecondary, fontSize: 13, marginTop: 4, fontOpacity: 0.8 },
+  sheetCoords: { color: COLORS.textSecondary, fontSize: 13, marginTop: 4 },
   sheetFavBtn: { 
     width: 54, height: 54, borderRadius: 27, 
     backgroundColor: 'rgba(255,255,255,0.05)', 
@@ -196,7 +194,6 @@ const styles = StyleSheet.create({
     borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)'
   },
   sheetFavBtnActive: { backgroundColor: COLORS.warning, borderColor: COLORS.warning },
-  sheetClose: { padding: 10 },
   sheetActions: { marginTop: 8 },
   mainActionBtn: { 
     backgroundColor: COLORS.primary, padding: 20, borderRadius: 22, 
@@ -204,19 +201,23 @@ const styles = StyleSheet.create({
   },
   mainActionText: { color: '#fff', fontWeight: '900', fontSize: 16, letterSpacing: 1.5 },
 
-  favOverlay: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: COLORS.background, zIndex: 200, padding: 20 },
-  panelHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 25 },
-  panelTitle: { fontSize: 34, fontWeight: '900', color: COLORS.text },
-  closeBtn: { width: 48, height: 48, backgroundColor: 'rgba(255,255,255,0.08)', borderRadius: 24, justifyContent: 'center', alignItems: 'center' },
-  closeText: { color: COLORS.text, fontSize: 22 },
-  item: { flexDirection: 'row', alignItems: 'center', backgroundColor: COLORS.surface, padding: 20, borderRadius: 24, marginBottom: 12, borderWidth: 1, borderColor: 'rgba(255,255,255,0.03)' },
+  panelSafe: { flex: 1 },
+  panelHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 24, paddingBottom: 10 },
+  panelTitle: { fontSize: 32, fontWeight: '900', color: COLORS.text },
+  closeBtn: { width: 40, height: 40, backgroundColor: 'rgba(255,255,255,0.08)', borderRadius: 20, justifyContent: 'center', alignItems: 'center' },
+  closeText: { color: COLORS.text, fontSize: 18 },
+  list: { paddingHorizontal: 20 },
+  item: { 
+    flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.03)', 
+    padding: 16, borderRadius: 24, marginBottom: 10, borderWidth: 1, borderColor: 'rgba(255,255,255,0.05)' 
+  },
   itemMain: { flex: 1 },
-  itemName: { color: COLORS.text, fontWeight: '800', fontSize: 17 },
-  itemCoords: { color: COLORS.textMuted, fontSize: 12, marginTop: 4 },
+  itemName: { color: COLORS.text, fontWeight: '800', fontSize: 16 },
+  itemCoords: { color: COLORS.textMuted, fontSize: 11, marginTop: 2 },
   itemActions: { flexDirection: 'row', gap: 8 },
-  editBtn: { padding: 10, backgroundColor: 'rgba(255, 255, 255, 0.08)', borderRadius: 12 },
-  deleteBtn: { padding: 10, backgroundColor: 'rgba(244, 63, 94, 0.1)', borderRadius: 12 },
-  empty: { color: COLORS.textMuted, textAlign: 'center', marginTop: 40, fontWeight: '600', fontSize: 16 },
-  sectionTitle: { color: COLORS.textSecondary, fontSize: 13, fontWeight: 'bold', textTransform: 'uppercase', letterSpacing: 1.5, marginBottom: 15, paddingLeft: 5 },
-  itemHistory: { opacity: 0.85, paddingVertical: 15 }
+  editBtn: { padding: 8, backgroundColor: 'rgba(255, 255, 255, 0.05)', borderRadius: 10 },
+  deleteBtn: { padding: 8, backgroundColor: 'rgba(244, 63, 94, 0.08)', borderRadius: 10 },
+  empty: { color: COLORS.textMuted, textAlign: 'center', marginTop: 40, fontWeight: '600', fontSize: 14, opacity: 0.5 },
+  sectionTitle: { color: COLORS.textSecondary, fontSize: 11, fontWeight: 'bold', textTransform: 'uppercase', letterSpacing: 1.5, marginBottom: 12, paddingLeft: 5, opacity: 0.7 },
+  itemHistory: { opacity: 0.8, paddingVertical: 12 }
 });
