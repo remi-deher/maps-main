@@ -67,9 +67,8 @@ class GpsSimulator extends EventEmitter {
 
   _resetJitter() {
     if (this.jitterTimer) clearTimeout(this.jitterTimer)
-    if (this._isQuitting) return
-    // On passe à 30s pour plus de stabilité sur WiFi
-    this.jitterTimer = setTimeout(() => this._applyJitter(), 30000)
+    // On passe à 60s pour éviter les chevauchements et les alertes de dérive incessantes
+    this.jitterTimer = setTimeout(() => this._applyJitter(), 60000)
   }
 
   async _applyJitter() {

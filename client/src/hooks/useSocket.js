@@ -17,6 +17,8 @@ export function useSocket(ip, port, isMaintaining) {
   const [deviceInfo, setDeviceInfo]       = useState(null);
   const [connectionType, setConnectionType] = useState(null);
   const [rsdAddress, setRsdAddress]       = useState(null);
+  const [serverState, setServerState] = useState('idle');
+  const [verifiedLocation, setVerifiedLocation] = useState(null);
 
   const ws            = useRef(null);
   const isConnecting  = useRef(false);
@@ -146,6 +148,9 @@ export function useSocket(ip, port, isMaintaining) {
             if (payload.data.deviceInfo)    setDeviceInfo(payload.data.deviceInfo);
             if (payload.data.connectionType) setConnectionType(payload.data.connectionType);
             if (payload.data.rsdAddress)    setRsdAddress(payload.data.rsdAddress);
+            
+            setServerState(payload.data.state);
+            setVerifiedLocation(payload.data.lastVerifiedLocation);
 
             if (payload.data.state === 'idle') {
                logEvent.add("ℹ️ Serveur vierge détecté. Déclenchement restauration Option C...");
@@ -344,7 +349,10 @@ export function useSocket(ip, port, isMaintaining) {
     deviceInfo,
     connectionType,
     rsdAddress,
+    serverState,
+    verifiedLocation,
     sendAction,
     connect,
+    stop
   };
 }

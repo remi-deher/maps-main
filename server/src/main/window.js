@@ -32,10 +32,16 @@ function createTray() {
     },
     { type: 'separator' },
     { label: 'Ouvrir l\'interface', click: () => {
-        mainWindow.show()
-        mainWindow.focus()
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          mainWindow.show()
+          mainWindow.focus()
+        }
     } },
-    { label: 'Cacher', click: () => mainWindow.hide() },
+    { label: 'Cacher', click: () => {
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          mainWindow.hide()
+        }
+    } },
     { type: 'separator' },
     { label: 'Quitter l\'application', click: () => {
         isQuitting = true
@@ -48,8 +54,10 @@ function createTray() {
   tray.setContextMenu(contextMenu)
   
   tray.on('double-click', () => {
-    mainWindow.show()
-    mainWindow.focus()
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.show()
+      mainWindow.focus()
+    }
   })
 }
 
@@ -127,6 +135,7 @@ app.whenReady().then(() => {
 
   gps.on('location-changed', ({ lat, lon, name }) => {
     companion.broadcastLocation(lat, lon, name)
+    companion.confirmLocationApplied(lat, lon, name)
   })
 
   gps.on('log', (msg) => {
@@ -167,6 +176,7 @@ app.whenReady().then(() => {
 
 app.on('before-quit', () => {
   isQuitting = true
+  if (tray) tray.destroy()
   tunnel.setQuitting()
 })
 

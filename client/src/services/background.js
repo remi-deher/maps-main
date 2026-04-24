@@ -44,10 +44,23 @@ if (!TaskManager.isTaskDefined(LOCATION_TASK_NAME)) {
         // 2. Calculer la distance (Détection de dérive)
         const dist = getDistance(currentLoc, mockCoords);
         
-        // 3. Si dérive > 100m, la simulation est probablement tombée
-        // iOS nous renvoie notre vraie position au lieu de la simulée.
-        if (dist > 100) {
+        // 3. Si dérive > 200m, la simulation est probablement tombée
+        // On ajoute un délai de persistance de 5s pour ignorer les micro-coupures de Jitter.
+        if (dist > 200) {
            const now = Date.now();
+           let firstDriftTime = await AsyncStorage.getItem('FIRST_DRIFT_TIME');
+           
+           if (!firstDriftTime) {
+             firstDriftTime = now.toString();
+             await AsyncStorage.setItem('FIRST_DRIFT_TIME', firstDriftTime);
+             return; // On attend le prochain tick pour confirmer
+           }
+
+           // On ne relance que si la dérive persiste depuis plus de 5 secondes
+           if (now - parseInt(firstDriftTime) < 5000) {
+             return;
+           }
+
            const lastRelance = await AsyncStorage.getItem('LAST_RELANCE_TIME');
            
            if (!lastRelance || (now - parseInt(lastRelance)) > 10000) {
@@ -69,12 +82,13 @@ if (!TaskManager.isTaskDefined(LOCATION_TASK_NAME)) {
                }).then(() => {
                  eventBus.emit({ type: 'LOG', message: `✅ Relance auto envoyée (Dérive: ${Math.round(dist)}m)` });
                }).catch(() => {
-                 // Erreur réseau (PC éteint ou WiFi coupé), on ignore silencieusement
+                 // Erreur réseau
                });
-             } else {
-               eventBus.emit({ type: 'LOG', message: `⏳ Relance ignorée (Cooldown actif)` });
              }
            }
+        } else {
+           // On réinitialise le compteur de dérive si on est revenu à la normale
+           await AsyncStorage.removeItem('FIRST_DRIFT_TIME');
         }
         
         // Informer l'UI si elle est ouverte

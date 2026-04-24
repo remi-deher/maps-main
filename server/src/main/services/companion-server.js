@@ -50,22 +50,32 @@ class CompanionServer extends EventEmitter {
   }
 
   _refreshStatus() {
-    // On considère la simulation active si le tunnel est prêt ET qu'une position a été injectée
-    const isRunning = !!(this.tunnel?.getRsdAddress() && this.status?.lastInjectedLocation);
+    const rsdReady = !!this.tunnel?.getRsdAddress();
+    const simActive = !!(rsdReady && this.status?.lastVerifiedLocation);
     
     this.status = {
-      state: isRunning ? 'running' : 'idle',
-      tunnelActive: !!this.tunnel?.getRsdAddress(),
+      state: simActive ? 'running' : (rsdReady ? 'ready' : 'idle'),
+      tunnelActive: rsdReady,
       rsdAddress: this.tunnel?.getRsdAddress() || null,
       rsdPort: this.tunnel?.getRsdPort() || null,
       connectionType: this.tunnel?.getConnectionType() || null,
       deviceInfo: this.tunnel?.getDeviceInfo() || null,
       maintainActive: this.status?.maintainActive || false,
       lastHeartbeat: this.status?.lastHeartbeat || null,
-      lastInjectedLocation: this.status?.lastInjectedLocation || null,
+      lastInjectedLocation: this.status?.lastInjectedLocation || null, // Demandée
+      lastVerifiedLocation: this.status?.lastVerifiedLocation || null, // Confirmée par le pont
       favorites: favoritesManager.getFavorites(),
       recentHistory: favoritesManager.getHistory()
     }
+  }
+
+  /**
+   * Appelé par le GpsSimulator pour confirmer que la position est bien injectée sur l'iPhone
+   */
+  confirmLocationApplied(lat, lon, name) {
+    this.status.lastVerifiedLocation = { lat, lon, name, timestamp: Date.now() };
+    this._refreshStatus();
+    this._broadcast({ type: 'STATUS', data: this.status });
   }
 
   /**

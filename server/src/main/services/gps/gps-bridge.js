@@ -65,7 +65,7 @@ class GpsBridge extends EventEmitter {
       const timeout = setTimeout(() => {
         client.destroy()
         resolve({ success: false, error: 'Timeout communication avec le pont' })
-      }, 5000)
+      }, 10000)
 
       client.connect(this.port, this.host, () => {
         client.write(request)

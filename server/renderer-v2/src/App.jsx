@@ -50,8 +50,14 @@ function App() {
 
   useEffect(() => {
     window.gps.getStatus().then(data => {
-      if (data.tunnelReady) {
-        setStatus({ state: 'ready', message: 'iPhone connecté', type: data.connectionType, device: data.deviceInfo });
+      if (data.tunnelActive) {
+        setStatus({ 
+          state: data.state, 
+          message: data.state === 'running' ? 'Simulation active' : 'iPhone prêt', 
+          type: data.connectionType, 
+          device: data.deviceInfo,
+          verified: data.state === 'running'
+        });
       }
     });
 
@@ -59,22 +65,26 @@ function App() {
       const timestamp = new Date().toLocaleTimeString();
 
       if (data.service === 'tunneld') {
+        const isVerified = data.state === 'running';
         setStatus(prev => ({ 
           ...prev, 
           state: data.state, 
-          message: data.message, 
+          message: data.state === 'running' ? 'Simulation active' : (data.state === 'ready' ? 'iPhone prêt' : data.message), 
           type: data.type || prev.type,
-          device: data.device || prev.device
+          device: data.device || prev.device,
+          verified: isVerified
         }));
         setServerLogs(prev => [{ timestamp, message: `[TNL] ${data.message}`, type: data.state }, ...prev].slice(0, 500));
       } else if (data.service === 'client-log') {
-        setClientLogs(prev => [data.data, ...prev].slice(0, 500));
+        const enrichedLog = { ...data.data, timestamp };
+        setClientLogs(prev => [enrichedLog, ...prev].slice(0, 500));
       } else if (data.service === 'server-log') {
         setServerLogs(prev => [{ timestamp, message: data.data, type: 'info' }, ...prev].slice(0, 500));
       } else if (data.service === 'location') {
-        // Synchronisation du marqueur quand l'iPhone change la position
         const { lat, lon, name } = data.data;
         setActiveSim({ lat, lon, name });
+        // Quand on reçoit une position via LOCATION, c'est qu'elle est en cours d'application
+        setStatus(prev => ({ ...prev, verified: true, state: 'running', message: 'Simulation active' }));
       }
     });
 
@@ -262,9 +272,12 @@ function App() {
 
       {/* Status Pill (Bottom) */}
       <div className="absolute bottom-8 right-8 z-50">
-        <motion.div initial={{ x: 20, opacity: 0 }} animate={{ x: 0, opacity: 1 }} className={`flex items-center gap-4 px-6 py-3 rounded-2xl glass-dark border-l-4 ${status.state === 'ready' ? 'border-l-emerald-500' : 'border-l-blue-500'} shadow-xl`}>
-          <div className={`w-3 h-3 rounded-full ${status.state === 'ready' ? 'bg-emerald-500' : 'bg-blue-500 animate-pulse'}`} />
-          <p className="font-bold text-sm leading-none">{status.message}</p>
+        <motion.div initial={{ x: 20, opacity: 0 }} animate={{ x: 0, opacity: 1 }} className={`flex items-center gap-4 px-6 py-3 rounded-2xl glass-dark border-l-4 ${status.verified ? 'border-l-emerald-500 bg-emerald-500/10' : (status.state === 'ready' ? 'border-l-blue-500' : 'border-l-slate-500')} shadow-xl`}>
+          <div className={`w-3 h-3 rounded-full ${status.verified ? 'bg-emerald-500' : (status.state === 'ready' ? 'bg-blue-500 animate-pulse' : 'bg-slate-500')}`} />
+          <p className="font-bold text-sm leading-none flex items-center gap-2">
+            {status.message}
+            {status.verified && <span className="text-emerald-400">✅</span>}
+          </p>
         </motion.div>
       </div>
 

@@ -21,7 +21,7 @@ export default function App() {
   const { isMaintaining, requestPermissions, toggleBackground, searchAddress, reverseGeocode } = useLocation();
   const { 
     status, favorites, recentHistory, simulatedCoords, 
-    deviceInfo, connectionType, rsdAddress, 
+    deviceInfo, connectionType, rsdAddress, serverState, verifiedLocation,
     sendAction, connect 
   } = useSocket(serverIp, serverPort, isMaintaining);
   
@@ -74,6 +74,15 @@ export default function App() {
     pulse.start();
     return () => pulse.stop();
   }, []);
+
+  const isVerified = useMemo(() => {
+    if (!simulatedCoords || !verifiedLocation) return false;
+    const dist = getDistance(
+      simulatedCoords.latitude, simulatedCoords.longitude,
+      verifiedLocation.lat, verifiedLocation.lon
+    );
+    return dist < 1; // Moins d'un mètre d'écart = vérifié
+  }, [simulatedCoords, verifiedLocation]);
 
   const mapRef = useRef(null);
   const [cameraPermission, requestCameraPermission] = useCameraPermissions();
@@ -263,10 +272,13 @@ export default function App() {
               activeOpacity={0.8}
               onPress={centerOnLocation}
             >
-              <View style={styles.simPillIcon}><Text style={{fontSize: 12}}>🚀</Text></View>
+              <View style={[styles.simPillIcon, isVerified && { backgroundColor: COLORS.success + '20' }]}>
+                <Text style={{fontSize: 12}}>{isVerified ? '✅' : '🚀'}</Text>
+              </View>
               <Text style={styles.simPillText} numberOfLines={1}>
-                {simulatedAddress || "Simulation en cours..."}
+                {simulatedAddress || `${simulatedCoords.latitude.toFixed(4)}, ${simulatedCoords.longitude.toFixed(4)}`}
               </Text>
+              {isVerified && <View style={styles.verifiedBadge} />}
             </TouchableOpacity>
           )}
 
@@ -370,5 +382,30 @@ const styles = StyleSheet.create({
     width: 28, height: 28, borderRadius: 14, backgroundColor: 'rgba(99, 102, 241, 0.2)',
     justifyContent: 'center', alignItems: 'center'
   },
-  simPillText: { color: COLORS.text, fontSize: 14, fontWeight: '700', flex: 1 }
+  simPillText: { color: COLORS.text, fontSize: 14, fontWeight: '700', flex: 1 },
+  verifiedBadge: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: COLORS.success,
+    marginLeft: 4,
+  },
 });
+
+/**
+ * Calcule la distance entre deux points en mètres
+ */
+function getDistance(lat1, lon1, lat2, lon2) {
+  const R = 6371e3;
+  const φ1 = lat1 * Math.PI/180;
+  const φ2 = lat2 * Math.PI/180;
+  const Δφ = (lat2-lat1) * Math.PI/180;
+  const Δλ = (lon2-lon1) * Math.PI/180;
+
+  const a = Math.sin(Δφ/2) * Math.sin(Δφ/2) +
+          Math.cos(φ1) * Math.cos(φ2) *
+          Math.sin(Δλ/2) * Math.sin(Δλ/2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+
+  return R * c;
+}
