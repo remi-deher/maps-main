@@ -34,24 +34,38 @@ class TunneldService extends EventEmitter {
 
   async start(manualIp = null) {
     if (this._isQuitting) return
-    if (this.runner.isRunning && this._manualIp === manualIp) return
+    
+    // Mise à jour de l'IP manuelle (transite des états) sans tuer le processus
+    this._manualIp = manualIp
+
+    if (this.runner.isRunning) {
+      if (manualIp && !this.activeConnection) {
+        dbg(`[tunneld-service] IP WebSocket reçue (${manualIp}) pendant que le démon tourne. Tentative de fallback...`)
+        this._triggerNativeFallback(manualIp)
+      }
+      return
+    }
+
     if (this._isStarting) return
     this._isStarting = true
 
     try {
-      if (this.runner.isRunning) {
-        this.stop()
-        await new Promise(resolve => setTimeout(resolve, 1500))
-      }
-
-      this._manualIp = manualIp
-      dbg('[tunneld-service] lancement du demon tunneld...')
+      dbg(`[tunneld-service] lancement du demon tunneld (Base Daemon)...`)
+      dbg(`[DEBUG MANUEL] Commande à tester : .\\resources\\python\\python.exe -m pymobiledevice3 remote tunneld`)
       sendStatus('tunneld', 'starting', 'Initialisation du demon tunnel...')
 
+      // Lancement du processus de base (Priorité 4 / USB / Passive Discovery)
       this.runner.spawn(PYTHON, ['-m', 'pymobiledevice3', 'remote', 'tunneld'])
 
       if (this.fallbackTimer) clearTimeout(this.fallbackTimer)
-      this.fallbackTimer = setTimeout(() => this._triggerNativeFallback(this._manualIp), 10000)
+
+      if (manualIp) {
+        // Priorité 2 : Si IP déjà là au démarrage, on tente le fallback immédiat
+        this._triggerNativeFallback(manualIp)
+      } else {
+        // Priorité 3 : Attente standard avant fallback Bonjour automatique
+        this.fallbackTimer = setTimeout(() => this._triggerNativeFallback(null), 10000)
+      }
     } finally {
       setTimeout(() => { this._isStarting = false }, 2000)
     }
@@ -88,7 +102,8 @@ class TunneldService extends EventEmitter {
       if (this.activeConnection && this.activeConnection.address === address && this.activeConnection.port === port) return
 
       dbg(`[tunneld] Connexion detectee : ${type} (${address}:${port})`)
-      this._startRsdHeartbeat(address, port, deviceId)
+      // Le heartbeat est maintenant géré par l'orchestrateur via l'IP WebSocket
+      // this._startRsdHeartbeat(address, port, deviceId)
 
       this.activeConnection = { address, port, type, id: deviceId }
       this.emit('connection', this.activeConnection)
@@ -178,4 +193,4 @@ class TunneldService extends EventEmitter {
   }
 }
 
-module.exports = TunneldService
+module.exports = new TunneldService()

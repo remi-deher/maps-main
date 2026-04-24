@@ -17,14 +17,15 @@ class GpsSimulator extends EventEmitter {
     
     this.lastCoords = null
     this.restorationTimer = null
+    this.jitterTimer = null
     this._isQuitting = false
     this._isLaunching = false
 
-    // Relayer les logs
-    this.commander.runner.on('log', (msg) => this.emit('log', msg))
+    this._isLaunching = false
   }
 
   async setLocation(lat, lon, name = null) {
+    this._resetJitter()
     if (this._isLaunching) return { success: false, error: 'Simulation en cours de lancement' }
     
     // Si on est en phase de restauration, on met juste à jour les coordonnées cibles
@@ -55,6 +56,32 @@ class GpsSimulator extends EventEmitter {
     } finally {
       this._isLaunching = false
     }
+  }
+
+  _resetJitter() {
+    if (this.jitterTimer) clearTimeout(this.jitterTimer)
+    if (this._isQuitting) return
+    this.jitterTimer = setTimeout(() => this._applyJitter(), 45000)
+  }
+
+  async _applyJitter() {
+    if (!this.lastCoords || this._isQuitting || this._isLaunching) return
+    
+    const rsdAddress = this.tunnel.getRsdAddress()
+    const rsdPort = this.tunnel.getRsdPort()
+    if (!rsdAddress) return
+
+    // Micro-jitter de 0.000001 deg (~10cm) pour maintenir iOS éveillé
+    const jitterLat = this.lastCoords.lat + (Math.random() > 0.5 ? 0.000001 : -0.000001)
+    dbg(`[gps-simulator] Envoi Micro-Jitter de maintien d'activite (${jitterLat.toFixed(7)})`)
+    
+    try {
+      await this.commander.execute('set', rsdAddress, rsdPort, [String(jitterLat), String(this.lastCoords.lon)])
+    } catch (e) {
+      dbg(`[gps-simulator] Echec Jitter: ${e.message}`)
+    }
+    
+    this._resetJitter()
   }
 
   async clearLocation() {
@@ -88,6 +115,7 @@ class GpsSimulator extends EventEmitter {
   stop() {
     this.watchdog.stop()
     this.commander.stop()
+    if (this.jitterTimer) clearTimeout(this.jitterTimer)
   }
 
   destroy() {
