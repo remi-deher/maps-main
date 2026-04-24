@@ -206,6 +206,9 @@ class CompanionServer extends EventEmitter {
           dbg(`[companion-server] iPhone demande position: ${lat}, ${lon} (${name || 'sans nom'})`)
           this.emit('request-location', { lat, lon, name })
           if (name) favoritesManager.addToHistory({ lat, lon, name })
+          
+          // Couche 4 : Envoyer l'Accusé de Réception (ACK) au client
+          ws.send(JSON.stringify({ type: 'ACK', data: { lat, lon, timestamp: Date.now() } }))
         }
         break
       }
