@@ -41,6 +41,7 @@ class SettingsManager {
       wifiPort: '', 
       companionPort: 8080,
       connectionMode: 'both', // 'usb', 'wifi', 'both'
+      preferredIp: '',
       favorites: [],
       recentHistory: []
     }

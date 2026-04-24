@@ -6,6 +6,7 @@ const os = require('os')
 const { EventEmitter } = require('events')
 const { dbg, sendStatus } = require('../logger')
 const favoritesManager = require('./favorites-manager')
+const settings = require('./settings-manager')
 
 /**
  * CompanionServer - Gere la communication WebSocket avec l'application iOS
@@ -239,7 +240,21 @@ class CompanionServer extends EventEmitter {
   }
 
   _getLocalIp() {
+    const preferredIp = settings.get('preferredIp')
     const interfaces = os.networkInterfaces()
+    
+    // Si une IP est préférée, on vérifie si elle est toujours disponible
+    if (preferredIp) {
+      for (const name of Object.keys(interfaces)) {
+        for (const iface of interfaces[name]) {
+          if (iface.family === 'IPv4' && iface.address === preferredIp) {
+            return preferredIp
+          }
+        }
+      }
+    }
+
+    // Fallback sur la première interface valide
     for (const name of Object.keys(interfaces)) {
       for (const iface of interfaces[name]) {
         if (iface.family === 'IPv4' && !iface.internal) return iface.address

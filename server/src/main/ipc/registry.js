@@ -3,6 +3,7 @@
 const { ipcMain, app, shell } = require('electron')
 const settings = require('../services/settings-manager')
 const QRCode = require('qrcode')
+const { getNetworkInterfaces } = require('../utils/network')
 
 /**
  * Registre central des IPC Handlers.
@@ -18,6 +19,8 @@ function registerIpcHandlers(tunnel, gps, companion) {
     rsdPort:     tunnel.getRsdPort(),
     connectionType: tunnel.getConnectionType()
   }))
+
+  ipcMain.handle('get-network-interfaces', () => getNetworkInterfaces())
 
   // ─── GPS Simulation ────────────────────────────────────────────────────────
   

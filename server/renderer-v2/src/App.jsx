@@ -1,9 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { MapPin, Settings, History, Star, QrCode, Monitor, Search, X, Navigation, RotateCcw, Edit2, Trash2 } from 'lucide-react';
+import { MapPin, Settings, History, Star, QrCode, Monitor, Search, X, Navigation, RotateCcw, Edit2, Trash2, Terminal } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import MapView from './components/MapView';
 import SettingsModal from './components/SettingsModal';
 import QrModal from './components/QrModal';
+import LogsModal from './components/LogsModal';
 import { useStorage } from './hooks/useStorage';
 import { useSearch } from './hooks/useSearch';
 
@@ -12,10 +13,13 @@ function App() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [qrOpen, setQrOpen] = useState(false);
+  const [logsOpen, setLogsOpen] = useState(false);
   const [selectedPos, setSelectedPos] = useState(null);
   const [activeSim, setActiveSim] = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
+  
   const [clientLogs, setClientLogs] = useState([]);
+  const [serverLogs, setServerLogs] = useState([]);
   
   const searchInputRef = useRef(null);
   const { history, favorites, addToHistory, addFavorite, removeFavorite } = useStorage();
@@ -52,6 +56,8 @@ function App() {
     });
 
     const removeListener = window.gps.onStatus((data) => {
+      const timestamp = new Date().toLocaleTimeString();
+
       if (data.service === 'tunneld') {
         setStatus(prev => ({ 
           ...prev, 
@@ -60,10 +66,11 @@ function App() {
           type: data.type || prev.type,
           device: data.device || prev.device
         }));
+        setServerLogs(prev => [{ timestamp, message: `[TNL] ${data.message}`, type: data.state }, ...prev].slice(0, 500));
       } else if (data.service === 'client-log') {
-        setClientLogs(prev => [data.data, ...prev].slice(0, 50));
+        setClientLogs(prev => [data.data, ...prev].slice(0, 500));
       } else if (data.service === 'server-log') {
-        setClientLogs(prev => [{ timestamp: new Date().toLocaleTimeString(), message: `[SRV] ${data.data}`, type: 'info' }, ...prev].slice(0, 50));
+        setServerLogs(prev => [{ timestamp, message: data.data, type: 'info' }, ...prev].slice(0, 500));
       }
     });
 
@@ -136,16 +143,6 @@ function App() {
                       <span className="text-xs text-slate-500 uppercase tracking-wider">IP / RSD</span>
                       <span className="text-sm font-mono text-blue-300">{status.type === 'USB' ? 'USB Native' : (status.device?.ip || '192.168.x.x')}</span>
                     </div>
-                    <div className="flex justify-between items-center">
-                      <span className="text-xs text-slate-500 uppercase tracking-wider">iOS Version</span>
-                      <span className="text-sm font-bold text-slate-300">{status.device?.version || 'N/A'}</span>
-                    </div>
-                    <div className="flex justify-between items-center">
-                      <span className="text-xs text-slate-500 uppercase tracking-wider">Appairé</span>
-                      <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${status.device?.paired ? 'bg-emerald-500/20 text-emerald-400' : 'bg-amber-500/20 text-amber-400'}`}>
-                        {status.device?.paired ? 'OUI' : 'NON (DVT)'}
-                      </span>
-                    </div>
                     <div className="flex justify-between items-center pt-2 border-t border-white/5">
                       <span className="text-xs text-slate-500 uppercase tracking-wider">Connexion</span>
                       <span className="text-xs font-bold text-emerald-400 flex items-center gap-1">
@@ -200,26 +197,20 @@ function App() {
                   </div>
                 </section>
 
-                {/* DEBUG CONSOLE CLIENT */}
+                {/* CONSOLE PREVIEW SECTION */}
                 <section className="mt-auto pt-6">
-                  <div className="flex items-center justify-between text-sm font-semibold text-slate-400 mb-3 px-2">
-                    <div className="flex items-center gap-2">
-                      <Monitor className="w-4 h-4" /> <span>CONSOLE DISTANTE (iOS)</span>
+                  <button 
+                    onClick={() => {setLogsOpen(true); setSidebarOpen(false);}}
+                    className="w-full group p-4 rounded-2xl bg-black/40 border border-white/5 hover:bg-white/5 transition-all flex items-center justify-between"
+                  >
+                    <div className="flex items-center gap-3 text-slate-400 group-hover:text-white transition-colors">
+                      <Terminal className="w-5 h-5 text-blue-400" />
+                      <span className="text-sm font-bold uppercase tracking-wider">Console Système</span>
                     </div>
-                    <button onClick={() => setClientLogs([])} className="text-[10px] hover:text-white transition-colors">EFFACER</button>
-                  </div>
-                  <div className="bg-black/40 rounded-xl p-3 h-48 overflow-y-auto border border-white/5 font-mono text-[10px]">
-                    {clientLogs.length > 0 ? clientLogs.map((log, i) => (
-                      <div key={i} className="mb-1.5 flex gap-2">
-                        <span className="text-slate-500">[{log.timestamp}]</span>
-                        <span className={
-                          log.type === 'error' ? 'text-rose-400' : 
-                          log.type === 'success' ? 'text-emerald-400' : 
-                          'text-blue-300'
-                        }>{log.message}</span>
-                      </div>
-                    )) : <p className="text-slate-600 italic">En attente de logs...</p>}
-                  </div>
+                    <div className="px-2 py-0.5 rounded-full bg-blue-500/20 text-blue-400 text-[10px] font-bold">
+                      {serverLogs.length + clientLogs.length} LOGS
+                    </div>
+                  </button>
                 </section>
               </div>
               <div className="mt-auto pt-6 border-t border-white/5 flex gap-2">
@@ -237,6 +228,14 @@ function App() {
 
       <SettingsModal isOpen={settingsOpen} onClose={() => setSettingsOpen(false)} />
       <QrModal isOpen={qrOpen} onClose={() => setQrOpen(false)} />
+      <LogsModal 
+        isOpen={logsOpen} 
+        onClose={() => setLogsOpen(false)} 
+        serverLogs={serverLogs} 
+        clientLogs={clientLogs} 
+        onClearServer={() => setServerLogs([])}
+        onClearClient={() => setClientLogs([])}
+      />
 
       {/* Action Pill (Bottom) */}
       <AnimatePresence>
@@ -265,7 +264,7 @@ function App() {
         </motion.div>
       </div>
 
-      {/* 🛡️ OMNIBAR - NOUVELLE STRUCTURE DE CENTRAGE SANS TRANSFORMATION 🛡️ */}
+      {/* 🛡️ OMNIBAR 🛡️ */}
       <div 
         className="absolute top-6 left-0 right-0 mx-auto w-full max-w-2xl z-[10000] px-6"
         style={{ pointerEvents: 'none' }} 
@@ -300,7 +299,10 @@ function App() {
               }}
             />
           </div>
-          <QrCode className="w-6 h-6 text-slate-300 cursor-pointer" onClick={(e) => { e.stopPropagation(); setQrOpen(true); }} />
+          <div className="flex items-center gap-2">
+            <Terminal className="w-6 h-6 text-blue-400 cursor-pointer hover:text-blue-300 transition-colors" onClick={(e) => { e.stopPropagation(); setLogsOpen(true); }} />
+            <QrCode className="w-6 h-6 text-slate-300 cursor-pointer hover:text-white transition-colors" onClick={(e) => { e.stopPropagation(); setQrOpen(true); }} />
+          </div>
         </div>
 
         {/* Results Dropdown */}

@@ -5,17 +5,31 @@ import { X, Smartphone, Globe, Hash } from 'lucide-react';
 function QrModal({ isOpen, onClose }) {
   const [qrData, setQrData] = useState(null);
   const [connInfo, setConnInfo] = useState(null);
+  const [interfaces, setInterfaces] = useState([]);
+  const [preferredIp, setPreferredIp] = useState('');
+
+  const refreshQr = async () => {
+    const res = await window.gps.getCompanionQr();
+    if (res.success) {
+      setQrData(res.dataUrl);
+      setConnInfo({ ip: res.ip, port: res.port });
+    }
+  };
 
   useEffect(() => {
     if (isOpen) {
-      window.gps.getCompanionQr().then(res => {
-        if (res.success) {
-          setQrData(res.dataUrl);
-          setConnInfo({ ip: res.ip, port: res.port });
-        }
-      });
+      window.gps.getNetworkInterfaces().then(setInterfaces);
+      window.gps.getSettings().then(s => setPreferredIp(s.preferredIp || ''));
+      refreshQr();
     }
   }, [isOpen]);
+
+  const handleInterfaceChange = async (ip) => {
+    setPreferredIp(ip);
+    await window.gps.saveSettings({ preferredIp: ip });
+    // Attendre un tout petit peu que le backend prenne en compte le changement
+    setTimeout(refreshQr, 100);
+  };
 
   if (!isOpen) return null;
 
@@ -43,16 +57,33 @@ function QrModal({ isOpen, onClose }) {
         </div>
 
         <h2 className="text-xl font-bold mb-2">Connecter l'iPhone</h2>
-        <p className="text-slate-400 text-sm mb-8">Scannez ce QR Code pour configurer automatiquement la connexion.</p>
+        <p className="text-slate-400 text-sm mb-6">Scannez ce QR Code pour configurer automatiquement la connexion.</p>
 
-        <div className="bg-white p-4 rounded-3xl inline-block shadow-2xl mb-8">
+        <div className="bg-white p-4 rounded-3xl inline-block shadow-2xl mb-6">
           {qrData ? (
-            <img src={qrData} alt="QR Code" className="w-48 h-48" />
+            <img src={qrData} alt="QR Code" className="w-40 h-40" />
           ) : (
-            <div className="w-48 h-48 flex items-center justify-center text-slate-900 font-bold">
+            <div className="w-40 h-40 flex items-center justify-center text-slate-900 font-bold italic">
               Génération...
             </div>
           )}
+        </div>
+
+        {/* Sélecteur d'interface rapide */}
+        <div className="mb-6 space-y-2 text-left">
+          <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest px-1">Choix de l'interface réseau</label>
+          <select 
+            value={preferredIp}
+            onChange={(e) => handleInterfaceChange(e.target.value)}
+            className="w-full bg-white/5 border border-white/10 rounded-xl p-3 outline-none focus:border-blue-500 transition-colors text-white text-xs appearance-none cursor-pointer"
+          >
+            <option value="" className="bg-slate-900">Auto-détection</option>
+            {interfaces.map((iface, i) => (
+              <option key={i} value={iface.address} className="bg-slate-900">
+                {iface.name} ({iface.address})
+              </option>
+            ))}
+          </select>
         </div>
 
         {/* Bloc de vérification IP / Port */}
@@ -60,16 +91,16 @@ function QrModal({ isOpen, onClose }) {
           <div className="bg-white/5 border border-white/10 rounded-2xl p-3 text-left">
             <div className="flex items-center gap-2 text-blue-400 mb-1">
               <Globe className="w-3 h-3" />
-              <span className="text-[10px] font-bold uppercase tracking-wider">Adresse IP</span>
+              <span className="text-[10px] font-bold uppercase tracking-wider">IP Utilisée</span>
             </div>
-            <p className="text-sm font-mono text-white truncate">{connInfo?.ip || 'Détection...'}</p>
+            <p className="text-xs font-mono text-white truncate">{connInfo?.ip || '...'}</p>
           </div>
           <div className="bg-white/5 border border-white/10 rounded-2xl p-3 text-left">
             <div className="flex items-center gap-2 text-emerald-400 mb-1">
               <Hash className="w-3 h-3" />
               <span className="text-[10px] font-bold uppercase tracking-wider">Port</span>
             </div>
-            <p className="text-sm font-mono text-white">{connInfo?.port || '....'}</p>
+            <p className="text-xs font-mono text-white">{connInfo?.port || '....'}</p>
           </div>
         </div>
 
