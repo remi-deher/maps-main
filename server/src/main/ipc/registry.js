@@ -26,7 +26,11 @@ function registerIpcHandlers(tunnel, gps, companion) {
   
   ipcMain.handle('set-location', async (_event, { lat, lon, name }) => {
     try {
-      return await gps.setLocation(lat, lon, name)
+      const result = await gps.setLocation(lat, lon, name)
+      if (result.success) {
+        companion.broadcastLocation(lat, lon, name)
+      }
+      return result
     } catch (e) {
       return { success: false, error: e.message }
     }

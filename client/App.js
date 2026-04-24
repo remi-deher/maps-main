@@ -58,10 +58,12 @@ export default function App() {
     return () => batterySub.remove();
   }, []);
 
-  // Géocodage inverse automatique pour la Pill
+  // Géocodage inverse automatique pour la Pill + Centrage auto
   useEffect(() => {
     if (simulatedCoords) {
       reverseGeocode(simulatedCoords.latitude, simulatedCoords.longitude).then(setSimulatedAddress);
+      // Auto-centrage lors d'une mise à jour distante (PC -> iPhone)
+      mapRef.current?.animateToRegion({ ...simulatedCoords, latitudeDelta: 0.005, longitudeDelta: 0.005 }, 500);
     } else {
       setSimulatedAddress(null);
     }

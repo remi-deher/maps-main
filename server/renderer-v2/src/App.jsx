@@ -71,6 +71,10 @@ function App() {
         setClientLogs(prev => [data.data, ...prev].slice(0, 500));
       } else if (data.service === 'server-log') {
         setServerLogs(prev => [{ timestamp, message: data.data, type: 'info' }, ...prev].slice(0, 500));
+      } else if (data.service === 'location') {
+        // Synchronisation du marqueur quand l'iPhone change la position
+        const { lat, lon, name } = data.data;
+        setActiveSim({ lat, lon, name });
       }
     });
 
