@@ -68,15 +68,13 @@ function createWindow() {
 
   if (isDev) {
     mainWindow.loadURL('http://localhost:3000').catch(() => {
-      const prodPath = path.join(__dirname, '..', '..', 'dist-web', 'renderer-v2', 'index.html')
-      mainWindow.loadFile(prodPath)
+      mainWindow.loadFile(path.join(__dirname, '../../dist-web/renderer-v2/index.html'))
     })
   } else {
-    const prodPath = path.join(__dirname, '..', '..', 'dist-web', 'renderer-v2', 'index.html')
-    const fallbackPath = path.join(app.getAppPath(), 'dist-web', 'renderer-v2', 'index.html')
-    
-    mainWindow.loadFile(prodPath).catch(() => {
-      mainWindow.loadFile(fallbackPath)
+    // Chemin standard pour une application empaquetée
+    const indexPath = path.join(app.getAppPath(), 'dist-web', 'renderer-v2', 'index.html')
+    mainWindow.loadFile(indexPath).catch((err) => {
+      console.error('Erreur chargement production:', err)
     })
   }
 

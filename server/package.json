@@ -28,10 +28,9 @@
     "files": [
       "main.js",
       "preload.js",
-      "index.html",
       "src/**",
-      "renderer/**",
-      "assets/**"
+      "dist-web/**",
+      "resources/**"
     ],
     "extraResources": [
       {
