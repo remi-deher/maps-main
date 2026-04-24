@@ -14,33 +14,54 @@ let companion
 let tray
 let isQuitting = false
 
+let firstHide = true
+
 function createTray() {
-  // On peut utiliser une icône vide ou un symbole en attendant l'icône finale
   const iconPath = path.join(__dirname, '..', '..', 'resources', 'icon.png')
   let icon = nativeImage.createFromPath(iconPath)
   
   if (icon.isEmpty()) {
-    // Fallback: petite icône de remplacement (point bleu) si l'icône n'est pas trouvée
     icon = nativeImage.createEmpty()
   }
 
-  tray = new Tray(icon)
+  tray = new Tray(icon.resize({ width: 16, height: 16 }))
   const contextMenu = Menu.buildFromTemplate([
-    { label: 'Ouvrir GPS Mock', click: () => mainWindow.show() },
+    { 
+      label: '📍 GPS Mock — Actif', 
+      enabled: false 
+    },
     { type: 'separator' },
-    { label: 'Quitter', click: () => {
+    { label: 'Ouvrir l\'interface', click: () => {
+        mainWindow.show()
+        mainWindow.focus()
+    } },
+    { label: 'Cacher', click: () => mainWindow.hide() },
+    { type: 'separator' },
+    { label: 'Quitter l\'application', click: () => {
         isQuitting = true
         app.quit()
       } 
     }
   ])
 
-  tray.setToolTip('GPS Mock — iPhone Location Spoofer')
+  tray.setToolTip('GPS Mock — iPhone Location Spoofer (Actif en arrière-plan)')
   tray.setContextMenu(contextMenu)
   
   tray.on('double-click', () => {
     mainWindow.show()
+    mainWindow.focus()
   })
+}
+
+function showTrayNotification() {
+  if (firstHide && tray) {
+    tray.displayBalloon({
+      title: 'GPS Mock tourne en arrière-plan',
+      content: 'L\'application reste active pour maintenir la simulation GPS. Utilisez l\'icône dans la barre des tâches pour l\'ouvrir à nouveau.',
+      iconType: 'info'
+    })
+    firstHide = false
+  }
 }
 
 function createWindow() {
@@ -60,6 +81,7 @@ function createWindow() {
     if (!isQuitting) {
       event.preventDefault()
       mainWindow.hide()
+      showTrayNotification()
       return false
     }
   })
