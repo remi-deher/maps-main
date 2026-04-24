@@ -1,11 +1,86 @@
 import React, { useEffect, useRef } from 'react';
-import { StyleSheet, View, Text, TouchableOpacity, Animated, Dimensions, ScrollView, SafeAreaView, Pressable, Alert } from 'react-native';
-import { TrueSheet } from '@lodev09/react-native-true-sheet';
+import { 
+  StyleSheet, View, Text, TouchableOpacity, Animated, Dimensions, 
+  ScrollView, SafeAreaView, Pressable, Alert, Modal, PanResponder 
+} from 'react-native';
 import { COLORS, SHADOWS } from '../constants/theme';
 
 const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 
-// Helper pour les micro-interactions de pression
+// ─── COMPOSANT BOTTOM SHEET PERSONNALISÉ (SANS DÉPENDANCES) ──────────────────
+
+const BottomSheet = ({ visible, onClose, children, height = 'auto' }) => {
+  const pan = useRef(new Animated.Value(SCREEN_HEIGHT)).current;
+  const opacity = useRef(new Animated.Value(0)).current;
+
+  // Configuration du PanResponder pour le glisser-déposer vers le bas
+  const panResponder = useRef(
+    PanResponder.create({
+      onMoveShouldSetPanResponder: (_, gestureState) => gestureState.dy > 5,
+      onPanResponderMove: (_, gestureState) => {
+        if (gestureState.dy > 0) {
+          pan.setValue(gestureState.dy);
+        }
+      },
+      onPanResponderRelease: (_, gestureState) => {
+        if (gestureState.dy > 100 || gestureState.vy > 0.5) {
+          onClose();
+        } else {
+          Animated.spring(pan, {
+            toValue: 0,
+            useNativeDriver: true,
+            friction: 8,
+          }).start();
+        }
+      },
+    })
+  ).current;
+
+  useEffect(() => {
+    if (visible) {
+      Animated.parallel([
+        Animated.timing(opacity, { toValue: 1, duration: 300, useNativeDriver: true }),
+        Animated.spring(pan, { toValue: 0, friction: 8, tension: 40, useNativeDriver: true })
+      ]).start();
+    } else {
+      Animated.parallel([
+        Animated.timing(opacity, { toValue: 0, duration: 250, useNativeDriver: true }),
+        Animated.timing(pan, { toValue: SCREEN_HEIGHT, duration: 300, useNativeDriver: true })
+      ]).start();
+    }
+  }, [visible]);
+
+  if (!visible && pan._value === SCREEN_HEIGHT) return null;
+
+  const dynamicHeightStyle = height === 'auto' ? {} : { height: height };
+
+  return (
+    <Modal transparent visible={visible} animationType="none" onRequestClose={onClose}>
+      <View style={styles.overlay}>
+        <Animated.View 
+          style={[styles.backdrop, { opacity }]} 
+          onStartShouldSetResponder={() => true}
+          onResponderRelease={onClose}
+        />
+        <Animated.View 
+          style={[
+            styles.sheet, 
+            dynamicHeightStyle,
+            { transform: [{ translateY: pan }] }
+          ]}
+        >
+          <View {...panResponder.panHandlers} style={styles.dragHandleContainer}>
+            <View style={styles.dragHandle} />
+          </View>
+          {children}
+        </Animated.View>
+      </View>
+    </Modal>
+  );
+};
+
+// ─── COMPOSANTS MÉTIERS ───────────────────────────────────────────────────────
+
 const ScaleButton = ({ children, onPress, style }) => {
   const scale = useRef(new Animated.Value(1)).current;
   const onPressIn = () => Animated.spring(scale, { toValue: 0.95, useNativeDriver: true }).start();
@@ -44,24 +119,8 @@ export function QuickFavorites({ favorites, onTeleport, visible }) {
 }
 
 export function ActionPanel({ visible, coords, isFavorite, onTeleport, onToggleFavorite, onClose }) {
-  const sheet = useRef(null);
-
-  useEffect(() => {
-    if (visible) {
-      sheet.current?.present();
-    } else {
-      sheet.current?.dismiss();
-    }
-  }, [visible]);
-
   return (
-    <TrueSheet
-      ref={sheet}
-      sizes={['auto']}
-      cornerRadius={32}
-      blurTint="dark"
-      onDismiss={onClose}
-    >
+    <BottomSheet visible={visible} onClose={onClose}>
       <View style={styles.sheetContent}>
         <View style={styles.sheetHeader}>
           <View style={{flex: 1}}>
@@ -79,21 +138,11 @@ export function ActionPanel({ visible, coords, isFavorite, onTeleport, onToggleF
           </ScaleButton>
         </View>
       </View>
-    </TrueSheet>
+    </BottomSheet>
   );
 }
 
 export function FavoritesPanel({ visible, favorites, history, onClose, onTeleport, onRemove, onRename }) {
-  const sheet = useRef(null);
-
-  useEffect(() => {
-    if (visible) {
-      sheet.current?.present();
-    } else {
-      sheet.current?.dismiss();
-    }
-  }, [visible]);
-
   const handleRename = (fav) => {
     Alert.prompt(
       "Renommer le favori",
@@ -115,23 +164,16 @@ export function FavoritesPanel({ visible, favorites, history, onClose, onTelepor
   };
 
   return (
-    <TrueSheet
-      ref={sheet}
-      sizes={['50%', '90%']}
-      cornerRadius={32}
-      blurTint="dark"
-      onDismiss={onClose}
-    >
+    <BottomSheet visible={visible} onClose={onClose} height={SCREEN_HEIGHT * 0.7}>
       <SafeAreaView style={styles.panelSafe}>
         <View style={styles.panelHeader}>
           <Text style={styles.panelTitle}>Mes Lieux</Text>
-          <TouchableOpacity onPress={() => sheet.current?.dismiss()} style={styles.closeBtn}>
+          <TouchableOpacity onPress={onClose} style={styles.closeBtn}>
             <Text style={styles.closeText}>✕</Text>
           </TouchableOpacity>
         </View>
         
         <ScrollView style={styles.list} showsVerticalScrollIndicator={false}>
-          {/* SECTION FAVORIS */}
           <Text style={styles.sectionTitle}>Favoris ⭐</Text>
           {favorites && favorites.length > 0 ? favorites.map((fav, i) => (
             <View key={`fav-${i}`} style={styles.item}>
@@ -150,7 +192,6 @@ export function FavoritesPanel({ visible, favorites, history, onClose, onTelepor
             </View>
           )) : <Text style={styles.empty}>Aucun favori enregistré.</Text>}
 
-          {/* SECTION RÉCENTS */}
           <Text style={[styles.sectionTitle, { marginTop: 30 }]}>Historique Récents 🕒</Text>
           {history && history.length > 0 ? history.map((item, i) => (
             <TouchableOpacity 
@@ -168,11 +209,37 @@ export function FavoritesPanel({ visible, favorites, history, onClose, onTelepor
           <View style={{height: 100}} />
         </ScrollView>
       </SafeAreaView>
-    </TrueSheet>
+    </BottomSheet>
   );
 }
 
 const styles = StyleSheet.create({
+  // Bottom Sheet Styles
+  overlay: { flex: 1, justifyContent: 'flex-end' },
+  backdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.5)' },
+  sheet: { 
+    backgroundColor: '#1E293B', 
+    borderTopLeftRadius: 32, 
+    borderTopRightRadius: 32, 
+    paddingBottom: 20,
+    ...SHADOWS.premium,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.1)'
+  },
+  dragHandleContainer: { 
+    width: '100%', 
+    height: 30, 
+    alignItems: 'center', 
+    justifyContent: 'center' 
+  },
+  dragHandle: { 
+    width: 40, 
+    height: 5, 
+    borderRadius: 3, 
+    backgroundColor: 'rgba(255,255,255,0.2)' 
+  },
+
+  // Other Styles
   quickContainer: { position: 'absolute', bottom: 185, left: 0, right: 0, zIndex: 55 },
   quickScroll: { paddingHorizontal: 20, gap: 10 },
   quickItem: { 
@@ -183,7 +250,7 @@ const styles = StyleSheet.create({
   quickEmoji: { fontSize: 14 },
   quickText: { color: COLORS.text, fontSize: 12, fontWeight: '700', maxWidth: 120 },
 
-  sheetContent: { padding: 24, paddingBottom: 40 },
+  sheetContent: { paddingHorizontal: 24, paddingBottom: 20 },
   sheetHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 24, gap: 12 },
   sheetTitle: { color: COLORS.text, fontWeight: '900', fontSize: 24, flex: 1 },
   sheetCoords: { color: COLORS.textSecondary, fontSize: 13, marginTop: 4 },
@@ -193,10 +260,10 @@ const styles = StyleSheet.create({
     justifyContent: 'center', alignItems: 'center',
     borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)'
   },
-  sheetFavBtnActive: { backgroundColor: COLORS.warning, borderColor: COLORS.warning },
+  sheetFavBtnActive: { backgroundColor: '#F59E0B', borderColor: '#F59E0B' },
   sheetActions: { marginTop: 8 },
   mainActionBtn: { 
-    backgroundColor: COLORS.primary, padding: 20, borderRadius: 22, 
+    backgroundColor: '#6366F1', padding: 20, borderRadius: 22, 
     alignItems: 'center', ...SHADOWS.light 
   },
   mainActionText: { color: '#fff', fontWeight: '900', fontSize: 16, letterSpacing: 1.5 },
@@ -213,11 +280,11 @@ const styles = StyleSheet.create({
   },
   itemMain: { flex: 1 },
   itemName: { color: COLORS.text, fontWeight: '800', fontSize: 16 },
-  itemCoords: { color: COLORS.textMuted, fontSize: 11, marginTop: 2 },
+  itemCoords: { color: '#94A3B8', fontSize: 11, marginTop: 2 },
   itemActions: { flexDirection: 'row', gap: 8 },
   editBtn: { padding: 8, backgroundColor: 'rgba(255, 255, 255, 0.05)', borderRadius: 10 },
   deleteBtn: { padding: 8, backgroundColor: 'rgba(244, 63, 94, 0.08)', borderRadius: 10 },
-  empty: { color: COLORS.textMuted, textAlign: 'center', marginTop: 40, fontWeight: '600', fontSize: 14, opacity: 0.5 },
+  empty: { color: '#94A3B8', textAlign: 'center', marginTop: 40, fontWeight: '600', fontSize: 14, opacity: 0.5 },
   sectionTitle: { color: COLORS.textSecondary, fontSize: 11, fontWeight: 'bold', textTransform: 'uppercase', letterSpacing: 1.5, marginBottom: 12, paddingLeft: 5, opacity: 0.7 },
   itemHistory: { opacity: 0.8, paddingVertical: 12 }
 });

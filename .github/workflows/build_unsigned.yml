@@ -32,7 +32,7 @@ jobs:
       - name: Install Pods
         run: |
           cd client/ios
-          RCT_NEW_ARCH_ENABLED=1 pod install --repo-update
+          pod install --repo-update
 
       - name: Build Unsigned App
         run: |
@@ -47,7 +47,6 @@ jobs:
                      CODE_SIGNING_REQUIRED=NO \
                      CODE_SIGN_IDENTITY="" \
                      AD_HOC_CODE_SIGNING_ALLOWED=YES \
-                     GCC_PREPROCESSOR_DEFINITIONS='$inherited RCT_NEW_ARCH_ENABLED=1' \
                      clean build
 
       - name: Create IPA
