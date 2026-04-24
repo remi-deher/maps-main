@@ -3,6 +3,7 @@
 const { ipcMain, app, shell } = require('electron')
 const settings = require('../services/settings-manager')
 const QRCode = require('qrcode')
+const { getNetworkInterfaces } = require('../utils/network')
 
 /**
  * Registre central des IPC Handlers.
@@ -19,11 +20,17 @@ function registerIpcHandlers(tunnel, gps, companion) {
     connectionType: tunnel.getConnectionType()
   }))
 
+  ipcMain.handle('get-network-interfaces', () => getNetworkInterfaces())
+
   // ─── GPS Simulation ────────────────────────────────────────────────────────
   
   ipcMain.handle('set-location', async (_event, { lat, lon, name }) => {
     try {
-      return await gps.setLocation(lat, lon, name)
+      const result = await gps.setLocation(lat, lon, name)
+      if (result.success) {
+        companion.broadcastLocation(lat, lon, name)
+      }
+      return result
     } catch (e) {
       return { success: false, error: e.message }
     }

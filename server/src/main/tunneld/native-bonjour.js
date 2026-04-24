@@ -20,7 +20,7 @@ class NativeBonjour extends EventEmitter {
    * Lance un scan bref pour trouver des instances _apple-mobdev2
    */
   async scan(timeoutMs = 10000) {
-    if (this._isScanning) return
+    if (this._isScanning) return []
     this._isScanning = true
     dbg('[native-bonjour] lancement du scan dns-sd...')
 

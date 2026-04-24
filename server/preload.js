@@ -19,4 +19,5 @@ contextBridge.exposeInMainWorld('gps', {
   removeFavorite: (lat, lon) => ipcRenderer.invoke('remove-favorite', { lat, lon }),
   renameFavorite: (lat, lon, newName) => ipcRenderer.invoke('rename-favorite', { lat, lon, newName }),
   getCompanionQr: () => ipcRenderer.invoke('get-companion-qr'),
+  getNetworkInterfaces: () => ipcRenderer.invoke('get-network-interfaces'),
 })

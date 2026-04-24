@@ -82,16 +82,38 @@ class ProcessRunner extends EventEmitter {
   }
 
   stop() {
-    if (this.process) {
-      const pid = this.process.pid
-      dbg(`[${this.name}] Arret du processus (PID: ${pid})...`)
+    if (this.process || this.name === 'tunneld') {
+      const pid = this.process ? this.process.pid : null
+      dbg(`[${this.name}] Arret du processus${pid ? ` (PID: ${pid})` : ''}...`)
       
       if (process.platform === 'win32') {
-        // Nettoyage agressif sur Windows pour liberer les ports instantanement
-        exec(`taskkill /F /T /PID ${pid}`, (err) => {
-          if (err) dbg(`[${this.name}] Erreur taskkill: ${err.message}`)
-        })
-      } else {
+        try {
+          // 1. Essayer de tuer par PID si disponible (Synchrone pour bloquer jusqu'à libération)
+          if (pid) {
+            const { execSync } = require('child_process')
+            execSync(`taskkill /F /T /PID ${pid}`, { stdio: 'ignore' })
+          }
+        } catch (e) { /* ignore */ }
+
+        try {
+          // 2. Nettoyage de secours : Tuer tout processus python lié à cette tâche
+          if (this.name === 'tunneld') {
+            const { execSync } = require('child_process')
+            const cleanCmd = 'powershell "Get-CimInstance Win32_Process -Filter \\"Name = \'python.exe\' AND CommandLine LIKE \'%remote tunneld%\'\\" | Stop-Process -Force -ErrorAction SilentlyContinue"'
+            execSync(cleanCmd, { stdio: 'ignore' })
+          }
+        } catch (e) { /* ignore */ }
+
+        try {
+          // 3. ULTIME RECOURS : Tuer le processus qui occupe le port 49151
+          if (this.name === 'tunneld') {
+            const { execSync } = require('child_process')
+            const killPortCmd = 'powershell "Get-NetTCPConnection -LocalPort 49151 -ErrorAction SilentlyContinue | ForEach-Object { Stop-Process -Id $_.OwningProcess -Force -ErrorAction SilentlyContinue }"'
+            execSync(killPortCmd, { stdio: 'ignore' })
+            dbg(`[${this.name}] Port 49151 libere de force (Sync).`)
+          }
+        } catch (e) { /* ignore */ }
+      } else if (this.process) {
         this.process.kill('SIGTERM')
       }
       this.process = null

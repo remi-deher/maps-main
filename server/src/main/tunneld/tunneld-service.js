@@ -34,24 +34,38 @@ class TunneldService extends EventEmitter {
 
   async start(manualIp = null) {
     if (this._isQuitting) return
-    if (this.runner.isRunning && this._manualIp === manualIp) return
+    
+    // Mise à jour de l'IP manuelle (transite des états) sans tuer le processus
+    this._manualIp = manualIp
+
+    if (this.runner.isRunning) {
+      if (manualIp && !this.activeConnection) {
+        dbg(`[tunneld-service] IP WebSocket reçue (${manualIp}) pendant que le démon tourne. Tentative de fallback...`)
+        this._triggerNativeFallback(manualIp)
+      }
+      return
+    }
+
     if (this._isStarting) return
     this._isStarting = true
 
     try {
-      if (this.runner.isRunning) {
-        this.stop()
-        await new Promise(resolve => setTimeout(resolve, 1500))
-      }
-
-      this._manualIp = manualIp
-      dbg('[tunneld-service] lancement du demon tunneld...')
+      dbg(`[tunneld-service] lancement du demon tunneld (Base Daemon)...`)
+      dbg(`[DEBUG MANUEL] Commande à tester : .\\resources\\python\\python.exe -m pymobiledevice3 remote tunneld`)
       sendStatus('tunneld', 'starting', 'Initialisation du demon tunnel...')
 
+      // Lancement du processus de base (Priorité 4 / USB / Passive Discovery)
       this.runner.spawn(PYTHON, ['-m', 'pymobiledevice3', 'remote', 'tunneld'])
 
       if (this.fallbackTimer) clearTimeout(this.fallbackTimer)
-      this.fallbackTimer = setTimeout(() => this._triggerNativeFallback(this._manualIp), 10000)
+
+      if (manualIp) {
+        // Priorité 2 : Si IP déjà là au démarrage, on tente le fallback immédiat
+        this._triggerNativeFallback(manualIp)
+      } else {
+        // Priorité 3 : Attente standard avant fallback Bonjour automatique
+        this.fallbackTimer = setTimeout(() => this._triggerNativeFallback(null), 10000)
+      }
     } finally {
       setTimeout(() => { this._isStarting = false }, 2000)
     }
@@ -88,7 +102,8 @@ class TunneldService extends EventEmitter {
       if (this.activeConnection && this.activeConnection.address === address && this.activeConnection.port === port) return
 
       dbg(`[tunneld] Connexion detectee : ${type} (${address}:${port})`)
-      this._startRsdHeartbeat(address, port, deviceId)
+      // Le heartbeat est maintenant géré par l'orchestrateur via l'IP WebSocket
+      // this._startRsdHeartbeat(address, port, deviceId)
 
       this.activeConnection = { address, port, type, id: deviceId }
       this.emit('connection', this.activeConnection)
@@ -104,6 +119,20 @@ class TunneldService extends EventEmitter {
       this._stopAllHeartbeats()
       this.activeConnection = null
       this.emit('disconnection', text)
+    }
+
+    // --- GESTION DES ERREURS DE BIND (PORT OCCUPÉ) ---
+    if (text.includes('10048')) {
+      dbg('[tunneld] ⚠️ Port 49151 déjà utilisé. Tentative de nettoyage forcé...')
+      this.stop() // Déclenche le nettoyage ProcessRunner
+      this._scheduleRestart(5000) // On attend un peu plus
+    }
+
+    // --- GESTION DES ERREURS RÉSEAU (CACHE IPV6 OBSOLÈTE) ---
+    if (text.includes('1231')) {
+      dbg('[tunneld] ❌ Erreur réseau 1231 (Cible injoignable). Pause de 10s avant nouvelle tentative...')
+      this.stop()
+      this._scheduleRestart(10000) // On calme le jeu pour laisser mDNS se stabiliser
     }
   }
 
@@ -149,23 +178,34 @@ class TunneldService extends EventEmitter {
   }
 
   async _triggerNativeFallback(manualIp = null) {
-    if (this._isQuitting || this.activeConnection) return
-    let targetData = null
-    if (manualIp) {
-      dbg(`[tunneld-service] Tentative prioritaire sur l'IP detectee (WebSocket) : ${manualIp}...`)
-      targetData = await nativeBonjour.resolve({ name: 'Manual', address: manualIp })
-    }
-    if (!targetData) {
-      dbg('[tunneld-service] Recherche d\'appareils via Bonjour Natif (dns-sd)...')
-      const instances = await nativeBonjour.scan(4000)
-      if (instances.length > 0) {
-        targetData = await nativeBonjour.resolve(instances[0])
+    if (this._isQuitting || this.activeConnection || this._isResolving) return
+    this._isResolving = true
+    
+    try {
+      let targetData = null
+      if (manualIp) {
+        dbg(`[tunneld-service] Tentative prioritaire sur l'IP detectee (WebSocket) : ${manualIp}...`)
+        targetData = await nativeBonjour.resolve({ name: 'Manual', address: manualIp })
       }
-    }
-    if (targetData && !this.activeConnection) {
-      this._handleData(`--rsd ${targetData.address} ${targetData.port} [start-tunnel-task-usbmux-native-WiFi]`)
-    } else if (!this.activeConnection) {
-      this._scheduleRestart(5000)
+      
+      if (!targetData) {
+        dbg('[tunneld-service] Recherche d\'appareils via Bonjour Natif (dns-sd)...')
+        const instances = await nativeBonjour.scan(4000)
+        if (instances.length > 0) {
+          // PRIORITÉ : On cherche d'abord une instance avec une IP fe80 (Link-Local)
+          const bestInstance = instances.find(i => i.address && i.address.startsWith('fe80')) || instances[0]
+          targetData = await nativeBonjour.resolve(bestInstance)
+        }
+      }
+
+      if (targetData && !this.activeConnection) {
+        dbg(`[tunneld-service] Solution de secours trouvée : ${targetData.address}:${targetData.port}`)
+        this._handleData(`--rsd ${targetData.address} ${targetData.port} [start-tunnel-task-usbmux-native-WiFi]`)
+      } else if (!this.activeConnection) {
+        this._scheduleRestart(5000)
+      }
+    } finally {
+      this._isResolving = false
     }
   }
 
@@ -178,4 +218,4 @@ class TunneldService extends EventEmitter {
   }
 }
 
-module.exports = TunneldService
+module.exports = new TunneldService()

@@ -1,8 +1,9 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { StyleSheet, View, TouchableWithoutFeedback, Keyboard, KeyboardAvoidingView, Platform, TouchableOpacity, Text } from 'react-native';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
+import { StyleSheet, View, TouchableWithoutFeedback, Keyboard, KeyboardAvoidingView, Platform, TouchableOpacity, Text, Animated, Easing } from 'react-native';
 import MapView, { Marker } from 'react-native-maps';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import * as Battery from 'expo-battery';
+import * as Location from 'expo-location';
 
 // Modules locaux
 import { COLORS, SHADOWS } from './src/constants/theme';
@@ -21,7 +22,7 @@ export default function App() {
   const { isMaintaining, requestPermissions, toggleBackground, searchAddress, reverseGeocode } = useLocation();
   const { 
     status, favorites, recentHistory, simulatedCoords, 
-    deviceInfo, connectionType, rsdAddress, 
+    deviceInfo, connectionType, rsdAddress, serverState, verifiedLocation,
     sendAction, connect 
   } = useSocket(serverIp, serverPort, isMaintaining);
   
@@ -34,6 +35,55 @@ export default function App() {
   const [showDebug, setShowDebug] = useState(false);
   const [isFavsOpen, setIsFavsOpen] = useState(false);
   const [isLowPowerMode, setIsLowPowerMode] = useState(false);
+  const [mapType, setMapType] = useState('hybrid');
+  
+  // Animation du point bleu (Pulse)
+  const pulseScale = useRef(new Animated.Value(1)).current;
+  const pulseOpacity = useRef(new Animated.Value(0.4)).current;
+
+  useEffect(() => {
+    const pulse = Animated.loop(
+      Animated.parallel([
+        Animated.sequence([
+          Animated.timing(pulseScale, {
+            toValue: 3.5,
+            duration: 2500,
+            useNativeDriver: true,
+            easing: Easing.out(Easing.ease)
+          }),
+          Animated.timing(pulseScale, {
+            toValue: 1,
+            duration: 0,
+            useNativeDriver: true
+          })
+        ]),
+        Animated.sequence([
+          Animated.timing(pulseOpacity, {
+            toValue: 0,
+            duration: 2500,
+            useNativeDriver: true,
+            easing: Easing.out(Easing.ease)
+          }),
+          Animated.timing(pulseOpacity, {
+            toValue: 0.4,
+            duration: 0,
+            useNativeDriver: true
+          })
+        ])
+      ])
+    );
+    pulse.start();
+    return () => pulse.stop();
+  }, []);
+
+  const isVerified = useMemo(() => {
+    if (!simulatedCoords || !verifiedLocation) return false;
+    const dist = getDistance(
+      simulatedCoords.latitude, simulatedCoords.longitude,
+      verifiedLocation.lat, verifiedLocation.lon
+    );
+    return dist < 1; // Moins d'un mètre d'écart = vérifié
+  }, [simulatedCoords, verifiedLocation]);
 
   const mapRef = useRef(null);
   const [cameraPermission, requestCameraPermission] = useCameraPermissions();
@@ -57,10 +107,12 @@ export default function App() {
     return () => batterySub.remove();
   }, []);
 
-  // Géocodage inverse automatique pour la Pill
+  // Géocodage inverse automatique pour la Pill + Centrage auto
   useEffect(() => {
     if (simulatedCoords) {
       reverseGeocode(simulatedCoords.latitude, simulatedCoords.longitude).then(setSimulatedAddress);
+      // Auto-centrage lors d'une mise à jour distante (PC -> iPhone)
+      mapRef.current?.animateToRegion({ ...simulatedCoords, latitudeDelta: 0.005, longitudeDelta: 0.005 }, 500);
     } else {
       setSimulatedAddress(null);
     }
@@ -68,7 +120,7 @@ export default function App() {
 
   // Actions
   const handleTeleport = (coords) => {
-    logEvent.add(`Téléportation vers: ${coords.latitude}, ${coords.longitude}`);
+    logEvent.add(`Téléportation demandée : ${coords.latitude.toFixed(4)}, ${coords.longitude.toFixed(4)}`);
     sendAction('SET_LOCATION', { lat: coords.latitude, lon: coords.longitude, name: coords.name || "" });
     setPendingCoords(null);
     setIsFavsOpen(false);
@@ -96,15 +148,24 @@ export default function App() {
     }
   };
   
-  const centerOnSimulation = () => {
+  const centerOnLocation = async () => {
     if (simulatedCoords) {
       logEvent.add("Centrage sur position simulée");
-      mapRef.current?.animateToRegion({
-        ...simulatedCoords,
-        latitudeDelta: 0.005,
-        longitudeDelta: 0.005
+      mapRef.current?.animateToRegion({ ...simulatedCoords, latitudeDelta: 0.005, longitudeDelta: 0.005 }, 500);
+    } else {
+      logEvent.add("Centrage sur position réelle");
+      const loc = await Location.getCurrentPositionAsync({});
+      mapRef.current?.animateToRegion({ 
+        latitude: loc.coords.latitude, 
+        longitude: loc.coords.longitude, 
+        latitudeDelta: 0.005, 
+        longitudeDelta: 0.005 
       }, 500);
     }
+  };
+
+  const toggleMapType = () => {
+    setMapType(prev => prev === 'hybrid' ? 'standard' : 'hybrid');
   };
 
   const handleScannerResult = ({ data }) => {
@@ -138,7 +199,7 @@ export default function App() {
           <MapView
             ref={mapRef}
             style={StyleSheet.absoluteFill}
-            mapType="hybrid"
+            mapType={mapType}
             initialRegion={{ latitude: 48.8566, longitude: 2.3522, latitudeDelta: 0.01, longitudeDelta: 0.01 }}
             onLongPress={async (e) => {
               const coords = e.nativeEvent.coordinate;
@@ -148,24 +209,32 @@ export default function App() {
             }}
           >
             {simulatedCoords && (
-              <Marker coordinate={simulatedCoords}>
-                <View style={styles.marker}><View style={styles.pulse} /><View style={styles.dot} /></View>
+              <Marker coordinate={simulatedCoords} anchor={{x: 0.5, y: 0.5}} flat={false}>
+                <View style={styles.markerContainer}>
+                  <Animated.View 
+                    style={[
+                      styles.pulseHalo, 
+                      { 
+                        transform: [{ scale: pulseScale }],
+                        opacity: pulseOpacity
+                      }
+                    ]} 
+                  />
+                  <View style={styles.blueDot} />
+                </View>
               </Marker>
             )}
             {pendingCoords && <Marker coordinate={pendingCoords} pinColor={COLORS.error} />}
           </MapView>
 
-          <TouchableOpacity 
-            activeOpacity={0.9} 
-            onPress={() => setShowDebug(true)}
-            style={styles.omnibarContainer}
-          >
+          <View style={styles.omnibarContainer}>
             <Omnibar 
                 searchQuery={searchQuery}
                 onSearchChange={setSearchQuery}
                 onSearchSubmit={handleSearch}
                 onScannerPress={() => setShowScanner(true)}
                 onSettingsPress={() => setShowSettings(true)}
+                onDebugPress={() => setShowDebug(true)}
                 onSuggestionSelect={(coords) => {
                   setPendingCoords(coords);
                   mapRef.current?.animateToRegion({ ...coords, latitudeDelta: 0.01, longitudeDelta: 0.01 }, 800);
@@ -175,7 +244,7 @@ export default function App() {
                 isMaintaining={isMaintaining}
                 isLowPowerMode={isLowPowerMode}
             />
-          </TouchableOpacity>
+          </View>
 
           <View style={styles.floatingActions}>
             <TouchableOpacity style={[styles.floatBtn, isMaintaining && styles.activeFloat, SHADOWS.light]} onPress={toggleBackground}>
@@ -184,11 +253,12 @@ export default function App() {
             <TouchableOpacity style={[styles.floatBtn, SHADOWS.light]} onPress={() => setIsFavsOpen(true)}>
               <Text style={{fontSize: 22}}>⭐</Text>
             </TouchableOpacity>
-            {simulatedCoords && (
-              <TouchableOpacity style={[styles.floatBtn, SHADOWS.light]} onPress={centerOnSimulation}>
-                <Text style={{fontSize: 22}}>🎯</Text>
-              </TouchableOpacity>
-            )}
+            <TouchableOpacity style={[styles.floatBtn, SHADOWS.light]} onPress={toggleMapType}>
+              <Text style={{fontSize: 22}}>{mapType === 'hybrid' ? '🗺️' : '🛰️'}</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={[styles.floatBtn, SHADOWS.light]} onPress={centerOnLocation}>
+              <Text style={{fontSize: 22}}>🎯</Text>
+            </TouchableOpacity>
           </View>
 
           <QuickFavorites 
@@ -201,12 +271,15 @@ export default function App() {
             <TouchableOpacity 
               style={[styles.simPill, SHADOWS.premium]} 
               activeOpacity={0.8}
-              onPress={centerOnSimulation}
+              onPress={centerOnLocation}
             >
-              <View style={styles.simPillIcon}><Text style={{fontSize: 12}}>🚀</Text></View>
+              <View style={[styles.simPillIcon, isVerified && { backgroundColor: COLORS.success + '20' }]}>
+                <Text style={{fontSize: 12}}>{isVerified ? '✅' : '🚀'}</Text>
+              </View>
               <Text style={styles.simPillText} numberOfLines={1}>
-                {simulatedAddress || "Simulation en cours..."}
+                {simulatedAddress || `${simulatedCoords.latitude.toFixed(4)}, ${simulatedCoords.longitude.toFixed(4)}`}
               </Text>
+              {isVerified && <View style={styles.verifiedBadge} />}
             </TouchableOpacity>
           )}
 
@@ -262,9 +335,32 @@ const styles = StyleSheet.create({
   scanner: { flex: 1, backgroundColor: '#000' },
   closeScanner: { position: 'absolute', bottom: 50, alignSelf: 'center', backgroundColor: COLORS.primary, padding: 20, borderRadius: 30 },
   closeText: { color: COLORS.text, fontWeight: 'bold' },
-  marker: { width: 30, height: 30, alignItems: 'center', justifyContent: 'center' },
-  pulse: { position: 'absolute', width: 26, height: 26, borderRadius: 13, backgroundColor: COLORS.primary, opacity: 0.2 },
-  dot: { width: 12, height: 12, borderRadius: 6, backgroundColor: COLORS.primary, borderWidth: 2, borderColor: '#fff' },
+  markerContainer: {
+    width: 100,
+    height: 100,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  blueDot: {
+    width: 16,
+    height: 16,
+    borderRadius: 8,
+    backgroundColor: '#007AFF',
+    borderWidth: 3,
+    borderColor: '#FFFFFF',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.5,
+    shadowRadius: 3,
+    elevation: 5,
+  },
+  pulseHalo: {
+    position: 'absolute',
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    backgroundColor: '#007AFF',
+  },
   floatingActions: { position: 'absolute', top: 160, right: 15, gap: 10 },
   floatBtn: { width: 54, height: 54, borderRadius: 27, backgroundColor: COLORS.surface, justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)' },
   activeFloat: { borderColor: COLORS.primary, backgroundColor: 'rgba(99,102,241,0.3)' },
@@ -287,5 +383,30 @@ const styles = StyleSheet.create({
     width: 28, height: 28, borderRadius: 14, backgroundColor: 'rgba(99, 102, 241, 0.2)',
     justifyContent: 'center', alignItems: 'center'
   },
-  simPillText: { color: COLORS.text, fontSize: 14, fontWeight: '700', flex: 1 }
+  simPillText: { color: COLORS.text, fontSize: 14, fontWeight: '700', flex: 1 },
+  verifiedBadge: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: COLORS.success,
+    marginLeft: 4,
+  },
 });
+
+/**
+ * Calcule la distance entre deux points en mètres
+ */
+function getDistance(lat1, lon1, lat2, lon2) {
+  const R = 6371e3;
+  const φ1 = lat1 * Math.PI/180;
+  const φ2 = lat2 * Math.PI/180;
+  const Δφ = (lat2-lat1) * Math.PI/180;
+  const Δλ = (lon2-lon1) * Math.PI/180;
+
+  const a = Math.sin(Δφ/2) * Math.sin(Δφ/2) +
+          Math.cos(φ1) * Math.cos(φ2) *
+          Math.sin(Δλ/2) * Math.sin(Δλ/2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+
+  return R * c;
+}

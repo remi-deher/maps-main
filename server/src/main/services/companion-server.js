@@ -3,9 +3,11 @@
 const WebSocket = require('ws')
 const { WebSocketServer } = WebSocket
 const os = require('os')
+const http = require('http')
 const { EventEmitter } = require('events')
 const { dbg, sendStatus } = require('../logger')
 const favoritesManager = require('./favorites-manager')
+const settings = require('./settings-manager')
 
 /**
  * CompanionServer - Gere la communication WebSocket avec l'application iOS
@@ -15,12 +17,15 @@ class CompanionServer extends EventEmitter {
     super()
     this.tunnel = tunnelManager
     this.wss = null
+    this.httpServer = null
     this.port = null
     this.clients = new Set()
     this.status = {}
     
     // Initialisation du statut
     this._refreshStatus()
+
+    // ... (rest of constructor same)
 
     // Ecouter les mises a jour des favoris/historique
     favoritesManager.on('favorites-updated', (favs) => {
@@ -45,39 +50,91 @@ class CompanionServer extends EventEmitter {
   }
 
   _refreshStatus() {
+    const rsdReady = !!this.tunnel?.getRsdAddress();
+    const simActive = !!(rsdReady && this.status?.lastVerifiedLocation);
+    
     this.status = {
-      tunnelActive: !!this.tunnel?.getRsdAddress(),
+      state: simActive ? 'running' : (rsdReady ? 'ready' : 'idle'),
+      tunnelActive: rsdReady,
       rsdAddress: this.tunnel?.getRsdAddress() || null,
       rsdPort: this.tunnel?.getRsdPort() || null,
       connectionType: this.tunnel?.getConnectionType() || null,
       deviceInfo: this.tunnel?.getDeviceInfo() || null,
       maintainActive: this.status?.maintainActive || false,
       lastHeartbeat: this.status?.lastHeartbeat || null,
+      lastInjectedLocation: this.status?.lastInjectedLocation || null, // Demandée
+      lastVerifiedLocation: this.status?.lastVerifiedLocation || null, // Confirmée par le pont
       favorites: favoritesManager.getFavorites(),
       recentHistory: favoritesManager.getHistory()
     }
   }
 
   /**
-   * Demarre le serveur WebSocket
+   * Appelé par le GpsSimulator pour confirmer que la position est bien injectée sur l'iPhone
+   */
+  confirmLocationApplied(lat, lon, name) {
+    this.status.lastVerifiedLocation = { lat, lon, name, timestamp: Date.now() };
+    this._refreshStatus();
+    this._broadcast({ type: 'STATUS', data: this.status });
+  }
+
+  /**
+   * Demarre le serveur WebSocket + HTTP
    */
   start(port = 8080) {
-    if (this.wss && this.port === port) {
+    if (this.httpServer && this.port === port) {
       dbg(`[companion-server] Serveur deja actif sur le port ${port}`)
       return
     }
     
-    if (this.wss) {
+    if (this.httpServer) {
       dbg(`[companion-server] Changement de port ${this.port} -> ${port}`)
       this.stop()
     }
 
     try {
       this.port = port
-      this.wss = new WebSocketServer({ port })
+      
+      // Creation du serveur HTTP pour gerer les requetes de secours (Background)
+      this.httpServer = http.createServer((req, res) => {
+        if (req.method === 'POST' && req.url === '/relance') {
+          let body = ''
+          req.on('data', chunk => body += chunk.toString())
+          req.on('end', () => {
+            try {
+              const payload = JSON.parse(body)
+              const { lat, lon, name } = payload
+              if (lat !== undefined && lon !== undefined) {
+                dbg(`[companion-server] ⚠️ DÉRIVE DÉTECTÉE sur l'iPhone (${lat}, ${lon}). Relance automatique...`)
+                sendStatus('companion', 'info', `Secours : Simulation relancée (${name || 'Background'})`)
+                this.emit('request-location', { lat, lon, name })
+                res.writeHead(200, { 'Content-Type': 'application/json' })
+                res.end(JSON.stringify({ success: true }))
+                return
+              }
+            } catch (e) {
+              dbg(`[companion-server] Erreur parsing POST /relance: ${e.message}`)
+            }
+            res.writeHead(400)
+            res.end()
+          })
+          return
+        }
+        
+        // Reponse par defaut
+        res.writeHead(404)
+        res.end()
+      })
+
+      // Attacher le WebSocket au serveur HTTP
+      this.wss = new WebSocketServer({ server: this.httpServer })
+      
       const ip = this._getLocalIp()
-      dbg(`[companion-server] Serveur demarre sur ${ip}:${port}`)
-      sendStatus('companion', 'info', `Pret pour connexion iPhone sur ${ip}:${port}`)
+      
+      this.httpServer.listen(port, () => {
+        dbg(`[companion-server] Serveur (HTTP+WS) demarre sur ${ip}:${port}`)
+        sendStatus('companion', 'info', `Pret pour connexion iPhone sur ${ip}:${port}`)
+      })
 
       this.wss.on('connection', (ws, req) => {
         let clientIp = req.socket.remoteAddress
@@ -87,18 +144,17 @@ class CompanionServer extends EventEmitter {
         this.emit('iphone-ip-detected', clientIp)
         
         this.clients.add(ws)
-        this._refreshStatus() // S'assurer que le statut est a jour avant l'envoi
+        this._refreshStatus()
         ws.send(JSON.stringify({ type: 'STATUS', data: this.status }))
 
         ws.on('message', (message) => {
           try {
             const payload = JSON.parse(message)
-            dbg(`[companion-server] Message reçu : ${payload.type}`)
             if (payload && payload.type) {
               this._handleMessage(ws, payload)
             }
           } catch (e) {
-            dbg(`[companion-server] Erreur traitement message: ${e.message}`)
+            dbg(`[companion-server] Erreur message: ${e.message}`)
           }
         })
 
@@ -120,7 +176,7 @@ class CompanionServer extends EventEmitter {
       })
 
     } catch (e) {
-      dbg(`[companion-server] Erreur demarrage sur port ${port}: ${e.message}`)
+      dbg(`[companion-server] Erreur demarrage: ${e.message}`)
       sendStatus('companion', 'error', `Erreur serveur compagnon : ${e.message}`)
     }
   }
@@ -161,10 +217,15 @@ class CompanionServer extends EventEmitter {
       
       case 'SET_LOCATION': {
         const { lat, lon, name } = payload.data || {}
-        if (lat && lon) {
+        if (lat !== undefined && lon !== undefined) {
           dbg(`[companion-server] iPhone demande position: ${lat}, ${lon} (${name || 'sans nom'})`)
+          this.status.lastInjectedLocation = { lat, lon, name }
+          this._refreshStatus()
           this.emit('request-location', { lat, lon, name })
           if (name) favoritesManager.addToHistory({ lat, lon, name })
+          
+          // Couche 4 : Envoyer l'Accusé de Réception (ACK) au client
+          ws.send(JSON.stringify({ type: 'ACK', data: { lat, lon, timestamp: Date.now() } }))
         }
         break
       }
@@ -193,6 +254,12 @@ class CompanionServer extends EventEmitter {
         this.emit('client-log', payload.data)
         break
       }
+
+      case 'GET_STATUS': {
+        this._refreshStatus()
+        ws.send(JSON.stringify({ type: 'STATUS', data: this.status }))
+        break
+      }
     }
   }
 
@@ -206,6 +273,11 @@ class CompanionServer extends EventEmitter {
       dbg('[companion-server] Arret du serveur WebSocket...')
       this.wss.close()
       this.wss = null
+    }
+    if (this.httpServer) {
+      dbg('[companion-server] Arret du serveur HTTP...')
+      this.httpServer.close()
+      this.httpServer = null
     }
   }
 
@@ -239,7 +311,21 @@ class CompanionServer extends EventEmitter {
   }
 
   _getLocalIp() {
+    const preferredIp = settings.get('preferredIp')
     const interfaces = os.networkInterfaces()
+    
+    // Si une IP est préférée, on vérifie si elle est toujours disponible
+    if (preferredIp) {
+      for (const name of Object.keys(interfaces)) {
+        for (const iface of interfaces[name]) {
+          if (iface.family === 'IPv4' && iface.address === preferredIp) {
+            return preferredIp
+          }
+        }
+      }
+    }
+
+    // Fallback sur la première interface valide
     for (const name of Object.keys(interfaces)) {
       for (const iface of interfaces[name]) {
         if (iface.family === 'IPv4' && !iface.internal) return iface.address

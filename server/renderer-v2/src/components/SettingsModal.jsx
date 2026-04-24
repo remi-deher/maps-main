@@ -8,12 +8,15 @@ function SettingsModal({ isOpen, onClose }) {
     googleMapsKey: '',
     companionPort: 8081,
     wifiIp: '',
-    wifiPort: 32498
+    wifiPort: 32498,
+    preferredIp: ''
   });
+  const [interfaces, setInterfaces] = useState([]);
 
   useEffect(() => {
     if (isOpen) {
       window.gps.getSettings().then(setSettings);
+      window.gps.getNetworkInterfaces().then(setInterfaces);
     }
   }, [isOpen]);
 
@@ -50,6 +53,26 @@ function SettingsModal({ isOpen, onClose }) {
         </div>
 
         <div className="p-8 space-y-8 overflow-y-auto max-h-[70vh]">
+          {/* Interface Réseau */}
+          <section className="space-y-4">
+            <label className="text-sm font-bold text-slate-400 uppercase tracking-wider">Interface Réseau (WebSocket)</label>
+            <div className="space-y-2">
+              <p className="text-xs text-slate-500 px-1">Choisissez la carte réseau à utiliser pour la connexion iPhone</p>
+              <select 
+                value={settings.preferredIp}
+                onChange={(e) => setSettings({...settings, preferredIp: e.target.value})}
+                className="w-full bg-white/5 border border-white/10 rounded-xl p-3 outline-none focus:border-blue-500 transition-colors text-white appearance-none cursor-pointer"
+              >
+                <option value="" className="bg-slate-900">Auto-détection (recommandé)</option>
+                {interfaces.map((iface, i) => (
+                  <option key={i} value={iface.address} className="bg-slate-900">
+                    {iface.name} — {iface.address}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </section>
+
           {/* Map Provider */}
           <section className="space-y-4">
             <label className="text-sm font-bold text-slate-400 uppercase tracking-wider">Moteur de carte</label>
@@ -84,7 +107,7 @@ function SettingsModal({ isOpen, onClose }) {
 
           {/* Network Settings */}
           <section className="space-y-4">
-            <label className="text-sm font-bold text-slate-400 uppercase tracking-wider">Réseau & Companion</label>
+            <label className="text-sm font-bold text-slate-400 uppercase tracking-wider">Réglages avancés</label>
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
                 <p className="text-xs text-slate-500 px-1">Port WebSocket (PC)</p>
