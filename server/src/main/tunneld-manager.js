@@ -24,7 +24,6 @@ class ConnectionOrchestrator extends EventEmitter {
     this.companionIp = null
     this._isQuitting = false
     
-    this._onTunnelRestoredCb = null
     this._onStatusChangeCb = null
 
     this._initListeners()
@@ -108,7 +107,6 @@ class ConnectionOrchestrator extends EventEmitter {
       dbg('[orchestrator] Tunnel prêt, en attente du WebSocket pour le heartbeat...')
     }
 
-    if (this._onTunnelRestoredCb) this._onTunnelRestoredCb()
     if (this._onStatusChangeCb) this._onStatusChangeCb(true)
     this.emit('ready', conn)
   }
@@ -230,7 +228,6 @@ class ConnectionOrchestrator extends EventEmitter {
   // Interface pour le compagnon WebSocket (Priorité 2)
   setWifiIpOverride(ip) { this.handleIphoneIpDetected(ip) }
 
-  setOnTunnelRestored(cb) { this._onTunnelRestoredCb = cb }
   setOnStatusChange(cb) { this._onStatusChangeCb = cb }
 }
 

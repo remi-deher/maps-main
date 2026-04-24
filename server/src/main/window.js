@@ -122,9 +122,6 @@ app.whenReady().then(() => {
   // Enregistre les handlers IPC
   registerIpcHandlers(tunnel, gps, companion)
   
-  // Liaison Tunnel -> GPS pour la restauration automatique
-  tunnel.setOnTunnelRestored(() => gps.onTunnelRestored())
-  
   const initialSettings = require('./services/settings-manager').get()
   
   // Appliquer les réglages initiaux (IP Wifi, etc.)
