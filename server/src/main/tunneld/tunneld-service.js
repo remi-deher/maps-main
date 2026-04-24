@@ -120,6 +120,20 @@ class TunneldService extends EventEmitter {
       this.activeConnection = null
       this.emit('disconnection', text)
     }
+
+    // --- GESTION DES ERREURS DE BIND (PORT OCCUPÉ) ---
+    if (text.includes('10048')) {
+      dbg('[tunneld] ⚠️ Port 49151 déjà utilisé. Tentative de nettoyage forcé...')
+      this.stop() // Déclenche le nettoyage ProcessRunner
+      this._scheduleRestart(5000) // On attend un peu plus
+    }
+
+    // --- GESTION DES ERREURS RÉSEAU (CACHE IPV6 OBSOLÈTE) ---
+    if (text.includes('1231')) {
+      dbg('[tunneld] ❌ Erreur réseau 1231 (Cible injoignable). Pause de 10s avant nouvelle tentative...')
+      this.stop()
+      this._scheduleRestart(10000) // On calme le jeu pour laisser mDNS se stabiliser
+    }
   }
 
   _startRsdHeartbeat(address, port, udid) {
@@ -164,23 +178,34 @@ class TunneldService extends EventEmitter {
   }
 
   async _triggerNativeFallback(manualIp = null) {
-    if (this._isQuitting || this.activeConnection) return
-    let targetData = null
-    if (manualIp) {
-      dbg(`[tunneld-service] Tentative prioritaire sur l'IP detectee (WebSocket) : ${manualIp}...`)
-      targetData = await nativeBonjour.resolve({ name: 'Manual', address: manualIp })
-    }
-    if (!targetData) {
-      dbg('[tunneld-service] Recherche d\'appareils via Bonjour Natif (dns-sd)...')
-      const instances = await nativeBonjour.scan(4000)
-      if (instances.length > 0) {
-        targetData = await nativeBonjour.resolve(instances[0])
+    if (this._isQuitting || this.activeConnection || this._isResolving) return
+    this._isResolving = true
+    
+    try {
+      let targetData = null
+      if (manualIp) {
+        dbg(`[tunneld-service] Tentative prioritaire sur l'IP detectee (WebSocket) : ${manualIp}...`)
+        targetData = await nativeBonjour.resolve({ name: 'Manual', address: manualIp })
       }
-    }
-    if (targetData && !this.activeConnection) {
-      this._handleData(`--rsd ${targetData.address} ${targetData.port} [start-tunnel-task-usbmux-native-WiFi]`)
-    } else if (!this.activeConnection) {
-      this._scheduleRestart(5000)
+      
+      if (!targetData) {
+        dbg('[tunneld-service] Recherche d\'appareils via Bonjour Natif (dns-sd)...')
+        const instances = await nativeBonjour.scan(4000)
+        if (instances.length > 0) {
+          // PRIORITÉ : On cherche d'abord une instance avec une IP fe80 (Link-Local)
+          const bestInstance = instances.find(i => i.address && i.address.startsWith('fe80')) || instances[0]
+          targetData = await nativeBonjour.resolve(bestInstance)
+        }
+      }
+
+      if (targetData && !this.activeConnection) {
+        dbg(`[tunneld-service] Solution de secours trouvée : ${targetData.address}:${targetData.port}`)
+        this._handleData(`--rsd ${targetData.address} ${targetData.port} [start-tunnel-task-usbmux-native-WiFi]`)
+      } else if (!this.activeConnection) {
+        this._scheduleRestart(5000)
+      }
+    } finally {
+      this._isResolving = false
     }
   }
 

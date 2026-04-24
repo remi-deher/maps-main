@@ -20,8 +20,6 @@ class GpsSimulator extends EventEmitter {
     this.jitterTimer = null
     this._isQuitting = false
     this._isLaunching = false
-
-    this._isLaunching = false
   }
 
   async setLocation(lat, lon, name = null) {
@@ -54,9 +52,8 @@ class GpsSimulator extends EventEmitter {
       } else {
         // --- AMÉLIORATION : Gestion des erreurs de connexion ---
         if (result.error && (result.error.includes('refuse') || result.error.includes('timeout') || result.error.includes('socket'))) {
-          dbg(`[gps-simulator] ⚠️ Erreur critique de connexion (WiFi/RSD). Tentative de rafraîchissement tunnel...`)
-          this.tunnel.forceRefresh()
-          // On garde les coords pour la restauration automatique qui suivra le refresh
+          dbg(`[gps-simulator] ⚠️ Erreur de communication (Tunnel instable). Mise en file d'attente...`)
+          // On laisse l'orchestrateur gérer la déconnexion, on garde juste les coords
           this.lastCoords = { lat, lon, name }
         } else {
           dbg(`[gps-simulator] ❌ Echec simulation: ${result.error}`)
@@ -115,11 +112,8 @@ class GpsSimulator extends EventEmitter {
   onTunnelRestored() {
     if (!this.lastCoords || this._isQuitting || this.restorationTimer) return
     
-    dbg(`[gps-simulator] ⚠️ Perte de simulation détectée (Tunnel down). Coordonnées sauvegardées : ${this.lastCoords.lat}, ${this.lastCoords.lon}`)
+    dbg(`[gps-simulator] ⚠️ Perte de simulation détectée (Tunnel down). Attente de la remontée automatique...`)
     
-    // On force la recherche du tunnel
-    this.tunnel.forceRefresh()
-
     if (this.restorationTimer) clearTimeout(this.restorationTimer)
     
     this.restorationTimer = setTimeout(async () => {
@@ -129,7 +123,7 @@ class GpsSimulator extends EventEmitter {
         dbg(`[gps-simulator] 🔄 Restauration automatique vers ${lat}, ${lon} (${name})`)
         await this.setLocation(lat, lon, name)
       }
-    }, 6000) // Un peu plus long pour laisser le temps au tunnel de remonter
+    }, 10000) // 10s pour laisser le temps au tunnel de se stabiliser (IPv6, mDNS, etc.)
   }
 
   stop() {

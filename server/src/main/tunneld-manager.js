@@ -153,10 +153,10 @@ class ConnectionOrchestrator extends EventEmitter {
     if (this._onStatusChangeCb) this._onStatusChangeCb(false)
     this.emit('lost')
 
-    // Si on a perdu l'USB, on relance immédiatement la découverte WiFi
+    // Le redémarrage est géré en interne par le service tunneld (TunneldService)
+    // avec ses propres délais de sécurité (backoff) pour éviter les boucles de crash.
     if (!this._isQuitting) {
-      dbg('[orchestrator] Tentative de remontée du tunnel après déconnexion...')
-      this.start()
+      dbg('[orchestrator] Attente de la remontée automatique via le service...')
     }
   }
 
@@ -212,7 +212,18 @@ class ConnectionOrchestrator extends EventEmitter {
   getConnectionType() { return this.activeConnection?.type }
   getDeviceInfo() { return this.activeConnection?.deviceInfo || { name: 'iPhone', version: 'Inconnue' } }
   
-  forceRefresh() { this.stopTunneld(); this.start() }
+  forceRefresh() { 
+    const now = Date.now()
+    if (this._lastRefresh && (now - this._lastRefresh) < 15000) {
+      dbg('[orchestrator] forceRefresh ignoré (cooldown 15s actif)')
+      return
+    }
+    
+    dbg('[orchestrator] 🔄 Rafraîchissement forcé du tunnel demandé...')
+    this._lastRefresh = now
+    this.stopTunneld()
+    this.start() 
+  }
   startTunneld() { this.start() }
   applyConnectionMode(mode) { dbg(`[orchestrator] Mode demandé : ${mode}`) }
   
