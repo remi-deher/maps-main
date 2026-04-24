@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { AppState } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { eventBus } from '../services/background';
 import { logEvent } from '../services/logger';
 
@@ -61,7 +62,7 @@ export function useSocket(ip, port, isMaintaining) {
         logEvent.add("WebSocket établi avec succès !", "success");
       };
 
-      ws.current.onmessage = (e) => {
+      ws.current.onmessage = async (e) => {
         try {
           const payload = JSON.parse(e.data);
           if (payload.type === 'STATUS') {
@@ -71,11 +72,14 @@ export function useSocket(ip, port, isMaintaining) {
             if (payload.data.connectionType) setConnectionType(payload.data.connectionType);
             if (payload.data.rsdAddress) setRsdAddress(payload.data.rsdAddress);
           } else if (payload.type === 'LOCATION') {
-            setSimulatedCoords({
+            const coords = {
               latitude: payload.data.lat,
               longitude: payload.data.lon,
               name: payload.data.name
-            });
+            };
+            setSimulatedCoords(coords);
+            // Sauvegarde pour la tâche de fond
+            await AsyncStorage.setItem('MOCK_LOCATION', JSON.stringify(coords));
           }
         } catch (err) {}
       };
@@ -106,7 +110,10 @@ export function useSocket(ip, port, isMaintaining) {
         logEvent.add(`Nouvelle config détectée: ${ip}:${port}`);
         lastConfig.current = { ip, port };
         stop("Changement de configuration IP/Port");
-        if (ip) connect();
+        if (ip) {
+          AsyncStorage.setItem('SERVER_CONFIG', JSON.stringify({ ip, port }));
+          connect();
+        }
     }
 
     const reconnectInterval = setInterval(() => {
