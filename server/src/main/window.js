@@ -1,6 +1,6 @@
 'use strict'
 
-const { app, BrowserWindow } = require('electron')
+const { app, BrowserWindow, Tray, Menu, nativeImage } = require('electron')
 const path = require('path')
 const { setWindow, dbg } = require('./logger')
 const tunnel = require('./tunneld-manager')
@@ -11,6 +11,37 @@ const { registerIpcHandlers } = require('./ipc/registry')
 let mainWindow
 let gps
 let companion
+let tray
+let isQuitting = false
+
+function createTray() {
+  // On peut utiliser une icône vide ou un symbole en attendant l'icône finale
+  const iconPath = path.join(__dirname, '..', '..', 'resources', 'icon.png')
+  let icon = nativeImage.createFromPath(iconPath)
+  
+  if (icon.isEmpty()) {
+    // Fallback: petite icône de remplacement (point bleu) si l'icône n'est pas trouvée
+    icon = nativeImage.createEmpty()
+  }
+
+  tray = new Tray(icon)
+  const contextMenu = Menu.buildFromTemplate([
+    { label: 'Ouvrir GPS Mock', click: () => mainWindow.show() },
+    { type: 'separator' },
+    { label: 'Quitter', click: () => {
+        isQuitting = true
+        app.quit()
+      } 
+    }
+  ])
+
+  tray.setToolTip('GPS Mock — iPhone Location Spoofer')
+  tray.setContextMenu(contextMenu)
+  
+  tray.on('double-click', () => {
+    mainWindow.show()
+  })
+}
 
 function createWindow() {
   mainWindow = new BrowserWindow({
@@ -22,12 +53,21 @@ function createWindow() {
       contextIsolation: true,
       nodeIntegration: false,
     },
+    // On cache la fenêtre au lieu de la détruire lors de la fermeture
   })
+
+  mainWindow.on('close', (event) => {
+    if (!isQuitting) {
+      event.preventDefault()
+      mainWindow.hide()
+      return false
+    }
+  })
+
   const isDev = process.env.NODE_ENV === 'development' || !app.isPackaged
 
   if (isDev) {
     mainWindow.loadURL('http://localhost:3000').catch(() => {
-      // Si le serveur de dev n'est pas lancé, on charge le build local
       const prodPath = path.join(__dirname, '..', '..', 'dist-web', 'renderer-v2', 'index.html')
       mainWindow.loadFile(prodPath)
     })
@@ -40,12 +80,12 @@ function createWindow() {
     })
   }
 
-  // Injecter la référence fenêtre dans le logger
   setWindow(mainWindow)
 }
 
 app.whenReady().then(() => {
   createWindow()
+  createTray()
   
   // Initialisation des services
   gps = new GpsSimulator(tunnel)
@@ -66,7 +106,7 @@ app.whenReady().then(() => {
   tunnel.setOnStatusChange((active) => companion.updateTunnelStatus(active))
 
   gps.on('location-changed', ({ lat, lon, name }) => {
-    tunnel.stopHeartbeats() // On arrête les heartbeats pour laisser la simulation prioritaire
+    tunnel.stopHeartbeats() 
     companion.broadcastLocation(lat, lon, name)
   })
 
@@ -74,10 +114,8 @@ app.whenReady().then(() => {
     if (mainWindow) mainWindow.webContents.send('status-update', { service: 'server-log', state: 'new', data: msg })
   })
 
-  // Liaison Companion -> GPS (Demande de l'iPhone vers le PC)
   companion.on('request-location', ({ lat, lon, name }) => {
     gps.setLocation(lat, lon, name || "Position iPhone")
-    // Notifier le renderer pour mettre à jour la carte sur le PC
     if (mainWindow) {
         mainWindow.webContents.send('status-update', { 
             service: 'location', 
@@ -87,12 +125,10 @@ app.whenReady().then(() => {
     }
   })
 
-  // Liaison Companion -> Tunnel (Information uniquement)
   companion.on('iphone-ip-detected', (ip) => {
     tunnel.setWifiIpOverride(ip)
   })
 
-  // Liaison Companion -> Renderer (Synchro Favoris & Historique temps réel)
   companion.on('favorites-updated', (favs) => {
     if (mainWindow) mainWindow.webContents.send('status-update', { service: 'favorites', state: 'updated', data: favs })
   })
@@ -105,21 +141,27 @@ app.whenReady().then(() => {
     if (mainWindow) mainWindow.webContents.send('status-update', { service: 'client-log', state: 'new', data: log })
   })
 
-  companion.start(initialSettings.companionPort) // Démarrer le serveur WebSocket
+  companion.start(initialSettings.companionPort)
   
   tunnel.startTunneld(initialSettings)
 })
 
 app.on('before-quit', () => {
+  isQuitting = true
   tunnel.setQuitting()
 })
 
 app.on('window-all-closed', () => {
-  tunnel.setQuitting()
-  if (gps) gps.destroy()
-  companion.stop()
-  tunnel.stopTunneld()
-  app.quit()
+  // Sur Windows, on ne quitte pas si on a le tray
+  if (process.platform !== 'darwin' && !isQuitting) {
+    // On ne fait rien, la fenêtre est juste cachée
+  } else {
+    tunnel.setQuitting()
+    if (gps) gps.destroy()
+    companion.stop()
+    tunnel.stopTunneld()
+    app.quit()
+  }
 })
 
 module.exports = { createWindow }

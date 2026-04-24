@@ -61,7 +61,7 @@ class GpsSimulator extends EventEmitter {
   _resetJitter() {
     if (this.jitterTimer) clearTimeout(this.jitterTimer)
     if (this._isQuitting) return
-    this.jitterTimer = setTimeout(() => this._applyJitter(), 45000)
+    this.jitterTimer = setTimeout(() => this._applyJitter(), 120000)
   }
 
   async _applyJitter() {
