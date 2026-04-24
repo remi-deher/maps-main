@@ -27,12 +27,18 @@ class PymobiledeviceBridge:
                 msg = line.decode().strip()
                 if msg:
                     logger.info(f"[{prefix}] {msg}")
+        except asyncio.CancelledError:
+            pass
         except Exception:
             pass
 
     async def stop_current_sim(self):
         if self.output_task:
             self.output_task.cancel()
+            try:
+                await self.output_task
+            except (asyncio.CancelledError, Exception):
+                pass
             self.output_task = None
 
         if self.current_process:
