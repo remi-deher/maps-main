@@ -6,7 +6,7 @@
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
-    "newArchEnabled": false,
+    "newArchEnabled": true,
     "splash": {
       "image": "./assets/splash-icon.png",
       "resizeMode": "contain",
@@ -24,7 +24,7 @@
         "NSLocationWhenInUseUsageDescription": "Required to show your current simulated position.",
         "NSLocationAlwaysUsageDescription": "Required to maintain the developer tunnel alive during simulation."
       },
-      "deploymentTarget": "13.0"
+      "deploymentTarget": "15.1"
     },
     "android": {
       "adaptiveIcon": {
