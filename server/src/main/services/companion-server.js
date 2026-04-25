@@ -151,10 +151,11 @@ class CompanionServer extends EventEmitter {
           try {
             const payload = JSON.parse(message)
             if (payload && payload.type) {
+              dbg(`[IN]  <- iPhone: ${payload.type}${payload.type === 'HEARTBEAT' ? '' : ' ' + JSON.stringify(payload.data || {})}`)
               this._handleMessage(ws, payload)
             }
           } catch (e) {
-            dbg(`[companion-server] Erreur message: ${e.message}`)
+            dbg(`[ERR] Erreur message: ${e.message}`)
           }
         })
 
@@ -211,21 +212,24 @@ class CompanionServer extends EventEmitter {
         }
         this.status.lastHeartbeat = Date.now()
         this._updateFrontend()
-        ws.send(JSON.stringify({ type: 'PONG', timestamp: Date.now() }))
+        const pong = JSON.stringify({ type: 'PONG', timestamp: Date.now() })
+        ws.send(pong)
         break
       }
       
       case 'SET_LOCATION': {
         const { lat, lon, name } = payload.data || {}
         if (lat !== undefined && lon !== undefined) {
-          dbg(`[companion-server] iPhone demande position: ${lat}, ${lon} (${name || 'sans nom'})`)
+          dbg(`[CMD] iPhone demande position: ${lat}, ${lon} (${name || 'sans nom'})`)
           this.status.lastInjectedLocation = { lat, lon, name }
           this._refreshStatus()
           this.emit('request-location', { lat, lon, name })
           if (name) favoritesManager.addToHistory({ lat, lon, name })
           
           // Couche 4 : Envoyer l'Accusé de Réception (ACK) au client
-          ws.send(JSON.stringify({ type: 'ACK', data: { lat, lon, timestamp: Date.now() } }))
+          const ack = JSON.stringify({ type: 'ACK', data: { lat, lon, timestamp: Date.now() } })
+          dbg(`[OUT] -> iPhone: ACK`)
+          ws.send(ack)
         }
         break
       }
@@ -284,6 +288,9 @@ class CompanionServer extends EventEmitter {
   _broadcast(data) {
     if (!this.wss) return
     const message = JSON.stringify(data)
+    if (data.type !== 'STATUS' || this.clients.size > 0) {
+        dbg(`[OUT] -> iPhone: ${data.type}`)
+    }
     for (const client of this.clients) {
       if (client.readyState === 1) { // WebSocket.OPEN
         client.send(message)

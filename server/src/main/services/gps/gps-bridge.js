@@ -22,7 +22,8 @@ class GpsBridge extends EventEmitter {
   start() {
     if (this.runner.isRunning) return
 
-    const scriptPath = path.join(__dirname, '..', '..', 'python', 'bridge.py')
+    const { resolveScript } = require('../../python-resolver')
+    const scriptPath = resolveScript('bridge.py')
     dbg(`[gps-bridge] Lancement du pont Python...`)
     
     this.runner.spawn(PYTHON, [scriptPath])
@@ -30,9 +31,18 @@ class GpsBridge extends EventEmitter {
     this.runner.on('stdout', (data) => {
       if (data.includes('BRIDGE_READY')) {
         this.isReady = true
-        dbg('[gps-bridge] Le pont est pret.')
+        dbg('[gps-bridge] ✅ Le pont est pret.')
         this.emit('ready')
       }
+      // Relayer les logs du pont vers la console globale
+      if (data.includes(' - INFO - ')) {
+          const clean = data.split(' - INFO - ')[1].trim()
+          dbg(`[gps-bridge] ${clean}`)
+      }
+    })
+
+    this.runner.on('stderr', (data) => {
+      dbg(`[gps-bridge] [ERR] ${data}`)
     })
 
     this.runner.on('exit', () => {
@@ -43,10 +53,8 @@ class GpsBridge extends EventEmitter {
   }
 
   async sendCommand(action, rsdHost, rsdPort, payload = {}) {
-    // Log pour aide au débug manuel
     if (action === 'set_location') {
-      const cmd = `.\\resources\\python\\python.exe -m pymobiledevice3 developer dvt simulate-location set --rsd ${rsdHost} ${rsdPort} -- ${payload.lat} ${payload.lon}`
-      dbg(`[DEBUG MANUEL] Commande à tester : ${cmd}`)
+      dbg(`[CMD] Simulation : ${payload.lat}, ${payload.lon}`)
     }
 
     return new Promise((resolve) => {
@@ -75,8 +83,14 @@ class GpsBridge extends EventEmitter {
         clearTimeout(timeout)
         try {
           const response = JSON.parse(data.toString())
+          if (response.success) {
+              dbg(`[OK] Pont a répondu avec succès`)
+          } else {
+              dbg(`[ERR] Pont a répondu : ${response.error}`)
+          }
           resolve(response)
         } catch (e) {
+          dbg(`[ERR] Pont a envoyé une réponse invalide`)
           resolve({ success: false, error: 'Reponse JSON invalide du pont' })
         }
         client.destroy()

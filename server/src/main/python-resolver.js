@@ -29,8 +29,25 @@ function resolvePython() {
   return 'python3'
 }
 
+/**
+ * Résout le chemin vers un script Python.
+ * En prod, cherche dans le dossier 'python_scripts' (extraResources).
+ * En dev, cherche dans 'src/main/python/'.
+ *
+ * @param {string} scriptName Nom du fichier script (ex: 'bridge.py')
+ * @returns {string} Chemin absolu vers le script
+ */
+function resolveScript(scriptName) {
+  if (app.isPackaged) {
+    const bundled = path.join(process.resourcesPath, 'python_scripts', scriptName)
+    if (fs.existsSync(bundled)) return bundled
+  }
+
+  return path.join(app.getAppPath(), 'src', 'main', 'python', scriptName)
+}
+
 // Résolution faite une seule fois au démarrage
 const PYTHON = resolvePython()
 
-// Exportation de la constante ET de la fonction pour les tests
-module.exports = { PYTHON, resolvePython }
+// Exportation des constantes ET des fonctions
+module.exports = { PYTHON, resolvePython, resolveScript }

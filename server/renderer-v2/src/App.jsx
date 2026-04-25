@@ -139,8 +139,13 @@ function App() {
             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setSidebarOpen(false)} className="absolute inset-0 bg-black/40 backdrop-blur-sm z-[60]" />
             <motion.div initial={{ x: -400 }} animate={{ x: 0 }} exit={{ x: -400 }} className="absolute top-0 left-0 bottom-0 w-96 glass-dark z-[70] shadow-2xl p-6 flex flex-col">
               <div className="flex items-center justify-between mb-8">
-                <h2 className="text-2xl font-bold bg-gradient-to-r from-blue-400 to-emerald-400 bg-clip-text text-transparent">Global Mock</h2>
-                <button onClick={() => setSidebarOpen(false)} className="p-2 hover:bg-white/10 rounded-xl transition-colors"><X className="w-6 h-6" /></button>
+                <h2 className="text-2xl font-black bg-gradient-to-r from-blue-400 via-indigo-400 to-emerald-400 bg-clip-text text-transparent tracking-tight">GPS Mock</h2>
+                <button 
+                  onClick={() => setSidebarOpen(false)} 
+                  className="p-2 hover:bg-white/10 rounded-xl transition-all hover:rotate-90 active:scale-90"
+                >
+                  <X className="w-6 h-6 text-slate-400" />
+                </button>
               </div>
               <div className="flex-1 overflow-y-auto space-y-8 pr-2 custom-scrollbar">
                 {/* DEVICE INFO SECTION */}
@@ -148,19 +153,24 @@ function App() {
                   <div className="flex items-center gap-2 text-sm font-semibold text-slate-400 mb-3 px-2">
                     <Monitor className="w-4 h-4 text-emerald-400" /> <span>APPAREIL</span>
                   </div>
-                  <div className="mx-2 p-4 rounded-2xl bg-white/5 border border-white/5 space-y-3">
-                    <div className="flex justify-between items-center">
-                      <span className="text-xs text-slate-500 uppercase tracking-wider">Modèle</span>
-                      <span className="text-sm font-bold text-white">{status.device?.type || 'iPhone'}</span>
+                  <div className="mx-2 p-5 rounded-2xl bg-gradient-to-br from-white/10 to-white/5 border border-white/10 shadow-xl space-y-4">
+                    <div className="flex justify-between items-center group">
+                      <span className="text-[10px] text-slate-500 uppercase font-black tracking-widest">Modèle</span>
+                      <span className="text-sm font-bold text-white group-hover:text-blue-400 transition-colors">{status.device?.type || 'iPhone'}</span>
                     </div>
-                    <div className="flex justify-between items-center">
-                      <span className="text-xs text-slate-500 uppercase tracking-wider">IP / RSD</span>
+                    <div className="flex justify-between items-center group">
+                      <span className="text-[10px] text-slate-500 uppercase font-black tracking-widest">Version iOS</span>
+                      <span className="text-sm font-mono text-slate-300">{status.device?.version || 'Detecting...'}</span>
+                    </div>
+                    <div className="flex justify-between items-center group">
+                      <span className="text-[10px] text-slate-500 uppercase font-black tracking-widest">IP / RSD</span>
                       <span className="text-sm font-mono text-blue-300">{status.type === 'USB' ? 'USB Native' : (status.device?.ip || '192.168.x.x')}</span>
                     </div>
-                    <div className="flex justify-between items-center pt-2 border-t border-white/5">
-                      <span className="text-xs text-slate-500 uppercase tracking-wider">Connexion</span>
-                      <span className="text-xs font-bold text-emerald-400 flex items-center gap-1">
-                        <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" /> {status.type || 'Attente...'}
+                    <div className="flex justify-between items-center pt-3 border-t border-white/10">
+                      <span className="text-[10px] text-slate-500 uppercase font-black tracking-widest">Connexion</span>
+                      <span className={`text-xs font-black flex items-center gap-2 px-2 py-1 rounded-full ${status.type ? 'bg-emerald-500/10 text-emerald-400' : 'bg-amber-500/10 text-amber-400'}`}>
+                        <div className={`w-2 h-2 rounded-full ${status.type ? 'bg-emerald-500 animate-pulse' : 'bg-amber-500'} shadow-[0_0_8px_rgba(16,185,129,0.5)]`} /> 
+                        {status.type || 'Scanning...'}
                       </span>
                     </div>
                   </div>
@@ -227,12 +237,18 @@ function App() {
                   </button>
                 </section>
               </div>
-              <div className="mt-auto pt-6 border-t border-white/5 flex gap-2">
-                <button onClick={() => {setSettingsOpen(true); setSidebarOpen(false);}} className="flex-1 h-12 glass hover:bg-white/10 rounded-xl font-medium transition-colors flex items-center justify-center gap-2">
-                  <Settings className="w-5 h-5" /> <span className="text-sm">Réglages</span>
+              <div className="mt-auto pt-6 border-t border-white/10 flex gap-3">
+                <button 
+                  onClick={() => {setSettingsOpen(true); setSidebarOpen(false);}} 
+                  className="flex-1 h-12 glass-deeper hover:bg-white/10 rounded-xl font-bold transition-all flex items-center justify-center gap-2 hover:scale-[1.02] active:scale-95 text-slate-300 hover:text-white"
+                >
+                  <Settings className="w-5 h-5" /> <span className="text-xs uppercase tracking-widest">Réglages</span>
                 </button>
-                <button onClick={() => {setQrOpen(true); setSidebarOpen(false);}} className="flex-1 h-12 glass hover:bg-white/10 rounded-xl font-medium transition-colors flex items-center justify-center gap-2">
-                  <QrCode className="w-5 h-5" /> <span className="text-sm">QR Code</span>
+                <button 
+                  onClick={() => {setQrOpen(true); setSidebarOpen(false);}} 
+                  className="flex-1 h-12 glass-deeper hover:bg-white/10 rounded-xl font-bold transition-all flex items-center justify-center gap-2 hover:scale-[1.02] active:scale-95 text-slate-300 hover:text-white"
+                >
+                  <QrCode className="w-5 h-5" /> <span className="text-xs uppercase tracking-widest">QR Code</span>
                 </button>
               </div>
             </motion.div>
@@ -295,7 +311,7 @@ function App() {
           }}
           onClick={handleContainerClick}
         >
-          <Monitor className="w-6 h-6 text-blue-300 cursor-pointer" onClick={(e) => { e.stopPropagation(); setSidebarOpen(true); }} />
+          <Monitor className={`w-6 h-6 cursor-pointer transition-all hover:scale-110 active:scale-90 ${sidebarOpen ? 'text-blue-400' : 'text-blue-300/60'}`} onClick={(e) => { e.stopPropagation(); setSidebarOpen(!sidebarOpen); }} />
           <div className="relative flex-1 flex items-center h-full">
             <Search className="w-5 h-5 text-slate-300 absolute left-0 pointer-events-none" />
             <input 
@@ -316,9 +332,15 @@ function App() {
               }}
             />
           </div>
-          <div className="flex items-center gap-2">
-            <Terminal className="w-6 h-6 text-blue-400 cursor-pointer hover:text-blue-300 transition-colors" onClick={(e) => { e.stopPropagation(); setLogsOpen(true); }} />
-            <QrCode className="w-6 h-6 text-slate-300 cursor-pointer hover:text-white transition-colors" onClick={(e) => { e.stopPropagation(); setQrOpen(true); }} />
+          <div className="flex items-center gap-3">
+            <Terminal 
+              className={`w-6 h-6 cursor-pointer transition-all hover:scale-110 active:scale-90 ${logsOpen ? 'text-blue-400' : 'text-blue-300/40'}`} 
+              onClick={(e) => { e.stopPropagation(); setLogsOpen(!logsOpen); }} 
+            />
+            <QrCode 
+              className={`w-6 h-6 cursor-pointer transition-all hover:scale-110 active:scale-90 ${qrOpen ? 'text-white' : 'text-slate-300/40'}`} 
+              onClick={(e) => { e.stopPropagation(); setQrOpen(!qrOpen); }} 
+            />
           </div>
         </div>
 

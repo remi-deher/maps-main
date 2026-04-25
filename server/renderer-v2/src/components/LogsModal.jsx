@@ -93,9 +93,13 @@ function LogsModal({ isOpen, onClose, serverLogs, clientLogs, onClearServer, onC
                 <div key={i} className="flex gap-4 group">
                   <span className="text-slate-600 select-none min-w-[85px]">{log.timestamp}</span>
                   <span className={`flex-1 break-all ${
-                    log.type === 'error' || log.message.includes('[ERR]') ? 'text-rose-400' :
-                    log.type === 'success' || log.message.includes('[OK]') ? 'text-emerald-400' :
+                    log.message.includes('[ERR]') || log.message.includes('❌') || log.type === 'error' ? 'text-rose-400' :
+                    log.message.includes('[OK]') || log.message.includes('✅') || log.type === 'success' ? 'text-emerald-400' :
                     log.message.includes('[SRV]') ? 'text-blue-400' :
+                    log.message.includes('[IN]') ? 'text-amber-400' :
+                    log.message.includes('[OUT]') ? 'text-indigo-400' :
+                    log.message.includes('[CMD]') ? 'text-cyan-400' :
+                    log.message.includes('[gps-bridge]') ? 'text-slate-500 italic' :
                     'text-slate-300'
                   }`}>
                     {log.message}
