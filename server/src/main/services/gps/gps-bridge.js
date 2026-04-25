@@ -81,17 +81,14 @@ class GpsBridge extends EventEmitter {
 
     const { address, rsdPort } = tunnelInfo
     
-    // Tuer l'ancienne injection si elle existe
-    if (this.pythonProc) {
-      this.pythonProc.kill()
-      this.pythonProc = null
-    }
-
-    dbg(`[gps-bridge] Injection Hybride : Python PMD3 sur Tunnel Go (${address}:${rsdPort})`)
+    if (!this.pythonProcs) this.pythonProcs = []
+    
+    dbg(`[gps-bridge] Injection Cumulative : Python PMD3 sur Tunnel Go (${address}:${rsdPort})`)
     
     return new Promise((resolve) => {
       const { PYTHON } = require('../../python-resolver')
       const { spawn } = require('child_process')
+      const path = require('path')
       
       const args = [
         '-m', 'pymobiledevice3', 
@@ -101,40 +98,43 @@ class GpsBridge extends EventEmitter {
         String(lat), String(lon)
       ]
 
-      dbg(`[gps-bridge] Exécution : ${PYTHON} ${args.join(' ')}`)
-      
-      const path = require('path')
-      this.pythonProc = spawn(PYTHON, args, {
+      const newProc = spawn(PYTHON, args, {
         shell: true,
         cwd: path.dirname(PYTHON)
       })
 
-      let timer = setTimeout(() => {
-        dbg('[gps-bridge] ⚠️ Timeout Python')
-        resolve({ success: false, error: 'Timeout' })
-      }, 10000)
+      this.pythonProcs.push(newProc)
 
-      this.pythonProc.stdout.on('data', (data) => {
+      let resolved = false
+
+      newProc.stdout.on('data', (data) => {
         const msg = data.toString()
-        dbg(`[python-pmd3] ${msg.trim()}`)
         if (msg.includes('Press ENTER to exit')) {
-          if (timer) {
-            clearTimeout(timer)
-            timer = null
+          if (!resolved) {
+            resolved = true
+            dbg(`[gps-bridge] ✅ Position active (Processus #${this.pythonProcs.length})`)
+            resolve({ success: true })
           }
-          dbg('[gps-bridge] ✅ Simulation active')
-          resolve({ success: true })
         }
       })
 
-      this.pythonProc.stderr.on('data', (data) => { 
-        dbg(`[python-pmd3-err] ${data.toString().trim()}`)
+      newProc.stderr.on('data', (data) => { 
+        const msg = data.toString()
+        if (msg.includes('Error')) dbg(`[python-pmd3-err] ${msg.trim()}`)
       })
 
-      this.pythonProc.on('close', (code) => {
+      const timer = setTimeout(() => {
+        if (!resolved) {
+          resolved = true
+          dbg('[gps-bridge] ⚠️ Timeout sur l\'injection')
+          resolve({ success: false, error: 'Timeout' })
+        }
+      }, 10000)
+
+      newProc.on('close', (code) => {
         if (timer) clearTimeout(timer)
-        dbg(`[gps-bridge] Processus Python fermé (code ${code})`)
-        this.pythonProc = null
+        // Retirer de la liste si le processus s'arrête de lui-même
+        this.pythonProcs = this.pythonProcs.filter(p => p !== newProc)
       })
     })
   }
@@ -187,9 +187,9 @@ class GpsBridge extends EventEmitter {
   }
 
   stop() {
-    if (this.pythonProc) {
-      this.pythonProc.kill()
-      this.pythonProc = null
+    if (this.pythonProcs) {
+      this.pythonProcs.forEach(p => p.kill())
+      this.pythonProcs = []
     }
     this._udid = null
     this.isReady = false
