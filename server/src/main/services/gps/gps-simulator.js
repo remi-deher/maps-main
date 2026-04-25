@@ -13,12 +13,11 @@ class GpsSimulator extends EventEmitter {
     this.tunnel = tunnelManager
     this.commander = new GpsCommander()
     this.lastCoords = null
-    this._isLaunching = false
     this._isQuitting = false
   }
 
   async setLocation(lat, lon, name = null) {
-    if (this._isLaunching || this._isQuitting) return { success: false, error: 'Simulation occupée ou en fermeture' }
+    if (this._isQuitting) return { success: false, error: 'Simulation en fermeture' }
     
     const rsdAddress = this.tunnel.getRsdAddress()
     const rsdPort = this.tunnel.getRsdPort()
@@ -28,7 +27,6 @@ class GpsSimulator extends EventEmitter {
       return { success: false, error: 'Tunnel non prêt, position mise en file d\'attente' }
     }
 
-    this._isLaunching = true
     try {
       const result = await this.commander.execute('set', rsdAddress, rsdPort, [String(lat), String(lon)])
       
@@ -39,8 +37,9 @@ class GpsSimulator extends EventEmitter {
         dbg(`[gps-simulator] ❌ Échec simulation: ${result.error}`)
       }
       return result
-    } finally {
-      this._isLaunching = false
+    } catch (e) {
+      dbg(`[gps-simulator] ❌ Erreur critique: ${e.message}`)
+      return { success: false, error: e.message }
     }
   }
 
