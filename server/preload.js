@@ -4,6 +4,7 @@ contextBridge.exposeInMainWorld('gps', {
   setLocation:   (lat, lon, name) => ipcRenderer.invoke('set-location', { lat, lon, name }),
   clearLocation: () => ipcRenderer.invoke('clear-location'),
   getStatus:     () => ipcRenderer.invoke('get-status'),
+  restartTunnel: () => ipcRenderer.invoke('restart-tunnel'),
   onStatus:      (cb) => {
     const listener = (_e, data) => cb(data)
     ipcRenderer.on('status-update', listener)

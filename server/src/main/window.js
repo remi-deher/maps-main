@@ -142,6 +142,15 @@ app.whenReady().then(() => {
     if (mainWindow) mainWindow.webContents.send('status-update', { service: 'server-log', state: 'new', data: msg })
   })
 
+  // --- AUTOMATISATION : Re-appliquer la position dès que le tunnel est prêt ---
+  tunnel.on('ready', (conn) => {
+    if (gps.lastCoords) {
+      const { lat, lon, name } = gps.lastCoords
+      dbg(`[window] 🔄 Tunnel prêt (${conn.type}). Ré-application automatique de la position en attente : ${lat}, ${lon}`)
+      gps.setLocation(lat, lon, name)
+    }
+  })
+
   companion.on('request-location', ({ lat, lon, name }) => {
     gps.setLocation(lat, lon, name || "Position iPhone")
     if (mainWindow) {
@@ -154,7 +163,9 @@ app.whenReady().then(() => {
   })
 
   companion.on('iphone-ip-detected', (ip) => {
+    dbg(`[window] 📱 iPhone détecté sur le réseau (${ip}). Rafraîchissement du tunnel...`)
     tunnel.setWifiIpOverride(ip)
+    tunnel.forceRefresh()
   })
 
   companion.on('favorites-updated', (favs) => {

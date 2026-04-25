@@ -173,6 +173,14 @@ function App() {
                         {status.type || 'Scanning...'}
                       </span>
                     </div>
+                    
+                    <button 
+                      onClick={() => window.gps.restartTunnel()} 
+                      className="w-full mt-2 py-2 px-4 rounded-xl bg-blue-600/10 hover:bg-blue-600/20 text-blue-400 text-[10px] font-black uppercase tracking-widest transition-all flex items-center justify-center gap-2 border border-blue-500/20 group"
+                    >
+                      <RotateCcw className="w-3.5 h-3.5 group-hover:rotate-180 transition-transform duration-500" />
+                      Redémarrer Tunnel & Bonjour
+                    </button>
                   </div>
                 </section>
                 {/* FAVORIS SECTION */}

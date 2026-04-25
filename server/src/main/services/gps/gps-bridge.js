@@ -76,8 +76,12 @@ class GpsBridge extends EventEmitter {
   }
 
   async _setLocation(lat, lon) {
+    dbg(`[gps-bridge] Tentative d'injection : ${lat}, ${lon}`)
     const tunnelInfo = await this._getTunnelInfo()
-    if (!tunnelInfo) return { success: false, error: 'Tunnel Go-iOS non détecté' }
+    if (!tunnelInfo) {
+      dbg('[gps-bridge] ❌ Injection annulée : Tunnel Go-iOS non détecté via API')
+      return { success: false, error: 'Tunnel Go-iOS non détecté' }
+    }
 
     const { address, rsdPort } = tunnelInfo
     
@@ -150,12 +154,21 @@ class GpsBridge extends EventEmitter {
             const tunnels = JSON.parse(body)
             if (Array.isArray(tunnels) && tunnels.length > 0) {
               const t = tunnels[0]
-              resolve({ udid: t.udid, address: t.address, rsdPort: t.rsdPort })
-            } else resolve(null)
-          } catch (e) { resolve(null) }
+              resolve({ udid: t.udid, address: t.address || t.tunnelAddress, rsdPort: t.rsdPort || t.tunnelPort })
+            } else {
+              // dbg('[gps-bridge] API /tunnels retournée vide')
+              resolve(null)
+            }
+          } catch (e) { 
+            dbg(`[gps-bridge] Erreur parsing /tunnels : ${e.message}`)
+            resolve(null) 
+          }
         })
       })
-      req.on('error', () => resolve(null))
+      req.on('error', (e) => {
+        // dbg(`[gps-bridge] Erreur HTTP /tunnels : ${e.message}`)
+        resolve(null)
+      })
       req.end()
     })
   }

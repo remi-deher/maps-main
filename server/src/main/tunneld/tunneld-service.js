@@ -29,12 +29,13 @@ class TunneldService extends EventEmitter {
     this._isQuitting = false
     this._pollTimer = null
     this._restartTimer = null
+    this._isStarting = false
     dbg('[tunneld-service] Initialise - go-ios v1.0.211')
 
     this.runner.on('stdout', (text) => this._handleOutput(text))
     this.runner.on('stderr', (text) => this._handleOutput(text))
     this.runner.on('exit', ({ code, signal }) => {
-      if (this._isQuitting) return
+      if (this._isQuitting || this._isStarting) return
       dbg(`[tunneld] Processus arrete (code ${code}, signal ${signal}). Relance dans 5s...`)
       this._stopPolling()
       this.activeConnection = null
@@ -45,24 +46,44 @@ class TunneldService extends EventEmitter {
 
   start() {
     if (this._isQuitting) return
-    if (this.runner.isRunning) return
+    if (this._restartTimer) { clearTimeout(this._restartTimer); this._restartTimer = null }
+    if (this.runner.isRunning || this._isStarting) return
+
+    this._isStarting = true
 
     dbg('[tunneld-service] Lancement de ios tunnel start...')
     sendStatus('tunneld', 'starting', 'Initialisation du tunnel go-ios...')
 
+    // Tenter de relancer le service Bonjour sur Windows pour aider la découverte mDNS
+    if (process.platform === 'win32') {
+      try {
+        const { execSync } = require('child_process')
+        dbg('[tunneld-service] 🔄 Redémarrage du service Bonjour (mDNS)...')
+        execSync('powershell "Restart-Service \'Bonjour Service\' -ErrorAction SilentlyContinue"', { stdio: 'ignore' })
+      } catch (e) { /* ignore si pas admin ou service absent */ }
+    }
+
     const goIosDir = path.dirname(GOIOS)
     this.runner.options.cwd = goIosDir
 
-    // Revenir au mode tunnel start (rest-api non disponible)
-    this.runner.spawn(GOIOS, ['tunnel', 'start', `--tunnel-info-port=${TUNNEL_INFO_PORT}`])
+    // Activer l'agent go-ios en mode userspace pour plus de stabilité sur Windows
+    this.runner.spawn(GOIOS, ['tunnel', 'start', `--tunnel-info-port=${TUNNEL_INFO_PORT}`], {
+      ENABLE_GO_IOS_AGENT: 'user'
+    })
 
     // Début du polling API après 2s (laisser le processus démarrer)
-    setTimeout(() => this._startPolling(), 2000)
+    setTimeout(() => {
+      this._isStarting = false
+      this._startPolling()
+    }, 2000)
   }
 
   _handleOutput(text) {
     if (!text || !text.trim()) return
-    // On affiche tout pour le debug de la migration
+    
+    // Ignorer les messages d'événement go-ios qui polluent la console
+    if (text.includes('"msg":"event: 0"')) return
+
     dbg(`[tunneld] ${text.trim()}`)
   }
 
@@ -96,18 +117,32 @@ class TunneldService extends EventEmitter {
       res.on('data', (chunk) => { body += chunk })
       res.on('end', () => {
         try {
-          // if (body !== '[]' && body !== '') {
-          //    dbg(`[tunneld-service] API ${path} : ${body}`)
-          // }
+          if (body && body !== '[]') {
+            // dbg(`[tunneld-service] API ${path} brute : ${body}`)
+          }
+          
+          if (!body || body === '[]') return
+
           const tunnels = JSON.parse(body)
           if (Array.isArray(tunnels) && tunnels.length > 0) {
             this._handleTunnelList(tunnels)
           }
-        } catch (e) { /* ignore */ }
+        } catch (e) { 
+           dbg(`[tunneld-service] Erreur parsing API ${path} : ${e.message} (Body: ${body})`)
+        }
       })
     })
-    req.on('error', () => {})
-    req.on('timeout', () => req.destroy())
+    req.on('error', (e) => {
+      if (e.code === 'ECONNREFUSED') {
+        // Silencieux pour ne pas polluer si l'API n'est pas encore montée
+      } else {
+        dbg(`[tunneld-service] Erreur HTTP API : ${e.message}`)
+      }
+    })
+    req.on('timeout', () => {
+      dbg(`[tunneld-service] Timeout API sur port ${TUNNEL_INFO_PORT}`)
+      req.destroy()
+    })
   }
 
   _handleTunnelList(tunnels) {
