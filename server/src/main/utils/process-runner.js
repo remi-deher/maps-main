@@ -5,7 +5,7 @@ const { dbg } = require('../logger')
 const Encoder = require('./encoder')
 
 /**
- * ProcessRunner - Utilitaire unifié pour lancer des processus externes
+ * ProcessRunner - Utilitaire unifié pour lancer des processus externes (Optimisé go-ios)
  */
 class ProcessRunner extends EventEmitter {
   constructor(name, options = {}) {
@@ -14,7 +14,6 @@ class ProcessRunner extends EventEmitter {
     this.process = null
     this.options = {
       cwd: null,
-      python: true, 
       priority: -10, // Haute priorité par défaut (-20 à 19)
       ...options
     }
@@ -24,10 +23,6 @@ class ProcessRunner extends EventEmitter {
     this.stop()
 
     const env = { ...process.env, ...extraEnv }
-    if (this.options.python) {
-      env.PYTHONIOENCODING = 'utf-8'
-      env.PYTHONUNBUFFERED = '1'
-    }
 
     dbg(`[${this.name}] spawn: ${command} ${args.join(' ')}`)
     
@@ -50,8 +45,7 @@ class ProcessRunner extends EventEmitter {
     this.process.stdout.on('data', (data) => {
       const msg = Encoder.decode(data).trim()
       if (msg) {
-        dbg(`[${this.name}] [stdout] : ${msg}`)
-        this.emit('log', msg)
+        // Trop de verbeux dans stdout pour go-ios, on ne dbg que via tunneld-service
         this.emit('stdout', msg)
       }
     })
@@ -59,14 +53,11 @@ class ProcessRunner extends EventEmitter {
     this.process.stderr.on('data', (data) => {
       const msg = Encoder.decode(data).trim()
       if (msg) {
-        dbg(`[${this.name}] [stderr] : ${msg}`)
-        this.emit('log', `Erreur: ${msg}`)
         this.emit('stderr', msg)
         
         if (msg.includes('Connection was terminated abruptly') || 
-            msg.includes('WinError 1236') || 
-            msg.includes('WinError 10061') ||
-            msg.includes('ConnectionAbortedError')) {
+            msg.includes('ERROR') || 
+            msg.includes('failed')) {
            this.emit('critical-error', msg)
         }
       }
@@ -88,7 +79,6 @@ class ProcessRunner extends EventEmitter {
       
       if (process.platform === 'win32') {
         try {
-          // 1. Essayer de tuer par PID si disponible (Synchrone pour bloquer jusqu'à libération)
           if (pid) {
             const { execSync } = require('child_process')
             execSync(`taskkill /F /T /PID ${pid}`, { stdio: 'ignore' })
@@ -96,21 +86,21 @@ class ProcessRunner extends EventEmitter {
         } catch (e) { /* ignore */ }
 
         try {
-          // 2. Nettoyage de secours : Tuer tout processus python lié à cette tâche
+          // Nettoyage de secours : Tuer tout processus ios.exe lié au tunnel
           if (this.name === 'tunneld') {
             const { execSync } = require('child_process')
-            const cleanCmd = 'powershell "Get-CimInstance Win32_Process -Filter \\"Name = \'python.exe\' AND CommandLine LIKE \'%remote tunneld%\'\\" | Stop-Process -Force -ErrorAction SilentlyContinue"'
+            const cleanCmd = 'powershell "Get-CimInstance Win32_Process -Filter \\"Name = \'ios.exe\' AND CommandLine LIKE \'%tunnel start%\'\\" | Stop-Process -Force -ErrorAction SilentlyContinue"'
             execSync(cleanCmd, { stdio: 'ignore' })
           }
         } catch (e) { /* ignore */ }
 
         try {
-          // 3. ULTIME RECOURS : Tuer le processus qui occupe le port 49151
+          // Libération du port de l'API go-ios (28100)
           if (this.name === 'tunneld') {
             const { execSync } = require('child_process')
-            const killPortCmd = 'powershell "Get-NetTCPConnection -LocalPort 49151 -ErrorAction SilentlyContinue | ForEach-Object { Stop-Process -Id $_.OwningProcess -Force -ErrorAction SilentlyContinue }"'
+            const killPortCmd = 'powershell "Get-NetTCPConnection -LocalPort 28100 -ErrorAction SilentlyContinue | ForEach-Object { Stop-Process -Id $_.OwningProcess -Force -ErrorAction SilentlyContinue }"'
             execSync(killPortCmd, { stdio: 'ignore' })
-            dbg(`[${this.name}] Port 49151 libere de force (Sync).`)
+            dbg(`[${this.name}] Port 28100 libere de force.`)
           }
         } catch (e) { /* ignore */ }
       } else if (this.process) {

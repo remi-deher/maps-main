@@ -20,6 +20,8 @@ function registerIpcHandlers(tunnel, gps, companion) {
     connectionType: tunnel.getConnectionType()
   }))
 
+  ipcMain.handle('restart-tunnel', () => tunnel.forceRefresh())
+
   ipcMain.handle('get-network-interfaces', () => getNetworkInterfaces())
 
   // ─── GPS Simulation ────────────────────────────────────────────────────────

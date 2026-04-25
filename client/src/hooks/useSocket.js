@@ -155,6 +155,8 @@ export function useSocket(ip, port, isMaintaining) {
             if (payload.data.state === 'idle') {
                logEvent.add("ℹ️ Serveur vierge détecté. Déclenchement restauration Option C...");
                replayLastCoords(true); // Restauration forcée sans TTL
+            } else if (payload.data.state === 'starting') {
+               logEvent.add("⏳ Serveur en cours de démarrage, attente...");
             } else {
                logEvent.add(`✅ Simulation déjà active sur le serveur (${payload.data.state})`);
             }

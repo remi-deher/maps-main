@@ -21,6 +21,7 @@ class CompanionServer extends EventEmitter {
     this.port = null
     this.clients = new Set()
     this.status = {}
+    this.lastDriftRelance = 0 // Cooldown pour éviter les rafales
     
     // Initialisation du statut
     this._refreshStatus()
@@ -51,10 +52,16 @@ class CompanionServer extends EventEmitter {
 
   _refreshStatus() {
     const rsdReady = !!this.tunnel?.getRsdAddress();
+    const isStarting = this.tunnel?.isStarting ? this.tunnel.isStarting() : false;
     const simActive = !!(rsdReady && this.status?.lastVerifiedLocation);
     
+    let computedState = 'idle';
+    if (simActive) computedState = 'running';
+    else if (rsdReady) computedState = 'ready';
+    else if (isStarting) computedState = 'starting';
+    
     this.status = {
-      state: simActive ? 'running' : (rsdReady ? 'ready' : 'idle'),
+      state: computedState,
       tunnelActive: rsdReady,
       rsdAddress: this.tunnel?.getRsdAddress() || null,
       rsdPort: this.tunnel?.getRsdPort() || null,
@@ -105,9 +112,31 @@ class CompanionServer extends EventEmitter {
               const payload = JSON.parse(body)
               const { lat, lon, name } = payload
               if (lat !== undefined && lon !== undefined) {
-                dbg(`[companion-server] ⚠️ DÉRIVE DÉTECTÉE sur l'iPhone (${lat}, ${lon}). Relance automatique...`)
-                sendStatus('companion', 'info', `Secours : Simulation relancée (${name || 'Background'})`)
-                this.emit('request-location', { lat, lon, name })
+                const now = Date.now()
+                if (now - this.lastDriftRelance < 8000) {
+                  dbg(`[companion-server] ⏳ Dérive ignorée (cooldown 8s actif)`)
+                  res.writeHead(200)
+                  res.end()
+                  return
+                }
+
+                // Vérifier si la dérive concerne bien la position ACTUELLE
+                const target = this.status?.lastInjectedLocation
+                if (target) {
+                  const dLat = Math.abs(target.lat - lat)
+                  const dLon = Math.abs(target.lon - lon)
+                  if (dLat > 0.01 || dLon > 0.01) {
+                    dbg(`[companion-server] 🗑 Dérive obsolète ignorée (pos. rapportée ≠ cible actuelle)`)
+                    res.writeHead(200)
+                    res.end()
+                    return
+                  }
+                }
+
+                this.lastDriftRelance = now
+                dbg(`[companion-server] ⚠️ DÉRIVE DÉTECTÉE sur l'iPhone (${lat}, ${lon}). Relance forcée...`)
+                sendStatus('companion', 'info', `Secours : Simulation forcée (Dérive détectée)`)
+                this.emit('request-location', { lat, lon, name, force: true })
                 res.writeHead(200, { 'Content-Type': 'application/json' })
                 res.end(JSON.stringify({ success: true }))
                 return
@@ -151,10 +180,11 @@ class CompanionServer extends EventEmitter {
           try {
             const payload = JSON.parse(message)
             if (payload && payload.type) {
+              dbg(`[IN]  <- iPhone: ${payload.type}${payload.type === 'HEARTBEAT' ? '' : ' ' + JSON.stringify(payload.data || {})}`)
               this._handleMessage(ws, payload)
             }
           } catch (e) {
-            dbg(`[companion-server] Erreur message: ${e.message}`)
+            dbg(`[ERR] Erreur message: ${e.message}`)
           }
         })
 
@@ -211,21 +241,36 @@ class CompanionServer extends EventEmitter {
         }
         this.status.lastHeartbeat = Date.now()
         this._updateFrontend()
-        ws.send(JSON.stringify({ type: 'PONG', timestamp: Date.now() }))
+        const pong = JSON.stringify({ type: 'PONG', timestamp: Date.now() })
+        ws.send(pong)
         break
       }
       
       case 'SET_LOCATION': {
         const { lat, lon, name } = payload.data || {}
         if (lat !== undefined && lon !== undefined) {
-          dbg(`[companion-server] iPhone demande position: ${lat}, ${lon} (${name || 'sans nom'})`)
+          // Anti-rafale : ignorer les positions identiques envoyees en <3s
+          const now = Date.now()
+          const last = this._lastSetTs || {}
+          const key = `${lat.toFixed(4)},${lon.toFixed(4)}`
+          if (this._lastSetKey === key && now - (last[key] || 0) < 3000) {
+            const ack = JSON.stringify({ type: 'ACK', data: { lat, lon, timestamp: now } })
+            ws.send(ack)
+            break
+          }
+          this._lastSetKey = key
+          if (!this._lastSetTs) this._lastSetTs = {}
+          this._lastSetTs[key] = now
+
+          dbg(`[CMD] iPhone demande position: ${lat}, ${lon} (${name || 'sans nom'})`)
           this.status.lastInjectedLocation = { lat, lon, name }
           this._refreshStatus()
           this.emit('request-location', { lat, lon, name })
           if (name) favoritesManager.addToHistory({ lat, lon, name })
           
-          // Couche 4 : Envoyer l'Accusé de Réception (ACK) au client
-          ws.send(JSON.stringify({ type: 'ACK', data: { lat, lon, timestamp: Date.now() } }))
+          const ack = JSON.stringify({ type: 'ACK', data: { lat, lon, timestamp: Date.now() } })
+          dbg(`[OUT] -> iPhone: ACK`)
+          ws.send(ack)
         }
         break
       }
@@ -284,6 +329,9 @@ class CompanionServer extends EventEmitter {
   _broadcast(data) {
     if (!this.wss) return
     const message = JSON.stringify(data)
+    if (data.type !== 'STATUS' || this.clients.size > 0) {
+        dbg(`[OUT] -> iPhone: ${data.type}`)
+    }
     for (const client of this.clients) {
       if (client.readyState === 1) { // WebSocket.OPEN
         client.send(message)

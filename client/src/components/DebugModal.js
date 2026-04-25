@@ -20,13 +20,13 @@ export default function DebugModal({ visible, onClose }) {
             <Text style={styles.closeText}>FERMER</Text>
           </TouchableOpacity>
         </SafeAreaView>
-        
+
         <ScrollView style={styles.logList} contentContainerStyle={{ padding: 15 }}>
           {logs.map((log) => (
             <View key={log.id} style={styles.logEntry}>
               <Text style={styles.timestamp}>{log.timestamp}</Text>
               <Text style={[
-                styles.message, 
+                styles.message,
                 log.type === 'error' && { color: COLORS.error },
                 log.type === 'success' && { color: COLORS.success }
               ]}>
@@ -37,8 +37,8 @@ export default function DebugModal({ visible, onClose }) {
           {logs.length === 0 && <Text style={styles.empty}>Aucun événement enregistré.</Text>}
         </ScrollView>
 
-        <TouchableOpacity 
-          style={styles.clearBtn} 
+        <TouchableOpacity
+          style={styles.clearBtn}
           onPress={() => { logEvent.history = []; setLogs([]); }}
         >
           <Text style={styles.clearText}>EFFACER TOUT</Text>
@@ -50,9 +50,9 @@ export default function DebugModal({ visible, onClose }) {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#000' },
-  header: { 
-    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', 
-    padding: 20, borderBottomWidth: 1, borderBottomColor: '#334155' 
+  header: {
+    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
+    padding: 20, borderBottomWidth: 1, borderBottomColor: '#334155'
   },
   title: { color: '#fff', fontSize: 20, fontWeight: 'bold' },
   closeBtn: { padding: 10, backgroundColor: COLORS.primary, borderRadius: 10 },

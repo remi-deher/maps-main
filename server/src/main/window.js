@@ -17,11 +17,14 @@ let isQuitting = false
 let firstHide = true
 
 function createTray() {
-  const iconPath = path.join(__dirname, '..', '..', 'resources', 'icon.png')
+  const iconPath = path.join(app.getAppPath(), 'resources', 'icon.png')
   let icon = nativeImage.createFromPath(iconPath)
   
   if (icon.isEmpty()) {
+    dbg(`[tray] ⚠️ Icône non trouvée à : ${iconPath}`)
     icon = nativeImage.createEmpty()
+  } else {
+    dbg(`[tray] Icône chargée : ${iconPath}`)
   }
 
   tray = new Tray(icon.resize({ width: 16, height: 16 }))
@@ -139,6 +142,15 @@ app.whenReady().then(() => {
     if (mainWindow) mainWindow.webContents.send('status-update', { service: 'server-log', state: 'new', data: msg })
   })
 
+  // --- AUTOMATISATION : Re-appliquer la position dès que le tunnel est prêt ---
+  tunnel.on('ready', (conn) => {
+    if (gps.lastCoords) {
+      const { lat, lon, name } = gps.lastCoords
+      dbg(`[window] 🔄 Tunnel prêt (${conn.type}). Ré-application automatique de la position en attente : ${lat}, ${lon}`)
+      gps.setLocation(lat, lon, name)
+    }
+  })
+
   companion.on('request-location', ({ lat, lon, name }) => {
     gps.setLocation(lat, lon, name || "Position iPhone")
     if (mainWindow) {
@@ -150,8 +162,18 @@ app.whenReady().then(() => {
     }
   })
 
+  let ipDetectTimer = null
   companion.on('iphone-ip-detected', (ip) => {
+    if (ipDetectTimer) clearTimeout(ipDetectTimer)
+    
+    dbg(`[window] 📱 iPhone détecté (${ip}). Attente de stabilisation (3s)...`)
     tunnel.setWifiIpOverride(ip)
+    
+    ipDetectTimer = setTimeout(() => {
+      dbg(`[window] 📱 Connexion stable. Rafraîchissement du tunnel Go-iOS...`)
+      tunnel.forceRefresh()
+      ipDetectTimer = null
+    }, 3000)
   })
 
   companion.on('favorites-updated', (favs) => {
