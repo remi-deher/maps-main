@@ -103,7 +103,7 @@ class GpsBridge extends EventEmitter {
       ]
 
       const newProc = spawn(PYTHON, args, {
-        shell: true,
+        shell: false,
         cwd: path.dirname(PYTHON)
       })
 
@@ -201,8 +201,18 @@ class GpsBridge extends EventEmitter {
 
   stop() {
     if (this.pythonProcs) {
-      this.pythonProcs.forEach(p => p.kill())
+      this.pythonProcs.forEach(p => {
+        try { p.kill('SIGKILL') } catch(e) {}
+      })
       this.pythonProcs = []
+      
+      // Nettoyage agressif sur Windows pour éviter les zombies de l'ancienne session
+      if (process.platform === 'win32') {
+        try {
+          const { execSync } = require('child_process')
+          execSync('powershell "Get-CimInstance Win32_Process -Filter \\"Name = \'python.exe\' AND CommandLine LIKE \'%pymobiledevice3%\'\\" | Stop-Process -Force -ErrorAction SilentlyContinue"', { stdio: 'ignore' })
+        } catch(e) {}
+      }
     }
     this._udid = null
     this.isReady = false

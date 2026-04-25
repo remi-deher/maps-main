@@ -52,10 +52,16 @@ class CompanionServer extends EventEmitter {
 
   _refreshStatus() {
     const rsdReady = !!this.tunnel?.getRsdAddress();
+    const isStarting = this.tunnel?.isStarting ? this.tunnel.isStarting() : false;
     const simActive = !!(rsdReady && this.status?.lastVerifiedLocation);
     
+    let computedState = 'idle';
+    if (simActive) computedState = 'running';
+    else if (rsdReady) computedState = 'ready';
+    else if (isStarting) computedState = 'starting';
+    
     this.status = {
-      state: simActive ? 'running' : (rsdReady ? 'ready' : 'idle'),
+      state: computedState,
       tunnelActive: rsdReady,
       rsdAddress: this.tunnel?.getRsdAddress() || null,
       rsdPort: this.tunnel?.getRsdPort() || null,

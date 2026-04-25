@@ -143,6 +143,7 @@ class ConnectionOrchestrator extends EventEmitter {
   getRsdPort() { return this.activeConnection?.port }
   getConnectionType() { return 'USB' }
   getDeviceInfo() { return this.activeConnection?.deviceInfo || { name: 'iPhone', version: 'Inconnue' } }
+  isStarting() { return this.daemon._isStarting }
   
   forceRefresh() { 
     dbg('[orchestrator] 🔄 Redémarrage du tunnel go-ios...')

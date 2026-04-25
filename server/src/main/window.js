@@ -162,10 +162,18 @@ app.whenReady().then(() => {
     }
   })
 
+  let ipDetectTimer = null
   companion.on('iphone-ip-detected', (ip) => {
-    dbg(`[window] 📱 iPhone détecté sur le réseau (${ip}). Rafraîchissement du tunnel...`)
+    if (ipDetectTimer) clearTimeout(ipDetectTimer)
+    
+    dbg(`[window] 📱 iPhone détecté (${ip}). Attente de stabilisation (3s)...`)
     tunnel.setWifiIpOverride(ip)
-    tunnel.forceRefresh()
+    
+    ipDetectTimer = setTimeout(() => {
+      dbg(`[window] 📱 Connexion stable. Rafraîchissement du tunnel Go-iOS...`)
+      tunnel.forceRefresh()
+      ipDetectTimer = null
+    }, 3000)
   })
 
   companion.on('favorites-updated', (favs) => {

@@ -57,10 +57,10 @@ class TunneldService extends EventEmitter {
     // Tenter de relancer le service Bonjour sur Windows pour aider la découverte mDNS
     if (process.platform === 'win32') {
       try {
-        const { execSync } = require('child_process')
-        dbg('[tunneld-service] 🔄 Redémarrage du service Bonjour (mDNS)...')
-        execSync('powershell "Restart-Service \'Bonjour Service\' -ErrorAction SilentlyContinue"', { stdio: 'ignore' })
-      } catch (e) { /* ignore si pas admin ou service absent */ }
+        const { exec } = require('child_process')
+        dbg('[tunneld-service] 🔄 Redémarrage asynchrone du service Bonjour (mDNS)...')
+        exec('powershell "Restart-Service \'Bonjour Service\' -ErrorAction SilentlyContinue"')
+      } catch (e) { /* ignore */ }
     }
 
     const goIosDir = path.dirname(GOIOS)
