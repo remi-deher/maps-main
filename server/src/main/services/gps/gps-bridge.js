@@ -1,117 +1,174 @@
 'use strict'
 
-const net = require('net')
-const path = require('path')
+const http = require('http')
 const { EventEmitter } = require('events')
 const { dbg } = require('../../logger')
-const { PYTHON } = require('../../python-resolver')
-const ProcessRunner = require('../../utils/process-runner')
+
+const TUNNEL_INFO_PORT = 28100
 
 /**
- * GpsBridge - Client Node.js pour communiquer avec bridge.py
+ * GpsBridge (go-ios) - Envoie les commandes GPS via l'API REST HTTP de go-ios.
+ *
+ * Architecture simplifiée :
+ *   - Plus de bridge Python, plus de socket TCP, plus de subprocess dvt
+ *   - Appel HTTP direct : PUT http://localhost:28100/device/:udid/location
+ *   - go-ios gère la connexion au service DVT en interne
+ *   - Stable car go-ios maintient la session DVT de façon native
  */
 class GpsBridge extends EventEmitter {
   constructor() {
     super()
-    this.runner = new ProcessRunner('python-bridge')
-    this.port = 49000
-    this.host = '::1' // IPv6 Loopback
     this.isReady = false
+    this._udid = null
+    dbg('[gps-bridge] Bridge go-ios initialisé')
   }
 
+  /**
+   * Démarre le bridge (no-op pour go-ios, le tunnel est géré par tunneld-service).
+   * Maintenu pour la compatibilité avec l'API appelante.
+   */
   start() {
-    if (this.runner.isRunning) return
+    this.isReady = true
+    dbg('[gps-bridge] ✅ Bridge go-ios prêt (API REST HTTP)')
+    this.emit('ready')
+  }
 
-    const { resolveScript } = require('../../python-resolver')
-    const scriptPath = resolveScript('bridge.py')
-    dbg(`[gps-bridge] Lancement du pont Python...`)
-    
-    this.runner.spawn(PYTHON, [scriptPath])
+  /**
+   * Récupère le UDID de l'appareil connecté depuis l'API go-ios.
+   */
+  async _getUdid() {
+    if (this._udid) return this._udid
 
-    this.runner.on('stdout', (data) => {
-      if (data.includes('BRIDGE_READY')) {
-        this.isReady = true
-        dbg('[gps-bridge] ✅ Le pont est pret.')
-        this.emit('ready')
-      }
-      // Relayer les logs du pont vers la console globale
-      if (data.includes(' - INFO - ')) {
-          const clean = data.split(' - INFO - ')[1].trim()
-          dbg(`[gps-bridge] ${clean}`)
-      }
-    })
-
-    this.runner.on('stderr', (data) => {
-      // Filtrer les messages INFO qui sortent parfois sur stderr en Python
-      if (data.includes(' - INFO - ')) {
-          const clean = data.split(' - INFO - ')[1].trim()
-          dbg(`[gps-bridge] ${clean}`)
-      } else {
-          dbg(`[gps-bridge] [ERR] ${data}`)
-      }
-    })
-
-    this.runner.on('exit', () => {
-      this.isReady = false
-      dbg('[gps-bridge] Le pont s\'est arrete. Relance dans 2s...')
-      setTimeout(() => this.start(), 2000)
+    return new Promise((resolve) => {
+      const req = http.get(`http://127.0.0.1:${TUNNEL_INFO_PORT}/`, { timeout: 2000 }, (res) => {
+        let body = ''
+        res.on('data', (c) => { body += c })
+        res.on('end', () => {
+          try {
+            const tunnels = JSON.parse(body)
+            if (Array.isArray(tunnels) && tunnels.length > 0 && tunnels[0].udid) {
+              this._udid = tunnels[0].udid
+              resolve(this._udid)
+            } else {
+              resolve(null)
+            }
+          } catch (e) { resolve(null) }
+        })
+      })
+      req.on('error', () => resolve(null))
+      req.on('timeout', () => { req.destroy(); resolve(null) })
     })
   }
 
-  async sendCommand(action, rsdHost, rsdPort, payload = {}) {
+  /**
+   * Envoie une commande via l'API REST go-ios.
+   *
+   * @param {string} action  'set_location' | 'clear_location' | 'heartbeat'
+   * @param {string} _rsdHost  ignoré (go-ios gère le tunnel en interne)
+   * @param {string} _rsdPort  ignoré
+   * @param {object} payload  { lat, lon } pour set_location
+   */
+  async sendCommand(action, _rsdHost, _rsdPort, payload = {}) {
     if (action === 'set_location') {
       dbg(`[CMD] Simulation : ${payload.lat}, ${payload.lon}`)
+      return this._setLocation(payload.lat, payload.lon)
+    }
+
+    if (action === 'clear_location') {
+      return this._clearLocation()
+    }
+
+    if (action === 'heartbeat') {
+      return this._heartbeat()
+    }
+
+    return { success: false, error: `Action inconnue : ${action}` }
+  }
+
+  async _setLocation(lat, lon) {
+    const udid = await this._getUdid()
+    if (!udid) {
+      return { success: false, error: 'Aucun appareil connecté (go-ios tunnel non actif)' }
     }
 
     return new Promise((resolve) => {
-      if (!this.isReady) {
-        return resolve({ success: false, error: 'Le pont Python n\'est pas encore pret' })
+      const body = JSON.stringify({ lat: parseFloat(lat), lon: parseFloat(lon) })
+      const options = {
+        hostname: '127.0.0.1',
+        port: TUNNEL_INFO_PORT,
+        path: `/device/${udid}/location`,
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'Content-Length': Buffer.byteLength(body)
+        },
+        timeout: 8000
       }
 
-      const client = new net.Socket()
-      const request = JSON.stringify({
-        action,
-        rsd_host: rsdHost,
-        rsd_port: parseInt(rsdPort),
-        ...payload
-      })
-
-      const timeout = setTimeout(() => {
-        client.destroy()
-        resolve({ success: false, error: 'Timeout communication avec le pont' })
-      }, 10000)
-
-      client.connect(this.port, this.host, () => {
-        client.write(request)
-      })
-
-      client.on('data', (data) => {
-        clearTimeout(timeout)
-        try {
-          const response = JSON.parse(data.toString())
-          if (response.success) {
-              dbg(`[OK] Pont a répondu avec succès`)
+      const req = http.request(options, (res) => {
+        let resBody = ''
+        res.on('data', (c) => { resBody += c })
+        res.on('end', () => {
+          if (res.statusCode === 200) {
+            dbg(`[OK] go-ios a appliqué la position`)
+            resolve({ success: true })
           } else {
-              dbg(`[ERR] Pont a répondu : ${response.error}`)
+            dbg(`[ERR] go-ios a retourné HTTP ${res.statusCode} : ${resBody}`)
+            // Invalider le UDID si erreur (appareil peut avoir changé)
+            this._udid = null
+            resolve({ success: false, error: `HTTP ${res.statusCode}: ${resBody}` })
           }
-          resolve(response)
-        } catch (e) {
-          dbg(`[ERR] Pont a envoyé une réponse invalide`)
-          resolve({ success: false, error: 'Reponse JSON invalide du pont' })
-        }
-        client.destroy()
+        })
       })
 
-      client.on('error', (err) => {
-        clearTimeout(timeout)
-        resolve({ success: false, error: `Erreur socket pont: ${err.message}` })
-        client.destroy()
+      req.on('error', (err) => {
+        dbg(`[ERR] go-ios API error: ${err.message}`)
+        resolve({ success: false, error: err.message })
       })
+
+      req.on('timeout', () => {
+        req.destroy()
+        resolve({ success: false, error: 'Timeout API go-ios (8s)' })
+      })
+
+      req.write(body)
+      req.end()
     })
   }
 
+  async _clearLocation() {
+    const udid = await this._getUdid()
+    if (!udid) return { success: true } // Pas d'appareil, rien à faire
+
+    return new Promise((resolve) => {
+      const options = {
+        hostname: '127.0.0.1',
+        port: TUNNEL_INFO_PORT,
+        path: `/device/${udid}/location`,
+        method: 'DELETE',
+        timeout: 5000
+      }
+
+      const req = http.request(options, (res) => {
+        res.resume() // Vider le body
+        res.on('end', () => {
+          dbg('[OK] Position réinitialisée')
+          resolve({ success: true })
+        })
+      })
+      req.on('error', () => resolve({ success: true }))
+      req.on('timeout', () => { req.destroy(); resolve({ success: true }) })
+      req.end()
+    })
+  }
+
+  async _heartbeat() {
+    const udid = await this._getUdid()
+    return { success: true, status: udid ? 'alive' : 'idle' }
+  }
+
   stop() {
-    this.runner.stop()
+    this._udid = null
     this.isReady = false
   }
 }
