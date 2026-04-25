@@ -42,7 +42,13 @@ class GpsBridge extends EventEmitter {
     })
 
     this.runner.on('stderr', (data) => {
-      dbg(`[gps-bridge] [ERR] ${data}`)
+      // Filtrer les messages INFO qui sortent parfois sur stderr en Python
+      if (data.includes(' - INFO - ')) {
+          const clean = data.split(' - INFO - ')[1].trim()
+          dbg(`[gps-bridge] ${clean}`)
+      } else {
+          dbg(`[gps-bridge] [ERR] ${data}`)
+      }
     })
 
     this.runner.on('exit', () => {

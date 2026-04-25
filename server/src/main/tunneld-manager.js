@@ -61,6 +61,14 @@ class ConnectionOrchestrator extends EventEmitter {
   }
 
   /**
+   * Retourne true si l'adresse est une IPv6 link-local (fe80::) - instable sur Windows.
+   * Les adresses fd27:... ou autres sont des adresses globales stables.
+   */
+  _isLinkLocal(address) {
+    return address && address.toLowerCase().startsWith('fe80')
+  }
+
+  /**
    * Hint WebSocket : IP Certifiée reçue du compagnon iOS.
    * Sert à accélérer le tunneld si le scan auto est trop lent.
    */
@@ -77,6 +85,12 @@ class ConnectionOrchestrator extends EventEmitter {
   }
 
   _handleNewConnection(conn) {
+    // RÈGLE DE QUALITÉ : ne jamais écraser une adresse stable (fd27:...) par une link-local (fe80::)
+    if (this.activeConnection && !this._isLinkLocal(this.activeConnection.address) && this._isLinkLocal(conn.address)) {
+      dbg(`[orchestrator] ⚠️ Connexion link-local (${conn.address}) ignorée — adresse stable déjà active`)
+      return
+    }
+
     // Si on change de type de connexion (ex: WiFi -> USB), on nettoie tout
     if (this.activeConnection && this.activeConnection.type !== conn.type) {
       dbg(`[orchestrator] Changement de mode : ${this.activeConnection.type} -> ${conn.type}`)
@@ -87,10 +101,13 @@ class ConnectionOrchestrator extends EventEmitter {
 
     this.activeConnection = conn
     
-    // Annulation du timer de découverte si une connexion est établie
+    // Annuler le timer Bonjour immédiatement si on a une adresse stable
     if (this.discoveryTimer) {
       clearTimeout(this.discoveryTimer)
       this.discoveryTimer = null
+      if (!this._isLinkLocal(conn.address)) {
+        dbg(`[orchestrator] ✅ Adresse stable (${conn.address}) obtenue — scan Bonjour annulé`)
+      }
     }
 
     dbg(`[orchestrator] Connexion active : ${conn.type} (${conn.address}:${conn.port})`)
@@ -179,14 +196,15 @@ class ConnectionOrchestrator extends EventEmitter {
     // Phase 1 : Démarrage du démon tunneld de base (USB + Discovery passive)
     this.daemon.start()
 
-    // Phase 2 : Planification de la découverte Bonjour après un délai de 5s
+    // Phase 2 : Planification de la decouverte Bonjour apres 15s
+    // (15s pour laisser tunneld detecter la connexion USB en priorite)
     if (this.discoveryTimer) clearTimeout(this.discoveryTimer)
     this.discoveryTimer = setTimeout(() => {
       if (!this.activeConnection && !this.isUsbLocked) {
-        dbg('[orchestrator] Phase 2 : Pas de connexion après 5s, déclenchement du scan Bonjour...')
+        dbg('[orchestrator] Phase 2 : Pas de connexion USB apres 15s, scan Bonjour...')
         this.daemon._triggerNativeFallback(null)
       }
-    }, 5000)
+    }, 15000)
 
     sendStatus('tunneld', 'scanning', 'Recherche d\'un iPhone (Cascade active)...')
   }

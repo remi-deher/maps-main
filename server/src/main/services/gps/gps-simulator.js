@@ -30,7 +30,6 @@ class GpsSimulator extends EventEmitter {
 
     this._isLaunching = true
     try {
-      // Le pont gère lui-même le remplacement du processus précédent
       const result = await this.commander.execute('set', rsdAddress, rsdPort, [String(lat), String(lon)])
       
       if (result.success) {
