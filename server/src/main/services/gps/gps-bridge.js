@@ -40,7 +40,8 @@ class GpsBridge extends EventEmitter {
     if (this._udid) return this._udid
 
     return new Promise((resolve) => {
-      const req = http.get(`http://127.0.0.1:${TUNNEL_INFO_PORT}/`, { timeout: 2000 }, (res) => {
+      const http = require('http')
+      const req = http.get(`http://127.0.0.1:${TUNNEL_INFO_PORT}/tunnels`, { timeout: 2000 }, (res) => {
         let body = ''
         res.on('data', (c) => { body += c })
         res.on('end', () => {
@@ -60,114 +61,136 @@ class GpsBridge extends EventEmitter {
     })
   }
 
-  /**
-   * Envoie une commande via l'API REST go-ios.
-   *
-   * @param {string} action  'set_location' | 'clear_location' | 'heartbeat'
-   * @param {string} _rsdHost  ignoré (go-ios gère le tunnel en interne)
-   * @param {string} _rsdPort  ignoré
-   * @param {object} payload  { lat, lon } pour set_location
-   */
   async sendCommand(action, _rsdHost, _rsdPort, payload = {}) {
     if (action === 'set_location') {
-      dbg(`[CMD] Simulation : ${payload.lat}, ${payload.lon}`)
       return this._setLocation(payload.lat, payload.lon)
     }
-
     if (action === 'clear_location') {
       return this._clearLocation()
     }
-
     if (action === 'heartbeat') {
-      return this._heartbeat()
+      const udid = await this._getUdid()
+      return { success: !!udid }
     }
-
     return { success: false, error: `Action inconnue : ${action}` }
   }
 
   async _setLocation(lat, lon) {
-    const udid = await this._getUdid()
-    if (!udid) {
-      return { success: false, error: 'Aucun appareil connecté (go-ios tunnel non actif)' }
+    const tunnelInfo = await this._getTunnelInfo()
+    if (!tunnelInfo) return { success: false, error: 'Tunnel Go-iOS non détecté' }
+
+    const { address, rsdPort } = tunnelInfo
+    
+    // Tuer l'ancienne injection si elle existe
+    if (this.pythonProc) {
+      this.pythonProc.kill()
+      this.pythonProc = null
     }
 
+    dbg(`[gps-bridge] Injection Hybride : Python PMD3 sur Tunnel Go (${address}:${rsdPort})`)
+    
     return new Promise((resolve) => {
-      const body = JSON.stringify({ lat: parseFloat(lat), lon: parseFloat(lon) })
-      const options = {
-        hostname: '127.0.0.1',
-        port: TUNNEL_INFO_PORT,
-        path: `/device/${udid}/location`,
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          'Content-Length': Buffer.byteLength(body)
-        },
-        timeout: 8000
-      }
+      const { PYTHON } = require('../../python-resolver')
+      const { spawn } = require('child_process')
+      
+      const args = [
+        '-m', 'pymobiledevice3', 
+        'developer', 'dvt', 'simulate-location', 'set',
+        '--rsd', address, String(rsdPort),
+        '--',
+        String(lat), String(lon)
+      ]
 
-      const req = http.request(options, (res) => {
-        let resBody = ''
-        res.on('data', (c) => { resBody += c })
-        res.on('end', () => {
-          if (res.statusCode === 200) {
-            dbg(`[OK] go-ios a appliqué la position`)
-            resolve({ success: true })
-          } else {
-            dbg(`[ERR] go-ios a retourné HTTP ${res.statusCode} : ${resBody}`)
-            // Invalider le UDID si erreur (appareil peut avoir changé)
-            this._udid = null
-            resolve({ success: false, error: `HTTP ${res.statusCode}: ${resBody}` })
+      dbg(`[gps-bridge] Exécution : ${PYTHON} ${args.join(' ')}`)
+      
+      const path = require('path')
+      this.pythonProc = spawn(PYTHON, args, {
+        shell: true,
+        cwd: path.dirname(PYTHON)
+      })
+
+      let timer = setTimeout(() => {
+        dbg('[gps-bridge] ⚠️ Timeout Python')
+        resolve({ success: false, error: 'Timeout' })
+      }, 10000)
+
+      this.pythonProc.stdout.on('data', (data) => {
+        const msg = data.toString()
+        dbg(`[python-pmd3] ${msg.trim()}`)
+        if (msg.includes('Press ENTER to exit')) {
+          if (timer) {
+            clearTimeout(timer)
+            timer = null
           }
+          dbg('[gps-bridge] ✅ Simulation active')
+          resolve({ success: true })
+        }
+      })
+
+      this.pythonProc.stderr.on('data', (data) => { 
+        dbg(`[python-pmd3-err] ${data.toString().trim()}`)
+      })
+
+      this.pythonProc.on('close', (code) => {
+        if (timer) clearTimeout(timer)
+        dbg(`[gps-bridge] Processus Python fermé (code ${code})`)
+        this.pythonProc = null
+      })
+    })
+  }
+
+  async _getTunnelInfo() {
+    return new Promise((resolve) => {
+      const http = require('http')
+      const req = http.get(`http://127.0.0.1:${TUNNEL_INFO_PORT}/tunnels`, { timeout: 1500 }, (res) => {
+        let body = ''
+        res.on('data', (c) => { body += c })
+        res.on('end', () => {
+          try {
+            const tunnels = JSON.parse(body)
+            if (Array.isArray(tunnels) && tunnels.length > 0) {
+              const t = tunnels[0]
+              resolve({ udid: t.udid, address: t.address, rsdPort: t.rsdPort })
+            } else resolve(null)
+          } catch (e) { resolve(null) }
         })
       })
-
-      req.on('error', (err) => {
-        dbg(`[ERR] go-ios API error: ${err.message}`)
-        resolve({ success: false, error: err.message })
-      })
-
-      req.on('timeout', () => {
-        req.destroy()
-        resolve({ success: false, error: 'Timeout API go-ios (8s)' })
-      })
-
-      req.write(body)
+      req.on('error', () => resolve(null))
       req.end()
+    })
+  }
+
+  async _mountImage(udid) {
+    dbg('[gps-bridge] Tentative de montage auto de l\'image développeur...')
+    return new Promise((resolve) => {
+      const { GOIOS } = require('../../goios-resolver')
+      const { spawn } = require('child_process')
+      const path = require('path')
+      const proc = spawn(GOIOS, ['image', 'auto', `--udid=${udid}`], { cwd: path.dirname(GOIOS) })
+      proc.on('close', () => resolve())
     })
   }
 
   async _clearLocation() {
-    const udid = await this._getUdid()
-    if (!udid) return { success: true } // Pas d'appareil, rien à faire
+    const tunnelInfo = await this._getTunnelInfo()
+    if (!tunnelInfo) return { success: true }
 
-    return new Promise((resolve) => {
-      const options = {
-        hostname: '127.0.0.1',
-        port: TUNNEL_INFO_PORT,
-        path: `/device/${udid}/location`,
-        method: 'DELETE',
-        timeout: 5000
-      }
+    const { PYTHON } = require('../../python-resolver')
+    const { spawn } = require('child_process')
 
-      const req = http.request(options, (res) => {
-        res.resume() // Vider le body
-        res.on('end', () => {
-          dbg('[OK] Position réinitialisée')
-          resolve({ success: true })
-        })
-      })
-      req.on('error', () => resolve({ success: true }))
-      req.on('timeout', () => { req.destroy(); resolve({ success: true }) })
-      req.end()
-    })
-  }
-
-  async _heartbeat() {
-    const udid = await this._getUdid()
-    return { success: true, status: udid ? 'alive' : 'idle' }
+    spawn(PYTHON, [
+        '-m', 'pymobiledevice3', 
+        'developer', 'dvt', 'simulate-location', 'clear',
+        '--rsd', tunnelInfo.address, String(tunnelInfo.rsdPort)
+    ])
+    return { success: true }
   }
 
   stop() {
+    if (this.pythonProc) {
+      this.pythonProc.kill()
+      this.pythonProc = null
+    }
     this._udid = null
     this.isReady = false
   }

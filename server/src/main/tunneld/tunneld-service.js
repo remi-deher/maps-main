@@ -2,6 +2,7 @@
 
 const { EventEmitter } = require('events')
 const http = require('http')
+const path = require('path')
 const { dbg, sendStatus } = require('../logger')
 const { GOIOS } = require('../goios-resolver')
 const ProcessRunner = require('../utils/process-runner')
@@ -49,8 +50,11 @@ class TunneldService extends EventEmitter {
     dbg('[tunneld-service] Lancement de ios tunnel start...')
     sendStatus('tunneld', 'starting', 'Initialisation du tunnel go-ios...')
 
-    // go-ios tunnel start utilise le mode userspace (pas besoin d'admin sur Windows)
-    this.runner.spawn(GOIOS, ['tunnel', 'start', '--userspace', `--tunnel-info-port=${TUNNEL_INFO_PORT}`])
+    const goIosDir = path.dirname(GOIOS)
+    this.runner.options.cwd = goIosDir
+
+    // Revenir au mode tunnel start (rest-api non disponible)
+    this.runner.spawn(GOIOS, ['tunnel', 'start', `--tunnel-info-port=${TUNNEL_INFO_PORT}`])
 
     // Début du polling API après 2s (laisser le processus démarrer)
     setTimeout(() => this._startPolling(), 2000)
@@ -58,10 +62,8 @@ class TunneldService extends EventEmitter {
 
   _handleOutput(text) {
     if (!text || !text.trim()) return
-    // Logs utiles seulement (go-ios est verbeux)
-    if (text.includes('started') || text.includes('tunnel') || text.includes('error') || text.includes('ERROR')) {
-      dbg(`[tunneld] ${text.trim()}`)
-    }
+    // On affiche tout pour le debug de la migration
+    dbg(`[tunneld] ${text.trim()}`)
   }
 
   /**
@@ -84,28 +86,27 @@ class TunneldService extends EventEmitter {
   }
 
   _pollTunnelApi() {
-    const req = http.get(`http://127.0.0.1:${TUNNEL_INFO_PORT}/`, { timeout: 1500 }, (res) => {
+    // On n'utilise plus que /tunnels qui est l'endpoint valide
+    this._fetchFromApi('/tunnels')
+  }
+
+  _fetchFromApi(path) {
+    const req = http.get(`http://127.0.0.1:${TUNNEL_INFO_PORT}${path}`, { timeout: 1500 }, (res) => {
       let body = ''
       res.on('data', (chunk) => { body += chunk })
       res.on('end', () => {
         try {
+          // if (body !== '[]' && body !== '') {
+          //    dbg(`[tunneld-service] API ${path} : ${body}`)
+          // }
           const tunnels = JSON.parse(body)
           if (Array.isArray(tunnels) && tunnels.length > 0) {
             this._handleTunnelList(tunnels)
-          } else {
-            // Pas encore de tunnel prêt
-            if (this.activeConnection) {
-              dbg('[tunneld-service] Plus aucun tunnel actif détecté')
-              this.activeConnection = null
-              this.emit('disconnection', 'Tunnel disparu')
-            }
           }
-        } catch (e) {
-          // Réponse invalide, on ignore
-        }
+        } catch (e) { /* ignore */ }
       })
     })
-    req.on('error', () => { /* API pas encore prête, on ignore */ })
+    req.on('error', () => {})
     req.on('timeout', () => req.destroy())
   }
 

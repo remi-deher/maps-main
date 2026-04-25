@@ -30,9 +30,20 @@
       "preload.js",
       "src/**",
       "dist-web/**",
-      "!resources/python"
+      "!resources/python",
+      "resources/ios.exe",
+      "resources/wintun.dll",
+      "resources/python/**"
     ],
     "extraResources": [
+      {
+        "from": "resources/ios.exe",
+        "to": "ios.exe"
+      },
+      {
+        "from": "resources/wintun.dll",
+        "to": "wintun.dll"
+      },
       {
         "from": "resources/python",
         "to": "python",
@@ -40,18 +51,8 @@
           "**/*",
           "!**/__pycache__",
           "!**/*.pyc",
-          "!**/*.pyo",
-          "!**/test",
-          "!**/tests",
-          "!**/docs",
-          "!**/idlelib",
-          "!**/turtledemo",
-          "!**/get-pip.py"
+          "!**/*.pyo"
         ]
-      },
-      {
-        "from": "src/main/python",
-        "to": "python_scripts"
       }
     ]
   },
