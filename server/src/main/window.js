@@ -17,11 +17,14 @@ let isQuitting = false
 let firstHide = true
 
 function createTray() {
-  const iconPath = path.join(__dirname, '..', '..', 'resources', 'icon.png')
+  const iconPath = path.join(app.getAppPath(), 'resources', 'icon.png')
   let icon = nativeImage.createFromPath(iconPath)
   
   if (icon.isEmpty()) {
+    dbg(`[tray] ⚠️ Icône non trouvée à : ${iconPath}`)
     icon = nativeImage.createEmpty()
+  } else {
+    dbg(`[tray] Icône chargée : ${iconPath}`)
   }
 
   tray = new Tray(icon.resize({ width: 16, height: 16 }))
