@@ -3,7 +3,6 @@
 echo "[entrypoint] Analyse de l'environnement de connexion iPhone..."
 
 # 1. Vérification si on est sur Windows/Mac (Docker Desktop)
-# On tente de voir si host.docker.internal est résolvable
 if getent hosts host.docker.internal > /dev/null; then
     echo "[entrypoint] Environnement Windows détecté."
     echo "[entrypoint] Création du pont vers le service Apple hôte (port 27015)..."

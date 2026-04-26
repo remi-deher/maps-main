@@ -93,6 +93,9 @@ class CompanionServer extends EventEmitter {
       lastHeartbeat: this.status?.lastHeartbeat || null,
       lastInjectedLocation: this.status?.lastInjectedLocation || null,
       lastVerifiedLocation: this.status?.lastVerifiedLocation || null,
+      usbDriver: settings.get('usbDriver'),
+      wifiDriver: settings.get('wifiDriver'),
+      fallbackEnabled: settings.get('fallbackEnabled'),
       favorites: favoritesManager.getFavorites(),
       recentHistory: favoritesManager.getHistory()
     }
@@ -427,6 +430,19 @@ class CompanionServer extends EventEmitter {
       
       case 'CLIENT_LOG': {
         this.emit('client-log', payload.data)
+        break
+      }
+
+      case 'SAVE_SETTINGS': {
+        if (payload.data) {
+          dbg(`[CMD] iPhone demande mise à jour réglages: ${JSON.stringify(payload.data)}`)
+          settings.save(payload.data)
+          if (this.tunnel && (payload.data.usbDriver || payload.data.wifiDriver)) {
+             this.tunnel.applySettings(settings.get())
+          }
+          this._refreshStatus()
+          this._broadcast({ type: 'STATUS', data: this.status })
+        }
         break
       }
 

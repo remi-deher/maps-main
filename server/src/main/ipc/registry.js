@@ -220,8 +220,12 @@ function registerIpcHandlers(tunnel, gps, companion) {
     const path = require('path')
     try {
       const projectRoot = path.join(app.getAppPath(), '..')
+      const certsDir = path.join(projectRoot, 'certs')
+      
       if (name === 'selfIdentity.plist') {
-        fs.writeFileSync(path.join(projectRoot, 'selfIdentity.plist'), content)
+        // On enregistre dans certs/ si le dossier existe (Docker), sinon à la racine
+        const targetDir = fs.existsSync(certsDir) ? certsDir : projectRoot
+        fs.writeFileSync(path.join(targetDir, 'selfIdentity.plist'), content)
       } else {
         let lockdownDir = 'C:\\ProgramData\\Apple\\Lockdown'
         if (process.platform === 'linux') {
@@ -245,7 +249,10 @@ function registerIpcHandlers(tunnel, gps, companion) {
       
       const files = fs.existsSync(lockdownDir) ? fs.readdirSync(lockdownDir).filter(f => f.endsWith('.plist')) : []
       const projectRoot = path.join(app.getAppPath(), '..')
-      const hasSelfIdentity = fs.existsSync(path.join(projectRoot, 'selfIdentity.plist'))
+      const certsDir = path.join(projectRoot, 'certs')
+      
+      const hasSelfIdentity = fs.existsSync(path.join(projectRoot, 'selfIdentity.plist')) || 
+                             (fs.existsSync(certsDir) && fs.existsSync(path.join(certsDir, 'selfIdentity.plist')))
       
       return { success: true, plists: files, hasSelfIdentity }
     } catch (e) {

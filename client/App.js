@@ -24,6 +24,7 @@ export default function App() {
   const { 
     status, favorites, recentHistory, simulatedCoords, 
     deviceInfo, connectionType, rsdAddress, serverState, verifiedLocation,
+    usbDriver, wifiDriver, fallbackEnabled,
     sendAction, startRoute, startOsrmRoute, sendSequence, sendCustomGpx, connect 
   } = useSocket(serverIp, serverPort, isMaintaining);
   
@@ -322,15 +323,22 @@ export default function App() {
             onClose={() => setShowSettings(false)}
             initialIp={serverIp}
             initialPort={serverPort}
+            initialUsbDriver={usbDriver}
+            initialWifiDriver={wifiDriver}
             status={status}
             deviceInfo={deviceInfo}
             connectionType={connectionType}
             rsdAddress={rsdAddress}
-            onSave={(ip, port) => { 
-                logEvent.add(`Config manuelle: ${ip}:${port}`);
-                saveSettings(ip, port); 
+            onSave={(data) => { 
+                if (typeof data === 'string') {
+                   // Ancien format (juste IP)
+                   saveSettings(data, serverPort); 
+                } else {
+                   // Nouveau format (objet complet)
+                   if (data.wifiIp) saveSettings(data.wifiIp, data.companionPort || serverPort);
+                   sendAction('SAVE_SETTINGS', data);
+                }
                 setShowSettings(false); 
-                connect(); 
             }}
             onImportGpx={(content) => {
               Alert.alert(

@@ -13,7 +13,12 @@ RUN apt-get update && apt-get install -y \
     socat \
     procps \
     iputils-ping \
+    usbutils \
+    avahi-utils \
+    libavahi-client3 \
     net-tools \
+    iproute2 \
+    netcat-openbsd \
     && rm -rf /var/lib/apt/lists/*
 
 # Création de l'environnement Python et installation de pymobiledevice3

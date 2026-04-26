@@ -4,11 +4,13 @@ import * as DocumentPicker from 'expo-document-picker';
 import * as FileSystem from 'expo-file-system';
 
 export default function SettingsModal({ 
-  visible, onClose, initialIp, initialPort, onSave, onImportGpx,
+  visible, onClose, initialIp, initialPort, initialUsbDriver, initialWifiDriver, onSave, onImportGpx,
   status, deviceInfo, connectionType, rsdAddress 
 }) {
   const [ip, setIp] = useState(initialIp);
   const [port, setPort] = useState(initialPort);
+  const [usbDriver, setUsbDriver] = useState(initialUsbDriver || 'go-ios');
+  const [wifiDriver, setWifiDriver] = useState(initialWifiDriver || 'pymobiledevice');
 
   const handlePickGpx = async () => {
     try {
@@ -99,13 +101,36 @@ export default function SettingsModal({
             )}
           </View>
 
+          <View style={styles.inputGroup}>
+            <Text style={styles.label}>DRIVER USB</Text>
+            <View style={styles.row}>
+               <TouchableOpacity 
+                 style={[styles.miniBtn, usbDriver === 'go-ios' && styles.miniBtnActive]}
+                 onPress={() => setUsbDriver('go-ios')}
+               >
+                 <Text style={[styles.miniBtnText, usbDriver === 'go-ios' && styles.miniBtnTextActive]}>GO-IOS</Text>
+               </TouchableOpacity>
+               <TouchableOpacity 
+                 style={[styles.miniBtn, usbDriver === 'pymobiledevice' && styles.miniBtnActive]}
+                 onPress={() => setUsbDriver('pymobiledevice')}
+               >
+                 <Text style={[styles.miniBtnText, usbDriver === 'pymobiledevice' && styles.miniBtnTextActive]}>PMD3</Text>
+               </TouchableOpacity>
+            </View>
+          </View>
+
           <View style={styles.actions}>
             <TouchableOpacity style={styles.cancelBtn} onPress={onClose}>
               <Text style={styles.cancelText}>ANNULER</Text>
             </TouchableOpacity>
             <TouchableOpacity 
               style={styles.saveBtn} 
-              onPress={() => onSave(ip, port)}
+              onPress={() => onSave({
+                wifiIp: ip,
+                companionPort: port,
+                usbDriver,
+                wifiDriver
+              })}
             >
               <Text style={styles.saveText}>APPLIQUER</Text>
             </TouchableOpacity>
@@ -150,5 +175,10 @@ const styles = StyleSheet.create({
   cancelBtn: { flex: 1, padding: 15, alignItems: 'center' },
   saveBtn: { flex: 2, backgroundColor: COLORS.primary, padding: 15, borderRadius: 15, alignItems: 'center' },
   cancelText: { color: COLORS.textSecondary, fontWeight: '700' },
-  saveText: { color: COLORS.text, fontWeight: '900' }
+  saveText: { color: COLORS.text, fontWeight: '900' },
+  row: { flexDirection: 'row', gap: 10, marginTop: 5 },
+  miniBtn: { flex: 1, backgroundColor: COLORS.background, padding: 12, borderRadius: 12, alignItems: 'center', borderWidth: 1, borderColor: 'rgba(255,255,255,0.05)' },
+  miniBtnActive: { backgroundColor: COLORS.primary, borderColor: COLORS.primary },
+  miniBtnText: { color: COLORS.textSecondary, fontSize: 11, fontWeight: '700' },
+  miniBtnTextActive: { color: COLORS.text, fontWeight: '900' }
 });

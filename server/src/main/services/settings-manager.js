@@ -38,22 +38,28 @@ class SettingsManager {
   }
 
   _load() {
-    try {
-      if (fs.existsSync(this.path)) {
-        return JSON.parse(fs.readFileSync(this.path, 'utf8'))
-      }
-    } catch (e) {
-      console.error('[SettingsManager] Erreur lecture:', e.message)
-    }
-    return { 
+    const defaults = { 
       wifiIp: '', 
       wifiPort: '', 
       companionPort: 8080,
-      connectionMode: 'both', // 'usb', 'wifi', 'both'
+      connectionMode: 'both',
+      usbDriver: 'go-ios',
+      wifiDriver: 'pymobiledevice',
+      fallbackEnabled: true,
       preferredIp: '',
       favorites: [],
       recentHistory: []
     }
+
+    try {
+      if (fs.existsSync(this.path)) {
+        const data = JSON.parse(fs.readFileSync(this.path, 'utf8'))
+        return { ...defaults, ...data }
+      }
+    } catch (e) {
+      console.error('[SettingsManager] Erreur lecture:', e.message)
+    }
+    return defaults
   }
 }
 

@@ -6,14 +6,19 @@
  */
 
 const { dbg, sendStatus } = require('./logger')
-const tunneldService = require('./tunneld/tunneld-service')
+const goIosService = require('./tunneld/tunneld-service')
+const pmd3Service = require('./services/tunneld-daemon')
 const gpsBridge = require('./services/gps/gps-bridge')
+const settings = require('./services/settings-manager')
 const { EventEmitter } = require('events')
 
 class ConnectionOrchestrator extends EventEmitter {
   constructor() {
     super()
-    this.daemon = tunneldService
+    this.daemons = {
+      'go-ios': goIosService,
+      'pymobiledevice': pmd3Service
+    }
     
     this.activeConnection = null
     this.heartbeatRunners = new Map()
@@ -27,20 +32,56 @@ class ConnectionOrchestrator extends EventEmitter {
   }
 
   _initListeners() {
-    this.daemon.on('connection', (conn) => {
-      dbg(`[orchestrator] Connexion go-ios établie : ${conn.address}:${conn.port}`)
-      this._handleNewConnection(conn)
+    // Écouter go-ios
+    goIosService.on('connection', (conn) => {
+      this._onDaemonConnection('go-ios', conn)
+    })
+    goIosService.on('disconnection', () => {
+      this._onDaemonDisconnection('go-ios')
     })
 
-    this.daemon.on('disconnection', () => {
-      dbg('[orchestrator] Déconnexion détectée du tunnel go-ios.')
-      this._handleDisconnection()
+    // Écouter PMD3
+    pmd3Service.on('connection', (conn) => {
+      this._onDaemonConnection('pymobiledevice', conn)
+    })
+    pmd3Service.on('disconnection', () => {
+      this._onDaemonDisconnection('pymobiledevice')
     })
   }
 
-  /**
-   * Hint WebSocket : IP Certifiée reçue du compagnon iOS.
-   */
+  _onDaemonConnection(driver, conn) {
+    const currentSettings = settings.get()
+    const connType = conn.type?.toUpperCase().includes('WIFI') ? 'WIFI' : 'USB'
+    const preferredDriver = connType === 'WIFI' ? currentSettings.wifiDriver : currentSettings.usbDriver
+
+    dbg(`[orchestrator] Tentative de connexion via ${driver} (${connType}) - Préférence: ${preferredDriver}`)
+
+    // Si on a déjà une connexion active, on ne change que si le driver entrant est "mieux" (préféré)
+    // ou si la connexion actuelle est du même type et même driver.
+    if (this.activeConnection) {
+      if (this.activeConnection.driver === preferredDriver && driver !== preferredDriver) {
+        dbg(`[orchestrator] Ignoré: On a déjà une connexion via le driver préféré ${preferredDriver}`)
+        return
+      }
+      // Si on bascule vers un driver préféré
+      if (driver === preferredDriver && this.activeConnection.driver !== preferredDriver) {
+        dbg(`[orchestrator] Basculement vers le driver préféré : ${driver}`)
+      } else if (this.activeConnection.address === conn.address && this.activeConnection.port === conn.port) {
+        return // Même connexion
+      }
+    }
+
+    conn.driver = driver
+    this._handleNewConnection(conn)
+  }
+
+  _onDaemonDisconnection(driver) {
+    if (this.activeConnection && this.activeConnection.driver === driver) {
+      dbg(`[orchestrator] Déconnexion détectée du driver actif : ${driver}`)
+      this._handleDisconnection()
+    }
+  }
+
   handleIphoneIpDetected(ip) {
     dbg(`[orchestrator] Hint WebSocket reçu (${ip}).`)
     this.isCompanionConnected = true
@@ -52,17 +93,18 @@ class ConnectionOrchestrator extends EventEmitter {
   }
 
   _handleNewConnection(conn) {
-    if (this.activeConnection?.address === conn.address && this.activeConnection?.port === conn.port) return
-
     this.activeConnection = conn
-    dbg(`[orchestrator] Connexion active : ${conn.address}:${conn.port} (UDID: ${conn.id.slice(0, 8)})`)
+    const driverName = conn.driver === 'go-ios' ? 'go-ios' : 'PMD3'
+    const typeLabel = conn.type || 'USB'
+    
+    dbg(`[orchestrator] ✅ Connexion active : ${conn.address}:${conn.port} via ${driverName} (${typeLabel})`)
 
-    sendStatus('tunneld', 'ready', `Connecté via USB (go-ios)`, {
-      type: 'USB',
+    sendStatus('tunneld', 'ready', `Connecté via ${typeLabel} (${driverName})`, {
+      type: typeLabel,
+      driver: conn.driver,
       device: conn.deviceInfo || { name: 'iPhone' }
     })
 
-    // On lance le heartbeat si le compagnon est là
     if (this.isCompanionConnected) {
       this._startHeartbeatCycle()
     }
@@ -75,18 +117,17 @@ class ConnectionOrchestrator extends EventEmitter {
     this._stopAllHeartbeats()
     if (!this.activeConnection) return
     
-    dbg(`[orchestrator] Lancement du cycle Heartbeat (API REST)...`)
+    const driver = this.activeConnection.driver
+    dbg(`[orchestrator] Lancement du cycle Heartbeat (${driver})...`)
     
     const hbInterval = setInterval(async () => {
       if (!this.activeConnection) {
         clearInterval(hbInterval)
         return
       }
-
-      // Heartbeat via l'API REST de go-ios
       const result = await gpsBridge.sendCommand('heartbeat')
       if (!result.success) {
-        dbg(`[orchestrator] Heartbeat API échoué`)
+        dbg(`[orchestrator] Heartbeat ${driver} échoué`)
       }
     }, 15000)
 
@@ -107,28 +148,38 @@ class ConnectionOrchestrator extends EventEmitter {
   }
 
   _stopAllHeartbeats() {
-    this.daemon.stopHeartbeats()
+    Object.values(this.daemons).forEach(d => {
+      if (d.stopHeartbeats) d.stopHeartbeats()
+    })
     for (const hb of this.heartbeatRunners.values()) {
       hb.stop()
     }
     this.heartbeatRunners.clear()
   }
 
-  /**
-   * Démarre les services
-   */
   start() {
     if (this._isQuitting) return
-    dbg('[orchestrator] Démarrage des services go-ios...')
+    const s = settings.get()
+    
+    dbg(`[orchestrator] Démarrage des services (USB: ${s.usbDriver}, WiFi: ${s.wifiDriver})...`)
     
     gpsBridge.start()
-    this.daemon.start()
 
-    sendStatus('tunneld', 'scanning', 'Recherche d\'un iPhone via go-ios...')
+    // Démarrer les daemons nécessaires
+    const needed = new Set([s.usbDriver, s.wifiDriver])
+    needed.forEach(driverId => {
+      const daemon = this.daemons[driverId]
+      if (daemon) {
+        dbg(`[orchestrator] Lancement du driver : ${driverId}`)
+        daemon.start()
+      }
+    })
+
+    sendStatus('tunneld', 'scanning', `Recherche iPhone (USB:${s.usbDriver} WiFi:${s.wifiDriver})...`)
   }
 
   stopTunneld() {
-    this.daemon.stop()
+    Object.values(this.daemons).forEach(d => d.stop())
     this._stopAllHeartbeats()
     this.activeConnection = null
   }
@@ -141,20 +192,35 @@ class ConnectionOrchestrator extends EventEmitter {
   // API Publique (Façade)
   getRsdAddress() { return this.activeConnection?.address }
   getRsdPort() { return this.activeConnection?.port }
-  getConnectionType() { return 'USB' }
+  getConnectionType() { return this.activeConnection?.type || 'USB' }
+  getActiveDriver() { return this.activeConnection?.driver }
   getDeviceInfo() { return this.activeConnection?.deviceInfo || { name: 'iPhone', version: 'Inconnue' } }
-  isStarting() { return this.daemon._isStarting }
+  
+  isStarting() { 
+    return Object.values(this.daemons).some(d => d._isStarting || (d.runner && d.runner.isRunning)) 
+  }
   
   forceRefresh() { 
-    dbg('[orchestrator] 🔄 Redémarrage du tunnel go-ios...')
+    dbg('[orchestrator] 🔄 Redémarrage complet des tunnels...')
     this.stopTunneld()
-    this.start() 
+    setTimeout(() => this.start(), 1000)
   }
 
   startTunneld() { this.start() }
-  applyConnectionMode(mode) { dbg(`[orchestrator] Mode demandé : ${mode}`) }
+  
+  applySettings() {
+    dbg('[orchestrator] Application des nouveaux paramètres...')
+    this.forceRefresh()
+  }
+
+  applyConnectionMode(mode) { 
+    // Maintenu pour compatibilité, mais applySettings est préféré
+    this.applySettings()
+  }
+
   setWifiIpOverride(ip) { this.handleIphoneIpDetected(ip) }
   setOnStatusChange(cb) { this._onStatusChangeCb = cb }
 }
 
 module.exports = new ConnectionOrchestrator()
+

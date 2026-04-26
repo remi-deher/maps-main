@@ -1,5 +1,3 @@
-'use strict'
-
 const http = require('http')
 const { EventEmitter } = require('events')
 const { dbg } = require('../../logger')
@@ -7,88 +5,109 @@ const { dbg } = require('../../logger')
 const TUNNEL_INFO_PORT = 28100
 
 /**
- * GpsBridge (go-ios) - Envoie les commandes GPS via l'API REST HTTP de go-ios.
- *
- * Architecture simplifiée :
- *   - Plus de bridge Python, plus de socket TCP, plus de subprocess dvt
- *   - Appel HTTP direct : PUT http://localhost:28100/device/:udid/location
- *   - go-ios gère la connexion au service DVT en interne
- *   - Stable car go-ios maintient la session DVT de façon native
+ * GpsBridge - Orchestre l'injection de position via le driver actif (go-ios ou PMD3).
  */
 class GpsBridge extends EventEmitter {
   constructor() {
     super()
     this.isReady = false
-    this._udid = null
-    dbg('[gps-bridge] Bridge go-ios initialisé')
+    this.pythonProcs = []
+    dbg('[gps-bridge] Bridge multi-driver initialisé')
   }
 
-  /**
-   * Démarre le bridge (no-op pour go-ios, le tunnel est géré par tunneld-service).
-   * Maintenu pour la compatibilité avec l'API appelante.
-   */
   start() {
     this.isReady = true
-    dbg('[gps-bridge] ✅ Bridge go-ios prêt (API REST HTTP)')
+    dbg('[gps-bridge] ✅ Bridge prêt')
     this.emit('ready')
   }
 
   /**
-   * Récupère le UDID de l'appareil connecté depuis l'API go-ios.
+   * Récupère le driver actif et les infos de connexion depuis l'orchestrateur.
    */
-  async _getUdid() {
-    if (this._udid) return this._udid
-
-    return new Promise((resolve) => {
-      const http = require('http')
-      const req = http.get(`http://127.0.0.1:${TUNNEL_INFO_PORT}/tunnels`, { timeout: 2000 }, (res) => {
-        let body = ''
-        res.on('data', (c) => { body += c })
-        res.on('end', () => {
-          try {
-            const tunnels = JSON.parse(body)
-            if (Array.isArray(tunnels) && tunnels.length > 0 && tunnels[0].udid) {
-              this._udid = tunnels[0].udid
-              resolve(this._udid)
-            } else {
-              resolve(null)
-            }
-          } catch (e) { resolve(null) }
-        })
-      })
-      req.on('error', () => resolve(null))
-      req.on('timeout', () => { req.destroy(); resolve(null) })
-    })
+  _getActiveContext() {
+    const orchestrator = require('../../tunneld-manager')
+    return {
+      driver: orchestrator.getActiveDriver(),
+      address: orchestrator.getRsdAddress(),
+      port: orchestrator.getRsdPort(),
+      udid: orchestrator.getDeviceInfo()?.id || orchestrator.activeConnection?.id
+    }
   }
 
-  async sendCommand(action, _rsdHost, _rsdPort, payload = {}) {
+  async sendCommand(action, _host, _port, payload = {}) {
+    const ctx = this._getActiveContext()
+    
+    if (!ctx.driver || !ctx.address) {
+      if (action === 'heartbeat') return { success: false }
+      dbg(`[gps-bridge] ❌ Commande ${action} annulée : Pas de tunnel actif`)
+      return { success: false, error: 'Pas de tunnel actif' }
+    }
+
     if (action === 'set_location') {
-      return this._setLocation(payload.lat, payload.lon)
+      return this._setLocation(ctx, payload.lat, payload.lon)
     }
     if (action === 'clear_location') {
-      return this._clearLocation()
+      return this._clearLocation(ctx)
     }
     if (action === 'heartbeat') {
-      const udid = await this._getUdid()
-      return { success: !!udid }
+      return { success: true } // On a un tunnel actif, donc heartbeat OK
     }
     return { success: false, error: `Action inconnue : ${action}` }
   }
 
-  async _setLocation(lat, lon) {
-    dbg(`[gps-bridge] Tentative d'injection : ${lat}, ${lon}`)
-    const tunnelInfo = await this._getTunnelInfo()
-    if (!tunnelInfo) {
-      dbg('[gps-bridge] ❌ Injection annulée : Tunnel Go-iOS non détecté via API')
-      return { success: false, error: 'Tunnel Go-iOS non détecté' }
-    }
+  async _setLocation(ctx, lat, lon) {
+    dbg(`[gps-bridge] Injection (${ctx.driver}) : ${lat}, ${lon}`)
 
-    const { address, rsdPort } = tunnelInfo
-    
-    if (!this.pythonProcs) this.pythonProcs = []
-    
-    dbg(`[gps-bridge] Injection Cumulative : Python PMD3 sur Tunnel Go (${address}:${rsdPort})`)
-    
+    if (ctx.driver === 'go-ios') {
+      return this._setLocationGoIos(ctx, lat, lon)
+    } else {
+      return this._setLocationPmd3(ctx, lat, lon)
+    }
+  }
+
+  /**
+   * Injection via l'API REST locale de go-ios (très stable)
+   */
+  async _setLocationGoIos(ctx, lat, lon) {
+    return new Promise((resolve) => {
+      const data = JSON.stringify({ lat: parseFloat(lat), lon: parseFloat(lon) })
+      const udid = ctx.udid || 'any'
+      
+      const req = http.request({
+        hostname: '127.0.0.1',
+        port: TUNNEL_INFO_PORT,
+        path: `/device/${udid}/location`,
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'Content-Length': data.length
+        },
+        timeout: 2000
+      }, (res) => {
+        if (res.statusCode === 200) {
+          resolve({ success: true })
+        } else {
+          dbg(`[gps-bridge] ❌ Erreur API go-ios : Status ${res.statusCode}`)
+          // Fallback vers Python si l'API REST échoue ? 
+          // Non, on reste sur le driver choisi par l'utilisateur.
+          resolve({ success: false, error: `HTTP ${res.statusCode}` })
+        }
+      })
+
+      req.on('error', (e) => {
+        dbg(`[gps-bridge] ❌ Erreur injection go-ios REST : ${e.message}`)
+        resolve({ success: false, error: e.message })
+      })
+
+      req.write(data)
+      req.end()
+    })
+  }
+
+  /**
+   * Injection via pymobiledevice3 (DVT)
+   */
+  async _setLocationPmd3(ctx, lat, lon) {
     return new Promise((resolve) => {
       const { PYTHON } = require('../../python-resolver')
       const { spawn } = require('child_process')
@@ -97,201 +116,96 @@ class GpsBridge extends EventEmitter {
       const args = [
         '-m', 'pymobiledevice3', 
         'developer', 'dvt', 'simulate-location', 'set',
-        '--rsd', address, String(rsdPort),
+        '--rsd', ctx.address, String(ctx.port),
         '--',
         String(lat), String(lon)
       ]
 
-      const newProc = spawn(PYTHON, args, {
-        shell: false,
-        cwd: path.dirname(PYTHON)
-      })
-
+      const newProc = spawn(PYTHON, args, { shell: false, cwd: path.dirname(PYTHON) })
       this.pythonProcs.push(newProc)
 
       let resolved = false
+      const done = (success, error) => {
+        if (resolved) return
+        resolved = true
+        resolve({ success, error })
+      }
 
-      newProc.stdout.on('data', (data) => {
-        const msg = data.toString()
-        // dbg(`[python-pmd3-stdout] ${msg.trim()}`) // Décommenter si besoin de debug complet
-        if (msg.toLowerCase().includes('enter')) {
-          if (!resolved) {
-            resolved = true
-            dbg(`[gps-bridge] ✅ Position active (Processus #${this.pythonProcs.length})`)
-            resolve({ success: true })
-          }
-        }
-      })
-
-      newProc.stderr.on('data', (data) => { 
-        const msg = data.toString()
-        // dbg(`[python-pmd3-stderr] ${msg.trim()}`)
-        if (msg.toLowerCase().includes('enter') && !resolved) {
-          resolved = true
-          dbg(`[gps-bridge] ✅ Position active (détecté via stderr)`)
-          resolve({ success: true })
-        }
-        if (msg.includes('Error') || msg.includes('Exception')) {
-          dbg(`[python-pmd3-err] ${msg.trim()}`)
-        }
-      })
-
-      const timer = setTimeout(() => {
-        if (!resolved) {
-          resolved = true
-          dbg('[gps-bridge] ⚠️ Timeout sur l\'injection (aucun message de succès reçu de pymobiledevice3)')
-          resolve({ success: false, error: 'Timeout' })
-        }
-      }, 10000)
+      newProc.stdout.on('data', (d) => { if (d.toString().toLowerCase().includes('enter')) done(true) })
+      newProc.stderr.on('data', (d) => { if (d.toString().toLowerCase().includes('enter')) done(true) })
+      
+      const timer = setTimeout(() => done(false, 'Timeout PMD3'), 5000)
 
       newProc.on('close', (code) => {
-        if (timer) clearTimeout(timer)
-        // Retirer de la liste si le processus s'arrête de lui-même
+        clearTimeout(timer)
         this.pythonProcs = this.pythonProcs.filter(p => p !== newProc)
-        
-        if (!resolved) {
-          resolved = true
-          if (code === 0) {
-            dbg(`[gps-bridge] ✅ Position active (pymobiledevice3 s'est terminé avec succès)`)
-            resolve({ success: true })
-          } else {
-            dbg(`[gps-bridge] ❌ Injection échouée (code ${code})`)
-            resolve({ success: false, error: `Process exited with code ${code}` })
-          }
-        }
+        if (code === 0) done(true)
+        else done(false, `Code ${code}`)
       })
     })
   }
 
-  async _getTunnelInfo() {
-    return new Promise((resolve) => {
-      const http = require('http')
-      const req = http.get(`http://127.0.0.1:${TUNNEL_INFO_PORT}/tunnels`, { timeout: 1500 }, (res) => {
-        let body = ''
-        res.on('data', (c) => { body += c })
-        res.on('end', () => {
-          try {
-            const tunnels = JSON.parse(body)
-            if (Array.isArray(tunnels) && tunnels.length > 0) {
-              const t = tunnels[0]
-              resolve({ udid: t.udid, address: t.address || t.tunnelAddress, rsdPort: t.rsdPort || t.tunnelPort })
-            } else {
-              // dbg('[gps-bridge] API /tunnels retournée vide')
-              resolve(null)
-            }
-          } catch (e) { 
-            dbg(`[gps-bridge] Erreur parsing /tunnels : ${e.message}`)
-            resolve(null) 
-          }
-        })
-      })
-      req.on('error', (e) => {
-        // dbg(`[gps-bridge] Erreur HTTP /tunnels : ${e.message}`)
-        resolve(null)
-      })
-      req.end()
-    })
-  }
-
-  async _mountImage(udid) {
-    dbg('[gps-bridge] Tentative de montage auto de l\'image développeur...')
-    return new Promise((resolve) => {
-      const { GOIOS } = require('../../goios-resolver')
-      const { spawn } = require('child_process')
-      const path = require('path')
-      const proc = spawn(GOIOS, ['image', 'auto', `--udid=${udid}`], { cwd: path.dirname(GOIOS) })
-      proc.on('close', () => resolve())
-    })
-  }
-
-  /**
-   * Joue un fichier GPX pour simuler un itinéraire dynamique.
-   */
   async playGpx(gpxPath) {
-    dbg(`[gps-bridge] Lecture itinéraire : ${gpxPath}`)
-    const tunnelInfo = await this._getTunnelInfo()
-    if (!tunnelInfo) {
-      dbg('[gps-bridge] ❌ Lecture annulée : Tunnel Go-iOS non détecté')
-      return { success: false, error: 'Tunnel Go-iOS non détecté' }
-    }
+    const ctx = this._getActiveContext()
+    dbg(`[gps-bridge] Lecture GPX (${ctx.driver}) : ${gpxPath}`)
 
-    // Arrêter les anciennes simulations (DVT est exclusif)
-    this.stop()
-
-    if (!this.pythonProcs) this.pythonProcs = []
+    this.stop() // Arrête les simulations en cours
 
     return new Promise((resolve) => {
       const { PYTHON } = require('../../python-resolver')
       const { spawn } = require('child_process')
       const path = require('path')
 
+      // Pour l'instant on garde PMD3 pour le GPX car go-ios REST ne supporte peut-être pas encore le play via HTTP de façon standard
       const args = [
         '-m', 'pymobiledevice3', 
         'developer', 'dvt', 'simulate-location', 'play',
-        '--rsd', tunnelInfo.address, String(tunnelInfo.rsdPort),
+        '--rsd', ctx.address, String(ctx.port),
         gpxPath
       ]
 
-      const proc = spawn(PYTHON, args, {
-        shell: false,
-        cwd: path.dirname(PYTHON)
-      })
-
+      const proc = spawn(PYTHON, args, { shell: false, cwd: path.dirname(PYTHON) })
       this.pythonProcs.push(proc)
 
-      proc.stdout.on('data', (data) => {
-        const msg = data.toString()
-        dbg(`[python-pmd3] ${msg.trim()}`)
-      })
-
-      proc.stderr.on('data', (data) => {
-        const msg = data.toString()
-        if (msg.includes('Error')) dbg(`[python-pmd3-err] ${msg.trim()}`)
-      })
-
-      proc.on('close', (code) => {
-        dbg(`[gps-bridge] Fin lecture GPX (code ${code})`)
+      proc.on('close', () => {
         this.pythonProcs = this.pythonProcs.filter(p => p !== proc)
       })
 
-      // On considère que c'est lancé dès que le spawn est OK
       resolve({ success: true })
     })
   }
 
-  async _clearLocation() {
-    const tunnelInfo = await this._getTunnelInfo()
-    if (!tunnelInfo) return { success: true }
-
-    const { PYTHON } = require('../../python-resolver')
-    const { spawn } = require('child_process')
-
-    spawn(PYTHON, [
-        '-m', 'pymobiledevice3', 
-        'developer', 'dvt', 'simulate-location', 'clear',
-        '--rsd', tunnelInfo.address, String(tunnelInfo.rsdPort)
-    ])
+  async _clearLocation(ctx) {
+    if (ctx.driver === 'go-ios') {
+      // DELETE via REST
+      const udid = ctx.udid || 'any'
+      const req = http.request({
+        hostname: '127.0.0.1', port: TUNNEL_INFO_PORT, path: `/device/${udid}/location`, method: 'DELETE'
+      })
+      req.end()
+    } else {
+      const { PYTHON } = require('../../python-resolver')
+      const { spawn } = require('child_process')
+      spawn(PYTHON, [
+        '-m', 'pymobiledevice3', 'developer', 'dvt', 'simulate-location', 'clear',
+        '--rsd', ctx.address, String(ctx.port)
+      ])
+    }
     return { success: true }
   }
 
   stop() {
-    if (this.pythonProcs) {
-      this.pythonProcs.forEach(p => {
-        try { p.kill('SIGKILL') } catch(e) {}
-      })
-      this.pythonProcs = []
-      
-      // Nettoyage agressif sur Windows pour éviter les zombies de l'ancienne session
-      if (process.platform === 'win32') {
-        try {
-          const { execSync } = require('child_process')
-          execSync('powershell "Get-CimInstance Win32_Process -Filter \\"Name = \'python.exe\' AND CommandLine LIKE \'%pymobiledevice3%\'\\" | Stop-Process -Force -ErrorAction SilentlyContinue"', { stdio: 'ignore' })
-        } catch(e) {}
-      }
+    this.pythonProcs.forEach(p => { try { p.kill('SIGKILL') } catch(e) {} })
+    this.pythonProcs = []
+    
+    if (process.platform === 'win32') {
+      try {
+        const { execSync } = require('child_process')
+        execSync('powershell "Stop-Process -Name python -Force -ErrorAction SilentlyContinue"', { stdio: 'ignore' })
+      } catch(e) {}
     }
-    this._udid = null
-    this.isReady = false
   }
 }
 
 module.exports = new GpsBridge()
+

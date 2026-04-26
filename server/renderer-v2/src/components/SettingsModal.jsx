@@ -9,7 +9,10 @@ function SettingsModal({ isOpen, onClose }) {
     companionPort: 8081,
     wifiIp: '',
     wifiPort: 32498,
-    preferredIp: ''
+    preferredIp: '',
+    usbDriver: 'go-ios',
+    wifiDriver: 'pymobiledevice',
+    fallbackEnabled: true
   });
   const [interfaces, setInterfaces] = useState([]);
   const [plistData, setPlistData] = useState({ plists: [], hasSelfIdentity: false });
@@ -138,6 +141,49 @@ function SettingsModal({ isOpen, onClose }) {
                   onChange={(e) => setSettings({...settings, wifiPort: parseInt(e.target.value)})}
                   className="w-full bg-white/5 border border-white/10 rounded-xl p-3 outline-none focus:border-blue-500 transition-colors"
                 />
+              </div>
+            </div>
+          </section>
+
+          {/* Driver Selection */}
+          <section className="space-y-4">
+            <label className="text-sm font-bold text-slate-400 uppercase tracking-wider">Moteurs de connexion (Drivers)</label>
+            <div className="space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <p className="text-xs text-slate-500 px-1">Mode USB</p>
+                  <select 
+                    value={settings.usbDriver}
+                    onChange={(e) => setSettings({...settings, usbDriver: e.target.value})}
+                    className="w-full bg-white/5 border border-white/10 rounded-xl p-3 outline-none focus:border-blue-500 transition-colors text-white appearance-none cursor-pointer"
+                  >
+                    <option value="go-ios" className="bg-slate-900">go-ios (Recommandé)</option>
+                    <option value="pymobiledevice" className="bg-slate-900">pymobiledevice3</option>
+                  </select>
+                </div>
+                <div className="space-y-2">
+                  <p className="text-xs text-slate-500 px-1">Mode WiFi</p>
+                  <select 
+                    value={settings.wifiDriver}
+                    onChange={(e) => setSettings({...settings, wifiDriver: e.target.value})}
+                    className="w-full bg-white/5 border border-white/10 rounded-xl p-3 outline-none focus:border-blue-500 transition-colors text-white appearance-none cursor-pointer"
+                  >
+                    <option value="pymobiledevice" className="bg-slate-900">pymobiledevice3 (Défaut)</option>
+                    <option value="go-ios" className="bg-slate-900">go-ios</option>
+                  </select>
+                </div>
+              </div>
+              <div className="flex items-center gap-3 p-3 bg-white/5 border border-white/10 rounded-xl">
+                <input 
+                  type="checkbox"
+                  checked={settings.fallbackEnabled}
+                  onChange={(e) => setSettings({...settings, fallbackEnabled: e.target.checked})}
+                  className="w-4 h-4 rounded border-white/10 bg-white/5"
+                />
+                <div>
+                  <p className="text-sm font-bold text-white">Activer le basculement automatique</p>
+                  <p className="text-[10px] text-slate-500">Tente l'autre driver si le préféré échoue.</p>
+                </div>
               </div>
             </div>
           </section>

@@ -1,0 +1,26 @@
+{
+  "wifiIp": "",
+  "wifiPort": "",
+  "companionPort": 8080,
+  "connectionMode": "both",
+  "preferredIp": "",
+  "favorites": [
+    {
+      "lat": 35.6768601,
+      "lon": 139.7638947,
+      "name": "Tokyo"
+    }
+  ],
+  "recentHistory": [
+    {
+      "lat": 35.6586784,
+      "lon": 139.6997166,
+      "name": "渋谷エクセルホテル東急"
+    },
+    {
+      "lat": 35.739411,
+      "lon": 139.7666734,
+      "name": "NTTコミュニケーションズ 東京第6データセンター"
+    }
+  ]
+}
