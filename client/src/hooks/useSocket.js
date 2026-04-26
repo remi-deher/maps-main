@@ -17,6 +17,8 @@ export function useSocket(ip, port, isMaintaining) {
   const [deviceInfo, setDeviceInfo]       = useState(null);
   const [connectionType, setConnectionType] = useState(null);
   const [rsdAddress, setRsdAddress]       = useState(null);
+  const [serverState, setServerState] = useState('idle');
+  const [verifiedLocation, setVerifiedLocation] = useState(null);
 
   const ws            = useRef(null);
   const isConnecting  = useRef(false);
@@ -31,6 +33,10 @@ export function useSocket(ip, port, isMaintaining) {
   // --- Couche 4 : ACK serveur ---
   const pendingAck    = useRef(null);
   const pendingAckData = useRef(null);
+
+  // --- Garde anti-boucle restauration ---
+  // Empêche la restauration de se déclencher plusieurs fois par session WS
+  const hasRestoredThisSession = useRef(false);
 
   // ─────────────────────────────────────────
   // Helpers
@@ -61,6 +67,8 @@ export function useSocket(ip, port, isMaintaining) {
   const stop = useCallback((reason = 'Non spécifiée') => {
     clearRetryTimer();
     clearAckTimer();
+    // Réinitialise le garde de restauration pour la prochaine connexion
+    hasRestoredThisSession.current = false;
     if (ws.current) {
       logEvent.add(`Fermeture WS — ${reason}`);
       ws.current.onclose = null; // évite le re-schedule du retry
@@ -74,14 +82,15 @@ export function useSocket(ip, port, isMaintaining) {
   // Couche 2 : Replay des dernières coords
   // ─────────────────────────────────────────
 
-  const replayLastCoords = useCallback(async () => {
+  const replayLastCoords = useCallback(async (force = false) => {
     try {
       const raw = await AsyncStorage.getItem('MOCK_LOCATION');
       if (!raw) return;
       const saved = JSON.parse(raw);
       const age = Date.now() - (saved.savedAt || 0);
       
-      if (age > COORDS_TTL_MS) {
+      // Option C : On ignore le TTL si c'est une restauration forcée (serveur vide)
+      if (!force && age > COORDS_TTL_MS) {
         logEvent.add('Coords expirées (TTL > 30min), pas de replay');
         return;
       }
@@ -89,7 +98,7 @@ export function useSocket(ip, port, isMaintaining) {
       if (ws.current?.readyState === WebSocket.OPEN) {
         const { latitude, longitude, name } = saved;
         ws.current.send(JSON.stringify({ type: 'SET_LOCATION', data: { lat: latitude, lon: longitude, name } }));
-        logEvent.add(`🔄 Replay : ${latitude.toFixed(4)}, ${longitude.toFixed(4)}`);
+        logEvent.add(`🔄 Restauration ${force ? '(Forcée)' : '(Auto)'} : ${latitude.toFixed(4)}, ${longitude.toFixed(4)}`);
       }
     } catch (e) {
       logEvent.add(`Erreur replay : ${e.message}`, 'error');
@@ -124,8 +133,8 @@ export function useSocket(ip, port, isMaintaining) {
         updateStatus('Connecté');
         logEvent.add('WS connecté', 'success');
 
-        // Couche 2 : Replay immédiat
-        await replayLastCoords();
+        // Au démarrage, on demande l'état au serveur
+        ws.current.send(JSON.stringify({ type: 'GET_STATUS' }));
       };
 
       ws.current.onmessage = (e) => {
@@ -139,12 +148,40 @@ export function useSocket(ip, port, isMaintaining) {
             return;
           }
 
+          // STATUS_UPDATE : mise à jour partielle (favoris, historique) — SANS déclencher de restauration
+          if (payload.type === 'STATUS_UPDATE') {
+            if (payload.data.favorites)     setFavorites(payload.data.favorites);
+            if (payload.data.recentHistory) setRecentHistory(payload.data.recentHistory);
+            return;
+          }
+
           if (payload.type === 'STATUS') {
             if (payload.data.favorites)     setFavorites(payload.data.favorites);
             if (payload.data.recentHistory) setRecentHistory(payload.data.recentHistory);
             if (payload.data.deviceInfo)    setDeviceInfo(payload.data.deviceInfo);
             if (payload.data.connectionType) setConnectionType(payload.data.connectionType);
             if (payload.data.rsdAddress)    setRsdAddress(payload.data.rsdAddress);
+            
+            setServerState(payload.data.state);
+            setVerifiedLocation(payload.data.lastVerifiedLocation);
+
+            // Restauration "Option C" :
+            // Conditions strictes pour éviter les fausses détections :
+            // 1. L'état doit être 'ready' (le tunnel est actif mais aucune simulation n'est en cours)
+            // 2. La restauration ne doit se déclencher qu'UNE FOIS par session de connexion
+            if (payload.data.state === 'ready' && !hasRestoredThisSession.current) {
+               hasRestoredThisSession.current = true;
+               logEvent.add("ℹ️ Tunnel prêt, serveur vierge. Restauration automatique...");
+               replayLastCoords(true);
+            } else if (payload.data.state === 'starting' || payload.data.state === 'idle') {
+               logEvent.add(`⏳ Serveur non prêt (${payload.data.state}), attente...`);
+            } else if (['running', 'moving'].includes(payload.data.state)) {
+               // Pour éviter de spammer les logs, on n'affiche ça que si c'est la première fois
+               if (!hasRestoredThisSession.current) {
+                 hasRestoredThisSession.current = true;
+                 logEvent.add(`✅ Simulation déjà active sur le serveur (${payload.data.state})`);
+               }
+            }
           } else if (payload.type === 'LOCATION') {
             const coords = {
               latitude:  payload.data.lat,
@@ -297,6 +334,7 @@ export function useSocket(ip, port, isMaintaining) {
 
     const unsubBus = eventBus.subscribe((ev) => {
       if (ev.type === 'TICK' && isMaintaining) sendHeartbeat();
+      if (ev.type === 'LOG') logEvent.add(ev.message);
     });
 
     const timer = setInterval(() => {
@@ -327,6 +365,22 @@ export function useSocket(ip, port, isMaintaining) {
     return () => stop('Démontage composant');
   }, [stop]);
 
+  const startRoute = useCallback((endLat, endLon, speed = 5) => {
+    sendAction('PLAY_ROUTE', { endLat, endLon, speed });
+  }, [sendAction]);
+
+  const startOsrmRoute = useCallback((endLat, endLon, profile = 'driving', speed = null) => {
+    sendAction('PLAY_OSRM_ROUTE', { endLat, endLon, profile, speed });
+  }, [sendAction]);
+
+  const sendSequence = useCallback((legs) => {
+    sendAction('PLAY_SEQUENCE', { legs });
+  }, [sendAction]);
+
+  const sendCustomGpx = useCallback((gpxContent, speed = null) => {
+    sendAction('PLAY_CUSTOM_GPX', { gpxContent, speed });
+  }, [sendAction]);
+
   return {
     status,
     favorites,
@@ -335,7 +389,15 @@ export function useSocket(ip, port, isMaintaining) {
     deviceInfo,
     connectionType,
     rsdAddress,
+    serverState,
+    isMoving: serverState === 'moving',
+    verifiedLocation,
     sendAction,
+    startRoute,
+    startOsrmRoute,
+    sendSequence,
+    sendCustomGpx,
     connect,
+    stop
   };
 }

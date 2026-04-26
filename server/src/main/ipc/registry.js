@@ -20,6 +20,8 @@ function registerIpcHandlers(tunnel, gps, companion) {
     connectionType: tunnel.getConnectionType()
   }))
 
+  ipcMain.handle('restart-tunnel', () => tunnel.forceRefresh())
+
   ipcMain.handle('get-network-interfaces', () => getNetworkInterfaces())
 
   // ─── GPS Simulation ────────────────────────────────────────────────────────
@@ -40,6 +42,114 @@ function registerIpcHandlers(tunnel, gps, companion) {
     try {
       await gps.clearLocation()
       return { success: true }
+    } catch (e) {
+      return { success: false, error: e.message }
+    }
+  })
+
+  ipcMain.handle('play-route', async (_event, { endLat, endLon, speed }) => {
+    try {
+      const routeGenerator = require('../services/gps/route-generator')
+      const gpsBridge = require('../services/gps/gps-bridge')
+      
+      const start = companion.status.lastVerifiedLocation || companion.status.lastInjectedLocation
+      if (!start) throw new Error('Position de départ inconnue')
+
+      const gpxPath = routeGenerator.generateOrthodromicGpx(
+        { lat: start.lat, lon: start.lon },
+        { lat: endLat, lon: endLon },
+        speed || 5
+      )
+
+      const result = await gpsBridge.playGpx(gpxPath)
+      
+      if (result.success) {
+        companion.status.state = 'moving'
+        companion._broadcast({ type: 'STATUS', data: companion.status })
+      }
+      
+      return result
+    } catch (e) {
+      return { success: false, error: e.message }
+    }
+  })
+
+  ipcMain.handle('dialog:openGpx', async () => {
+    const { dialog } = require('electron')
+    const fs = require('fs').promises
+    const res = await dialog.showOpenDialog({
+      properties: ['openFile'],
+      filters: [{ name: 'GPX', extensions: ['gpx'] }]
+    })
+    
+    if (!res.canceled && res.filePaths.length > 0) {
+      const content = await fs.readFile(res.filePaths[0], 'utf8')
+      return { success: true, content, path: res.filePaths[0] }
+    }
+    return { success: false }
+  })
+
+  ipcMain.handle('play-custom-gpx', async (_event, { gpxContent, speed }) => {
+    try {
+      const routeGenerator = require('../services/gps/route-generator')
+      const gpsBridge = require('../services/gps/gps-bridge')
+      
+      const gpxPath = routeGenerator.processExternalGpx(gpxContent, speed)
+      const result = await gpsBridge.playGpx(gpxPath)
+      
+      if (result.success) {
+        companion.status.state = 'moving'
+        companion._broadcast({ type: 'STATUS', data: companion.status })
+      }
+      
+      return result
+    } catch (e) {
+      return { success: false, error: e.message }
+    }
+  })
+
+  ipcMain.handle('play-osrm-route', async (_event, { endLat, endLon, profile, speed }) => {
+    try {
+      const routeGenerator = require('../services/gps/route-generator')
+      const gpsBridge = require('../services/gps/gps-bridge')
+      
+      const start = companion.status.lastVerifiedLocation || companion.status.lastInjectedLocation
+      if (!start) throw new Error('Position de départ inconnue')
+
+      const gpxPath = await routeGenerator.generateOsrmRoute(
+        { lat: start.lat, lon: start.lon },
+        { lat: endLat, lon: endLon },
+        profile || 'driving',
+        speed
+      )
+
+      const result = await gpsBridge.playGpx(gpxPath)
+      
+      if (result.success) {
+        companion.status.state = 'moving'
+        companion._broadcast({ type: 'STATUS', data: companion.status })
+      }
+      
+      return result
+    } catch (e) {
+      return { success: false, error: e.message }
+    }
+  })
+
+  ipcMain.handle('play-sequence', async (_event, legs) => {
+    try {
+      const routeGenerator = require('../services/gps/route-generator')
+      const gpsBridge = require('../services/gps/gps-bridge')
+      
+      const gpxPath = await routeGenerator.generateMultimodalGpx(legs)
+      const result = await gpsBridge.playGpx(gpxPath)
+      
+      if (result.success) {
+        companion.status.state = 'moving'
+        companion._broadcast({ type: 'STATUS', data: companion.status })
+      }
+      
+      return result
     } catch (e) {
       return { success: false, error: e.message }
     }

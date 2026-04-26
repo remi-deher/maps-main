@@ -44,26 +44,54 @@ if (!TaskManager.isTaskDefined(LOCATION_TASK_NAME)) {
         // 2. Calculer la distance (Détection de dérive)
         const dist = getDistance(currentLoc, mockCoords);
         
-        // 3. Si dérive > 100m, la simulation est probablement tombée
-        // iOS nous renvoie notre vraie position au lieu de la simulée.
-        if (dist > 100) {
-           const configJson = await AsyncStorage.getItem('SERVER_CONFIG');
-           if (configJson) {
-             const { ip, port } = JSON.parse(configJson);
-             
-             // On utilise HTTP POST car le WebSocket est suspendu en arrière-plan
-             fetch(`http://${ip}:${port}/relance`, {
-               method: 'POST',
-               headers: { 'Content-Type': 'application/json' },
-               body: JSON.stringify({
-                 lat: mockCoords.latitude,
-                 lon: mockCoords.longitude,
-                 name: `Relance Auto (Dérive: ${Math.round(dist)}m)`
-               })
-             }).catch(() => {
-               // Erreur réseau (PC éteint ou WiFi coupé), on ignore silencieusement
-             });
+        // 3. Si dérive > 200m, la simulation est probablement tombée
+        // On ajoute un délai de persistance de 5s pour ignorer les micro-coupures de Jitter.
+        if (dist > 200) {
+           const now = Date.now();
+           let firstDriftTime = await AsyncStorage.getItem('FIRST_DRIFT_TIME');
+           
+           if (!firstDriftTime) {
+             firstDriftTime = now.toString();
+             await AsyncStorage.setItem('FIRST_DRIFT_TIME', firstDriftTime);
+             return; // On attend le prochain tick pour confirmer
            }
+
+           // On ne relance que si la dérive persiste depuis plus de 5 secondes
+           if (now - parseInt(firstDriftTime) < 5000) {
+             return;
+           }
+
+           const lastRelance = await AsyncStorage.getItem('LAST_RELANCE_TIME');
+           
+           if (!lastRelance || (now - parseInt(lastRelance)) > 60000) {
+              const configJson = await AsyncStorage.getItem('SERVER_CONFIG');
+              if (configJson) {
+                const { ip, port } = JSON.parse(configJson);
+                
+                await AsyncStorage.setItem('LAST_RELANCE_TIME', now.toString());
+                await AsyncStorage.removeItem('FIRST_DRIFT_TIME');
+                
+                // On envoie la VRAIE position GPS du téléphone (pas la cible simulée).
+                // Le serveur compare cette position réelle à sa cible injectée pour
+                // confirmer que la simulation a bien dérivé.
+                fetch(`http://${ip}:${port}/relance`, {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({
+                    lat: currentLoc.latitude,
+                    lon: currentLoc.longitude,
+                    name: `Relance Auto (Dérive: ${Math.round(dist)}m)`
+                  })
+                }).then(() => {
+                  eventBus.emit({ type: 'LOG', message: `✅ Relance auto envoyée (Dérive: ${Math.round(dist)}m)` });
+                }).catch(() => {
+                  // Erreur réseau
+                });
+              }
+           }
+        } else {
+           // On réinitialise le compteur de dérive si on est revenu à la normale
+           await AsyncStorage.removeItem('FIRST_DRIFT_TIME');
         }
         
         // Informer l'UI si elle est ouverte
@@ -71,7 +99,7 @@ if (!TaskManager.isTaskDefined(LOCATION_TASK_NAME)) {
           type: 'TICK', 
           timestamp: Date.now(), 
           drift: dist,
-          isMocked: dist < 100 
+          isMocked: dist < 200 
         });
 
       } catch (e) {

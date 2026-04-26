@@ -1,6 +1,6 @@
 {
   "name": "gps-mock",
-  "version": "1.0.0",
+  "version": "2.1.0",
   "description": "GPS location spoofer for iPhone via pymobiledevice3",
   "main": "main.js",
   "scripts": {
@@ -30,14 +30,28 @@
       "preload.js",
       "src/**",
       "dist-web/**",
-      "resources/**"
+      "!resources/python",
+      "resources/ios.exe",
+      "resources/wintun.dll",
+      "resources/python/**"
     ],
     "extraResources": [
+      {
+        "from": "resources/ios.exe",
+        "to": "ios.exe"
+      },
+      {
+        "from": "resources/wintun.dll",
+        "to": "wintun.dll"
+      },
       {
         "from": "resources/python",
         "to": "python",
         "filter": [
-          "**/*"
+          "**/*",
+          "!**/__pycache__",
+          "!**/*.pyc",
+          "!**/*.pyo"
         ]
       }
     ]

@@ -8,6 +8,7 @@ const { EventEmitter } = require('events')
 const { dbg, sendStatus } = require('../logger')
 const favoritesManager = require('./favorites-manager')
 const settings = require('./settings-manager')
+const routeGenerator = require('./gps/route-generator')
 
 /**
  * CompanionServer - Gere la communication WebSocket avec l'application iOS
@@ -21,6 +22,7 @@ class CompanionServer extends EventEmitter {
     this.port = null
     this.clients = new Set()
     this.status = {}
+    this.lastDriftRelance = 0 // Cooldown pour éviter les rafales
     
     // Initialisation du statut
     this._refreshStatus()
@@ -28,15 +30,17 @@ class CompanionServer extends EventEmitter {
     // ... (rest of constructor same)
 
     // Ecouter les mises a jour des favoris/historique
+    // On envoie STATUS_UPDATE (pas STATUS complet) pour ne pas déclencher la logique
+    // de restauration "serveur vierge" sur le client.
     favoritesManager.on('favorites-updated', (favs) => {
       this.status.favorites = favs
-      this._broadcast({ type: 'STATUS', data: this.status })
+      this._broadcast({ type: 'STATUS_UPDATE', data: { favorites: favs } })
       this.emit('favorites-updated', favs)
     })
 
     favoritesManager.on('history-updated', (history) => {
       this.status.recentHistory = history
-      this._broadcast({ type: 'STATUS', data: this.status })
+      this._broadcast({ type: 'STATUS_UPDATE', data: { recentHistory: history } })
       this.emit('history-updated', history)
     })
 
@@ -50,17 +54,48 @@ class CompanionServer extends EventEmitter {
   }
 
   _refreshStatus() {
+    const rsdReady = !!this.tunnel?.getRsdAddress();
+    const isStarting = this.tunnel?.isStarting ? this.tunnel.isStarting() : false;
+    const simActive = !!(rsdReady && this.status?.lastVerifiedLocation);
+
+    // Les états manuels ('moving') ne doivent JAMAIS être écrasés par _refreshStatus.
+    // Seuls 'idle', 'ready', 'running', 'starting' sont calculés dynamiquement.
+    const manualStates = ['moving']
+    const currentState = this.status?.state
+    
+    let computedState = 'idle';
+    if (simActive) computedState = 'running';
+    else if (rsdReady) computedState = 'ready';
+    else if (isStarting) computedState = 'starting';
+    
+    // Préserver l'état manuel sauf si le tunnel n'est plus actif
+    const finalState = (manualStates.includes(currentState) && rsdReady)
+      ? currentState
+      : computedState;
+    
     this.status = {
-      tunnelActive: !!this.tunnel?.getRsdAddress(),
+      state: finalState,
+      tunnelActive: rsdReady,
       rsdAddress: this.tunnel?.getRsdAddress() || null,
       rsdPort: this.tunnel?.getRsdPort() || null,
       connectionType: this.tunnel?.getConnectionType() || null,
       deviceInfo: this.tunnel?.getDeviceInfo() || null,
       maintainActive: this.status?.maintainActive || false,
       lastHeartbeat: this.status?.lastHeartbeat || null,
+      lastInjectedLocation: this.status?.lastInjectedLocation || null,
+      lastVerifiedLocation: this.status?.lastVerifiedLocation || null,
       favorites: favoritesManager.getFavorites(),
       recentHistory: favoritesManager.getHistory()
     }
+  }
+
+  /**
+   * Appelé par le GpsSimulator pour confirmer que la position est bien injectée sur l'iPhone
+   */
+  confirmLocationApplied(lat, lon, name) {
+    this.status.lastVerifiedLocation = { lat, lon, name, timestamp: Date.now() };
+    this._refreshStatus();
+    this._broadcast({ type: 'STATUS', data: this.status });
   }
 
   /**
@@ -90,9 +125,47 @@ class CompanionServer extends EventEmitter {
               const payload = JSON.parse(body)
               const { lat, lon, name } = payload
               if (lat !== undefined && lon !== undefined) {
-                dbg(`[companion-server] ⚠️ DÉRIVE DÉTECTÉE sur l'iPhone (${lat}, ${lon}). Relance automatique...`)
-                sendStatus('companion', 'info', `Secours : Simulation relancée (${name || 'Background'})`)
-                this.emit('request-location', { lat, lon, name })
+                const now = Date.now()
+                // Cooldown de 45s : après une injection réussie, l'iPhone mettra du
+                // temps à rapporter à nouveau sa vraie position GPS. Sans ce délai long,
+                // chaque rapport de position réelle (loin de la cible) déclencherait
+                // une relance infinie.
+                if (now - this.lastDriftRelance < 45000) {
+                  dbg(`[companion-server] ⏳ Dérive ignorée (cooldown 45s actif)`)
+                  res.writeHead(200)
+                  res.end()
+                  return
+                }
+
+                // Vérifier si la dérive concerne bien la position ACTUELLE
+                // Si le rapport de position est très proche de la cible injectée (<100m),
+                // c'est que l'injection a réussi — pas de relance nécessaire.
+                const target = this.status?.lastInjectedLocation
+                if (target) {
+                  const dLat = Math.abs(target.lat - lat)
+                  const dLon = Math.abs(target.lon - lon)
+                  if (dLat < 0.001 && dLon < 0.001) {
+                    dbg(`[companion-server] ✅ Position proche de la cible, injection confirmée`)
+                    res.writeHead(200)
+                    res.end()
+                    return
+                  }
+                }
+
+                this.lastDriftRelance = now
+
+                // Ignorer la dérive si le tunnel est en train de monter ou vient juste d'être prêt
+                // On laisse 15s au système pour ré-injecter la position après un tunnel ready.
+                if (this.status.state === 'starting' || this.status.state === 'ready') {
+                  dbg(`[companion-server] ⏳ Dérive ignorée (Tunnel en phase d'initialisation: ${this.status.state})`)
+                  res.writeHead(200)
+                  res.end()
+                  return
+                }
+
+                dbg(`[companion-server] ⚠️ DÉRIVE DÉTECTÉE sur l'iPhone (${lat}, ${lon}). Relance forcée...`)
+                sendStatus('companion', 'info', `Secours : Simulation forcée (Dérive détectée)`)
+                this.emit('request-location', { lat, lon, name, force: true })
                 res.writeHead(200, { 'Content-Type': 'application/json' })
                 res.end(JSON.stringify({ success: true }))
                 return
@@ -136,10 +209,11 @@ class CompanionServer extends EventEmitter {
           try {
             const payload = JSON.parse(message)
             if (payload && payload.type) {
+              dbg(`[IN]  <- iPhone: ${payload.type}${payload.type === 'HEARTBEAT' ? '' : ' ' + JSON.stringify(payload.data || {})}`)
               this._handleMessage(ws, payload)
             }
           } catch (e) {
-            dbg(`[companion-server] Erreur message: ${e.message}`)
+            dbg(`[ERR] Erreur message: ${e.message}`)
           }
         })
 
@@ -196,19 +270,122 @@ class CompanionServer extends EventEmitter {
         }
         this.status.lastHeartbeat = Date.now()
         this._updateFrontend()
-        ws.send(JSON.stringify({ type: 'PONG', timestamp: Date.now() }))
+        const pong = JSON.stringify({ type: 'PONG', timestamp: Date.now() })
+        ws.send(pong)
         break
       }
       
       case 'SET_LOCATION': {
         const { lat, lon, name } = payload.data || {}
         if (lat !== undefined && lon !== undefined) {
-          dbg(`[companion-server] iPhone demande position: ${lat}, ${lon} (${name || 'sans nom'})`)
+          // Anti-rafale : ignorer les positions identiques envoyees en <3s
+          const now = Date.now()
+          const last = this._lastSetTs || {}
+          const key = `${lat.toFixed(4)},${lon.toFixed(4)}`
+          if (this._lastSetKey === key && now - (last[key] || 0) < 3000) {
+            const ack = JSON.stringify({ type: 'ACK', data: { lat, lon, timestamp: now } })
+            ws.send(ack)
+            break
+          }
+          this._lastSetKey = key
+          if (!this._lastSetTs) this._lastSetTs = {}
+          this._lastSetTs[key] = now
+
+          dbg(`[CMD] iPhone demande position: ${lat}, ${lon} (${name || 'sans nom'})`)
+          this.status.lastInjectedLocation = { lat, lon, name }
+          this._refreshStatus()
           this.emit('request-location', { lat, lon, name })
           if (name) favoritesManager.addToHistory({ lat, lon, name })
           
-          // Couche 4 : Envoyer l'Accusé de Réception (ACK) au client
-          ws.send(JSON.stringify({ type: 'ACK', data: { lat, lon, timestamp: Date.now() } }))
+          const ack = JSON.stringify({ type: 'ACK', data: { lat, lon, timestamp: Date.now() } })
+          dbg(`[OUT] -> iPhone: ACK`)
+          ws.send(ack)
+        }
+        break
+      }
+
+      case 'PLAY_ROUTE': {
+        const { endLat, endLon, speed } = payload.data || {}
+        if (endLat !== undefined && endLon !== undefined) {
+          const start = this.status.lastVerifiedLocation || this.status.lastInjectedLocation
+          if (!start) {
+            dbg(`[companion-server] ❌ PLAY_ROUTE annulé : Point de départ inconnu`)
+            break
+          }
+          
+          dbg(`[CMD] iPhone demande navigation vers: ${endLat}, ${endLon} à ${speed} km/h`)
+          const gpxPath = routeGenerator.generateOrthodromicGpx(
+            { lat: start.lat, lon: start.lon },
+            { lat: endLat, lon: endLon },
+            speed || 5
+          )
+          
+          const gpsBridge = require('./gps/gps-bridge')
+          gpsBridge.playGpx(gpxPath)
+          
+          this.status.state = 'moving'
+          this._broadcast({ type: 'STATUS', data: this.status })
+        }
+        break
+      }
+
+      case 'PLAY_SEQUENCE': {
+        const { legs } = payload.data || {}
+        if (legs && legs.length > 0) {
+          dbg(`[CMD] iPhone envoie une séquence multimodale (${legs.length} étapes)`)
+          routeGenerator.generateMultimodalGpx(legs).then(gpxPath => {
+            const gpsBridge = require('./gps/gps-bridge')
+            gpsBridge.playGpx(gpxPath)
+            this.status.state = 'moving'
+            this._broadcast({ type: 'STATUS', data: this.status })
+          }).catch(err => {
+            dbg(`[companion-server] ❌ Erreur generateMultimodalGpx: ${err.message}`)
+          })
+        }
+        break
+      }
+
+      case 'PLAY_OSRM_ROUTE': {
+        const { endLat, endLon, profile, speed } = payload.data || {}
+        if (endLat !== undefined && endLon !== undefined) {
+          const start = this.status.lastVerifiedLocation || this.status.lastInjectedLocation
+          if (!start) break
+          
+          dbg(`[CMD] iPhone demande itinéraire OSRM (${profile}) vers: ${endLat}, ${endLon}`)
+          
+          // On ne bloque pas le WS (c'est asynchrone)
+          routeGenerator.generateOsrmRoute(
+            { lat: start.lat, lon: start.lon },
+            { lat: endLat, lon: endLon },
+            profile || 'driving',
+            speed
+          ).then(gpxPath => {
+            const gpsBridge = require('./gps/gps-bridge')
+            gpsBridge.playGpx(gpxPath)
+            this.status.state = 'moving'
+            this._broadcast({ type: 'STATUS', data: this.status })
+          }).catch(err => {
+            dbg(`[companion-server] ❌ Erreur generateOsrmRoute: ${err.message}`)
+          })
+        }
+        break
+      }
+
+      case 'PLAY_CUSTOM_GPX': {
+        const { gpxContent, speed } = payload.data || {}
+        if (gpxContent) {
+          try {
+            dbg(`[CMD] iPhone envoie un GPX personnalisé (vitesse override: ${speed || 'non'})`)
+            const gpxPath = routeGenerator.processExternalGpx(gpxContent, speed)
+            
+            const gpsBridge = require('./gps/gps-bridge')
+            gpsBridge.playGpx(gpxPath)
+            
+            this.status.state = 'moving'
+            this._broadcast({ type: 'STATUS', data: this.status })
+          } catch (e) {
+            dbg(`[companion-server] ❌ Erreur PLAY_CUSTOM_GPX: ${e.message}`)
+          }
         }
         break
       }
@@ -237,6 +414,12 @@ class CompanionServer extends EventEmitter {
         this.emit('client-log', payload.data)
         break
       }
+
+      case 'GET_STATUS': {
+        this._refreshStatus()
+        ws.send(JSON.stringify({ type: 'STATUS', data: this.status }))
+        break
+      }
     }
   }
 
@@ -261,6 +444,9 @@ class CompanionServer extends EventEmitter {
   _broadcast(data) {
     if (!this.wss) return
     const message = JSON.stringify(data)
+    if (data.type !== 'STATUS' || this.clients.size > 0) {
+        dbg(`[OUT] -> iPhone: ${data.type}`)
+    }
     for (const client of this.clients) {
       if (client.readyState === 1) { // WebSocket.OPEN
         client.send(message)

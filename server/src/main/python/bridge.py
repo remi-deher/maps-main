@@ -13,6 +13,7 @@ class PymobiledeviceBridge:
         self.current_process = None
         self.current_params = None
         self.output_task = None
+        self.lock = asyncio.Lock()
 
     def _clean_host(self, host):
         if not host: return host
@@ -26,6 +27,9 @@ class PymobiledeviceBridge:
                 if not line: break
                 msg = line.decode().strip()
                 if msg:
+                    # On ignore les erreurs de connexion reset qui polluent les logs lors du kill
+                    if "10054" in msg or "ConnectionResetError" in msg:
+                        continue
                     logger.info(f"[{prefix}] {msg}")
         except asyncio.CancelledError:
             pass
@@ -68,73 +72,106 @@ class PymobiledeviceBridge:
 
         await self.stop_current_sim()
 
-        logger.info(f"Relancement simulation: {lat}, {lon} sur {host}:{port}")
+        # Retry avec backoff exponentiel (WinError 121 peut arriver sur la premiere tentative)
+        retry_delays = [0, 3, 6]  # Delais en secondes avant chaque tentative
+        last_error = "Echec inconnu"
         
-        cmd = [
-            sys.executable, "-m", "pymobiledevice3", 
-            "developer", "dvt", "simulate-location", "set", 
-            "--rsd", host, str(port), 
-            "--", # Indique la fin des options pour gérer les nombres négatifs
-            str(lat), str(lon)
-        ]
-
-        try:
-            self.current_process = await asyncio.create_subprocess_exec(
-                *cmd,
-                stdin=asyncio.subprocess.PIPE,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-                creationflags=0x08000000 if os.name == 'nt' else 0
-            )
+        for attempt, delay in enumerate(retry_delays):
+            if delay > 0:
+                logger.info(f"Tentative {attempt+1}/3 dans {delay}s...")
+                await asyncio.sleep(delay)
             
-            # Lancer le logging en arrière-plan
-            self.output_task = asyncio.gather(
-                self._log_output("CLI-OUT", self.current_process.stdout),
-                self._log_output("CLI-ERR", self.current_process.stderr)
-            )
+            logger.info(f"Lancement simulation (tentative {attempt+1}/3): {lat}, {lon} sur {host}:{port}")
+            
+            cmd = [
+                sys.executable, "-m", "pymobiledevice3", 
+                "developer", "dvt", "simulate-location", "set", 
+                "--rsd", host, str(port), 
+                "--",
+                str(lat), str(lon)
+            ]
 
-            # --- AMÉLIORATION : Attendre de voir si le CLI arrive à se connecter ---
-            # On attend 3s. Si le process meurt durant ce laps de temps, c'est un échec de connexion.
-            for _ in range(15): # 15 x 200ms = 3s
-                await asyncio.sleep(0.2)
-                if self.current_process.returncode is not None:
-                    return {"success": False, "error": "L'iPhone a refuse la connexion (RSD/DVT error)"}
+            try:
+                self.current_process = await asyncio.create_subprocess_exec(
+                    *cmd,
+                    stdin=asyncio.subprocess.PIPE,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE,
+                    creationflags=0x08000000 if os.name == 'nt' else 0
+                )
+                
+                self.output_task = asyncio.gather(
+                    self._log_output("CLI-OUT", self.current_process.stdout),
+                    self._log_output("CLI-ERR", self.current_process.stderr)
+                )
 
-            self.current_params = new_params
-            return {"success": True}
-        except Exception as e:
-            logger.error(f"Erreur lors du lancement CLI: {e}")
-            return {"success": False, "error": str(e)}
+                # Attente 3s pour detecter les echecs rapides de connexion
+                for _ in range(15):  # 15 x 200ms = 3s
+                    await asyncio.sleep(0.2)
+                    if self.current_process.returncode is not None:
+                        break
+                
+                if self.current_process.returncode is None:
+                    # Le processus tourne encore apres 3s : connexion reussie
+                    self.current_params = new_params
+                    # Monitor en arriere-plan pour invalider les params si le CLI meurt
+                    asyncio.ensure_future(self._watch_and_reset(new_params))
+                    return {"success": True}
+                else:
+                    last_error = f"CLI mort rapidement (code {self.current_process.returncode}) - tentative {attempt+1}"
+                    logger.warning(last_error)
+                    self.current_process = None
+                    
+            except Exception as e:
+                last_error = str(e)
+                logger.error(f"Exception tentative {attempt+1}: {e}")
+        
+        self.current_params = None
+        return {"success": False, "error": f"Echec apres 3 tentatives: {last_error}"}
+
+    async def _watch_and_reset(self, expected_params):
+        """Surveille le processus en arriere-plan. Si le CLI meurt par erreur, invalide les params."""
+        proc = self.current_process
+        if not proc:
+            return
+        try:
+            await asyncio.wait_for(proc.wait(), timeout=90.0)
+            if proc.returncode != 0 and self.current_params == expected_params:
+                logger.warning(f"CLI mort en arriere-plan (code {proc.returncode}). Params invalides.")
+                self.current_params = None
+        except asyncio.TimeoutError:
+            pass  # Le processus tourne depuis 90s, tout va bien
 
     async def handle_command(self, reader, writer):
-        try:
-            line = await reader.read(4096)
-            if not line: return
-            
-            request = json.loads(line.decode())
-            action = request.get('action')
-            host = self._clean_host(request.get('rsd_host'))
-            port = request.get('rsd_port')
-            
-            if action == 'set_location':
-                lat, lon = float(request.get('lat')), float(request.get('lon'))
-                response = await self.set_location(host, port, lat, lon)
-            elif action == 'clear_location':
-                await self.stop_current_sim()
-                response = {"success": True}
-            elif action == 'heartbeat':
-                status = "alive" if self.current_process and self.current_process.returncode is None else "idle"
-                response = {"success": True, "status": status}
-            else:
-                response = {"success": False, "error": "Action inconnue"}
+        async with self.lock:
+            try:
+                line = await reader.read(4096)
+                if not line: return
+                
+                request = json.loads(line.decode())
+                action = request.get('action')
+                host = self._clean_host(request.get('rsd_host'))
+                port = request.get('rsd_port')
+                
+                if action == 'set_location':
+                    lat, lon = float(request.get('lat')), float(request.get('lon'))
+                    response = await self.set_location(host, port, lat, lon)
+                elif action == 'clear_location':
+                    await self.stop_current_sim()
+                    response = {"success": True}
+                elif action == 'heartbeat':
+                    status = "alive" if self.current_process and self.current_process.returncode is None else "idle"
+                    response = {"success": True, "status": status}
+                else:
+                    response = {"success": False, "error": "Action inconnue"}
 
-            writer.write(json.dumps(response).encode())
-            await writer.drain()
-        except Exception as e:
-            logger.error(f"Erreur handler: {e}")
-        finally:
-            writer.close()
-            await writer.wait_closed()
+                writer.write(json.dumps(response).encode())
+                await writer.drain()
+            except Exception as e:
+                logger.error(f"Erreur handler: {e}")
+            finally:
+                writer.close()
+                await writer.wait_closed()
 
 async def main():
     bridge = PymobiledeviceBridge()

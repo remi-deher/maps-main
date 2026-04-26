@@ -1,194 +1,203 @@
 'use strict'
 
 const { EventEmitter } = require('events')
+const http = require('http')
+const path = require('path')
 const { dbg, sendStatus } = require('../logger')
-const { PYTHON } = require('../python-resolver')
-const { TUNNEL_RESTART_DELAY } = require('../constants')
+const { GOIOS } = require('../goios-resolver')
 const ProcessRunner = require('../utils/process-runner')
-const nativeBonjour = require('./native-bonjour')
+
+const TUNNEL_INFO_PORT = 28100  // Port HTTP local exposé par go-ios
+const POLL_INTERVAL_MS = 2000   // Interroge l'API go-ios toutes les 2s
 
 /**
- * TunneldService - Gere le demon pymobiledevice3 remote tunneld
+ * TunneldService (go-ios) - Gere le daemon "ios tunnel start"
+ *
+ * Architecture :
+ *   - "ios tunnel start" tourne en arrière-plan et crée le tunnel RSD
+ *   - go-ios expose une API HTTP locale sur le port 28100
+ *   - On interroge cette API toutes les Xs pour récupérer l'adresse RSD
+ *   - Une fois l'adresse trouvée, on émet 'connection' et on arrête le polling
+ *   - On garde le polling pour détecter les déconnexions
  */
 class TunneldService extends EventEmitter {
   constructor() {
     super()
     this.runner = new ProcessRunner('tunneld')
-    this.heartbeatRunners = new Map()
-    this.restartTimer = null
-    this.fallbackTimer = null
     this.activeConnection = null
-    this.deviceInfo = { name: 'iPhone', version: 'Inconnue', type: 'Inconnu', paired: false, ip: null }
+    this.deviceInfo = { name: 'iPhone', version: 'Inconnue', type: 'USB', paired: true, ip: null }
     this._isQuitting = false
-    dbg('[tunneld-service] Initialise - v2.0.1 (No-Brackets)')
+    this._pollTimer = null
+    this._restartTimer = null
+    this._isStarting = false
+    dbg('[tunneld-service] Initialise - go-ios v1.0.211')
 
-    this.runner.on('stdout', (text) => this._handleData(text))
-    this.runner.on('stderr', (text) => this._handleData(text))
+    this.runner.on('stdout', (text) => this._handleOutput(text))
+    this.runner.on('stderr', (text) => this._handleOutput(text))
     this.runner.on('exit', ({ code, signal }) => {
-      if (this._isQuitting || this.restartTimer) return
-      dbg(`[tunneld] Demon tunnel arrete (code ${code}, signal ${signal})`)
-      this.emit('disconnection', 'Demon tunnel arrete')
-      this._scheduleRestart(TUNNEL_RESTART_DELAY)
-    })
-  }
-
-  async start(manualIp = null) {
-    if (this._isQuitting) return
-    
-    // Mise à jour de l'IP manuelle (transite des états) sans tuer le processus
-    this._manualIp = manualIp
-
-    if (this.runner.isRunning) {
-      if (manualIp && !this.activeConnection) {
-        dbg(`[tunneld-service] IP WebSocket reçue (${manualIp}) pendant que le démon tourne. Tentative de fallback...`)
-        this._triggerNativeFallback(manualIp)
-      }
-      return
-    }
-
-    if (this._isStarting) return
-    this._isStarting = true
-
-    try {
-      dbg(`[tunneld-service] lancement du demon tunneld (Base Daemon)...`)
-      dbg(`[DEBUG MANUEL] Commande à tester : .\\resources\\python\\python.exe -m pymobiledevice3 remote tunneld`)
-      sendStatus('tunneld', 'starting', 'Initialisation du demon tunnel...')
-
-      // Lancement du processus de base (Priorité 4 / USB / Passive Discovery)
-      this.runner.spawn(PYTHON, ['-m', 'pymobiledevice3', 'remote', 'tunneld'])
-
-      if (this.fallbackTimer) clearTimeout(this.fallbackTimer)
-
-      if (manualIp) {
-        // Priorité 2 : Si IP déjà là au démarrage, on tente le fallback immédiat
-        this._triggerNativeFallback(manualIp)
-      } else {
-        // Priorité 3 : Attente standard avant fallback Bonjour automatique
-        this.fallbackTimer = setTimeout(() => this._triggerNativeFallback(null), 10000)
-      }
-    } finally {
-      setTimeout(() => { this._isStarting = false }, 2000)
-    }
-  }
-
-  _handleData(text) {
-    if (!text) return
-
-    const matchId = text.match(/ID:([\w:.]+)/)
-    const matchVer = text.match(/VERSION:([\d.]+)/)
-    const matchType = text.match(/TYPE:([^ >]+)/)
-    const matchPaired = text.match(/PAIRED:(\w+)/)
-
-    if (matchId || matchVer || matchType || matchPaired) {
-      if (matchId) this.deviceInfo.ip = matchId[1]
-      if (matchVer) this.deviceInfo.version = matchVer[1]
-      if (matchType) this.deviceInfo.type = matchType[1].replace(/[,>]$/, '')
-      if (matchPaired) this.deviceInfo.paired = matchPaired[1].toLowerCase().includes('true')
-      this.emit('device-info-updated', this.deviceInfo)
-    }
-
-    const matchRsd = text.match(/--rsd\s+([\w:.%]+)\s+(\d+)/)
-    if (matchRsd) {
-      const address = matchRsd[1]
-      const port = matchRsd[2]
-
-      const matchIdTask = text.match(/\[start-tunnel-task-usbmux-(.+)-([^-]+)\]/)
-      const deviceId = matchIdTask ? matchIdTask[1] : 'native'
-      const typeRaw = matchIdTask ? matchIdTask[2] : ''
-      const isUSB = typeRaw.toLowerCase().includes('usb')
-      const type = isUSB ? 'USB' : 'WiFi'
-
-      if (this.fallbackTimer) { clearTimeout(this.fallbackTimer); this.fallbackTimer = null }
-      if (this.activeConnection && this.activeConnection.address === address && this.activeConnection.port === port) return
-
-      dbg(`[tunneld] Connexion detectee : ${type} (${address}:${port})`)
-      // Le heartbeat est maintenant géré par l'orchestrateur via l'IP WebSocket
-      // this._startRsdHeartbeat(address, port, deviceId)
-
-      this.activeConnection = { address, port, type, id: deviceId }
-      this.emit('connection', this.activeConnection)
-      
-      sendStatus('tunneld', 'ready', `Tunnel actif (${type}) -> ${address}:${port}`, { 
-        type, 
-        device: this.deviceInfo 
-      })
-    }
-
-    if (text.includes('Disconnected from tunnel') || text.includes('Tunnel task failed')) {
-      dbg(`[tunneld-service] Deconnexion detectee : ${text}`)
-      this._stopAllHeartbeats()
+      if (this._isQuitting || this._isStarting) return
+      dbg(`[tunneld] Processus arrete (code ${code}, signal ${signal}). Relance dans 5s...`)
+      this._stopPolling()
       this.activeConnection = null
-      this.emit('disconnection', text)
+      this.emit('disconnection', 'Processus tunnel arrete')
+      this._scheduleRestart(5000)
+    })
+  }
+
+  start() {
+    if (this._isQuitting) return
+    if (this._restartTimer) { clearTimeout(this._restartTimer); this._restartTimer = null }
+    if (this.runner.isRunning || this._isStarting) return
+
+    this._isStarting = true
+    dbg('[tunneld-service] Lancement de ios tunnel start...')
+    sendStatus('tunneld', 'starting', 'Initialisation du tunnel go-ios...')
+
+    // On ne redémarre plus Bonjour automatiquement ici car cela provoque des micro-coupures WiFi
+    // qui déclenchent des boucles de reconnexion infinies.
+
+    const goIosDir = path.dirname(GOIOS)
+    this.runner.options.cwd = goIosDir
+
+    // Lancer le tunnel sans variables d'environnement restrictives pour tester la stabilité brute
+    this.runner.spawn(GOIOS, ['tunnel', 'start', `--tunnel-info-port=${TUNNEL_INFO_PORT}`])
+
+    // Début du polling API après 2s (laisser le processus démarrer)
+    setTimeout(() => {
+      this._isStarting = false
+      this._startPolling()
+    }, 2000)
+  }
+
+  _handleOutput(text) {
+    if (!text || !text.trim()) return
+    
+    // Ignorer les messages d'événement go-ios qui polluent la console
+    if (text.includes('"msg":"event: 0"')) return
+
+    dbg(`[tunneld] ${text.trim()}`)
+  }
+
+  /**
+   * Interroge l'API HTTP locale de go-ios pour connaître l'état du tunnel.
+   * Endpoint : GET http://localhost:28100/
+   * Réponse JSON : [{ udid, tunnelAddress, tunnelPort, userspace }]
+   */
+  _startPolling() {
+    if (this._pollTimer) return
+    dbg('[tunneld-service] Polling API go-ios démarré...')
+    this._pollTimer = setInterval(() => this._pollTunnelApi(), POLL_INTERVAL_MS)
+    this._pollTunnelApi() // Première vérification immédiate
+  }
+
+  _stopPolling() {
+    if (this._pollTimer) {
+      clearInterval(this._pollTimer)
+      this._pollTimer = null
     }
   }
 
-  _startRsdHeartbeat(address, port, udid) {
-    const key = `${address}:${port}`
-    if (this.heartbeatRunners.has(key)) return
-    
-    dbg(`[tunneld-service] Battement de coeur (RSD) sur ${key}...`)
-    
-    // IMPORT : Sur Windows, l'IPv6 Link-Local avec Scope ID (%xx) ne doit PAS avoir de crochets 
-    // si l'hôte et le port sont passés en arguments séparés, sinon pymobiledevice3/python crashe.
-    // Mais il DOIT avoir le Scope ID pour être joignable par l'OS.
-    const args = ['-m', 'pymobiledevice3', 'lockdown', 'heartbeat', '--rsd', address, port]
+  _pollTunnelApi() {
+    // On n'utilise plus que /tunnels qui est l'endpoint valide
+    this._fetchFromApi('/tunnels')
+  }
 
-    const hbRunner = new ProcessRunner(`hb-${udid.slice(0,8)}`)
-    hbRunner.on('stdout', (t) => this._handleData(t))
-    hbRunner.spawn(PYTHON, args)
-    this.heartbeatRunners.set(key, hbRunner)
+  _fetchFromApi(path) {
+    const req = http.get(`http://127.0.0.1:${TUNNEL_INFO_PORT}${path}`, { timeout: 1500 }, (res) => {
+      let body = ''
+      res.on('data', (chunk) => { body += chunk })
+      res.on('end', () => {
+        try {
+          if (body && body !== '[]') {
+            // dbg(`[tunneld-service] API ${path} brute : ${body}`)
+          }
+          
+          if (!body || body === '[]') return
 
-    hbRunner.on('exit', () => {
-      if (this.heartbeatRunners.get(key) === hbRunner) {
-        this.heartbeatRunners.delete(key)
+          const tunnels = JSON.parse(body)
+          if (Array.isArray(tunnels) && tunnels.length > 0) {
+            this._handleTunnelList(tunnels)
+          }
+        } catch (e) { 
+           dbg(`[tunneld-service] Erreur parsing API ${path} : ${e.message} (Body: ${body})`)
+        }
+      })
+    })
+    req.on('error', (e) => {
+      if (e.code === 'ECONNREFUSED') {
+        // Silencieux pour ne pas polluer si l'API n'est pas encore montée
+      } else {
+        dbg(`[tunneld-service] Erreur HTTP API : ${e.message}`)
       }
     })
+    req.on('timeout', () => {
+      dbg(`[tunneld-service] Timeout API sur port ${TUNNEL_INFO_PORT}`)
+      req.destroy()
+    })
+  }
+
+  _handleTunnelList(tunnels) {
+    // Prend le premier tunnel disponible
+    const tunnel = tunnels[0]
+    const address = tunnel.tunnelAddress || tunnel.address
+    const port = String(tunnel.tunnelPort || tunnel.rsdPort || tunnel.port)
+    const udid = tunnel.udid || 'unknown'
+
+    if (!address || !port) return
+
+    // Pas de changement → on ne ré-émet pas
+    if (this.activeConnection?.address === address && this.activeConnection?.port === port) return
+
+    // Récupérer les infos du device via go-ios si possible
+    this._fetchDeviceInfo(udid)
+
+    const conn = { address, port, type: 'USB', id: udid, deviceInfo: this.deviceInfo }
+    this.activeConnection = conn
+
+    dbg(`[tunneld] ✅ Tunnel actif : ${address}:${port} (UDID: ${udid.slice(0, 8)}...)`)
+    sendStatus('tunneld', 'ready', `Tunnel go-ios actif → ${address}:${port}`, {
+      type: 'USB',
+      device: this.deviceInfo
+    })
+
+    this.emit('connection', conn)
+  }
+
+  _fetchDeviceInfo(udid) {
+    // Appel non-bloquant pour récupérer les infos du device
+    const req = http.get(`http://127.0.0.1:${TUNNEL_INFO_PORT}/device/${udid}/info`, { timeout: 2000 }, (res) => {
+      let body = ''
+      res.on('data', (c) => { body += c })
+      res.on('end', () => {
+        try {
+          const info = JSON.parse(body)
+          if (info.DeviceName) this.deviceInfo.name = info.DeviceName
+          if (info.ProductVersion) this.deviceInfo.version = info.ProductVersion
+          if (info.ProductType) this.deviceInfo.type = info.ProductType
+          this.deviceInfo.paired = true
+          this.emit('device-info-updated', this.deviceInfo)
+        } catch (e) { /* ignore */ }
+      })
+    })
+    req.on('error', () => {})
+    req.on('timeout', () => req.destroy())
   }
 
   stop() {
+    this._stopPolling()
+    if (this._restartTimer) { clearTimeout(this._restartTimer); this._restartTimer = null }
     this.runner.stop()
-    this._stopAllHeartbeats()
-    if (this.fallbackTimer) clearTimeout(this.fallbackTimer)
-    if (this.restartTimer) clearTimeout(this.restartTimer)
     this.activeConnection = null
   }
 
-  stopHeartbeats() { this._stopAllHeartbeats() }
+  stopHeartbeats() { /* go-ios gère ça en interne */ }
   destroy() { this._isQuitting = true; this.stop() }
 
-  _stopAllHeartbeats() {
-    for (const [key, runner] of this.heartbeatRunners) {
-      runner.stop()
-    }
-    this.heartbeatRunners.clear()
-  }
-
-  async _triggerNativeFallback(manualIp = null) {
-    if (this._isQuitting || this.activeConnection) return
-    let targetData = null
-    if (manualIp) {
-      dbg(`[tunneld-service] Tentative prioritaire sur l'IP detectee (WebSocket) : ${manualIp}...`)
-      targetData = await nativeBonjour.resolve({ name: 'Manual', address: manualIp })
-    }
-    if (!targetData) {
-      dbg('[tunneld-service] Recherche d\'appareils via Bonjour Natif (dns-sd)...')
-      const instances = await nativeBonjour.scan(4000)
-      if (instances.length > 0) {
-        targetData = await nativeBonjour.resolve(instances[0])
-      }
-    }
-    if (targetData && !this.activeConnection) {
-      this._handleData(`--rsd ${targetData.address} ${targetData.port} [start-tunnel-task-usbmux-native-WiFi]`)
-    } else if (!this.activeConnection) {
-      this._scheduleRestart(5000)
-    }
-  }
-
   _scheduleRestart(delay) {
-    if (this.restartTimer) return
-    this.restartTimer = setTimeout(() => {
-      this.restartTimer = null
-      this.start(this._manualIp)
+    if (this._restartTimer || this._isQuitting) return
+    this._restartTimer = setTimeout(() => {
+      this._restartTimer = null
+      this.start()
     }, delay)
   }
 }

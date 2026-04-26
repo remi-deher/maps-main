@@ -14,33 +14,65 @@ let companion
 let tray
 let isQuitting = false
 
+let firstHide = true
+
 function createTray() {
-  // On peut utiliser une icône vide ou un symbole en attendant l'icône finale
-  const iconPath = path.join(__dirname, '..', '..', 'resources', 'icon.png')
+  const iconPath = path.join(app.getAppPath(), 'resources', 'icon.png')
   let icon = nativeImage.createFromPath(iconPath)
   
   if (icon.isEmpty()) {
-    // Fallback: petite icône de remplacement (point bleu) si l'icône n'est pas trouvée
+    dbg(`[tray] ⚠️ Icône non trouvée à : ${iconPath}`)
     icon = nativeImage.createEmpty()
+  } else {
+    dbg(`[tray] Icône chargée : ${iconPath}`)
   }
 
-  tray = new Tray(icon)
+  tray = new Tray(icon.resize({ width: 16, height: 16 }))
   const contextMenu = Menu.buildFromTemplate([
-    { label: 'Ouvrir GPS Mock', click: () => mainWindow.show() },
+    { 
+      label: '📍 GPS Mock — Actif', 
+      enabled: false 
+    },
     { type: 'separator' },
-    { label: 'Quitter', click: () => {
+    { label: 'Ouvrir l\'interface', click: () => {
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          mainWindow.show()
+          mainWindow.focus()
+        }
+    } },
+    { label: 'Cacher', click: () => {
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          mainWindow.hide()
+        }
+    } },
+    { type: 'separator' },
+    { label: 'Quitter l\'application', click: () => {
         isQuitting = true
         app.quit()
       } 
     }
   ])
 
-  tray.setToolTip('GPS Mock — iPhone Location Spoofer')
+  tray.setToolTip('GPS Mock — iPhone Location Spoofer (Actif en arrière-plan)')
   tray.setContextMenu(contextMenu)
   
   tray.on('double-click', () => {
-    mainWindow.show()
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.show()
+      mainWindow.focus()
+    }
   })
+}
+
+function showTrayNotification() {
+  if (firstHide && tray) {
+    tray.displayBalloon({
+      title: 'GPS Mock tourne en arrière-plan',
+      content: 'L\'application reste active pour maintenir la simulation GPS. Utilisez l\'icône dans la barre des tâches pour l\'ouvrir à nouveau.',
+      iconType: 'info'
+    })
+    firstHide = false
+  }
 }
 
 function createWindow() {
@@ -60,6 +92,7 @@ function createWindow() {
     if (!isQuitting) {
       event.preventDefault()
       mainWindow.hide()
+      showTrayNotification()
       return false
     }
   })
@@ -92,9 +125,6 @@ app.whenReady().then(() => {
   // Enregistre les handlers IPC
   registerIpcHandlers(tunnel, gps, companion)
   
-  // Liaison Tunnel -> GPS pour la restauration automatique
-  tunnel.setOnTunnelRestored(() => gps.onTunnelRestored())
-  
   const initialSettings = require('./services/settings-manager').get()
   
   // Appliquer les réglages initiaux (IP Wifi, etc.)
@@ -104,12 +134,21 @@ app.whenReady().then(() => {
   tunnel.setOnStatusChange((active) => companion.updateTunnelStatus(active))
 
   gps.on('location-changed', ({ lat, lon, name }) => {
-    tunnel.stopHeartbeats() 
     companion.broadcastLocation(lat, lon, name)
+    companion.confirmLocationApplied(lat, lon, name)
   })
 
   gps.on('log', (msg) => {
     if (mainWindow) mainWindow.webContents.send('status-update', { service: 'server-log', state: 'new', data: msg })
+  })
+
+  // --- AUTOMATISATION : Re-appliquer la position dès que le tunnel est prêt ---
+  tunnel.on('ready', (conn) => {
+    if (gps.lastCoords) {
+      const { lat, lon, name } = gps.lastCoords
+      dbg(`[window] 🔄 Tunnel prêt (${conn.type}). Ré-application automatique de la position en attente : ${lat}, ${lon}`)
+      gps.setLocation(lat, lon, name)
+    }
   })
 
   companion.on('request-location', ({ lat, lon, name }) => {
@@ -123,8 +162,20 @@ app.whenReady().then(() => {
     }
   })
 
+  let ipDetectTimer = null
   companion.on('iphone-ip-detected', (ip) => {
+    if (ipDetectTimer) clearTimeout(ipDetectTimer)
+    
+    dbg(`[window] 📱 iPhone détecté (${ip}). Mise à jour IP compagnon.`)
     tunnel.setWifiIpOverride(ip)
+    
+    // Pas de forceRefresh ici.
+    // Le tunnel go-ios est déjà en cours d'exécution et scanne le device USB
+    // de façon autonome. Un restart forcé à ce moment-là tuerait le processus
+    // pendant sa phase de détection et créerait une boucle d'instabilité.
+    // Si le tunnel est mort, c'est le watchdog interne (tunneld-service) qui
+    // le relancera, pas nous.
+    ipDetectTimer = null
   })
 
   companion.on('favorites-updated', (favs) => {
@@ -146,6 +197,7 @@ app.whenReady().then(() => {
 
 app.on('before-quit', () => {
   isQuitting = true
+  if (tray) tray.destroy()
   tunnel.setQuitting()
 })
 

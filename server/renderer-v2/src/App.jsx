@@ -50,8 +50,14 @@ function App() {
 
   useEffect(() => {
     window.gps.getStatus().then(data => {
-      if (data.tunnelReady) {
-        setStatus({ state: 'ready', message: 'iPhone connecté', type: data.connectionType, device: data.deviceInfo });
+      if (data.tunnelActive) {
+        setStatus({ 
+          state: data.state, 
+          message: data.state === 'running' ? 'Simulation active' : 'iPhone prêt', 
+          type: data.connectionType, 
+          device: data.deviceInfo,
+          verified: data.state === 'running'
+        });
       }
     });
 
@@ -59,22 +65,26 @@ function App() {
       const timestamp = new Date().toLocaleTimeString();
 
       if (data.service === 'tunneld') {
+        const isVerified = data.state === 'running';
         setStatus(prev => ({ 
           ...prev, 
           state: data.state, 
-          message: data.message, 
+          message: data.state === 'running' ? 'Simulation active' : (data.state === 'ready' ? 'iPhone prêt' : data.message), 
           type: data.type || prev.type,
-          device: data.device || prev.device
+          device: data.device || prev.device,
+          verified: isVerified
         }));
         setServerLogs(prev => [{ timestamp, message: `[TNL] ${data.message}`, type: data.state }, ...prev].slice(0, 500));
       } else if (data.service === 'client-log') {
-        setClientLogs(prev => [data.data, ...prev].slice(0, 500));
+        const enrichedLog = { ...data.data, timestamp };
+        setClientLogs(prev => [enrichedLog, ...prev].slice(0, 500));
       } else if (data.service === 'server-log') {
         setServerLogs(prev => [{ timestamp, message: data.data, type: 'info' }, ...prev].slice(0, 500));
       } else if (data.service === 'location') {
-        // Synchronisation du marqueur quand l'iPhone change la position
         const { lat, lon, name } = data.data;
         setActiveSim({ lat, lon, name });
+        // Quand on reçoit une position via LOCATION, c'est qu'elle est en cours d'application
+        setStatus(prev => ({ ...prev, verified: true, state: 'running', message: 'Simulation active' }));
       }
     });
 
@@ -102,6 +112,34 @@ function App() {
     }
   };
 
+  const playRoute = async (lat, lon) => {
+    const endLat = lat || selectedPos?.lat;
+    const endLon = lon || selectedPos?.lon;
+    if (!endLat || !endLon) return;
+    
+    const speed = parseFloat(prompt("Vitesse (km/h) :", "5")) || 5;
+    const res = await window.gps.playRoute({ endLat, endLon, speed });
+    if (res.success) {
+      setActiveSim({ lat: endLat, lon: endLon, name: "Navigation..." });
+      setSelectedPos(null);
+    }
+  };
+
+  const playOsrmRoute = async (lat, lon, profile = 'driving') => {
+    const endLat = lat || selectedPos?.lat;
+    const endLon = lon || selectedPos?.lon;
+    if (!endLat || !endLon) return;
+    
+    const speedStr = profile === 'driving' ? "" : (profile === 'walking' ? "5" : "20");
+    const speed = parseFloat(prompt(`Vitesse (km/h) [Profil: ${profile}] :`, speedStr)) || null;
+    
+    const res = await window.gps.playOsrmRoute({ endLat, endLon, profile, speed });
+    if (res.success) {
+      setActiveSim({ lat: endLat, lon: endLon, name: `Navigation (${profile})...` });
+      setSelectedPos(null);
+    }
+  };
+
   const resetLocation = async () => {
     await window.gps.clearLocation();
     setSelectedPos(null);
@@ -119,7 +157,7 @@ function App() {
       
       {/* Background Map */}
       <div className="absolute inset-0 z-0" tabIndex="-1" style={{ pointerEvents: 'auto' }}>
-        <MapView onMapClick={handleMapClick} selectedPos={selectedPos || activeSim} />
+        <MapView onMapClick={handleMapClick} selectedPos={selectedPos || activeSim} onPlayRoute={playRoute} onPlayOsrmRoute={playOsrmRoute} />
       </div>
 
       {/* Sidebar, Settings, etc. */}
@@ -129,8 +167,13 @@ function App() {
             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setSidebarOpen(false)} className="absolute inset-0 bg-black/40 backdrop-blur-sm z-[60]" />
             <motion.div initial={{ x: -400 }} animate={{ x: 0 }} exit={{ x: -400 }} className="absolute top-0 left-0 bottom-0 w-96 glass-dark z-[70] shadow-2xl p-6 flex flex-col">
               <div className="flex items-center justify-between mb-8">
-                <h2 className="text-2xl font-bold bg-gradient-to-r from-blue-400 to-emerald-400 bg-clip-text text-transparent">Global Mock</h2>
-                <button onClick={() => setSidebarOpen(false)} className="p-2 hover:bg-white/10 rounded-xl transition-colors"><X className="w-6 h-6" /></button>
+                <h2 className="text-2xl font-black bg-gradient-to-r from-blue-400 via-indigo-400 to-emerald-400 bg-clip-text text-transparent tracking-tight">GPS Mock</h2>
+                <button 
+                  onClick={() => setSidebarOpen(false)} 
+                  className="p-2 hover:bg-white/10 rounded-xl transition-all hover:rotate-90 active:scale-90"
+                >
+                  <X className="w-6 h-6 text-slate-400" />
+                </button>
               </div>
               <div className="flex-1 overflow-y-auto space-y-8 pr-2 custom-scrollbar">
                 {/* DEVICE INFO SECTION */}
@@ -138,21 +181,34 @@ function App() {
                   <div className="flex items-center gap-2 text-sm font-semibold text-slate-400 mb-3 px-2">
                     <Monitor className="w-4 h-4 text-emerald-400" /> <span>APPAREIL</span>
                   </div>
-                  <div className="mx-2 p-4 rounded-2xl bg-white/5 border border-white/5 space-y-3">
-                    <div className="flex justify-between items-center">
-                      <span className="text-xs text-slate-500 uppercase tracking-wider">Modèle</span>
-                      <span className="text-sm font-bold text-white">{status.device?.type || 'iPhone'}</span>
+                  <div className="mx-2 p-5 rounded-2xl bg-gradient-to-br from-white/10 to-white/5 border border-white/10 shadow-xl space-y-4">
+                    <div className="flex justify-between items-center group">
+                      <span className="text-[10px] text-slate-500 uppercase font-black tracking-widest">Modèle</span>
+                      <span className="text-sm font-bold text-white group-hover:text-blue-400 transition-colors">{status.device?.type || 'iPhone'}</span>
                     </div>
-                    <div className="flex justify-between items-center">
-                      <span className="text-xs text-slate-500 uppercase tracking-wider">IP / RSD</span>
+                    <div className="flex justify-between items-center group">
+                      <span className="text-[10px] text-slate-500 uppercase font-black tracking-widest">Version iOS</span>
+                      <span className="text-sm font-mono text-slate-300">{status.device?.version || 'Detecting...'}</span>
+                    </div>
+                    <div className="flex justify-between items-center group">
+                      <span className="text-[10px] text-slate-500 uppercase font-black tracking-widest">IP / RSD</span>
                       <span className="text-sm font-mono text-blue-300">{status.type === 'USB' ? 'USB Native' : (status.device?.ip || '192.168.x.x')}</span>
                     </div>
-                    <div className="flex justify-between items-center pt-2 border-t border-white/5">
-                      <span className="text-xs text-slate-500 uppercase tracking-wider">Connexion</span>
-                      <span className="text-xs font-bold text-emerald-400 flex items-center gap-1">
-                        <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" /> {status.type || 'Attente...'}
+                    <div className="flex justify-between items-center pt-3 border-t border-white/10">
+                      <span className="text-[10px] text-slate-500 uppercase font-black tracking-widest">Connexion</span>
+                      <span className={`text-xs font-black flex items-center gap-2 px-2 py-1 rounded-full ${status.type ? 'bg-emerald-500/10 text-emerald-400' : 'bg-amber-500/10 text-amber-400'}`}>
+                        <div className={`w-2 h-2 rounded-full ${status.type ? 'bg-emerald-500 animate-pulse' : 'bg-amber-500'} shadow-[0_0_8px_rgba(16,185,129,0.5)]`} /> 
+                        {status.type || 'Scanning...'}
                       </span>
                     </div>
+                    
+                    <button 
+                      onClick={() => window.gps.restartTunnel()} 
+                      className="w-full mt-2 py-2 px-4 rounded-xl bg-blue-600/10 hover:bg-blue-600/20 text-blue-400 text-[10px] font-black uppercase tracking-widest transition-all flex items-center justify-center gap-2 border border-blue-500/20 group"
+                    >
+                      <RotateCcw className="w-3.5 h-3.5 group-hover:rotate-180 transition-transform duration-500" />
+                      Redémarrer Tunnel & Bonjour
+                    </button>
                   </div>
                 </section>
                 {/* FAVORIS SECTION */}
@@ -217,14 +273,41 @@ function App() {
                   </button>
                 </section>
               </div>
-              <div className="mt-auto pt-6 border-t border-white/5 flex gap-2">
-                <button onClick={() => {setSettingsOpen(true); setSidebarOpen(false);}} className="flex-1 h-12 glass hover:bg-white/10 rounded-xl font-medium transition-colors flex items-center justify-center gap-2">
-                  <Settings className="w-5 h-5" /> <span className="text-sm">Réglages</span>
+              <div className="mt-auto pt-6 border-t border-white/10 flex gap-3">
+                <button 
+                  onClick={() => {setSettingsOpen(true); setSidebarOpen(false);}} 
+                  className="flex-1 h-12 glass-deeper hover:bg-white/10 rounded-xl font-bold transition-all flex items-center justify-center gap-2 hover:scale-[1.02] active:scale-95 text-slate-300 hover:text-white"
+                >
+                  <Settings className="w-5 h-5" /> <span className="text-xs uppercase tracking-widest">Réglages</span>
                 </button>
-                <button onClick={() => {setQrOpen(true); setSidebarOpen(false);}} className="flex-1 h-12 glass hover:bg-white/10 rounded-xl font-medium transition-colors flex items-center justify-center gap-2">
-                  <QrCode className="w-5 h-5" /> <span className="text-sm">QR Code</span>
+                <button 
+                  onClick={() => {setQrOpen(true); setSidebarOpen(false);}} 
+                  className="flex-1 h-12 glass-deeper hover:bg-white/10 rounded-xl font-bold transition-all flex items-center justify-center gap-2 hover:scale-[1.02] active:scale-95 text-slate-300 hover:text-white"
+                >
+                  <QrCode className="w-5 h-5" /> <span className="text-xs uppercase tracking-widest">QR Code</span>
                 </button>
               </div>
+              <button 
+                onClick={async () => {
+                  const res = await window.gps.openGpxDialog();
+                  if (res.success) {
+                    const speed = parseFloat(prompt("Vitesse (km/h) - Laissez vide pour vitesse réelle :", ""));
+                    await window.gps.playCustomGpx({ gpxContent: res.content, speed: isNaN(speed) ? null : speed });
+                    setSidebarOpen(false);
+                  }
+                }} 
+                className="w-full mt-4 h-12 bg-emerald-600/20 hover:bg-emerald-600/40 text-emerald-400 rounded-xl font-bold transition-all flex items-center justify-center gap-2 border border-emerald-500/20"
+              >
+                📁 Lancer GPX local
+              </button>
+              <button 
+                onClick={() => {
+                  alert("Le séquenceur multimodal sur PC sera disponible dans une prochaine mise à jour. Utilisez l'iPhone pour planifier vos étapes complexes.");
+                }} 
+                className="w-full mt-2 h-12 bg-indigo-600/20 hover:bg-indigo-600/40 text-indigo-400 rounded-xl font-bold transition-all flex items-center justify-center gap-2 border border-indigo-500/20"
+              >
+                ✈️ Séquenceur Voyage
+              </button>
             </motion.div>
           </>
         )}
@@ -254,7 +337,9 @@ function App() {
                 <Star className="w-5 h-5" fill={isFavorite(selectedPos.lat, selectedPos.lon) ? "currentColor" : "none"} />
               </button>
               <button onClick={resetLocation} className="p-3 glass hover:bg-white/10 rounded-2xl transition-colors text-slate-400"><RotateCcw className="w-5 h-5" /></button>
-              <button onClick={teleport} className="bg-blue-600 hover:bg-blue-500 text-white px-6 py-3 rounded-2xl font-bold flex items-center gap-2 transition-all active:scale-95 shadow-lg shadow-blue-900/20"><Navigation className="w-5 h-5" /> Allez ici</button>
+              <button onClick={() => playOsrmRoute(null, null, 'driving')} className="bg-indigo-600 hover:bg-indigo-500 text-white px-5 py-3 rounded-2xl font-bold flex items-center gap-2 transition-all active:scale-95 shadow-lg shadow-indigo-900/20"><Navigation className="w-5 h-5" /> Conduire</button>
+              <button onClick={() => playRoute()} className="bg-emerald-600 hover:bg-emerald-500 text-white px-5 py-3 rounded-2xl font-bold flex items-center gap-2 transition-all active:scale-95 shadow-lg shadow-emerald-900/20"><Navigation className="w-5 h-5" /> Marcher</button>
+              <button onClick={teleport} className="bg-blue-600 hover:bg-blue-500 text-white px-6 py-3 rounded-2xl font-bold flex items-center gap-2 transition-all active:scale-95 shadow-lg shadow-blue-900/20"><MapPin className="w-5 h-5" /> Allez ici</button>
             </div>
           </motion.div>
         )}
@@ -262,9 +347,12 @@ function App() {
 
       {/* Status Pill (Bottom) */}
       <div className="absolute bottom-8 right-8 z-50">
-        <motion.div initial={{ x: 20, opacity: 0 }} animate={{ x: 0, opacity: 1 }} className={`flex items-center gap-4 px-6 py-3 rounded-2xl glass-dark border-l-4 ${status.state === 'ready' ? 'border-l-emerald-500' : 'border-l-blue-500'} shadow-xl`}>
-          <div className={`w-3 h-3 rounded-full ${status.state === 'ready' ? 'bg-emerald-500' : 'bg-blue-500 animate-pulse'}`} />
-          <p className="font-bold text-sm leading-none">{status.message}</p>
+        <motion.div initial={{ x: 20, opacity: 0 }} animate={{ x: 0, opacity: 1 }} className={`flex items-center gap-4 px-6 py-3 rounded-2xl glass-dark border-l-4 ${status.verified ? 'border-l-emerald-500 bg-emerald-500/10' : (status.state === 'ready' ? 'border-l-blue-500' : 'border-l-slate-500')} shadow-xl`}>
+          <div className={`w-3 h-3 rounded-full ${status.verified ? 'bg-emerald-500' : (status.state === 'ready' ? 'bg-blue-500 animate-pulse' : 'bg-slate-500')}`} />
+          <p className="font-bold text-sm leading-none flex items-center gap-2">
+            {status.message}
+            {status.verified && <span className="text-emerald-400">✅</span>}
+          </p>
         </motion.div>
       </div>
 
@@ -282,7 +370,7 @@ function App() {
           }}
           onClick={handleContainerClick}
         >
-          <Monitor className="w-6 h-6 text-blue-300 cursor-pointer" onClick={(e) => { e.stopPropagation(); setSidebarOpen(true); }} />
+          <Monitor className={`w-6 h-6 cursor-pointer transition-all hover:scale-110 active:scale-90 ${sidebarOpen ? 'text-blue-400' : 'text-blue-300/60'}`} onClick={(e) => { e.stopPropagation(); setSidebarOpen(!sidebarOpen); }} />
           <div className="relative flex-1 flex items-center h-full">
             <Search className="w-5 h-5 text-slate-300 absolute left-0 pointer-events-none" />
             <input 
@@ -303,9 +391,15 @@ function App() {
               }}
             />
           </div>
-          <div className="flex items-center gap-2">
-            <Terminal className="w-6 h-6 text-blue-400 cursor-pointer hover:text-blue-300 transition-colors" onClick={(e) => { e.stopPropagation(); setLogsOpen(true); }} />
-            <QrCode className="w-6 h-6 text-slate-300 cursor-pointer hover:text-white transition-colors" onClick={(e) => { e.stopPropagation(); setQrOpen(true); }} />
+          <div className="flex items-center gap-3">
+            <Terminal 
+              className={`w-6 h-6 cursor-pointer transition-all hover:scale-110 active:scale-90 ${logsOpen ? 'text-blue-400' : 'text-blue-300/40'}`} 
+              onClick={(e) => { e.stopPropagation(); setLogsOpen(!logsOpen); }} 
+            />
+            <QrCode 
+              className={`w-6 h-6 cursor-pointer transition-all hover:scale-110 active:scale-90 ${qrOpen ? 'text-white' : 'text-slate-300/40'}`} 
+              onClick={(e) => { e.stopPropagation(); setQrOpen(!qrOpen); }} 
+            />
           </div>
         </div>
 
