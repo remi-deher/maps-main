@@ -14,7 +14,7 @@ let DefaultIcon = L.icon({
 });
 L.Marker.prototype.options.icon = DefaultIcon;
 
-function MapView({ onMapClick, selectedPos }) {
+function MapView({ onMapClick, selectedPos, onPlayRoute }) {
   const mapRef = useRef(null);
   const mapInstance = useRef(null);
   const markerInstance = useRef(null);
@@ -47,6 +47,25 @@ function MapView({ onMapClick, selectedPos }) {
       
       if (!markerInstance.current) {
         markerInstance.current = L.marker([lat, lon], { draggable: true }).addTo(mapInstance.current);
+        
+        // Popup avec bouton de navigation
+        const popupContent = document.createElement('div');
+        popupContent.innerHTML = `
+          <div style="padding: 8px; text-align: center;">
+            <button id="nav-here-btn" style="background: #6366f1; color: white; border: none; padding: 8px 12px; borderRadius: 8px; cursor: pointer; font-weight: bold;">
+              🚀 Naviguer jusqu'ici
+            </button>
+          </div>
+        `;
+        
+        markerInstance.current.bindPopup(popupContent);
+        markerInstance.current.on('popupopen', () => {
+          document.getElementById('nav-here-btn').onclick = () => {
+            onPlayRoute(lat, lon);
+            markerInstance.current.closePopup();
+          };
+        });
+
         markerInstance.current.on('dragend', (e) => {
           const p = e.target.getLatLng();
           onMapClick(p.lat, p.lng);

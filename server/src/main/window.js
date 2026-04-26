@@ -170,8 +170,13 @@ app.whenReady().then(() => {
     tunnel.setWifiIpOverride(ip)
     
     ipDetectTimer = setTimeout(() => {
-      dbg(`[window] 📱 Connexion stable. Rafraîchissement du tunnel Go-iOS...`)
-      tunnel.forceRefresh()
+      // Éviter de relancer si le tunnel est déjà en train de monter ou prêt
+      if (tunnel.isStarting() || !!tunnel.getRsdAddress()) {
+        dbg(`[window] 📱 Connexion déjà en cours ou prête. Pas de relance nécessaire.`)
+      } else {
+        dbg(`[window] 📱 Connexion stable. Rafraîchissement du tunnel Go-iOS...`)
+        tunnel.forceRefresh()
+      }
       ipDetectTimer = null
     }, 3000)
   })

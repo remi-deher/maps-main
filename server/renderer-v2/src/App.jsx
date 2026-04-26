@@ -112,6 +112,19 @@ function App() {
     }
   };
 
+  const playRoute = async (lat, lon) => {
+    const endLat = lat || selectedPos?.lat;
+    const endLon = lon || selectedPos?.lon;
+    if (!endLat || !endLon) return;
+    
+    const speed = parseFloat(prompt("Vitesse (km/h) :", "5")) || 5;
+    const res = await window.gps.playRoute({ endLat, endLon, speed });
+    if (res.success) {
+      setActiveSim({ lat: endLat, lon: endLon, name: "Navigation..." });
+      setSelectedPos(null);
+    }
+  };
+
   const resetLocation = async () => {
     await window.gps.clearLocation();
     setSelectedPos(null);
@@ -129,7 +142,7 @@ function App() {
       
       {/* Background Map */}
       <div className="absolute inset-0 z-0" tabIndex="-1" style={{ pointerEvents: 'auto' }}>
-        <MapView onMapClick={handleMapClick} selectedPos={selectedPos || activeSim} />
+        <MapView onMapClick={handleMapClick} selectedPos={selectedPos || activeSim} onPlayRoute={playRoute} />
       </div>
 
       {/* Sidebar, Settings, etc. */}
@@ -288,7 +301,8 @@ function App() {
                 <Star className="w-5 h-5" fill={isFavorite(selectedPos.lat, selectedPos.lon) ? "currentColor" : "none"} />
               </button>
               <button onClick={resetLocation} className="p-3 glass hover:bg-white/10 rounded-2xl transition-colors text-slate-400"><RotateCcw className="w-5 h-5" /></button>
-              <button onClick={teleport} className="bg-blue-600 hover:bg-blue-500 text-white px-6 py-3 rounded-2xl font-bold flex items-center gap-2 transition-all active:scale-95 shadow-lg shadow-blue-900/20"><Navigation className="w-5 h-5" /> Allez ici</button>
+              <button onClick={() => playRoute()} className="bg-emerald-600 hover:bg-emerald-500 text-white px-5 py-3 rounded-2xl font-bold flex items-center gap-2 transition-all active:scale-95 shadow-lg shadow-emerald-900/20"><Navigation className="w-5 h-5" /> Marcher</button>
+              <button onClick={teleport} className="bg-blue-600 hover:bg-blue-500 text-white px-6 py-3 rounded-2xl font-bold flex items-center gap-2 transition-all active:scale-95 shadow-lg shadow-blue-900/20"><MapPin className="w-5 h-5" /> Allez ici</button>
             </div>
           </motion.div>
         )}

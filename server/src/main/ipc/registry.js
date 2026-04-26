@@ -47,6 +47,33 @@ function registerIpcHandlers(tunnel, gps, companion) {
     }
   })
 
+  ipcMain.handle('play-route', async (_event, { endLat, endLon, speed }) => {
+    try {
+      const routeGenerator = require('../services/gps/route-generator')
+      const gpsBridge = require('../services/gps/gps-bridge')
+      
+      const start = companion.status.lastVerifiedLocation || companion.status.lastInjectedLocation
+      if (!start) throw new Error('Position de départ inconnue')
+
+      const gpxPath = routeGenerator.generateOrthodromicGpx(
+        { lat: start.lat, lon: start.lon },
+        { lat: endLat, lon: endLon },
+        speed || 5
+      )
+
+      const result = await gpsBridge.playGpx(gpxPath)
+      
+      if (result.success) {
+        companion.status.state = 'moving'
+        companion._broadcast({ type: 'STATUS', data: companion.status })
+      }
+      
+      return result
+    } catch (e) {
+      return { success: false, error: e.message }
+    }
+  })
+
   // ─── Settings ──────────────────────────────────────────────────────────────
   
   ipcMain.handle('get-settings', () => settings.get())

@@ -8,6 +8,7 @@ const { EventEmitter } = require('events')
 const { dbg, sendStatus } = require('../logger')
 const favoritesManager = require('./favorites-manager')
 const settings = require('./settings-manager')
+const routeGenerator = require('./gps/route-generator')
 
 /**
  * CompanionServer - Gere la communication WebSocket avec l'application iOS
@@ -134,6 +135,16 @@ class CompanionServer extends EventEmitter {
                 }
 
                 this.lastDriftRelance = now
+
+                // Ignorer la dérive si le tunnel est en train de monter ou vient juste d'être prêt
+                // On laisse 15s au système pour ré-injecter la position après un tunnel ready.
+                if (this.status.state === 'starting' || this.status.state === 'ready') {
+                  dbg(`[companion-server] ⏳ Dérive ignorée (Tunnel en phase d'initialisation: ${this.status.state})`)
+                  res.writeHead(200)
+                  res.end()
+                  return
+                }
+
                 dbg(`[companion-server] ⚠️ DÉRIVE DÉTECTÉE sur l'iPhone (${lat}, ${lon}). Relance forcée...`)
                 sendStatus('companion', 'info', `Secours : Simulation forcée (Dérive détectée)`)
                 this.emit('request-location', { lat, lon, name, force: true })
@@ -271,6 +282,31 @@ class CompanionServer extends EventEmitter {
           const ack = JSON.stringify({ type: 'ACK', data: { lat, lon, timestamp: Date.now() } })
           dbg(`[OUT] -> iPhone: ACK`)
           ws.send(ack)
+        }
+        break
+      }
+
+      case 'PLAY_ROUTE': {
+        const { endLat, endLon, speed } = payload.data || {}
+        if (endLat !== undefined && endLon !== undefined) {
+          const start = this.status.lastVerifiedLocation || this.status.lastInjectedLocation
+          if (!start) {
+            dbg(`[companion-server] ❌ PLAY_ROUTE annulé : Point de départ inconnu`)
+            break
+          }
+          
+          dbg(`[CMD] iPhone demande navigation vers: ${endLat}, ${endLon} à ${speed} km/h`)
+          const gpxPath = routeGenerator.generateOrthodromicGpx(
+            { lat: start.lat, lon: start.lon },
+            { lat: endLat, lon: endLon },
+            speed || 5
+          )
+          
+          const gpsBridge = require('./gps/gps-bridge')
+          gpsBridge.playGpx(gpxPath)
+          
+          this.status.state = 'moving'
+          this._broadcast({ type: 'STATUS', data: this.status })
         }
         break
       }

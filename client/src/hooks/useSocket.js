@@ -343,6 +343,10 @@ export function useSocket(ip, port, isMaintaining) {
     return () => stop('Démontage composant');
   }, [stop]);
 
+  const startRoute = useCallback((endLat, endLon, speed = 5) => {
+    sendAction('PLAY_ROUTE', { endLat, endLon, speed });
+  }, [sendAction]);
+
   return {
     status,
     favorites,
@@ -352,8 +356,10 @@ export function useSocket(ip, port, isMaintaining) {
     connectionType,
     rsdAddress,
     serverState,
+    isMoving: serverState === 'moving',
     verifiedLocation,
     sendAction,
+    startRoute,
     connect,
     stop
   };

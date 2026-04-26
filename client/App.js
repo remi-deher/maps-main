@@ -23,7 +23,7 @@ export default function App() {
   const { 
     status, favorites, recentHistory, simulatedCoords, 
     deviceInfo, connectionType, rsdAddress, serverState, verifiedLocation,
-    sendAction, connect 
+    sendAction, startRoute, connect 
   } = useSocket(serverIp, serverPort, isMaintaining);
   
   // États UI locaux
@@ -289,6 +289,11 @@ export default function App() {
             isFavorite={pendingCoords && favorites.some(f => Math.abs(f.lat - pendingCoords.latitude) < 0.0001 && Math.abs(f.lon - pendingCoords.longitude) < 0.0001)}
             onTeleport={handleTeleport}
             onToggleFavorite={handleToggleFavorite}
+            onStartRoute={(lat, lon, speed) => {
+              logEvent.add(`Itinéraire demandé vers : ${lat}, ${lon} (${speed}km/h)`);
+              startRoute(lat, lon, speed);
+              setPendingCoords(null);
+            }}
             onClose={() => setPendingCoords(null)}
           />
 

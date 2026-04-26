@@ -118,7 +118,20 @@ export function QuickFavorites({ favorites, onTeleport, visible }) {
   );
 }
 
-export function ActionPanel({ visible, coords, isFavorite, onTeleport, onToggleFavorite, onClose }) {
+export function ActionPanel({ visible, coords, isFavorite, onTeleport, onToggleFavorite, onStartRoute, onClose }) {
+  const handleWalk = () => {
+    Alert.alert(
+      "Vitesse du trajet",
+      "Choisissez votre allure :",
+      [
+        { text: "🚶 Marche (5 km/h)", onPress: () => onStartRoute(coords.latitude, coords.longitude, 5) },
+        { text: "🚲 Vélo (20 km/h)", onPress: () => onStartRoute(coords.latitude, coords.longitude, 20) },
+        { text: "🚗 Voiture (50 km/h)", onPress: () => onStartRoute(coords.latitude, coords.longitude, 50) },
+        { text: "Annuler", style: "cancel" }
+      ]
+    );
+  };
+
   return (
     <BottomSheet visible={visible} onClose={onClose}>
       <View style={styles.sheetContent}>
@@ -134,8 +147,11 @@ export function ActionPanel({ visible, coords, isFavorite, onTeleport, onToggleF
 
         <View style={styles.sheetActions}>
           <ScaleButton style={styles.mainActionBtn} onPress={() => onTeleport(coords)}>
-            <Text style={styles.mainActionText}>LANCER LA SIMULATION</Text>
+            <Text style={styles.mainActionText}>TÉLÉPORTER ICI</Text>
           </ScaleButton>
+          <TouchableOpacity style={styles.secondaryActionBtn} onPress={handleWalk}>
+            <Text style={styles.secondaryActionText}>MARCHER VERS CE POINT...</Text>
+          </TouchableOpacity>
         </View>
       </View>
     </BottomSheet>
@@ -267,6 +283,12 @@ const styles = StyleSheet.create({
     alignItems: 'center', ...SHADOWS.light 
   },
   mainActionText: { color: '#fff', fontWeight: '900', fontSize: 16, letterSpacing: 1.5 },
+  secondaryActionBtn: { 
+    marginTop: 12, padding: 16, borderRadius: 22, 
+    alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.05)',
+    borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)'
+  },
+  secondaryActionText: { color: COLORS.text, fontWeight: '700', fontSize: 14, opacity: 0.8 },
 
   panelSafe: { flex: 1 },
   panelHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 24, paddingBottom: 10 },
