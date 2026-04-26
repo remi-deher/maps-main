@@ -1,6 +1,11 @@
 'use strict'
 
-const { app } = require('electron')
+let app = null;
+try {
+  const electron = require('electron');
+  app = electron.app;
+} catch (e) {}
+
 const fs = require('fs')
 const path = require('path')
 const Encoder = require('./utils/encoder')
@@ -9,7 +14,7 @@ let _mainWindow = null
 let _logStream = null
 
 function initLogs() {
-  const logDir = app.getPath('logs')
+  const logDir = app ? app.getPath('logs') : path.join(__dirname, '..', '..', 'logs')
   if (!fs.existsSync(logDir)) {
     fs.mkdirSync(logDir, { recursive: true })
   }
@@ -34,7 +39,11 @@ function initLogs() {
   } catch (_) { }
 }
 
-app.whenReady().then(initLogs)
+if (app) {
+  app.whenReady().then(initLogs)
+} else {
+  initLogs()
+}
 
 /**
  * Injecter la référence à mainWindow après createWindow()
@@ -63,6 +72,10 @@ function dbg(msg) {
   if (_mainWindow && !_mainWindow.isDestroyed()) {
     _mainWindow.webContents.send('debug-log', cleanMsg)
   }
+
+  if (module.exports._headlessEventSubscribers) {
+    module.exports._headlessEventSubscribers.forEach(sub => sub.onDebug(cleanMsg));
+  }
 }
 
 /**
@@ -74,9 +87,14 @@ function dbg(msg) {
  */
 function sendStatus(service, state, message, data = {}) {
   const cleanMsg = Encoder.decode(message)
+  const payload = { service, state, message: cleanMsg, ...data };
   if (_mainWindow && !_mainWindow.isDestroyed()) {
-    _mainWindow.webContents.send('status-update', { service, state, message: cleanMsg, ...data })
+    _mainWindow.webContents.send('status-update', payload)
+  }
+  
+  if (module.exports._headlessEventSubscribers) {
+    module.exports._headlessEventSubscribers.forEach(sub => sub.onStatus(payload));
   }
 }
 
-module.exports = { setWindow, dbg, sendStatus }
+module.exports = { setWindow, dbg, sendStatus, _headlessEventSubscribers: [] }
