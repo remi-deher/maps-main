@@ -1,6 +1,11 @@
 'use strict'
 
-const { app } = require('electron')
+let app = null;
+try {
+  const electron = require('electron');
+  app = electron.app;
+} catch (e) {}
+
 const path = require('path')
 const fs   = require('fs')
 
@@ -9,7 +14,11 @@ const fs   = require('fs')
  */
 class SettingsManager {
   constructor() {
-    this.path = path.join(app.getPath('userData'), 'settings.json')
+    const storageDir = app ? app.getPath('userData') : path.join(__dirname, '..', '..', 'storage')
+    if (!fs.existsSync(storageDir)) {
+      fs.mkdirSync(storageDir, { recursive: true })
+    }
+    this.path = path.join(storageDir, 'settings.json')
     this.settings = this._load()
   }
 

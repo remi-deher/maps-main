@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { StyleSheet, View, TouchableWithoutFeedback, Keyboard, KeyboardAvoidingView, Platform, TouchableOpacity, Text, Animated, Easing } from 'react-native';
+import { StyleSheet, View, TouchableWithoutFeedback, Keyboard, KeyboardAvoidingView, Platform, TouchableOpacity, Text, Animated, Easing, Alert } from 'react-native';
 import MapView, { Marker } from 'react-native-maps';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import * as Battery from 'expo-battery';
@@ -14,6 +14,7 @@ import { logEvent } from './src/services/logger';
 import Omnibar from './src/components/Omnibar';
 import SettingsModal from './src/components/SettingsModal';
 import DebugModal from './src/components/DebugModal';
+import SequenceModal from './src/components/SequenceModal';
 import { ActionPanel, FavoritesPanel, QuickFavorites } from './src/components/Panels';
 
 export default function App() {
@@ -23,7 +24,7 @@ export default function App() {
   const { 
     status, favorites, recentHistory, simulatedCoords, 
     deviceInfo, connectionType, rsdAddress, serverState, verifiedLocation,
-    sendAction, connect 
+    sendAction, startRoute, startOsrmRoute, sendSequence, sendCustomGpx, connect 
   } = useSocket(serverIp, serverPort, isMaintaining);
   
   // États UI locaux
@@ -33,6 +34,7 @@ export default function App() {
   const [showScanner, setShowScanner] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [showDebug, setShowDebug] = useState(false);
+  const [showSequence, setShowSequence] = useState(false);
   const [isFavsOpen, setIsFavsOpen] = useState(false);
   const [isLowPowerMode, setIsLowPowerMode] = useState(false);
   const [mapType, setMapType] = useState('hybrid');
@@ -259,6 +261,9 @@ export default function App() {
             <TouchableOpacity style={[styles.floatBtn, SHADOWS.light]} onPress={centerOnLocation}>
               <Text style={{fontSize: 22}}>🎯</Text>
             </TouchableOpacity>
+            <TouchableOpacity style={[styles.floatBtn, SHADOWS.light, { backgroundColor: COLORS.secondary + '20' }]} onPress={() => setShowSequence(true)}>
+              <Text style={{fontSize: 22}}>✈️</Text>
+            </TouchableOpacity>
           </View>
 
           <QuickFavorites 
@@ -289,6 +294,16 @@ export default function App() {
             isFavorite={pendingCoords && favorites.some(f => Math.abs(f.lat - pendingCoords.latitude) < 0.0001 && Math.abs(f.lon - pendingCoords.longitude) < 0.0001)}
             onTeleport={handleTeleport}
             onToggleFavorite={handleToggleFavorite}
+            onStartRoute={(lat, lon, speed) => {
+              logEvent.add(`Itinéraire demandé vers : ${lat}, ${lon} (${speed}km/h)`);
+              startRoute(lat, lon, speed);
+              setPendingCoords(null);
+            }}
+            onStartOsrmRoute={(lat, lon, profile, speed) => {
+              logEvent.add(`Itinéraire OSRM (${profile}) vers : ${lat}, ${lon}`);
+              startOsrmRoute(lat, lon, profile, speed);
+              setPendingCoords(null);
+            }}
             onClose={() => setPendingCoords(null)}
           />
 
@@ -316,6 +331,38 @@ export default function App() {
                 saveSettings(ip, port); 
                 setShowSettings(false); 
                 connect(); 
+            }}
+            onImportGpx={(content) => {
+              Alert.alert(
+                "Importer un parcours",
+                "Comment voulez-vous simuler ce trajet ?",
+                [
+                  { text: "Vitesse réelle (si dispo)", onPress: () => sendCustomGpx(content, null) },
+                  { text: "Vitesse forcée...", onPress: () => {
+                    Alert.prompt(
+                      "Vitesse forcée",
+                      "Entrez la vitesse en km/h (ex: 20)",
+                      [
+                        { text: "Annuler", style: "cancel" },
+                        { text: "Lancer", onPress: (val) => sendCustomGpx(content, parseFloat(val) || 5) }
+                      ],
+                      "plain-text",
+                      "5"
+                    );
+                  }},
+                  { text: "Annuler", style: "cancel" }
+                ]
+              );
+            }}
+          />
+
+          <SequenceModal
+            visible={showSequence}
+            onClose={() => setShowSequence(false)}
+            currentCoords={simulatedCoords}
+            onStart={(legs) => {
+              logEvent.add(`Voyage multimodal lancé (${legs.length} étapes)`);
+              sendSequence(legs);
             }}
           />
 

@@ -22,8 +22,6 @@ function registerIpcHandlers(tunnel, gps, companion) {
 
   ipcMain.handle('restart-tunnel', () => tunnel.forceRefresh())
 
-  ipcMain.handle('get-network-interfaces', () => getNetworkInterfaces())
-
   // ─── GPS Simulation ────────────────────────────────────────────────────────
   
   ipcMain.handle('set-location', async (_event, { lat, lon, name }) => {
@@ -42,6 +40,114 @@ function registerIpcHandlers(tunnel, gps, companion) {
     try {
       await gps.clearLocation()
       return { success: true }
+    } catch (e) {
+      return { success: false, error: e.message }
+    }
+  })
+
+  ipcMain.handle('play-route', async (_event, { endLat, endLon, speed }) => {
+    try {
+      const routeGenerator = require('../services/gps/route-generator')
+      const gpsBridge = require('../services/gps/gps-bridge')
+      
+      const start = companion.status.lastVerifiedLocation || companion.status.lastInjectedLocation
+      if (!start) throw new Error('Position de départ inconnue')
+
+      const gpxPath = routeGenerator.generateOrthodromicGpx(
+        { lat: start.lat, lon: start.lon },
+        { lat: endLat, lon: endLon },
+        speed || 5
+      )
+
+      const result = await gpsBridge.playGpx(gpxPath)
+      
+      if (result.success) {
+        companion.status.state = 'moving'
+        companion._broadcast({ type: 'STATUS', data: companion.status })
+      }
+      
+      return result
+    } catch (e) {
+      return { success: false, error: e.message }
+    }
+  })
+
+  ipcMain.handle('dialog:openGpx', async () => {
+    const { dialog } = require('electron')
+    const fs = require('fs').promises
+    const res = await dialog.showOpenDialog({
+      properties: ['openFile'],
+      filters: [{ name: 'GPX', extensions: ['gpx'] }]
+    })
+    
+    if (!res.canceled && res.filePaths.length > 0) {
+      const content = await fs.readFile(res.filePaths[0], 'utf8')
+      return { success: true, content, path: res.filePaths[0] }
+    }
+    return { success: false }
+  })
+
+  ipcMain.handle('play-custom-gpx', async (_event, { gpxContent, speed }) => {
+    try {
+      const routeGenerator = require('../services/gps/route-generator')
+      const gpsBridge = require('../services/gps/gps-bridge')
+      
+      const gpxPath = routeGenerator.processExternalGpx(gpxContent, speed)
+      const result = await gpsBridge.playGpx(gpxPath)
+      
+      if (result.success) {
+        companion.status.state = 'moving'
+        companion._broadcast({ type: 'STATUS', data: companion.status })
+      }
+      
+      return result
+    } catch (e) {
+      return { success: false, error: e.message }
+    }
+  })
+
+  ipcMain.handle('play-osrm-route', async (_event, { endLat, endLon, profile, speed }) => {
+    try {
+      const routeGenerator = require('../services/gps/route-generator')
+      const gpsBridge = require('../services/gps/gps-bridge')
+      
+      const start = companion.status.lastVerifiedLocation || companion.status.lastInjectedLocation
+      if (!start) throw new Error('Position de départ inconnue')
+
+      const gpxPath = await routeGenerator.generateOsrmRoute(
+        { lat: start.lat, lon: start.lon },
+        { lat: endLat, lon: endLon },
+        profile || 'driving',
+        speed
+      )
+
+      const result = await gpsBridge.playGpx(gpxPath)
+      
+      if (result.success) {
+        companion.status.state = 'moving'
+        companion._broadcast({ type: 'STATUS', data: companion.status })
+      }
+      
+      return result
+    } catch (e) {
+      return { success: false, error: e.message }
+    }
+  })
+
+  ipcMain.handle('play-sequence', async (_event, legs) => {
+    try {
+      const routeGenerator = require('../services/gps/route-generator')
+      const gpsBridge = require('../services/gps/gps-bridge')
+      
+      const gpxPath = await routeGenerator.generateMultimodalGpx(legs)
+      const result = await gpsBridge.playGpx(gpxPath)
+      
+      if (result.success) {
+        companion.status.state = 'moving'
+        companion._broadcast({ type: 'STATUS', data: companion.status })
+      }
+      
+      return result
     } catch (e) {
       return { success: false, error: e.message }
     }
@@ -101,8 +207,70 @@ function registerIpcHandlers(tunnel, gps, companion) {
     }
   })
 
+  ipcMain.handle('get-network-interfaces', () => {
+    return companion.getNetworkInterfaces ? companion.getNetworkInterfaces() : []
+  })
+
   ipcMain.handle('open-logs', async () => {
     await shell.openPath(app.getPath('logs'))
+  })
+
+  ipcMain.handle('import-plist', async (_event, { name, content }) => {
+    const fs = require('fs')
+    const path = require('path')
+    try {
+      const projectRoot = path.join(app.getAppPath(), '..')
+      if (name === 'selfIdentity.plist') {
+        fs.writeFileSync(path.join(projectRoot, 'selfIdentity.plist'), content)
+      } else {
+        let lockdownDir = 'C:\\ProgramData\\Apple\\Lockdown'
+        if (process.platform === 'linux') {
+          lockdownDir = '/var/lib/lockdown'
+        }
+        if (!fs.existsSync(lockdownDir)) fs.mkdirSync(lockdownDir, { recursive: true })
+        fs.writeFileSync(path.join(lockdownDir, name), content)
+      }
+      return { success: true }
+    } catch (e) {
+      return { success: false, error: e.message }
+    }
+  })
+
+  ipcMain.handle('list-plists', async () => {
+    const fs = require('fs')
+    const path = require('path')
+    try {
+      let lockdownDir = 'C:\\ProgramData\\Apple\\Lockdown'
+      if (process.platform === 'linux') lockdownDir = '/var/lib/lockdown'
+      
+      const files = fs.existsSync(lockdownDir) ? fs.readdirSync(lockdownDir).filter(f => f.endsWith('.plist')) : []
+      const projectRoot = path.join(app.getAppPath(), '..')
+      const hasSelfIdentity = fs.existsSync(path.join(projectRoot, 'selfIdentity.plist'))
+      
+      return { success: true, plists: files, hasSelfIdentity }
+    } catch (e) {
+      return { success: false, error: e.message }
+    }
+  })
+
+  ipcMain.handle('delete-plist', async (_event, name) => {
+    const fs = require('fs')
+    const path = require('path')
+    try {
+      const projectRoot = path.join(app.getAppPath(), '..')
+      if (name === 'selfIdentity.plist') {
+        const p = path.join(projectRoot, 'selfIdentity.plist')
+        if (fs.existsSync(p)) fs.unlinkSync(p)
+      } else {
+        let lockdownDir = 'C:\\ProgramData\\Apple\\Lockdown'
+        if (process.platform === 'linux') lockdownDir = '/var/lib/lockdown'
+        const p = path.join(lockdownDir, name)
+        if (fs.existsSync(p)) fs.unlinkSync(p)
+      }
+      return { success: true }
+    } catch (e) {
+      return { success: false, error: e.message }
+    }
   })
 }
 

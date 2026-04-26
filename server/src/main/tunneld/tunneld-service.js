@@ -50,26 +50,17 @@ class TunneldService extends EventEmitter {
     if (this.runner.isRunning || this._isStarting) return
 
     this._isStarting = true
-
     dbg('[tunneld-service] Lancement de ios tunnel start...')
     sendStatus('tunneld', 'starting', 'Initialisation du tunnel go-ios...')
 
-    // Tenter de relancer le service Bonjour sur Windows pour aider la découverte mDNS
-    if (process.platform === 'win32') {
-      try {
-        const { exec } = require('child_process')
-        dbg('[tunneld-service] 🔄 Redémarrage asynchrone du service Bonjour (mDNS)...')
-        exec('powershell "Restart-Service \'Bonjour Service\' -ErrorAction SilentlyContinue"')
-      } catch (e) { /* ignore */ }
-    }
+    // On ne redémarre plus Bonjour automatiquement ici car cela provoque des micro-coupures WiFi
+    // qui déclenchent des boucles de reconnexion infinies.
 
     const goIosDir = path.dirname(GOIOS)
     this.runner.options.cwd = goIosDir
 
-    // Activer l'agent go-ios en mode userspace pour plus de stabilité sur Windows
-    this.runner.spawn(GOIOS, ['tunnel', 'start', `--tunnel-info-port=${TUNNEL_INFO_PORT}`], {
-      ENABLE_GO_IOS_AGENT: 'user'
-    })
+    // Lancer le tunnel sans variables d'environnement restrictives pour tester la stabilité brute
+    this.runner.spawn(GOIOS, ['tunnel', 'start', `--tunnel-info-port=${TUNNEL_INFO_PORT}`])
 
     // Début du polling API après 2s (laisser le processus démarrer)
     setTimeout(() => {

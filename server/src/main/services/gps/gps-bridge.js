@@ -113,7 +113,8 @@ class GpsBridge extends EventEmitter {
 
       newProc.stdout.on('data', (data) => {
         const msg = data.toString()
-        if (msg.includes('Press ENTER to exit')) {
+        // dbg(`[python-pmd3-stdout] ${msg.trim()}`) // Décommenter si besoin de debug complet
+        if (msg.toLowerCase().includes('enter')) {
           if (!resolved) {
             resolved = true
             dbg(`[gps-bridge] ✅ Position active (Processus #${this.pythonProcs.length})`)
@@ -124,13 +125,21 @@ class GpsBridge extends EventEmitter {
 
       newProc.stderr.on('data', (data) => { 
         const msg = data.toString()
-        if (msg.includes('Error')) dbg(`[python-pmd3-err] ${msg.trim()}`)
+        // dbg(`[python-pmd3-stderr] ${msg.trim()}`)
+        if (msg.toLowerCase().includes('enter') && !resolved) {
+          resolved = true
+          dbg(`[gps-bridge] ✅ Position active (détecté via stderr)`)
+          resolve({ success: true })
+        }
+        if (msg.includes('Error') || msg.includes('Exception')) {
+          dbg(`[python-pmd3-err] ${msg.trim()}`)
+        }
       })
 
       const timer = setTimeout(() => {
         if (!resolved) {
           resolved = true
-          dbg('[gps-bridge] ⚠️ Timeout sur l\'injection')
+          dbg('[gps-bridge] ⚠️ Timeout sur l\'injection (aucun message de succès reçu de pymobiledevice3)')
           resolve({ success: false, error: 'Timeout' })
         }
       }, 10000)
@@ -139,6 +148,17 @@ class GpsBridge extends EventEmitter {
         if (timer) clearTimeout(timer)
         // Retirer de la liste si le processus s'arrête de lui-même
         this.pythonProcs = this.pythonProcs.filter(p => p !== newProc)
+        
+        if (!resolved) {
+          resolved = true
+          if (code === 0) {
+            dbg(`[gps-bridge] ✅ Position active (pymobiledevice3 s'est terminé avec succès)`)
+            resolve({ success: true })
+          } else {
+            dbg(`[gps-bridge] ❌ Injection échouée (code ${code})`)
+            resolve({ success: false, error: `Process exited with code ${code}` })
+          }
+        }
       })
     })
   }
@@ -181,6 +201,61 @@ class GpsBridge extends EventEmitter {
       const path = require('path')
       const proc = spawn(GOIOS, ['image', 'auto', `--udid=${udid}`], { cwd: path.dirname(GOIOS) })
       proc.on('close', () => resolve())
+    })
+  }
+
+  /**
+   * Joue un fichier GPX pour simuler un itinéraire dynamique.
+   */
+  async playGpx(gpxPath) {
+    dbg(`[gps-bridge] Lecture itinéraire : ${gpxPath}`)
+    const tunnelInfo = await this._getTunnelInfo()
+    if (!tunnelInfo) {
+      dbg('[gps-bridge] ❌ Lecture annulée : Tunnel Go-iOS non détecté')
+      return { success: false, error: 'Tunnel Go-iOS non détecté' }
+    }
+
+    // Arrêter les anciennes simulations (DVT est exclusif)
+    this.stop()
+
+    if (!this.pythonProcs) this.pythonProcs = []
+
+    return new Promise((resolve) => {
+      const { PYTHON } = require('../../python-resolver')
+      const { spawn } = require('child_process')
+      const path = require('path')
+
+      const args = [
+        '-m', 'pymobiledevice3', 
+        'developer', 'dvt', 'simulate-location', 'play',
+        '--rsd', tunnelInfo.address, String(tunnelInfo.rsdPort),
+        gpxPath
+      ]
+
+      const proc = spawn(PYTHON, args, {
+        shell: false,
+        cwd: path.dirname(PYTHON)
+      })
+
+      this.pythonProcs.push(proc)
+
+      proc.stdout.on('data', (data) => {
+        const msg = data.toString()
+        dbg(`[python-pmd3] ${msg.trim()}`)
+      })
+
+      proc.stderr.on('data', (data) => {
+        const msg = data.toString()
+        if (msg.includes('Error')) dbg(`[python-pmd3-err] ${msg.trim()}`)
+      })
+
+      proc.on('close', (code) => {
+        dbg(`[gps-bridge] Fin lecture GPX (code ${code})`)
+        this.pythonProcs = this.pythonProcs.filter(p => p !== proc)
+      })
+
+      // On considère que c'est lancé dès que le spawn est OK
+      resolve({ success: true })
     })
   }
 

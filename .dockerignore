@@ -1,0 +1,36 @@
+# Dépendances Node locales (Windows)
+**/node_modules
+npm-debug.log
+
+# Dossiers Git
+.git
+.gitignore
+
+# Binaires Windows inutiles sous Linux
+**/*.exe
+**/*.dll
+server/resources/python/
+server/resources/ios.exe
+
+# Données locales et logs
+server/logs/
+server/storage/
+*.log
+.gemini/
+
+# Dossiers de build Electron (Windows)
+dist/
+out/
+
+# Application d'enrôlement (doit rester locale sur ton PC)
+ios-enroller/
+docker/*.bat
+
+# Fichiers de configuration sensibles ou locaux
+selfIdentity.plist
+*.plist
+!server/resources/*.plist
+
+# Divers
+.DS_Store
+Thumbs.db

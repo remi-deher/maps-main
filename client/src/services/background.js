@@ -63,28 +63,31 @@ if (!TaskManager.isTaskDefined(LOCATION_TASK_NAME)) {
 
            const lastRelance = await AsyncStorage.getItem('LAST_RELANCE_TIME');
            
-           if (!lastRelance || (now - parseInt(lastRelance)) > 10000) {
-             const configJson = await AsyncStorage.getItem('SERVER_CONFIG');
-             if (configJson) {
-               const { ip, port } = JSON.parse(configJson);
-               
-               await AsyncStorage.setItem('LAST_RELANCE_TIME', now.toString());
-               
-               // On utilise HTTP POST car le WebSocket est suspendu en arrière-plan
-               fetch(`http://${ip}:${port}/relance`, {
-                 method: 'POST',
-                 headers: { 'Content-Type': 'application/json' },
-                 body: JSON.stringify({
-                   lat: mockCoords.latitude,
-                   lon: mockCoords.longitude,
-                   name: `Relance Auto (Dérive: ${Math.round(dist)}m)`
-                 })
-               }).then(() => {
-                 eventBus.emit({ type: 'LOG', message: `✅ Relance auto envoyée (Dérive: ${Math.round(dist)}m)` });
-               }).catch(() => {
-                 // Erreur réseau
-               });
-             }
+           if (!lastRelance || (now - parseInt(lastRelance)) > 60000) {
+              const configJson = await AsyncStorage.getItem('SERVER_CONFIG');
+              if (configJson) {
+                const { ip, port } = JSON.parse(configJson);
+                
+                await AsyncStorage.setItem('LAST_RELANCE_TIME', now.toString());
+                await AsyncStorage.removeItem('FIRST_DRIFT_TIME');
+                
+                // On envoie la VRAIE position GPS du téléphone (pas la cible simulée).
+                // Le serveur compare cette position réelle à sa cible injectée pour
+                // confirmer que la simulation a bien dérivé.
+                fetch(`http://${ip}:${port}/relance`, {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({
+                    lat: currentLoc.latitude,
+                    lon: currentLoc.longitude,
+                    name: `Relance Auto (Dérive: ${Math.round(dist)}m)`
+                  })
+                }).then(() => {
+                  eventBus.emit({ type: 'LOG', message: `✅ Relance auto envoyée (Dérive: ${Math.round(dist)}m)` });
+                }).catch(() => {
+                  // Erreur réseau
+                });
+              }
            }
         } else {
            // On réinitialise le compteur de dérive si on est revenu à la normale

@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>iOS Enroller - Setup Trust</title>
+    <style>
+        :root {
+            --bg-color: #0f172a;
+            --card-bg: #1e293b;
+            --text-main: #f8fafc;
+            --text-muted: #94a3b8;
+            --primary: #3b82f6;
+            --primary-hover: #2563eb;
+            --success: #10b981;
+            --danger: #ef4444;
+            --border: #334155;
+        }
+        body {
+            font-family: 'Segoe UI', system-ui, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-main);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            margin: 0;
+        }
+        .container {
+            background-color: var(--card-bg);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 30px;
+            width: 100%;
+            max-width: 450px;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.5);
+        }
+        h1 {
+            margin-top: 0;
+            font-size: 1.5rem;
+            text-align: center;
+            margin-bottom: 25px;
+        }
+        .status-box {
+            background: rgba(0,0,0,0.2);
+            border-radius: 8px;
+            padding: 15px;
+            margin-bottom: 20px;
+            text-align: center;
+        }
+        .status-text {
+            font-weight: bold;
+            font-size: 1.1rem;
+            margin-bottom: 5px;
+        }
+        .status-subtext {
+            color: var(--text-muted);
+            font-size: 0.9rem;
+        }
+        .input-group {
+            margin-bottom: 15px;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+            color: var(--text-muted);
+            font-size: 0.9rem;
+        }
+        input {
+            width: 100%;
+            padding: 10px;
+            background: var(--bg-color);
+            border: 1px solid var(--border);
+            color: white;
+            border-radius: 6px;
+            box-sizing: border-box;
+        }
+        input:focus {
+            outline: none;
+            border-color: var(--primary);
+        }
+        button {
+            width: 100%;
+            padding: 12px;
+            background-color: var(--primary);
+            color: white;
+            border: none;
+            border-radius: 6px;
+            font-size: 1rem;
+            cursor: pointer;
+            transition: background 0.2s;
+            margin-top: 10px;
+        }
+        button:hover { background-color: var(--primary-hover); }
+        button:disabled {
+            background-color: var(--border);
+            color: var(--text-muted);
+            cursor: not-allowed;
+        }
+        .btn-success { background-color: var(--success); }
+        .btn-success:hover { background-color: #059669; }
+        
+        .log-box {
+            margin-top: 20px;
+            background: #000;
+            color: #10b981;
+            font-family: monospace;
+            padding: 10px;
+            border-radius: 6px;
+            font-size: 0.85rem;
+            height: 100px;
+            overflow-y: auto;
+            border: 1px solid var(--border);
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h1>iOS Enroller</h1>
+
+    <div class="status-box">
+        <div class="status-text" id="statusMain">Recherche d'appareil...</div>
+        <div class="status-subtext" id="statusSub">Veuillez brancher votre iPhone en USB</div>
+    </div>
+
+    <button id="btnPair" style="display: none;">Demander la confiance (Pair)</button>
+
+    <div id="transferSection" style="display: none; margin-top: 25px; border-top: 1px solid #334155; padding-top: 20px;">
+        <div class="input-group">
+            <label>IP du Serveur Docker cible (ex: 192.168.1.143)</label>
+            <input type="text" id="targetIp" placeholder="192.168.1.143">
+        </div>
+        <button id="btnTransfer" class="btn-success">Envoyer la clé vers le serveur</button>
+    </div>
+
+    <div class="log-box" id="logBox">
+        [Système] Prêt.
+    </div>
+</div>
+
+<script>
+    const statusMain = document.getElementById('statusMain');
+    const statusSub = document.getElementById('statusSub');
+    const btnPair = document.getElementById('btnPair');
+    const btnTransfer = document.getElementById('btnTransfer');
+    const transferSection = document.getElementById('transferSection');
+    const targetIpInput = document.getElementById('targetIp');
+    const logBox = document.getElementById('logBox');
+
+    let currentUdid = null;
+
+    function log(msg) {
+        logBox.innerHTML += `<br>[${new Date().toLocaleTimeString()}] ${msg}`;
+        logBox.scrollTop = logBox.scrollHeight;
+    }
+
+    async function checkStatus() {
+        try {
+            const res = await fetch('/api/status');
+            const data = await res.json();
+
+            if (data.connected && data.udid) {
+                if (currentUdid !== data.udid) {
+                    log(`Appareil détecté : ${data.udid}`);
+                }
+                currentUdid = data.udid;
+                if (data.isPaired) {
+                    statusMain.textContent = "Appareil bien enrôlé ✅";
+                    statusMain.style.color = "var(--success)";
+                    statusSub.textContent = `UDID: ${data.udid}`;
+                    btnPair.style.display = "none";
+                    transferSection.style.display = "block";
+                } else {
+                    statusMain.textContent = "Appareil connecté (Non Pairé)";
+                    statusMain.style.color = "var(--text-main)";
+                    statusSub.textContent = "Cliquez sur 'Pair' et validez sur l'iPhone.";
+                    btnPair.style.display = "block";
+                    transferSection.style.display = "none";
+                }
+            } else {
+                if (currentUdid !== null) {
+                    log("Appareil déconnecté.");
+                } else if (data.rawOutput && data.rawOutput.includes('error')) {
+                    log(`Sortie brute : ${data.rawOutput}`);
+                }
+                statusMain.textContent = "Aucun appareil trouvé";
+                statusMain.style.color = "var(--text-muted)";
+                statusSub.textContent = "Veuillez brancher votre iPhone en USB";
+                btnPair.style.display = "none";
+                transferSection.style.display = "none";
+                currentUdid = null;
+            }
+        } catch (e) {
+            log("Erreur de connexion au backend local : " + e.message);
+        }
+    }
+
+    btnPair.addEventListener('click', async () => {
+        btnPair.disabled = true;
+        log("Lancement du pairage...");
+        try {
+            const res = await fetch('/api/pair', { method: 'POST' });
+            const data = await res.json();
+            if (data.success) {
+                log(data.message);
+                statusMain.textContent = "Vérifiez l'écran de l'iPhone";
+                statusSub.textContent = "Acceptez la demande de confiance.";
+            } else {
+                log("Erreur: " + data.error);
+            }
+        } catch (e) {
+            log("Erreur d'appel API pair");
+        }
+        setTimeout(() => { btnPair.disabled = false; }, 3000);
+    });
+
+    btnTransfer.addEventListener('click', async () => {
+        const targetIp = targetIpInput.value.trim();
+        if (!targetIp) {
+            log("Veuillez saisir l'IP du serveur.");
+            return;
+        }
+
+        btnTransfer.disabled = true;
+        btnTransfer.textContent = "Envoi en cours...";
+        log(`Envoi des certificats vers ${targetIp}...`);
+
+        try {
+            const res = await fetch('/api/transfer', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ targetIp, udid: currentUdid })
+            });
+            const data = await res.json();
+
+            if (data.success) {
+                log("Transfert réussi ✅ ! Le serveur distant est prêt.");
+                statusSub.textContent = "Les clés ont été transférées au serveur distant.";
+            } else {
+                log("Échec du transfert : " + data.error);
+            }
+        } catch (e) {
+            log("Erreur réseau lors du transfert.");
+        }
+
+        btnTransfer.disabled = false;
+        btnTransfer.textContent = "Envoyer la clé vers le serveur";
+    });
+
+    // Polling toutes les 3 secondes pour vérifier l'état
+    setInterval(checkStatus, 3000);
+    checkStatus();
+</script>
+
+</body>
+</html>
