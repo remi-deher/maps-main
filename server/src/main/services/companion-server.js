@@ -311,6 +311,48 @@ class CompanionServer extends EventEmitter {
         break
       }
 
+      case 'PLAY_SEQUENCE': {
+        const { legs } = payload.data || {}
+        if (legs && legs.length > 0) {
+          dbg(`[CMD] iPhone envoie une séquence multimodale (${legs.length} étapes)`)
+          routeGenerator.generateMultimodalGpx(legs).then(gpxPath => {
+            const gpsBridge = require('./gps/gps-bridge')
+            gpsBridge.playGpx(gpxPath)
+            this.status.state = 'moving'
+            this._broadcast({ type: 'STATUS', data: this.status })
+          }).catch(err => {
+            dbg(`[companion-server] ❌ Erreur generateMultimodalGpx: ${err.message}`)
+          })
+        }
+        break
+      }
+
+      case 'PLAY_OSRM_ROUTE': {
+        const { endLat, endLon, profile, speed } = payload.data || {}
+        if (endLat !== undefined && endLon !== undefined) {
+          const start = this.status.lastVerifiedLocation || this.status.lastInjectedLocation
+          if (!start) break
+          
+          dbg(`[CMD] iPhone demande itinéraire OSRM (${profile}) vers: ${endLat}, ${endLon}`)
+          
+          // On ne bloque pas le WS (c'est asynchrone)
+          routeGenerator.generateOsrmRoute(
+            { lat: start.lat, lon: start.lon },
+            { lat: endLat, lon: endLon },
+            profile || 'driving',
+            speed
+          ).then(gpxPath => {
+            const gpsBridge = require('./gps/gps-bridge')
+            gpsBridge.playGpx(gpxPath)
+            this.status.state = 'moving'
+            this._broadcast({ type: 'STATUS', data: this.status })
+          }).catch(err => {
+            dbg(`[companion-server] ❌ Erreur generateOsrmRoute: ${err.message}`)
+          })
+        }
+        break
+      }
+
       case 'PLAY_CUSTOM_GPX': {
         const { gpxContent, speed } = payload.data || {}
         if (gpxContent) {

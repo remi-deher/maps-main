@@ -347,6 +347,14 @@ export function useSocket(ip, port, isMaintaining) {
     sendAction('PLAY_ROUTE', { endLat, endLon, speed });
   }, [sendAction]);
 
+  const startOsrmRoute = useCallback((endLat, endLon, profile = 'driving', speed = null) => {
+    sendAction('PLAY_OSRM_ROUTE', { endLat, endLon, profile, speed });
+  }, [sendAction]);
+
+  const sendSequence = useCallback((legs) => {
+    sendAction('PLAY_SEQUENCE', { legs });
+  }, [sendAction]);
+
   const sendCustomGpx = useCallback((gpxContent, speed = null) => {
     sendAction('PLAY_CUSTOM_GPX', { gpxContent, speed });
   }, [sendAction]);
@@ -364,6 +372,8 @@ export function useSocket(ip, port, isMaintaining) {
     verifiedLocation,
     sendAction,
     startRoute,
+    startOsrmRoute,
+    sendSequence,
     sendCustomGpx,
     connect,
     stop

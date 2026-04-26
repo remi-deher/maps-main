@@ -14,7 +14,7 @@ let DefaultIcon = L.icon({
 });
 L.Marker.prototype.options.icon = DefaultIcon;
 
-function MapView({ onMapClick, selectedPos, onPlayRoute }) {
+function MapView({ onMapClick, selectedPos, onPlayRoute, onPlayOsrmRoute }) {
   const mapRef = useRef(null);
   const mapInstance = useRef(null);
   const markerInstance = useRef(null);
@@ -48,12 +48,15 @@ function MapView({ onMapClick, selectedPos, onPlayRoute }) {
       if (!markerInstance.current) {
         markerInstance.current = L.marker([lat, lon], { draggable: true }).addTo(mapInstance.current);
         
-        // Popup avec bouton de navigation
+        // Popup avec boutons de navigation
         const popupContent = document.createElement('div');
         popupContent.innerHTML = `
-          <div style="padding: 8px; text-align: center;">
+          <div style="padding: 8px; text-align: center; display: flex; flex-direction: column; gap: 8px;">
             <button id="nav-here-btn" style="background: #6366f1; color: white; border: none; padding: 8px 12px; borderRadius: 8px; cursor: pointer; font-weight: bold;">
-              🚀 Naviguer jusqu'ici
+              🚶 Marcher (Ligne)
+            </button>
+            <button id="nav-osrm-btn" style="background: #10b981; color: white; border: none; padding: 8px 12px; borderRadius: 8px; cursor: pointer; font-weight: bold;">
+              🚗 Conduire (Route)
             </button>
           </div>
         `;
@@ -62,6 +65,10 @@ function MapView({ onMapClick, selectedPos, onPlayRoute }) {
         markerInstance.current.on('popupopen', () => {
           document.getElementById('nav-here-btn').onclick = () => {
             onPlayRoute(lat, lon);
+            markerInstance.current.closePopup();
+          };
+          document.getElementById('nav-osrm-btn').onclick = () => {
+            onPlayOsrmRoute(lat, lon, 'driving');
             markerInstance.current.closePopup();
           };
         });

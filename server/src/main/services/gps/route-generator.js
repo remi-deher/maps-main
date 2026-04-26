@@ -120,6 +120,159 @@ class RouteGenerator {
   }
 
   /**
+   * Génère un itinéraire routier via OSRM.
+   * @param {Object} start {lat, lon}
+   * @param {Object} end {lat, lon}
+   * @param {string} profile 'driving', 'walking', 'cycling'
+   * @param {number|null} speedKmh Vitesse forcée ou null (vitesse par défaut du profil)
+   * @returns {Promise<string>} Chemin du fichier GPX
+   */
+  async generateOsrmRoute(start, end, profile = 'driving', speedKmh = null) {
+    dbg(`[route-generator] Calcul itinéraire OSRM (${profile})...`)
+    
+    try {
+      // OSRM attend longitude,latitude
+      const url = `http://router.project-osrm.org/route/v1/${profile}/${start.lon},${start.lat};${end.lon},${end.lat}?overview=full&geometries=geojson`
+      
+      const response = await fetch(url)
+      if (!response.ok) throw new Error(`HTTP ${response.status}`)
+      
+      const data = await response.json()
+      if (!data.routes || data.routes.length === 0) {
+        throw new Error("Aucun itinéraire trouvé par OSRM")
+      }
+
+      const route = data.routes[0]
+      const coordinates = route.geometry.coordinates // [ [lon, lat], ... ]
+      const duration = route.duration // en secondes (vitesse théorique d'OSRM)
+      const distance = route.distance // en mètres
+
+      // Si on ne force pas la vitesse, on utilise la durée estimée par OSRM
+      // Sinon, on recalcule en fonction de speedKmh
+      const usedSpeedMs = speedKmh ? (speedKmh / 3.6) : (distance / duration)
+      const startTime = Date.now()
+      let totalTimeSec = 0
+
+      let gpx = '<?xml version="1.0" encoding="UTF-8"?>\n'
+      gpx += '<gpx version="1.1" creator="Antigravity OSRM">\n'
+      gpx += '  <trk><trkseg>\n'
+
+      // Premier point
+      gpx += `    <trkpt lat="${coordinates[0][1].toFixed(6)}" lon="${coordinates[0][0].toFixed(6)}">\n`
+      gpx += `      <time>${new Date(startTime).toISOString()}</time>\n`
+      gpx += `    </trkpt>\n`
+
+      for (let i = 1; i < coordinates.length; i++) {
+        const p1 = { lat: coordinates[i-1][1], lon: coordinates[i-1][0] }
+        const p2 = { lat: coordinates[i][1], lon: coordinates[i][0] }
+        
+        const d = this._getDistance(p1.lat, p1.lon, p2.lat, p2.lon)
+        const segmentDuration = d / usedSpeedMs
+        totalTimeSec += segmentDuration
+
+        const timeStr = new Date(startTime + totalTimeSec * 1000).toISOString()
+        gpx += `    <trkpt lat="${p2.lat.toFixed(6)}" lon="${p2.lon.toFixed(6)}">\n`
+        gpx += `      <time>${timeStr}</time>\n`
+        gpx += `    </trkpt>\n`
+      }
+
+      gpx += '  </trkseg></trk>\n'
+      gpx += '</gpx>'
+
+      const gpxPath = path.join(os.tmpdir(), 'antigravity_osrm.gpx')
+      fs.writeFileSync(gpxPath, gpx)
+      dbg(`[route-generator] Route OSRM prête : ${distance.toFixed(0)}m, ~${Math.floor(totalTimeSec/60)} min`)
+      
+      return gpxPath
+
+    } catch (e) {
+      dbg(`[route-generator] ⚠️ Échec OSRM (${e.message}). Fallback vers ligne droite...`)
+      // Fallback Étape 1 : Ligne droite
+      return this.generateOrthodromicGpx(start, end, speedKmh || 5)
+    }
+  }
+
+  /**
+   * Génère un itinéraire multimodal complexe.
+   * @param {Array} legs [{ type, start, end, startTime, endTime, speed }]
+   * @returns {Promise<string>} Chemin du fichier GPX maître
+   */
+  async generateMultimodalGpx(legs) {
+    dbg(`[route-generator] Assemblage d'un trajet multimodal (${legs.length} étapes)...`)
+    
+    let gpx = '<?xml version="1.0" encoding="UTF-8"?>\n'
+    gpx += '<gpx version="1.1" creator="Antigravity Multimodal">\n'
+    gpx += '  <trk><trkseg>\n'
+
+    for (const leg of legs) {
+      const { type, start, end, startTime, endTime, speed } = leg
+      const startMs = startTime || Date.now()
+      const endMs = endTime || (startMs + 10000)
+      const durationMs = endMs - startMs
+
+      if (type === 'wait') {
+        // Ajout de "Jitter" pour ne pas être parfaitement statique (anti-ban)
+        // On génère un point toutes les 10 secondes
+        for (let t = 0; t < durationMs; t += 10000) {
+          const jitterLat = (Math.random() - 0.5) * 0.00001
+          const jitterLon = (Math.random() - 0.5) * 0.00001
+          const timeStr = new Date(startMs + t).toISOString()
+          gpx += `    <trkpt lat="${(start.lat + jitterLat).toFixed(6)}" lon="${(start.lon + jitterLon).toFixed(6)}">\n`
+          gpx += `      <time>${timeStr}</time>\n`
+          gpx += `    </trkpt>\n`
+        }
+      } 
+      else if (type === 'flight') {
+        // Ligne droite avec accélération au début et à la fin (easing)
+        const steps = Math.max(20, Math.floor(durationMs / 5000)) // 1 point toutes les 5s
+        for (let i = 0; i <= steps; i++) {
+          const progress = i / steps
+          // Easing simple : sinusoidal pour ralentir aux extrémités
+          const easedProgress = 0.5 * (1 - Math.cos(progress * Math.PI))
+          
+          const lat = start.lat + (end.lat - start.lat) * easedProgress
+          const lon = start.lon + (end.lon - start.lon) * easedProgress
+          const timeStr = new Date(startMs + progress * durationMs).toISOString()
+          
+          gpx += `    <trkpt lat="${lat.toFixed(6)}" lon="${lon.toFixed(6)}">\n`
+          gpx += `      <time>${timeStr}</time>\n`
+          gpx += `    </trkpt>\n`
+        }
+      }
+      else if (type === 'walk' || type === 'drive') {
+        // Routage OSRM
+        try {
+          const profile = type === 'walk' ? 'walking' : 'driving'
+          const url = `http://router.project-osrm.org/route/v1/${profile}/${start.lon},${start.lat};${end.lon},${end.lat}?overview=full&geometries=geojson`
+          
+          const response = await fetch(url)
+          const data = await response.json()
+          
+          if (data.routes && data.routes.length > 0) {
+            const coordinates = data.routes[0].geometry.coordinates
+            for (let i = 0; i < coordinates.length; i++) {
+              const progress = i / (coordinates.length - 1)
+              const timeStr = new Date(startMs + progress * durationMs).toISOString()
+              gpx += `    <trkpt lat="${coordinates[i][1].toFixed(6)}" lon="${coordinates[i][0].toFixed(6)}">\n`
+              gpx += `      <time>${timeStr}</time>\n`
+              gpx += `    </trkpt>\n`
+            }
+          }
+        } catch (e) {
+          dbg(`[route-generator] ⚠️ Erreur OSRM dans leg multimodal: ${e.message}`)
+        }
+      }
+    }
+
+    gpx += '  </trkseg></trk>\n'
+    gpx += '</gpx>'
+
+    const gpxPath = path.join(os.tmpdir(), 'antigravity_multimodal.gpx')
+    fs.writeFileSync(gpxPath, gpx)
+    return gpxPath
+  }
+
+  /**
    * Distance Haversine en mètres
    */
   _getDistance(lat1, lon1, lat2, lon2) {

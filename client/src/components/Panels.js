@@ -118,15 +118,16 @@ export function QuickFavorites({ favorites, onTeleport, visible }) {
   );
 }
 
-export function ActionPanel({ visible, coords, isFavorite, onTeleport, onToggleFavorite, onStartRoute, onClose }) {
-  const handleWalk = () => {
+export function ActionPanel({ visible, coords, isFavorite, onTeleport, onToggleFavorite, onStartRoute, onStartOsrmRoute, onClose }) {
+  const handleNavigate = () => {
     Alert.alert(
-      "Vitesse du trajet",
-      "Choisissez votre allure :",
+      "Mode de déplacement",
+      "Comment souhaitez-vous vous y rendre ?",
       [
-        { text: "🚶 Marche (5 km/h)", onPress: () => onStartRoute(coords.latitude, coords.longitude, 5) },
-        { text: "🚲 Vélo (20 km/h)", onPress: () => onStartRoute(coords.latitude, coords.longitude, 20) },
-        { text: "🚗 Voiture (50 km/h)", onPress: () => onStartRoute(coords.latitude, coords.longitude, 50) },
+        { text: "🚶 Marche (Ligne droite)", onPress: () => onStartRoute(coords.latitude, coords.longitude, 5) },
+        { text: "🚶 Marche (Routes)", onPress: () => onStartOsrmRoute(coords.latitude, coords.longitude, 'walking', 5) },
+        { text: "🚲 Vélo (Routes)", onPress: () => onStartOsrmRoute(coords.latitude, coords.longitude, 'cycling', 20) },
+        { text: "🚗 Voiture (Routes)", onPress: () => onStartOsrmRoute(coords.latitude, coords.longitude, 'driving', null) },
         { text: "Annuler", style: "cancel" }
       ]
     );
@@ -149,8 +150,8 @@ export function ActionPanel({ visible, coords, isFavorite, onTeleport, onToggleF
           <ScaleButton style={styles.mainActionBtn} onPress={() => onTeleport(coords)}>
             <Text style={styles.mainActionText}>TÉLÉPORTER ICI</Text>
           </ScaleButton>
-          <TouchableOpacity style={styles.secondaryActionBtn} onPress={handleWalk}>
-            <Text style={styles.secondaryActionText}>MARCHER VERS CE POINT...</Text>
+          <TouchableOpacity style={styles.secondaryActionBtn} onPress={handleNavigate}>
+            <Text style={styles.secondaryActionText}>NAVIGUER JUSQU'ICI...</Text>
           </TouchableOpacity>
         </View>
       </View>

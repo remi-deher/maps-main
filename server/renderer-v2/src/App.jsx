@@ -125,6 +125,21 @@ function App() {
     }
   };
 
+  const playOsrmRoute = async (lat, lon, profile = 'driving') => {
+    const endLat = lat || selectedPos?.lat;
+    const endLon = lon || selectedPos?.lon;
+    if (!endLat || !endLon) return;
+    
+    const speedStr = profile === 'driving' ? "" : (profile === 'walking' ? "5" : "20");
+    const speed = parseFloat(prompt(`Vitesse (km/h) [Profil: ${profile}] :`, speedStr)) || null;
+    
+    const res = await window.gps.playOsrmRoute({ endLat, endLon, profile, speed });
+    if (res.success) {
+      setActiveSim({ lat: endLat, lon: endLon, name: `Navigation (${profile})...` });
+      setSelectedPos(null);
+    }
+  };
+
   const resetLocation = async () => {
     await window.gps.clearLocation();
     setSelectedPos(null);
@@ -142,7 +157,7 @@ function App() {
       
       {/* Background Map */}
       <div className="absolute inset-0 z-0" tabIndex="-1" style={{ pointerEvents: 'auto' }}>
-        <MapView onMapClick={handleMapClick} selectedPos={selectedPos || activeSim} onPlayRoute={playRoute} />
+        <MapView onMapClick={handleMapClick} selectedPos={selectedPos || activeSim} onPlayRoute={playRoute} onPlayOsrmRoute={playOsrmRoute} />
       </div>
 
       {/* Sidebar, Settings, etc. */}
@@ -285,6 +300,14 @@ function App() {
               >
                 📁 Lancer GPX local
               </button>
+              <button 
+                onClick={() => {
+                  alert("Le séquenceur multimodal sur PC sera disponible dans une prochaine mise à jour. Utilisez l'iPhone pour planifier vos étapes complexes.");
+                }} 
+                className="w-full mt-2 h-12 bg-indigo-600/20 hover:bg-indigo-600/40 text-indigo-400 rounded-xl font-bold transition-all flex items-center justify-center gap-2 border border-indigo-500/20"
+              >
+                ✈️ Séquenceur Voyage
+              </button>
             </motion.div>
           </>
         )}
@@ -314,6 +337,7 @@ function App() {
                 <Star className="w-5 h-5" fill={isFavorite(selectedPos.lat, selectedPos.lon) ? "currentColor" : "none"} />
               </button>
               <button onClick={resetLocation} className="p-3 glass hover:bg-white/10 rounded-2xl transition-colors text-slate-400"><RotateCcw className="w-5 h-5" /></button>
+              <button onClick={() => playOsrmRoute(null, null, 'driving')} className="bg-indigo-600 hover:bg-indigo-500 text-white px-5 py-3 rounded-2xl font-bold flex items-center gap-2 transition-all active:scale-95 shadow-lg shadow-indigo-900/20"><Navigation className="w-5 h-5" /> Conduire</button>
               <button onClick={() => playRoute()} className="bg-emerald-600 hover:bg-emerald-500 text-white px-5 py-3 rounded-2xl font-bold flex items-center gap-2 transition-all active:scale-95 shadow-lg shadow-emerald-900/20"><Navigation className="w-5 h-5" /> Marcher</button>
               <button onClick={teleport} className="bg-blue-600 hover:bg-blue-500 text-white px-6 py-3 rounded-2xl font-bold flex items-center gap-2 transition-all active:scale-95 shadow-lg shadow-blue-900/20"><MapPin className="w-5 h-5" /> Allez ici</button>
             </div>
