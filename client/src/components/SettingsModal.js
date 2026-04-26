@@ -1,26 +1,41 @@
 'use strict'
 
-import React, { useState } from 'react';
-import { StyleSheet, Text, View, TextInput, TouchableOpacity, Modal, Dimensions } from 'react-native';
-import { COLORS } from '../constants/theme';
-
-const { width: SCREEN_WIDTH } = Dimensions.get('window');
+import * as DocumentPicker from 'expo-document-picker';
+import * as FileSystem from 'expo-file-system';
 
 export default function SettingsModal({ 
-  visible, onClose, initialIp, initialPort, onSave, 
+  visible, onClose, initialIp, initialPort, onSave, onImportGpx,
   status, deviceInfo, connectionType, rsdAddress 
 }) {
   const [ip, setIp] = useState(initialIp);
   const [port, setPort] = useState(initialPort);
 
+  const handlePickGpx = async () => {
+    try {
+      const result = await DocumentPicker.getDocumentAsync({
+        type: 'application/gpx+xml',
+        copyToCacheDirectory: true
+      });
+
+      if (!result.canceled && result.assets && result.assets.length > 0) {
+        const fileUri = result.assets[0].uri;
+        const content = await FileSystem.readAsStringAsync(fileUri);
+        onImportGpx(content);
+        onClose();
+      }
+    } catch (err) {
+      console.error("Erreur lors du choix du GPX:", err);
+    }
+  };
+
   return (
     <Modal visible={visible} transparent animationType="fade">
       <View style={styles.overlay}>
         <View style={styles.content}>
-          <Text style={styles.title}>Configuration Serveur</Text>
+          <Text style={styles.title}>Paramètres</Text>
           
           <View style={styles.inputGroup}>
-            <Text style={styles.label}>ADRESSE IP</Text>
+            <Text style={styles.label}>ADRESSE IP SERVEUR</Text>
             <TextInput 
               style={styles.input} 
               value={ip} 
@@ -41,6 +56,13 @@ export default function SettingsModal({
               placeholderTextColor={COLORS.textMuted}
               keyboardType="numeric"
             />
+          </View>
+
+          <View style={styles.inputGroup}>
+            <Text style={styles.label}>NAVIGATION</Text>
+            <TouchableOpacity style={styles.gpxBtn} onPress={handlePickGpx}>
+              <Text style={styles.gpxBtnText}>📁 IMPORTER PARCOURS (.GPX)</Text>
+            </TouchableOpacity>
           </View>
 
           {/* SECTION STATUS CONNEXION */}
@@ -101,6 +123,8 @@ const styles = StyleSheet.create({
   inputGroup: { marginBottom: 15 },
   label: { fontSize: 10, color: COLORS.textMuted, fontWeight: '900', marginBottom: 5, marginLeft: 5 },
   input: { backgroundColor: COLORS.background, borderRadius: 15, padding: 15, color: COLORS.text, fontSize: 16 },
+  gpxBtn: { backgroundColor: 'rgba(99, 102, 241, 0.1)', borderStyle: 'dashed', borderWidth: 1, borderColor: COLORS.primary, borderRadius: 15, padding: 15, alignItems: 'center' },
+  gpxBtnText: { color: COLORS.primary, fontWeight: '900', fontSize: 12 },
   
   statusBox: { 
     backgroundColor: COLORS.background, 

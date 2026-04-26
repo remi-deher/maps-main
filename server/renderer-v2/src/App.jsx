@@ -272,6 +272,19 @@ function App() {
                   <QrCode className="w-5 h-5" /> <span className="text-xs uppercase tracking-widest">QR Code</span>
                 </button>
               </div>
+              <button 
+                onClick={async () => {
+                  const res = await window.gps.openGpxDialog();
+                  if (res.success) {
+                    const speed = parseFloat(prompt("Vitesse (km/h) - Laissez vide pour vitesse réelle :", ""));
+                    await window.gps.playCustomGpx({ gpxContent: res.content, speed: isNaN(speed) ? null : speed });
+                    setSidebarOpen(false);
+                  }
+                }} 
+                className="w-full mt-4 h-12 bg-emerald-600/20 hover:bg-emerald-600/40 text-emerald-400 rounded-xl font-bold transition-all flex items-center justify-center gap-2 border border-emerald-500/20"
+              >
+                📁 Lancer GPX local
+              </button>
             </motion.div>
           </>
         )}

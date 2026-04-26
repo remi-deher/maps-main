@@ -310,6 +310,25 @@ class CompanionServer extends EventEmitter {
         }
         break
       }
+
+      case 'PLAY_CUSTOM_GPX': {
+        const { gpxContent, speed } = payload.data || {}
+        if (gpxContent) {
+          try {
+            dbg(`[CMD] iPhone envoie un GPX personnalisé (vitesse override: ${speed || 'non'})`)
+            const gpxPath = routeGenerator.processExternalGpx(gpxContent, speed)
+            
+            const gpsBridge = require('./gps/gps-bridge')
+            gpsBridge.playGpx(gpxPath)
+            
+            this.status.state = 'moving'
+            this._broadcast({ type: 'STATUS', data: this.status })
+          } catch (e) {
+            dbg(`[companion-server] ❌ Erreur PLAY_CUSTOM_GPX: ${e.message}`)
+          }
+        }
+        break
+      }
       
       case 'ADD_HISTORY': {
         if (payload.data) favoritesManager.addToHistory(payload.data)

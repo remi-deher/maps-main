@@ -4,6 +4,8 @@ contextBridge.exposeInMainWorld('gps', {
   setLocation:   (lat, lon, name) => ipcRenderer.invoke('set-location', { lat, lon, name }),
   clearLocation: () => ipcRenderer.invoke('clear-location'),
   playRoute:     (data) => ipcRenderer.invoke('play-route', data),
+  openGpxDialog: () => ipcRenderer.invoke('dialog:openGpx'),
+  playCustomGpx: (data) => ipcRenderer.invoke('play-custom-gpx', data),
   getStatus:     () => ipcRenderer.invoke('get-status'),
   onStatus:      (cb) => {
     const listener = (_e, data) => cb(data);

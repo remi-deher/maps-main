@@ -74,6 +74,40 @@ function registerIpcHandlers(tunnel, gps, companion) {
     }
   })
 
+  ipcMain.handle('dialog:openGpx', async () => {
+    const { dialog } = require('electron')
+    const fs = require('fs').promises
+    const res = await dialog.showOpenDialog({
+      properties: ['openFile'],
+      filters: [{ name: 'GPX', extensions: ['gpx'] }]
+    })
+    
+    if (!res.canceled && res.filePaths.length > 0) {
+      const content = await fs.readFile(res.filePaths[0], 'utf8')
+      return { success: true, content, path: res.filePaths[0] }
+    }
+    return { success: false }
+  })
+
+  ipcMain.handle('play-custom-gpx', async (_event, { gpxContent, speed }) => {
+    try {
+      const routeGenerator = require('../services/gps/route-generator')
+      const gpsBridge = require('../services/gps/gps-bridge')
+      
+      const gpxPath = routeGenerator.processExternalGpx(gpxContent, speed)
+      const result = await gpsBridge.playGpx(gpxPath)
+      
+      if (result.success) {
+        companion.status.state = 'moving'
+        companion._broadcast({ type: 'STATUS', data: companion.status })
+      }
+      
+      return result
+    } catch (e) {
+      return { success: false, error: e.message }
+    }
+  })
+
   // ─── Settings ──────────────────────────────────────────────────────────────
   
   ipcMain.handle('get-settings', () => settings.get())

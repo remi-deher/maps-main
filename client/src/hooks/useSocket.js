@@ -347,6 +347,10 @@ export function useSocket(ip, port, isMaintaining) {
     sendAction('PLAY_ROUTE', { endLat, endLon, speed });
   }, [sendAction]);
 
+  const sendCustomGpx = useCallback((gpxContent, speed = null) => {
+    sendAction('PLAY_CUSTOM_GPX', { gpxContent, speed });
+  }, [sendAction]);
+
   return {
     status,
     favorites,
@@ -360,6 +364,7 @@ export function useSocket(ip, port, isMaintaining) {
     verifiedLocation,
     sendAction,
     startRoute,
+    sendCustomGpx,
     connect,
     stop
   };

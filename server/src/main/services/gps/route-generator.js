@@ -53,6 +53,73 @@ class RouteGenerator {
   }
 
   /**
+   * Analyse et nettoie un GPX externe, avec option de forcer la vitesse.
+   * @param {string} gpxString Contenu du fichier GPX
+   * @param {number|null} overrideSpeedKmh Vitesse forcée ou null pour garder l'original
+   * @returns {string} Chemin du fichier GPX prêt à l'emploi
+   */
+  processExternalGpx(gpxString, overrideSpeedKmh = null) {
+    dbg(`[route-generator] Traitement GPX externe (vitesse forcée: ${overrideSpeedKmh || 'non'})`)
+
+    // Extraction simple des points via Regex
+    const trkptRegex = /<trkpt\s+lat="([^"]+)"\s+lon="([^"]+)"/g
+    const points = []
+    let match
+    while ((match = trkptRegex.exec(gpxString)) !== null) {
+      points.push({ lat: parseFloat(match[1]), lon: parseFloat(match[2]) })
+    }
+
+    if (points.length < 2) {
+      throw new Error("Le fichier GPX ne contient pas assez de points de trace.")
+    }
+
+    // Si on ne force pas la vitesse ET que le fichier a déjà des timestamps, on le garde tel quel
+    const hasTimestamps = gpxString.includes('<time>')
+    if (!overrideSpeedKmh && hasTimestamps) {
+      const gpxPath = path.join(os.tmpdir(), 'antigravity_custom.gpx')
+      fs.writeFileSync(gpxPath, gpxString)
+      return gpxPath
+    }
+
+    // Sinon, on recalcule tout l'itinéraire avec la vitesse demandée
+    const speed = overrideSpeedKmh || 5
+    const speedMs = speed / 3.6
+    let totalTimeSec = 0
+    let startTime = Date.now()
+
+    let newGpx = '<?xml version="1.0" encoding="UTF-8"?>\n'
+    newGpx += '<gpx version="1.1" creator="Antigravity Navigator">\n'
+    newGpx += '  <trk><trkseg>\n'
+
+    // Premier point
+    newGpx += `    <trkpt lat="${points[0].lat.toFixed(6)}" lon="${points[0].lon.toFixed(6)}">\n`
+    newGpx += `      <time>${new Date(startTime).toISOString()}</time>\n`
+    newGpx += `    </trkpt>\n`
+
+    for (let i = 1; i < points.length; i++) {
+      const p1 = points[i - 1]
+      const p2 = points[i]
+      const d = this._getDistance(p1.lat, p1.lon, p2.lat, p2.lon)
+      const duration = d / speedMs
+      totalTimeSec += duration
+
+      const timeStr = new Date(startTime + totalTimeSec * 1000).toISOString()
+      newGpx += `    <trkpt lat="${p2.lat.toFixed(6)}" lon="${p2.lon.toFixed(6)}">\n`
+      newGpx += `      <time>${timeStr}</time>\n`
+      newGpx += `    </trkpt>\n`
+    }
+
+    newGpx += '  </trkseg></trk>\n'
+    newGpx += '</gpx>'
+
+    const gpxPath = path.join(os.tmpdir(), 'antigravity_custom.gpx')
+    fs.writeFileSync(gpxPath, newGpx)
+    dbg(`[route-generator] GPX personnalisé généré (${points.length} points, ~${Math.floor(totalTimeSec/60)} min)`)
+    
+    return gpxPath
+  }
+
+  /**
    * Distance Haversine en mètres
    */
   _getDistance(lat1, lon1, lat2, lon2) {

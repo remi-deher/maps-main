@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { StyleSheet, View, TouchableWithoutFeedback, Keyboard, KeyboardAvoidingView, Platform, TouchableOpacity, Text, Animated, Easing } from 'react-native';
+import { StyleSheet, View, TouchableWithoutFeedback, Keyboard, KeyboardAvoidingView, Platform, TouchableOpacity, Text, Animated, Easing, Alert } from 'react-native';
 import MapView, { Marker } from 'react-native-maps';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import * as Battery from 'expo-battery';
@@ -23,7 +23,7 @@ export default function App() {
   const { 
     status, favorites, recentHistory, simulatedCoords, 
     deviceInfo, connectionType, rsdAddress, serverState, verifiedLocation,
-    sendAction, startRoute, connect 
+    sendAction, startRoute, sendCustomGpx, connect 
   } = useSocket(serverIp, serverPort, isMaintaining);
   
   // États UI locaux
@@ -321,6 +321,28 @@ export default function App() {
                 saveSettings(ip, port); 
                 setShowSettings(false); 
                 connect(); 
+            }}
+            onImportGpx={(content) => {
+              Alert.alert(
+                "Importer un parcours",
+                "Comment voulez-vous simuler ce trajet ?",
+                [
+                  { text: "Vitesse réelle (si dispo)", onPress: () => sendCustomGpx(content, null) },
+                  { text: "Vitesse forcée...", onPress: () => {
+                    Alert.prompt(
+                      "Vitesse forcée",
+                      "Entrez la vitesse en km/h (ex: 20)",
+                      [
+                        { text: "Annuler", style: "cancel" },
+                        { text: "Lancer", onPress: (val) => sendCustomGpx(content, parseFloat(val) || 5) }
+                      ],
+                      "plain-text",
+                      "5"
+                    );
+                  }},
+                  { text: "Annuler", style: "cancel" }
+                ]
+              );
             }}
           />
 
