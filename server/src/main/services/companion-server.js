@@ -30,15 +30,17 @@ class CompanionServer extends EventEmitter {
     // ... (rest of constructor same)
 
     // Ecouter les mises a jour des favoris/historique
+    // On envoie STATUS_UPDATE (pas STATUS complet) pour ne pas déclencher la logique
+    // de restauration "serveur vierge" sur le client.
     favoritesManager.on('favorites-updated', (favs) => {
       this.status.favorites = favs
-      this._broadcast({ type: 'STATUS', data: this.status })
+      this._broadcast({ type: 'STATUS_UPDATE', data: { favorites: favs } })
       this.emit('favorites-updated', favs)
     })
 
     favoritesManager.on('history-updated', (history) => {
       this.status.recentHistory = history
-      this._broadcast({ type: 'STATUS', data: this.status })
+      this._broadcast({ type: 'STATUS_UPDATE', data: { recentHistory: history } })
       this.emit('history-updated', history)
     })
 
@@ -55,14 +57,24 @@ class CompanionServer extends EventEmitter {
     const rsdReady = !!this.tunnel?.getRsdAddress();
     const isStarting = this.tunnel?.isStarting ? this.tunnel.isStarting() : false;
     const simActive = !!(rsdReady && this.status?.lastVerifiedLocation);
+
+    // Les états manuels ('moving') ne doivent JAMAIS être écrasés par _refreshStatus.
+    // Seuls 'idle', 'ready', 'running', 'starting' sont calculés dynamiquement.
+    const manualStates = ['moving']
+    const currentState = this.status?.state
     
     let computedState = 'idle';
     if (simActive) computedState = 'running';
     else if (rsdReady) computedState = 'ready';
     else if (isStarting) computedState = 'starting';
     
+    // Préserver l'état manuel sauf si le tunnel n'est plus actif
+    const finalState = (manualStates.includes(currentState) && rsdReady)
+      ? currentState
+      : computedState;
+    
     this.status = {
-      state: computedState,
+      state: finalState,
       tunnelActive: rsdReady,
       rsdAddress: this.tunnel?.getRsdAddress() || null,
       rsdPort: this.tunnel?.getRsdPort() || null,
@@ -70,8 +82,8 @@ class CompanionServer extends EventEmitter {
       deviceInfo: this.tunnel?.getDeviceInfo() || null,
       maintainActive: this.status?.maintainActive || false,
       lastHeartbeat: this.status?.lastHeartbeat || null,
-      lastInjectedLocation: this.status?.lastInjectedLocation || null, // Demandée
-      lastVerifiedLocation: this.status?.lastVerifiedLocation || null, // Confirmée par le pont
+      lastInjectedLocation: this.status?.lastInjectedLocation || null,
+      lastVerifiedLocation: this.status?.lastVerifiedLocation || null,
       favorites: favoritesManager.getFavorites(),
       recentHistory: favoritesManager.getHistory()
     }
@@ -114,20 +126,26 @@ class CompanionServer extends EventEmitter {
               const { lat, lon, name } = payload
               if (lat !== undefined && lon !== undefined) {
                 const now = Date.now()
-                if (now - this.lastDriftRelance < 8000) {
-                  dbg(`[companion-server] ⏳ Dérive ignorée (cooldown 8s actif)`)
+                // Cooldown de 45s : après une injection réussie, l'iPhone mettra du
+                // temps à rapporter à nouveau sa vraie position GPS. Sans ce délai long,
+                // chaque rapport de position réelle (loin de la cible) déclencherait
+                // une relance infinie.
+                if (now - this.lastDriftRelance < 45000) {
+                  dbg(`[companion-server] ⏳ Dérive ignorée (cooldown 45s actif)`)
                   res.writeHead(200)
                   res.end()
                   return
                 }
 
                 // Vérifier si la dérive concerne bien la position ACTUELLE
+                // Si le rapport de position est très proche de la cible injectée (<100m),
+                // c'est que l'injection a réussi — pas de relance nécessaire.
                 const target = this.status?.lastInjectedLocation
                 if (target) {
                   const dLat = Math.abs(target.lat - lat)
                   const dLon = Math.abs(target.lon - lon)
-                  if (dLat > 0.01 || dLon > 0.01) {
-                    dbg(`[companion-server] 🗑 Dérive obsolète ignorée (pos. rapportée ≠ cible actuelle)`)
+                  if (dLat < 0.001 && dLon < 0.001) {
+                    dbg(`[companion-server] ✅ Position proche de la cible, injection confirmée`)
                     res.writeHead(200)
                     res.end()
                     return

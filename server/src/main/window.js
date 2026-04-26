@@ -166,19 +166,16 @@ app.whenReady().then(() => {
   companion.on('iphone-ip-detected', (ip) => {
     if (ipDetectTimer) clearTimeout(ipDetectTimer)
     
-    dbg(`[window] 📱 iPhone détecté (${ip}). Attente de stabilisation (3s)...`)
+    dbg(`[window] 📱 iPhone détecté (${ip}). Mise à jour IP compagnon.`)
     tunnel.setWifiIpOverride(ip)
     
-    ipDetectTimer = setTimeout(() => {
-      // Éviter de relancer si le tunnel est déjà en train de monter ou prêt
-      if (tunnel.isStarting() || !!tunnel.getRsdAddress()) {
-        dbg(`[window] 📱 Connexion déjà en cours ou prête. Pas de relance nécessaire.`)
-      } else {
-        dbg(`[window] 📱 Connexion stable. Rafraîchissement du tunnel Go-iOS...`)
-        tunnel.forceRefresh()
-      }
-      ipDetectTimer = null
-    }, 3000)
+    // Pas de forceRefresh ici.
+    // Le tunnel go-ios est déjà en cours d'exécution et scanne le device USB
+    // de façon autonome. Un restart forcé à ce moment-là tuerait le processus
+    // pendant sa phase de détection et créerait une boucle d'instabilité.
+    // Si le tunnel est mort, c'est le watchdog interne (tunneld-service) qui
+    // le relancera, pas nous.
+    ipDetectTimer = null
   })
 
   companion.on('favorites-updated', (favs) => {

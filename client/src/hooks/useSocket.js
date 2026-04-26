@@ -34,6 +34,10 @@ export function useSocket(ip, port, isMaintaining) {
   const pendingAck    = useRef(null);
   const pendingAckData = useRef(null);
 
+  // --- Garde anti-boucle restauration ---
+  // Empêche la restauration de se déclencher plusieurs fois par session WS
+  const hasRestoredThisSession = useRef(false);
+
   // ─────────────────────────────────────────
   // Helpers
   // ─────────────────────────────────────────
@@ -63,6 +67,8 @@ export function useSocket(ip, port, isMaintaining) {
   const stop = useCallback((reason = 'Non spécifiée') => {
     clearRetryTimer();
     clearAckTimer();
+    // Réinitialise le garde de restauration pour la prochaine connexion
+    hasRestoredThisSession.current = false;
     if (ws.current) {
       logEvent.add(`Fermeture WS — ${reason}`);
       ws.current.onclose = null; // évite le re-schedule du retry
@@ -142,6 +148,13 @@ export function useSocket(ip, port, isMaintaining) {
             return;
           }
 
+          // STATUS_UPDATE : mise à jour partielle (favoris, historique) — SANS déclencher de restauration
+          if (payload.type === 'STATUS_UPDATE') {
+            if (payload.data.favorites)     setFavorites(payload.data.favorites);
+            if (payload.data.recentHistory) setRecentHistory(payload.data.recentHistory);
+            return;
+          }
+
           if (payload.type === 'STATUS') {
             if (payload.data.favorites)     setFavorites(payload.data.favorites);
             if (payload.data.recentHistory) setRecentHistory(payload.data.recentHistory);
@@ -152,13 +165,19 @@ export function useSocket(ip, port, isMaintaining) {
             setServerState(payload.data.state);
             setVerifiedLocation(payload.data.lastVerifiedLocation);
 
-            if (payload.data.state === 'idle') {
-               logEvent.add("ℹ️ Serveur vierge détecté. Déclenchement restauration Option C...");
-               replayLastCoords(true); // Restauration forcée sans TTL
+            // Restauration "Option C" :
+            // Conditions strictes pour éviter les fausses détections :
+            // 1. L'état doit être 'idle' (pas 'ready', pas 'running', pas 'moving')
+            // 2. Le tunnel doit être actif (sinon le serveur démarre juste)
+            // 3. La restauration ne doit se déclencher qu'UNE FOIS par session de connexion
+            if (payload.data.state === 'idle' && payload.data.tunnelActive && !hasRestoredThisSession.current) {
+               hasRestoredThisSession.current = true;
+               logEvent.add("ℹ️ Serveur vierge (tunnel actif). Restauration Option C...");
+               replayLastCoords(true);
             } else if (payload.data.state === 'starting') {
                logEvent.add("⏳ Serveur en cours de démarrage, attente...");
-            } else {
-               logEvent.add(`✅ Simulation déjà active sur le serveur (${payload.data.state})`);
+            } else if (['running', 'moving', 'ready'].includes(payload.data.state)) {
+               logEvent.add(`✅ Simulation active sur le serveur (${payload.data.state})`);
             }
           } else if (payload.type === 'LOCATION') {
             const coords = {

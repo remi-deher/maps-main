@@ -58,8 +58,11 @@ class TunneldService extends EventEmitter {
 
     const goIosDir = path.dirname(GOIOS)
     this.runner.options.cwd = goIosDir
+    this.runner.options.env = Object.assign({}, process.env, { ENABLE_GO_IOS_AGENT: 'user' })
 
-    // Lancer le tunnel sans variables d'environnement restrictives pour tester la stabilité brute
+    // Utilisation du mode userspace (ENABLE_GO_IOS_AGENT=user) recommandé pour 
+    // éviter la corruption et le blocage de l'interface réseau Wintun sur Windows
+    // qui obligent sinon à redémarrer l'ordinateur.
     this.runner.spawn(GOIOS, ['tunnel', 'start', `--tunnel-info-port=${TUNNEL_INFO_PORT}`])
 
     // Début du polling API après 2s (laisser le processus démarrer)

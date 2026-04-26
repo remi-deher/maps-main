@@ -113,7 +113,8 @@ class GpsBridge extends EventEmitter {
 
       newProc.stdout.on('data', (data) => {
         const msg = data.toString()
-        if (msg.includes('Press ENTER to exit')) {
+        // dbg(`[python-pmd3-stdout] ${msg.trim()}`) // Décommenter si besoin de debug complet
+        if (msg.toLowerCase().includes('enter')) {
           if (!resolved) {
             resolved = true
             dbg(`[gps-bridge] ✅ Position active (Processus #${this.pythonProcs.length})`)
@@ -124,13 +125,21 @@ class GpsBridge extends EventEmitter {
 
       newProc.stderr.on('data', (data) => { 
         const msg = data.toString()
-        if (msg.includes('Error')) dbg(`[python-pmd3-err] ${msg.trim()}`)
+        // dbg(`[python-pmd3-stderr] ${msg.trim()}`)
+        if (msg.toLowerCase().includes('enter') && !resolved) {
+          resolved = true
+          dbg(`[gps-bridge] ✅ Position active (détecté via stderr)`)
+          resolve({ success: true })
+        }
+        if (msg.includes('Error') || msg.includes('Exception')) {
+          dbg(`[python-pmd3-err] ${msg.trim()}`)
+        }
       })
 
       const timer = setTimeout(() => {
         if (!resolved) {
           resolved = true
-          dbg('[gps-bridge] ⚠️ Timeout sur l\'injection')
+          dbg('[gps-bridge] ⚠️ Timeout sur l\'injection (aucun message de succès reçu de pymobiledevice3)')
           resolve({ success: false, error: 'Timeout' })
         }
       }, 10000)
@@ -139,6 +148,17 @@ class GpsBridge extends EventEmitter {
         if (timer) clearTimeout(timer)
         // Retirer de la liste si le processus s'arrête de lui-même
         this.pythonProcs = this.pythonProcs.filter(p => p !== newProc)
+        
+        if (!resolved) {
+          resolved = true
+          if (code === 0) {
+            dbg(`[gps-bridge] ✅ Position active (pymobiledevice3 s'est terminé avec succès)`)
+            resolve({ success: true })
+          } else {
+            dbg(`[gps-bridge] ❌ Injection échouée (code ${code})`)
+            resolve({ success: false, error: `Process exited with code ${code}` })
+          }
+        }
       })
     })
   }
