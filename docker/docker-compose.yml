@@ -6,6 +6,10 @@ services:
     container_name: gps-mock-server
     restart: unless-stopped
     privileged: true
+    cap_add:
+      - NET_ADMIN
+    devices:
+      - /dev/net/tun:/dev/net/tun
     extra_hosts:
       - "host.docker.internal:host-gateway"
     # ATTENTION: Sur Windows Docker Desktop, network_mode: host ne mappe pas les ports vers localhost.
