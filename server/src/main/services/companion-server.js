@@ -4,6 +4,10 @@ const WebSocket = require('ws')
 const { WebSocketServer } = WebSocket
 const os = require('os')
 const http = require('http')
+const fs = require('fs')
+const path = require('path')
+const express = require('express')
+const bodyParser = require('body-parser')
 const { EventEmitter } = require('events')
 const { dbg, sendStatus } = require('../logger')
 const favoritesManager = require('./favorites-manager')
@@ -19,10 +23,15 @@ class CompanionServer extends EventEmitter {
     this.tunnel = tunnelManager
     this.wss = null
     this.httpServer = null
+    this.app = express() // Utilisation d'Express pour Docker
     this.port = null
     this.clients = new Set()
     this.status = {}
     this.lastDriftRelance = 0 // Cooldown pour éviter les rafales
+    
+    // Configurer Express
+    this.app.use(bodyParser.json())
+    this._setupRoutes()
     
     // Initialisation du statut
     this._refreshStatus()
@@ -98,6 +107,77 @@ class CompanionServer extends EventEmitter {
     this._broadcast({ type: 'STATUS', data: this.status });
   }
 
+  _setupRoutes() {
+    // API d'enrôlement déporté (iOS-Enroller)
+    this.app.post('/api/enroll', (req, res) => {
+      const { udid, selfIdentity, deviceRecord } = req.body
+      if (!udid || !selfIdentity || !deviceRecord) return res.status(400).json({ error: 'Données manquantes' })
+
+      try {
+        dbg(`[enroll] Réception certificat pour UDID: ${udid}`)
+        
+        // 1. Sauvegarder l'identité hôte (à la racine du dossier server/)
+        fs.writeFileSync(path.join(__dirname, '..', '..', '..', 'selfIdentity.plist'), selfIdentity)
+
+        // 2. Déterminer le dossier Lockdown selon l'OS
+        let lockdownDir = 'C:\\ProgramData\\Apple\\Lockdown'
+        if (process.platform === 'linux') {
+          lockdownDir = '/var/lib/lockdown'
+          if (!fs.existsSync(lockdownDir)) {
+            fs.mkdirSync(lockdownDir, { recursive: true })
+          }
+        }
+
+        const devicePath = path.join(lockdownDir, `${udid}.plist`)
+        fs.writeFileSync(devicePath, deviceRecord)
+        
+        dbg(`[enroll] ✅ Certificats installés avec succès dans ${lockdownDir}`)
+        res.json({ success: true, message: 'Enrôlement réussi sur le serveur' })
+      } catch (err) {
+        dbg(`[enroll] ❌ Erreur installation: ${err.message}`)
+        res.status(500).json({ error: err.message })
+      }
+    })
+
+    // API Status pour le Dashboard
+    this.app.get('/api/status', (req, res) => {
+      res.json(this.status)
+    })
+
+    // Gestion de la détection de dérive (RELANCE)
+    this.app.post('/api/relance', (req, res) => {
+      const { lat, lon, name } = req.body
+      if (lat === undefined || lon === undefined) return res.status(400).end()
+
+      // Cooldown de 45s
+      const now = Date.now()
+      if (now - this.lastDriftRelance < 45000) {
+        return res.json({ ignored: 'cooldown' })
+      }
+
+      // Vérifier si proche de la cible
+      const target = this.status?.lastInjectedLocation
+      if (target) {
+        const dLat = Math.abs(target.lat - lat)
+        const dLon = Math.abs(target.lon - lon)
+        if (dLat < 0.001 && dLon < 0.001) return res.json({ success: true, note: 'near_target' })
+      }
+
+      this.lastDriftRelance = now
+
+      // Ignorer si tunnel en cours
+      if (this.status.state === 'starting' || this.status.state === 'ready') {
+        dbg(`[companion-server] ⏳ Dérive ignorée (Initialisation: ${this.status.state})`)
+        return res.json({ ignored: 'init' })
+      }
+
+      dbg(`[companion-server] ⚠️ DÉRIVE DÉTECTÉE sur l'iPhone (${lat}, ${lon}). Relance forcée...`)
+      sendStatus('companion', 'info', `Secours : Simulation forcée (Dérive détectée)`)
+      this.emit('request-location', { lat, lon, name, force: true })
+      res.json({ success: true })
+    })
+  }
+
   /**
    * Demarre le serveur WebSocket + HTTP
    */
@@ -115,74 +195,8 @@ class CompanionServer extends EventEmitter {
     try {
       this.port = port
       
-      // Creation du serveur HTTP pour gerer les requetes de secours (Background)
-      this.httpServer = http.createServer((req, res) => {
-        if (req.method === 'POST' && req.url === '/relance') {
-          let body = ''
-          req.on('data', chunk => body += chunk.toString())
-          req.on('end', () => {
-            try {
-              const payload = JSON.parse(body)
-              const { lat, lon, name } = payload
-              if (lat !== undefined && lon !== undefined) {
-                const now = Date.now()
-                // Cooldown de 45s : après une injection réussie, l'iPhone mettra du
-                // temps à rapporter à nouveau sa vraie position GPS. Sans ce délai long,
-                // chaque rapport de position réelle (loin de la cible) déclencherait
-                // une relance infinie.
-                if (now - this.lastDriftRelance < 45000) {
-                  dbg(`[companion-server] ⏳ Dérive ignorée (cooldown 45s actif)`)
-                  res.writeHead(200)
-                  res.end()
-                  return
-                }
-
-                // Vérifier si la dérive concerne bien la position ACTUELLE
-                // Si le rapport de position est très proche de la cible injectée (<100m),
-                // c'est que l'injection a réussi — pas de relance nécessaire.
-                const target = this.status?.lastInjectedLocation
-                if (target) {
-                  const dLat = Math.abs(target.lat - lat)
-                  const dLon = Math.abs(target.lon - lon)
-                  if (dLat < 0.001 && dLon < 0.001) {
-                    dbg(`[companion-server] ✅ Position proche de la cible, injection confirmée`)
-                    res.writeHead(200)
-                    res.end()
-                    return
-                  }
-                }
-
-                this.lastDriftRelance = now
-
-                // Ignorer la dérive si le tunnel est en train de monter ou vient juste d'être prêt
-                // On laisse 15s au système pour ré-injecter la position après un tunnel ready.
-                if (this.status.state === 'starting' || this.status.state === 'ready') {
-                  dbg(`[companion-server] ⏳ Dérive ignorée (Tunnel en phase d'initialisation: ${this.status.state})`)
-                  res.writeHead(200)
-                  res.end()
-                  return
-                }
-
-                dbg(`[companion-server] ⚠️ DÉRIVE DÉTECTÉE sur l'iPhone (${lat}, ${lon}). Relance forcée...`)
-                sendStatus('companion', 'info', `Secours : Simulation forcée (Dérive détectée)`)
-                this.emit('request-location', { lat, lon, name, force: true })
-                res.writeHead(200, { 'Content-Type': 'application/json' })
-                res.end(JSON.stringify({ success: true }))
-                return
-              }
-            } catch (e) {
-              dbg(`[companion-server] Erreur parsing POST /relance: ${e.message}`)
-            }
-            res.writeHead(400)
-            res.end()
-          })
-          return
-        }
-        
-        // Reponse par defaut
-        res.writeHead(404)
-        res.end()
-      })
+      // Creation du serveur HTTP via Express
+      this.httpServer = http.createServer(this.app)
 
       // Attacher le WebSocket au serveur HTTP
       this.wss = new WebSocketServer({ server: this.httpServer })

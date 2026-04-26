@@ -1,0 +1,26 @@
+version: '3.8'
+
+services:
+  gps-mock-server:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    container_name: gps-mock-server
+    restart: unless-stopped
+    # ATTENTION: Sur Windows Docker Desktop, network_mode: host ne mappe pas les ports vers localhost.
+    # Pour tester sur Windows, on désactive network_mode: host et on utilise ports.
+    # Lors du déploiement sur TrueNAS (Linux), décommentez network_mode: host et supprimez ports.
+    # network_mode: host
+    ports:
+      - "8080:8080"
+    volumes:
+      # Persistance des certificats de confiance de l'iPhone
+      - lockdown-data:/var/lib/lockdown
+      # Optionnel : logs persistants
+      - ./logs:/app/server/logs
+    environment:
+      - NODE_ENV=production
+      - DEBUG=true
+
+volumes:
+  lockdown-data:
