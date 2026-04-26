@@ -5,7 +5,17 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>GPS Mock V2</title>
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap">
-    <script src="/web-api.js"></script>
+    <script>
+      (function() {
+        const isFile = window.location.protocol === 'file:';
+        const isElectron = navigator.userAgent.includes('Electron');
+        if (!isFile && !isElectron) {
+          const s = document.createElement('script');
+          s.src = '/web-api.js';
+          document.head.appendChild(s);
+        }
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

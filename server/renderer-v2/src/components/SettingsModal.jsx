@@ -12,11 +12,13 @@ function SettingsModal({ isOpen, onClose }) {
     preferredIp: ''
   });
   const [interfaces, setInterfaces] = useState([]);
+  const [plistData, setPlistData] = useState({ plists: [], hasSelfIdentity: false });
 
   useEffect(() => {
     if (isOpen) {
       window.gps.getSettings().then(setSettings);
       window.gps.getNetworkInterfaces().then(setInterfaces);
+      window.gps.listPlists().then(setPlistData);
     }
   }, [isOpen]);
 
@@ -107,8 +109,18 @@ function SettingsModal({ isOpen, onClose }) {
 
           {/* Network Settings */}
           <section className="space-y-4">
-            <label className="text-sm font-bold text-slate-400 uppercase tracking-wider">Réglages avancés</label>
+            <label className="text-sm font-bold text-slate-400 uppercase tracking-wider">Réglages avancés (Connexion iPhone)</label>
             <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2 col-span-2">
+                <p className="text-xs text-slate-500 px-1">Adresse IP de l'iPhone (Force Override)</p>
+                <input 
+                  type="text" 
+                  value={settings.wifiIp}
+                  onChange={(e) => setSettings({...settings, wifiIp: e.target.value})}
+                  placeholder="ex: 192.168.1.15 (Laisser vide pour auto)"
+                  className="w-full bg-white/5 border border-white/10 rounded-xl p-3 outline-none focus:border-blue-500 transition-colors"
+                />
+              </div>
               <div className="space-y-2">
                 <p className="text-xs text-slate-500 px-1">Port WebSocket (PC)</p>
                 <input 
@@ -126,6 +138,127 @@ function SettingsModal({ isOpen, onClose }) {
                   onChange={(e) => setSettings({...settings, wifiPort: parseInt(e.target.value)})}
                   className="w-full bg-white/5 border border-white/10 rounded-xl p-3 outline-none focus:border-blue-500 transition-colors"
                 />
+              </div>
+            </div>
+          </section>
+
+          {/* Enrôlement Manuel */}
+          <section className="space-y-4">
+            <label className="text-sm font-bold text-slate-400 uppercase tracking-wider flex items-center gap-2">
+              <ShieldCheck className="w-4 h-4 text-green-400" />
+              Enrôlement Manuel (.plist)
+            </label>
+            <div className="bg-white/5 border border-white/10 rounded-2xl p-4 space-y-3">
+              <p className="text-xs text-slate-400">
+                Si vous ne pouvez pas utiliser l'application mobile pour l'enrôlement, 
+                vous pouvez importer manuellement vos fichiers <code className="text-blue-400">selfIdentity.plist</code> 
+                et <code className="text-blue-400">[UDID].plist</code>.
+              </p>
+              <div className="flex gap-2">
+                <input 
+                  type="file" 
+                  accept=".plist"
+                  multiple
+                  onChange={async (e) => {
+                    const files = Array.from(e.target.files);
+                    for (const file of files) {
+                      const reader = new FileReader();
+                      reader.onload = async (event) => {
+                        const res = await window.gps.importPlist({
+                          name: file.name,
+                          content: event.target.result
+                        });
+                        if (res.success) {
+                          alert(`Fichier ${file.name} importé avec succès !`);
+                        } else {
+                          alert(`Erreur pour ${file.name}: ${res.error}`);
+                        }
+                      };
+                      reader.readAsText(file);
+                    }
+                  }}
+                  className="block w-full text-sm text-slate-400
+                    file:mr-4 file:py-2 file:px-4
+                    file:rounded-xl file:border-0
+                    file:text-sm file:font-semibold
+                    file:bg-blue-600 file:text-white
+                    hover:file:bg-blue-500
+                    cursor-pointer"
+                />
+              </div>
+            </div>
+          </section>
+
+          {/* Liste des Certificats */}
+          <section className="space-y-4">
+            <label className="text-sm font-bold text-slate-400 uppercase tracking-wider flex items-center justify-between">
+              <span>Certificats Installés</span>
+              <button 
+                onClick={() => {
+                  window.gps.listPlists().then(res => {
+                    if (res.success) {
+                      setPlistData(res);
+                    }
+                  });
+                }}
+                className="text-[10px] text-blue-400 hover:underline"
+              >
+                Actualiser
+              </button>
+            </label>
+            <div className="space-y-2">
+              {/* Serveur Key */}
+              <div className="flex items-center justify-between p-3 bg-white/5 border border-white/10 rounded-xl">
+                <div className="flex items-center gap-3">
+                  <div className={`w-2 h-2 rounded-full ${plistData.hasSelfIdentity ? 'bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.6)]' : 'bg-red-500'}`} />
+                  <div>
+                    <p className="text-sm font-bold">Identité Serveur</p>
+                    <p className="text-[10px] text-slate-500">selfIdentity.plist</p>
+                  </div>
+                </div>
+                <button 
+                  onClick={async () => {
+                    if (confirm("Voulez-vous vraiment réinitialiser l'identité du serveur ? Cela cassera le jumelage avec tous les iPhones.")) {
+                      await window.gps.deletePlist('selfIdentity.plist');
+                      const res = await window.gps.listPlists();
+                      setPlistData(res);
+                    }
+                  }}
+                  className="px-3 py-1 bg-red-500/10 hover:bg-red-500/20 text-red-400 text-[10px] font-bold rounded-lg transition-colors"
+                >
+                  {plistData.hasSelfIdentity ? 'Réinitialiser' : 'Manquant'}
+                </button>
+              </div>
+
+              {/* Liste UDIDs */}
+              <div className="max-h-40 overflow-y-auto space-y-2 pr-1 custom-scrollbar">
+                {plistData.plists && plistData.plists.length > 0 ? (
+                  plistData.plists.map((name, i) => (
+                    <div key={i} className="flex items-center justify-between p-3 bg-white/5 border border-white/5 rounded-xl">
+                      <div className="flex items-center gap-3">
+                        <div className="w-2 h-2 rounded-full bg-blue-500/50" />
+                        <div>
+                          <p className="text-[11px] font-medium text-slate-300">iPhone UDID</p>
+                          <p className="text-[10px] text-slate-500 font-mono">{name.replace('.plist', '')}</p>
+                        </div>
+                      </div>
+                      <button 
+                        onClick={async () => {
+                          if (confirm(`Supprimer le certificat pour ${name} ?`)) {
+                            await window.gps.deletePlist(name);
+                            const res = await window.gps.listPlists();
+                            setPlistData(res);
+                          }
+                        }}
+                        className="p-2 hover:bg-white/10 text-slate-500 hover:text-red-400 rounded-lg transition-colors"
+                      >
+                        <X className="w-4 h-4" />
+                      </button>
+                    </div>
+                  ))
+                ) : (
+                  <p className="text-center py-4 text-xs text-slate-600 italic">Aucun iPhone jumelé</p>
+                )}
               </div>
             </div>
           </section>

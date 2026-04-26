@@ -116,8 +116,9 @@ class CompanionServer extends EventEmitter {
       try {
         dbg(`[enroll] Réception certificat pour UDID: ${udid}`)
         
-        // 1. Sauvegarder l'identité hôte (à la racine du dossier server/)
-        fs.writeFileSync(path.join(__dirname, '..', '..', '..', 'selfIdentity.plist'), selfIdentity)
+        // 1. Sauvegarder l'identité hôte (à la racine du projet, parent de /server)
+        const projectRoot = path.join(__dirname, '..', '..', '..')
+        fs.writeFileSync(path.join(projectRoot, 'selfIdentity.plist'), selfIdentity)
 
         // 2. Déterminer le dossier Lockdown selon l'OS
         let lockdownDir = 'C:\\ProgramData\\Apple\\Lockdown'

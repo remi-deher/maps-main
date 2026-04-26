@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   gps-mock-server:
     build:
@@ -7,6 +5,9 @@ services:
       dockerfile: docker/Dockerfile
     container_name: gps-mock-server
     restart: unless-stopped
+    privileged: true
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     # ATTENTION: Sur Windows Docker Desktop, network_mode: host ne mappe pas les ports vers localhost.
     # Pour tester sur Windows, on désactive network_mode: host et on utilise ports.
     # Lors du déploiement sur TrueNAS (Linux), décommentez network_mode: host et supprimez ports.

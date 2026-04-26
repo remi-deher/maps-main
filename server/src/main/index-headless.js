@@ -24,7 +24,7 @@ Module.prototype.require = function(id) {
       app: { 
         getPath: () => path.join(__dirname, '../../logs'), 
         isPackaged: false, 
-        getAppPath: () => __dirname,
+        getAppPath: () => path.join(__dirname, '..', '..'),
         whenReady: async () => {}
       },
       shell: { openPath: () => {} },
@@ -51,15 +51,8 @@ async function startServer() {
   try {
     dbg('[server] Initialisation des services...');
     
-    // Si on est sous Linux, on s'assure que usbmuxd est lancé pour que go-ios soit content
-    if (process.platform === 'linux') {
-      try {
-        require('child_process').execSync('usbmuxd -d', { stdio: 'ignore' });
-        dbg('[server] Daemon usbmuxd démarré');
-      } catch (e) {
-        dbg('[server] Note: impossible de démarrer usbmuxd (normal s\'il tourne déjà)');
-      }
-    }
+    // usbmuxd est maintenant géré par l'entrypoint.sh au niveau système
+
 
     // Initialisation comme dans window.js
     const gps = new GpsSimulator(tunnelManager);
@@ -71,6 +64,10 @@ async function startServer() {
     registerIpcHandlers(tunnelManager, gps, companion);
 
     // --- API REST POUR LE DASHBOARD WEB ---
+    companion.app.get('/web-api.js', (req, res) => {
+      res.sendFile(path.join(__dirname, 'web-api.js'));
+    });
+
     companion.app.post('/api/ipc/:action', async (req, res) => {
       const action = req.params.action;
       const handler = ipcHandlers[action];

@@ -10,6 +10,10 @@ RUN apt-get update && apt-get install -y \
     git \
     libusb-1.0-0 \
     usbmuxd \
+    socat \
+    procps \
+    iputils-ping \
+    net-tools \
     && rm -rf /var/lib/apt/lists/*
 
 # Création de l'environnement Python et installation de pymobiledevice3
@@ -47,5 +51,9 @@ ENV PORT=8080
 # Exposition du port (Dashboard + WS)
 EXPOSE 8080
 
-# Commande de démarrage (Mode Headless)
-CMD ["node", "server/src/main/index-headless.js"]
+# Copie et configuration du script d'entrée
+COPY docker/entrypoint.sh /usr/local/bin/
+RUN chmod +x /usr/local/bin/entrypoint.sh
+
+# Commande de démarrage (Mode Headless via Entrypoint)
+ENTRYPOINT ["entrypoint.sh"]

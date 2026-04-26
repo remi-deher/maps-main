@@ -22,8 +22,6 @@ function registerIpcHandlers(tunnel, gps, companion) {
 
   ipcMain.handle('restart-tunnel', () => tunnel.forceRefresh())
 
-  ipcMain.handle('get-network-interfaces', () => getNetworkInterfaces())
-
   // ─── GPS Simulation ────────────────────────────────────────────────────────
   
   ipcMain.handle('set-location', async (_event, { lat, lon, name }) => {
@@ -209,8 +207,70 @@ function registerIpcHandlers(tunnel, gps, companion) {
     }
   })
 
+  ipcMain.handle('get-network-interfaces', () => {
+    return companion.getNetworkInterfaces ? companion.getNetworkInterfaces() : []
+  })
+
   ipcMain.handle('open-logs', async () => {
     await shell.openPath(app.getPath('logs'))
+  })
+
+  ipcMain.handle('import-plist', async (_event, { name, content }) => {
+    const fs = require('fs')
+    const path = require('path')
+    try {
+      const projectRoot = path.join(app.getAppPath(), '..')
+      if (name === 'selfIdentity.plist') {
+        fs.writeFileSync(path.join(projectRoot, 'selfIdentity.plist'), content)
+      } else {
+        let lockdownDir = 'C:\\ProgramData\\Apple\\Lockdown'
+        if (process.platform === 'linux') {
+          lockdownDir = '/var/lib/lockdown'
+        }
+        if (!fs.existsSync(lockdownDir)) fs.mkdirSync(lockdownDir, { recursive: true })
+        fs.writeFileSync(path.join(lockdownDir, name), content)
+      }
+      return { success: true }
+    } catch (e) {
+      return { success: false, error: e.message }
+    }
+  })
+
+  ipcMain.handle('list-plists', async () => {
+    const fs = require('fs')
+    const path = require('path')
+    try {
+      let lockdownDir = 'C:\\ProgramData\\Apple\\Lockdown'
+      if (process.platform === 'linux') lockdownDir = '/var/lib/lockdown'
+      
+      const files = fs.existsSync(lockdownDir) ? fs.readdirSync(lockdownDir).filter(f => f.endsWith('.plist')) : []
+      const projectRoot = path.join(app.getAppPath(), '..')
+      const hasSelfIdentity = fs.existsSync(path.join(projectRoot, 'selfIdentity.plist'))
+      
+      return { success: true, plists: files, hasSelfIdentity }
+    } catch (e) {
+      return { success: false, error: e.message }
+    }
+  })
+
+  ipcMain.handle('delete-plist', async (_event, name) => {
+    const fs = require('fs')
+    const path = require('path')
+    try {
+      const projectRoot = path.join(app.getAppPath(), '..')
+      if (name === 'selfIdentity.plist') {
+        const p = path.join(projectRoot, 'selfIdentity.plist')
+        if (fs.existsSync(p)) fs.unlinkSync(p)
+      } else {
+        let lockdownDir = 'C:\\ProgramData\\Apple\\Lockdown'
+        if (process.platform === 'linux') lockdownDir = '/var/lib/lockdown'
+        const p = path.join(lockdownDir, name)
+        if (fs.existsSync(p)) fs.unlinkSync(p)
+      }
+      return { success: true }
+    } catch (e) {
+      return { success: false, error: e.message }
+    }
   })
 }
 

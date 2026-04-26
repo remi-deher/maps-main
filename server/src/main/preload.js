@@ -25,4 +25,9 @@ contextBridge.exposeInMainWorld('gps', {
   addFavorite:   (fav) => ipcRenderer.invoke('add-favorite', fav),
   removeFavorite:(lat, lon) => ipcRenderer.invoke('remove-favorite', { lat, lon }),
   renameFavorite:(lat, lon, newName) => ipcRenderer.invoke('rename-favorite', { lat, lon, newName }),
+
+  // Gestion des certificats (.plist)
+  importPlist:   (data) => ipcRenderer.invoke('import-plist', data),
+  listPlists:    () => ipcRenderer.invoke('list-plists'),
+  deletePlist:   (name) => ipcRenderer.invoke('delete-plist', name),
 })
