@@ -1,40 +1,37 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+Ximport { useState, useEffect, useRef, useCallback } from 'react';
 import { AppState } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { eventBus } from '../services/background';
 import { logEvent } from '../services/logger';
 
-const COORDS_TTL_MS  = 30 * 60 * 1000; // 30 min (Replay TTL)
+const COORDS_TTL_MS = 30 * 60 * 1000; // 30 min (Replay TTL)
 const ACK_TIMEOUT_MS = 3000;            // 3s sans ACK → renvoi
-const PING_INTERVAL  = 3000;            // Heartbeat strict
-const MAX_RETRY_MS   = 30000;           // Backoff plafonné à 30s
+const PING_INTERVAL = 3000;            // Heartbeat strict
+const MAX_RETRY_MS = 30000;           // Backoff plafonné à 30s
 
 export function useSocket(ip, port, isMaintaining) {
-  const [status, setStatus]               = useState('Déconnecté');
-  const [favorites, setFavorites]         = useState([]);
+  const [status, setStatus] = useState('Déconnecté');
+  const [favorites, setFavorites] = useState([]);
   const [recentHistory, setRecentHistory] = useState([]);
   const [simulatedCoords, setSimulatedCoords] = useState(null);
-  const [deviceInfo, setDeviceInfo]       = useState(null);
+  const [deviceInfo, setDeviceInfo] = useState(null);
   const [connectionType, setConnectionType] = useState(null);
-  const [rsdAddress, setRsdAddress]       = useState(null);
+  const [rsdAddress, setRsdAddress] = useState(null);
   const [serverState, setServerState] = useState('idle');
   const [verifiedLocation, setVerifiedLocation] = useState(null);
-  const [usbDriver, setUsbDriver] = useState('go-ios');
-  const [wifiDriver, setWifiDriver] = useState('pymobiledevice');
-  const [fallbackEnabled, setFallbackEnabled] = useState(true);
 
-  const ws            = useRef(null);
-  const isConnecting  = useRef(false);
-  const statusRef     = useRef('Déconnecté');
-  const lastConfig    = useRef({ ip: null, port: null });
-  const appState      = useRef(AppState.currentState);
+  const ws = useRef(null);
+  const isConnecting = useRef(false);
+  const statusRef = useRef('Déconnecté');
+  const lastConfig = useRef({ ip: null, port: null });
+  const appState = useRef(AppState.currentState);
 
   // --- Couche 1 : Backoff exponentiel ---
-  const retryDelay    = useRef(1000);
-  const retryTimer    = useRef(null);
+  const retryDelay = useRef(1000);
+  const retryTimer = useRef(null);
 
   // --- Couche 4 : ACK serveur ---
-  const pendingAck    = useRef(null);
+  const pendingAck = useRef(null);
   const pendingAckData = useRef(null);
 
   // --- Garde anti-boucle restauration ---
@@ -91,13 +88,13 @@ export function useSocket(ip, port, isMaintaining) {
       if (!raw) return;
       const saved = JSON.parse(raw);
       const age = Date.now() - (saved.savedAt || 0);
-      
+
       // Option C : On ignore le TTL si c'est une restauration forcée (serveur vide)
       if (!force && age > COORDS_TTL_MS) {
         logEvent.add('Coords expirées (TTL > 30min), pas de replay');
         return;
       }
-      
+
       if (ws.current?.readyState === WebSocket.OPEN) {
         const { latitude, longitude, name } = saved;
         ws.current.send(JSON.stringify({ type: 'SET_LOCATION', data: { lat: latitude, lon: longitude, name } }));
@@ -117,7 +114,7 @@ export function useSocket(ip, port, isMaintaining) {
 
     isConnecting.current = true;
     updateStatus('Connexion...');
-    
+
     try {
       ws.current = new WebSocket(`ws://${ip}:${port}`);
 
@@ -153,53 +150,50 @@ export function useSocket(ip, port, isMaintaining) {
 
           // STATUS_UPDATE : mise à jour partielle (favoris, historique) — SANS déclencher de restauration
           if (payload.type === 'STATUS_UPDATE') {
-            if (payload.data.favorites)     setFavorites(payload.data.favorites);
+            if (payload.data.favorites) setFavorites(payload.data.favorites);
             if (payload.data.recentHistory) setRecentHistory(payload.data.recentHistory);
             return;
           }
 
           if (payload.type === 'STATUS') {
-            if (payload.data.favorites)     setFavorites(payload.data.favorites);
+            if (payload.data.favorites) setFavorites(payload.data.favorites);
             if (payload.data.recentHistory) setRecentHistory(payload.data.recentHistory);
-            if (payload.data.deviceInfo)    setDeviceInfo(payload.data.deviceInfo);
+            if (payload.data.deviceInfo) setDeviceInfo(payload.data.deviceInfo);
             if (payload.data.connectionType) setConnectionType(payload.data.connectionType);
-            if (payload.data.rsdAddress)    setRsdAddress(payload.data.rsdAddress);
-            
+            if (payload.data.rsdAddress) setRsdAddress(payload.data.rsdAddress);
+
             setServerState(payload.data.state);
             setVerifiedLocation(payload.data.lastVerifiedLocation);
-            if (payload.data.usbDriver) setUsbDriver(payload.data.usbDriver);
-            if (payload.data.wifiDriver) setWifiDriver(payload.data.wifiDriver);
-            if (payload.data.fallbackEnabled !== undefined) setFallbackEnabled(payload.data.fallbackEnabled);
 
             // Restauration "Option C" :
             // Conditions strictes pour éviter les fausses détections :
             // 1. L'état doit être 'ready' (le tunnel est actif mais aucune simulation n'est en cours)
             // 2. La restauration ne doit se déclencher qu'UNE FOIS par session de connexion
             if (payload.data.state === 'ready' && !hasRestoredThisSession.current) {
-               hasRestoredThisSession.current = true;
-               logEvent.add("ℹ️ Tunnel prêt, serveur vierge. Restauration automatique...");
-               replayLastCoords(true);
+              hasRestoredThisSession.current = true;
+              logEvent.add("ℹ️ Tunnel prêt, serveur vierge. Restauration automatique...");
+              replayLastCoords(true);
             } else if (payload.data.state === 'starting' || payload.data.state === 'idle') {
-               logEvent.add(`⏳ Serveur non prêt (${payload.data.state}), attente...`);
+              logEvent.add(`⏳ Serveur non prêt (${payload.data.state}), attente...`);
             } else if (['running', 'moving'].includes(payload.data.state)) {
-               // Pour éviter de spammer les logs, on n'affiche ça que si c'est la première fois
-               if (!hasRestoredThisSession.current) {
-                 hasRestoredThisSession.current = true;
-                 logEvent.add(`✅ Simulation déjà active sur le serveur (${payload.data.state})`);
-               }
+              // Pour éviter de spammer les logs, on n'affiche ça que si c'est la première fois
+              if (!hasRestoredThisSession.current) {
+                hasRestoredThisSession.current = true;
+                logEvent.add(`✅ Simulation déjà active sur le serveur (${payload.data.state})`);
+              }
             }
           } else if (payload.type === 'LOCATION') {
             const coords = {
-              latitude:  payload.data.lat,
+              latitude: payload.data.lat,
               longitude: payload.data.lon,
-              name:      payload.data.name,
-              savedAt:   Date.now()
+              name: payload.data.name,
+              savedAt: Date.now()
             };
             setSimulatedCoords(coords);
             // Sauvegarde pour le Replay et la Tâche de fond
             AsyncStorage.setItem('MOCK_LOCATION', JSON.stringify(coords));
           }
-        } catch (_) {}
+        } catch (_) { }
       };
 
       ws.current.onclose = (e) => {
@@ -253,12 +247,12 @@ export function useSocket(ip, port, isMaintaining) {
           savedAt: Date.now()
         };
         await AsyncStorage.setItem('MOCK_LOCATION', JSON.stringify(coordsToSave));
-      } catch (_) {}
+      } catch (_) { }
 
       // Couche 4 : Armer le timer ACK avec fonction récursive nommée
       clearAckTimer();
       pendingAckData.current = data;
-      
+
       const retransmit = () => {
         if (ws.current?.readyState === WebSocket.OPEN && pendingAckData.current) {
           logEvent.add('Pas d\'ACK — renvoi coords...', 'error');
@@ -266,7 +260,7 @@ export function useSocket(ip, port, isMaintaining) {
           pendingAck.current = setTimeout(retransmit, ACK_TIMEOUT_MS);
         }
       };
-      
+
       pendingAck.current = setTimeout(retransmit, ACK_TIMEOUT_MS);
     }
 
@@ -404,9 +398,6 @@ export function useSocket(ip, port, isMaintaining) {
     sendSequence,
     sendCustomGpx,
     connect,
-    stop,
-    usbDriver,
-    wifiDriver,
-    fallbackEnabled
+    stop
   };
 }
