@@ -167,17 +167,20 @@ export function useSocket(ip, port, isMaintaining) {
 
             // Restauration "Option C" :
             // Conditions strictes pour éviter les fausses détections :
-            // 1. L'état doit être 'idle' (pas 'ready', pas 'running', pas 'moving')
-            // 2. Le tunnel doit être actif (sinon le serveur démarre juste)
-            // 3. La restauration ne doit se déclencher qu'UNE FOIS par session de connexion
-            if (payload.data.state === 'idle' && payload.data.tunnelActive && !hasRestoredThisSession.current) {
+            // 1. L'état doit être 'ready' (le tunnel est actif mais aucune simulation n'est en cours)
+            // 2. La restauration ne doit se déclencher qu'UNE FOIS par session de connexion
+            if (payload.data.state === 'ready' && !hasRestoredThisSession.current) {
                hasRestoredThisSession.current = true;
-               logEvent.add("ℹ️ Serveur vierge (tunnel actif). Restauration Option C...");
+               logEvent.add("ℹ️ Tunnel prêt, serveur vierge. Restauration automatique...");
                replayLastCoords(true);
-            } else if (payload.data.state === 'starting') {
-               logEvent.add("⏳ Serveur en cours de démarrage, attente...");
-            } else if (['running', 'moving', 'ready'].includes(payload.data.state)) {
-               logEvent.add(`✅ Simulation active sur le serveur (${payload.data.state})`);
+            } else if (payload.data.state === 'starting' || payload.data.state === 'idle') {
+               logEvent.add(`⏳ Serveur non prêt (${payload.data.state}), attente...`);
+            } else if (['running', 'moving'].includes(payload.data.state)) {
+               // Pour éviter de spammer les logs, on n'affiche ça que si c'est la première fois
+               if (!hasRestoredThisSession.current) {
+                 hasRestoredThisSession.current = true;
+                 logEvent.add(`✅ Simulation déjà active sur le serveur (${payload.data.state})`);
+               }
             }
           } else if (payload.type === 'LOCATION') {
             const coords = {
