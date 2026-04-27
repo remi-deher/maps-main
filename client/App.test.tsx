@@ -48,10 +48,13 @@ jest.mock('react-native-maps', () => {
 });
 
 describe('<App />', () => {
-  it('renders correctly (Smoke Test)', () => {
+  it('renders correctly (Smoke Test)', async () => {
     // On wrap dans un try/catch pour capturer les erreurs de boot
     try {
-      const tree = renderer.create(<App />).toJSON();
+      let tree;
+      await renderer.act(async () => {
+        tree = renderer.create(<App />);
+      });
       expect(tree).toBeDefined();
     } catch (error) {
       console.error("SMOKE TEST FAILED: The application crashed during rendering.");
