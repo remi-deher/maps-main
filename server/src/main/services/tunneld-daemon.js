@@ -19,10 +19,21 @@ class TunneldDaemon extends EventEmitter {
     this.runner.on('stderr', (msg) => this._handleOutput(msg))
   }
 
-  start() {
+  async start() {
     if (this.runner.isRunning) return
+    await this.stop()
     dbg('[tunneld-daemon] Lancement du demon global...')
-    this.runner.spawn(PYTHON, ['-m', 'pymobiledevice3', 'remote', 'tunneld'])
+    
+    const settings = require('./settings-manager')
+    const args = ['-m', 'pymobiledevice3', 'remote', 'tunneld']
+    
+    // Si go-ios est le driver préféré pour l'USB, on demande à PMD3 d'ignorer l'USB
+    // pour éviter les conflits de ports locaux (bind error 60106)
+    if (settings.get('usbDriver') === 'go-ios') {
+      args.push('--no-usbmux') 
+    }
+    
+    this.runner.spawn(PYTHON, args)
   }
 
   _handleOutput(text) {

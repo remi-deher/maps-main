@@ -73,41 +73,40 @@ class ProcessRunner extends EventEmitter {
   }
 
   stop() {
-    if (this.process || this.name === 'tunneld') {
+    return new Promise((resolve) => {
+      if (!this.process && this.name !== 'tunneld') return resolve()
+
       const pid = this.process ? this.process.pid : null
       dbg(`[${this.name}] Arret du processus${pid ? ` (PID: ${pid})` : ''}...`)
       
       if (process.platform === 'win32') {
-        try {
-          if (pid) {
-            const { execSync } = require('child_process')
-            execSync(`taskkill /F /T /PID ${pid}`, { stdio: 'ignore' })
-          }
-        } catch (e) { /* ignore */ }
+        const tasks = []
+        
+        if (pid) {
+          tasks.push(new Promise(r => exec(`taskkill /F /T /PID ${pid}`, () => r())))
+        }
 
-        try {
-          // Nettoyage de secours : Tuer tout processus ios.exe lié au tunnel
-          if (this.name === 'tunneld') {
-            const { execSync } = require('child_process')
-            const cleanCmd = 'powershell "Get-CimInstance Win32_Process -Filter \\"Name = \'ios.exe\' AND CommandLine LIKE \'%tunnel start%\'\\" | Stop-Process -Force -ErrorAction SilentlyContinue"'
-            execSync(cleanCmd, { stdio: 'ignore' })
-          }
-        } catch (e) { /* ignore */ }
+        if (this.name === 'tunneld') {
+          const cleanCmd = 'powershell "Get-CimInstance Win32_Process -Filter \\"Name = \'ios.exe\' AND CommandLine LIKE \'%tunnel start%\'\\" | Stop-Process -Force -ErrorAction SilentlyContinue"'
+          tasks.push(new Promise(r => exec(cleanCmd, () => r())))
 
-        try {
-          // Libération du port de l'API go-ios (28100)
-          if (this.name === 'tunneld') {
-            const { execSync } = require('child_process')
-            const killPortCmd = 'powershell "Get-NetTCPConnection -LocalPort 28100 -ErrorAction SilentlyContinue | ForEach-Object { Stop-Process -Id $_.OwningProcess -Force -ErrorAction SilentlyContinue }"'
-            execSync(killPortCmd, { stdio: 'ignore' })
-            dbg(`[${this.name}] Port 28100 libere de force.`)
-          }
-        } catch (e) { /* ignore */ }
-      } else if (this.process) {
-        this.process.kill('SIGTERM')
+          const killPortCmd = 'powershell "Get-NetTCPConnection -LocalPort 28100,60105 -ErrorAction SilentlyContinue | ForEach-Object { Stop-Process -Id $_.OwningProcess -Force -ErrorAction SilentlyContinue }"'
+          tasks.push(new Promise(r => exec(killPortCmd, () => {
+            dbg(`[${this.name}] Ports 28100 et 60105 liberes.`)
+            r()
+          })))
+        }
+
+        Promise.all(tasks).then(() => {
+          this.process = null
+          resolve()
+        })
+      } else {
+        if (this.process) this.process.kill('SIGTERM')
+        this.process = null
+        resolve()
       }
-      this.process = null
-    }
+    })
   }
 
   get isRunning() {

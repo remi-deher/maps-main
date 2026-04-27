@@ -44,7 +44,7 @@ class TunneldService extends EventEmitter {
     })
   }
 
-  start() {
+  async start() {
     if (this._isQuitting) return
     if (this._restartTimer) { clearTimeout(this._restartTimer); this._restartTimer = null }
     if (this.runner.isRunning || this._isStarting) return
@@ -53,14 +53,16 @@ class TunneldService extends EventEmitter {
     dbg('[tunneld-service] Lancement de ios tunnel start...')
     sendStatus('tunneld', 'starting', 'Initialisation du tunnel go-ios...')
 
-    // On ne redémarre plus Bonjour automatiquement ici car cela provoque des micro-coupures WiFi
-    // qui déclenchent des boucles de reconnexion infinies.
+    // On s'assure que le port est libre avant de lancer
+    await this.runner.stop()
 
     const goIosDir = path.dirname(GOIOS)
     this.runner.options.cwd = goIosDir
 
-    // Lancer le tunnel sans variables d'environnement restrictives pour tester la stabilité brute
-    this.runner.spawn(GOIOS, ['tunnel', 'start', `--tunnel-info-port=${TUNNEL_INFO_PORT}`])
+    const args = ['tunnel', 'start']
+    dbg(`[tunneld] Commande (Minimaliste) : ${GOIOS} ${args.join(' ')}`)
+
+    this.runner.spawn(GOIOS, args)
 
     // Début du polling API après 2s (laisser le processus démarrer)
     setTimeout(() => {
@@ -72,9 +74,7 @@ class TunneldService extends EventEmitter {
   _handleOutput(text) {
     if (!text || !text.trim()) return
     
-    // Ignorer les messages d'événement go-ios qui polluent la console
-    if (text.includes('"msg":"event: 0"')) return
-
+    // On affiche tout pour le debug
     dbg(`[tunneld] ${text.trim()}`)
   }
 

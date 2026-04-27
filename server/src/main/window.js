@@ -97,17 +97,16 @@ function createWindow() {
     }
   })
 
-  const isDev = process.env.NODE_ENV === 'development' || !app.isPackaged
+  const isDev = process.env.NODE_ENV === 'development'
+  const indexPath = path.join(__dirname, '../../dist-web/renderer-v2/index.html')
 
   if (isDev) {
     mainWindow.loadURL('http://localhost:3000').catch(() => {
-      mainWindow.loadFile(path.join(__dirname, '../../dist-web/renderer-v2/index.html'))
+      mainWindow.loadFile(indexPath)
     })
   } else {
-    // Chemin standard pour une application empaquetée
-    const indexPath = path.join(app.getAppPath(), 'dist-web', 'renderer-v2', 'index.html')
     mainWindow.loadFile(indexPath).catch((err) => {
-      console.error('Erreur chargement production:', err)
+      console.error('Erreur chargement UI:', err)
     })
   }
 

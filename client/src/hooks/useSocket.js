@@ -1,4 +1,4 @@
-Ximport { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { AppState } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { eventBus } from '../services/background';
@@ -19,6 +19,9 @@ export function useSocket(ip, port, isMaintaining) {
   const [rsdAddress, setRsdAddress] = useState(null);
   const [serverState, setServerState] = useState('idle');
   const [verifiedLocation, setVerifiedLocation] = useState(null);
+  const [usbDriver, setUsbDriver] = useState('go-ios');
+  const [wifiDriver, setWifiDriver] = useState('pymobiledevice');
+  const [fallbackEnabled, setFallbackEnabled] = useState(true);
 
   const ws = useRef(null);
   const isConnecting = useRef(false);
@@ -164,6 +167,9 @@ export function useSocket(ip, port, isMaintaining) {
 
             setServerState(payload.data.state);
             setVerifiedLocation(payload.data.lastVerifiedLocation);
+            if (payload.data.usbDriver) setUsbDriver(payload.data.usbDriver);
+            if (payload.data.wifiDriver) setWifiDriver(payload.data.wifiDriver);
+            if (payload.data.fallbackEnabled !== undefined) setFallbackEnabled(payload.data.fallbackEnabled);
 
             // Restauration "Option C" :
             // Conditions strictes pour éviter les fausses détections :
@@ -398,6 +404,9 @@ export function useSocket(ip, port, isMaintaining) {
     sendSequence,
     sendCustomGpx,
     connect,
-    stop
+    stop,
+    usbDriver,
+    wifiDriver,
+    fallbackEnabled
   };
 }

@@ -4382,3 +4382,6 @@
 [20:23:46] [tunneld] ✅ Tunnel actif : fd3c:dfb8:22c3::1:64973 (UDID: 00008140...)
 [20:23:46] [orchestrator] Connexion go-ios établie : fd3c:dfb8:22c3::1:64973
 [20:23:46] [orchestrator] Connexion active : fd3c:dfb8:22c3::1:64973 (UDID: 00008140)
+[22:48:53] [tunneld] {"level":"info","msg":"Tunnel server started","time":"2026-04-26T22:48:53Z"}
+[22:48:55] [tunneld-service] Polling API go-ios démarré...
+[22:48:55] [tunneld-daemon] Demon pret.

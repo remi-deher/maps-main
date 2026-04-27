@@ -165,15 +165,16 @@ class ConnectionOrchestrator extends EventEmitter {
     
     gpsBridge.start()
 
-    // Démarrer les daemons nécessaires
-    const needed = new Set([s.usbDriver, s.wifiDriver])
-    needed.forEach(driverId => {
+    // Démarrer les daemons nécessaires en parallèle
+    const needed = [...new Set([s.usbDriver, s.wifiDriver])]
+    Promise.all(needed.map(driverId => {
       const daemon = this.daemons[driverId]
       if (daemon) {
         dbg(`[orchestrator] Lancement du driver : ${driverId}`)
-        daemon.start()
+        return daemon.start()
       }
-    })
+      return Promise.resolve()
+    }))
 
     sendStatus('tunneld', 'scanning', `Recherche iPhone (USB:${s.usbDriver} WiFi:${s.wifiDriver})...`)
   }

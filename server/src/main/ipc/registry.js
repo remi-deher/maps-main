@@ -159,11 +159,9 @@ function registerIpcHandlers(tunnel, gps, companion) {
 
   ipcMain.handle('save-settings', (_event, newSettings) => {
     settings.save(newSettings)
-    // Synchronisation immédiate avec le tunnel manager
-    tunnel.setWifiIpOverride(newSettings.wifiIp || null, newSettings.wifiPort || null)
-    if (newSettings.connectionMode) {
-      tunnel.applyConnectionMode(newSettings.connectionMode)
-    }
+    // Synchronisation complète avec l'orchestrateur de tunnels
+    tunnel.applySettings(settings.get())
+    
     if (newSettings.companionPort) {
       companion.start(newSettings.companionPort)
     }
