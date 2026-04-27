@@ -146,7 +146,7 @@ app.whenReady().then(() => {
     if (gps.lastCoords) {
       const { lat, lon, name } = gps.lastCoords
       dbg(`[window] 🔄 Tunnel prêt (${conn.type}). Ré-application automatique de la position en attente : ${lat}, ${lon}`)
-      gps.setLocation(lat, lon, name)
+      gps.setLocation(lat, lon, name, true)
     }
   })
 

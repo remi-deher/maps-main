@@ -258,6 +258,27 @@ class CompanionServer extends EventEmitter {
         break
       }
 
+      case 'REAL_LOCATION': {
+        const { latitude, longitude } = payload.data || {}
+        if (latitude !== undefined && longitude !== undefined) {
+          const target = this.status.lastInjectedLocation || this.status.lastVerifiedLocation
+          if (target) {
+            const dist = this._calculateDistance(latitude, longitude, target.lat, target.lon)
+            this.status.lastRealLocation = { lat: latitude, lon: longitude, drift: dist, timestamp: Date.now() }
+            
+            // Si la dérive est > 50m, on considère que la simulation a échoué ou dérivé
+            if (dist > 50) {
+              dbg(`[companion-server] ⚠️ DÉRIVE DÉTECTÉE : ${dist.toFixed(1)}m`)
+            } else {
+              // On peut confirmer que la location est bien appliquée
+              this.status.lastVerifiedLocation = { ...target, timestamp: Date.now() }
+            }
+            this._broadcast('STATUS_UPDATE', { lastRealLocation: this.status.lastRealLocation, lastVerifiedLocation: this.status.lastVerifiedLocation })
+          }
+        }
+        break
+      }
+
       case 'GET_STATUS': {
         this._refreshStatus()
         socket.emit('STATUS', this.status)
@@ -361,6 +382,19 @@ class CompanionServer extends EventEmitter {
       this.status.maintainActive = false
       this._updateFrontend()
     }
+  }
+
+  _calculateDistance(lat1, lon1, lat2, lon2) {
+    const R = 6371e3 // Rayon de la Terre en mètres
+    const φ1 = lat1 * Math.PI / 180
+    const φ2 = lat2 * Math.PI / 180
+    const Δφ = (lat2 - lat1) * Math.PI / 180
+    const Δλ = (lon2 - lon1) * Math.PI / 180
+    const a = Math.sin(Δφ / 2) * Math.sin(Δφ / 2) +
+              Math.cos(φ1) * Math.cos(φ2) *
+              Math.sin(Δλ / 2) * Math.sin(Δλ / 2)
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
+    return R * c
   }
 
   _getLocalIp() {

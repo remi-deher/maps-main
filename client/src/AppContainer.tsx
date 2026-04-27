@@ -69,7 +69,20 @@ export default function AppContainer() {
       setIsLowPowerMode(lowPowerMode);
     });
 
-    return () => batterySub.remove();
+    const watchSub = Location.watchPositionAsync(
+      { accuracy: Location.Accuracy.Balanced, timeInterval: 10000, distanceInterval: 10 },
+      (loc) => {
+        store.reportRealLocation({
+          latitude: loc.coords.latitude,
+          longitude: loc.coords.longitude
+        });
+      }
+    );
+
+    return () => {
+      batterySub.remove();
+      watchSub.then(sub => sub.remove());
+    };
   }, []);
 
   useEffect(() => {

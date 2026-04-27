@@ -17,12 +17,12 @@ class GpsSimulator extends EventEmitter {
     this._isQuitting = false
   }
 
-  async setLocation(lat, lon, name = null) {
+  async setLocation(lat, lon, name = null, force = false) {
     if (this._isQuitting) return { success: false, error: 'Simulation en fermeture' }
     
-    // Throttling : éviter le spam (max 1 injection toutes les 2s)
+    // Throttling : éviter le spam (max 1 injection toutes les 500ms)
     const now = Date.now()
-    if (now - this.lastInjectionTime < 2000) {
+    if (!force && (now - this.lastInjectionTime < 500)) {
       dbg(`[gps-simulator] ⏳ Requête ignorée (throttling - ${now - this.lastInjectionTime}ms)`)
       return { success: true, ignored: true }
     }

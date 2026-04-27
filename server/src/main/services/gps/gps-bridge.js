@@ -109,17 +109,31 @@ class GpsBridge extends EventEmitter {
    */
   async _setLocationPmd3(ctx, lat, lon) {
     this.stop() // S'assurer qu'un seul processus d'injection tourne à la fois
+    
+    // Premier essai avec l'adresse fournie
+    const result = await this._execPmd3Set(ctx.address, ctx.port, lat, lon)
+    
+    // Si échec (notamment Timeout), et que c'était une IPv6 complexe, on tente via le Loopback
+    if (!result.success && ctx.address.includes(':') && ctx.address !== '::1') {
+      dbg(`[gps-bridge] 🔄 Tentative de repli (fallback) sur [::1]...`)
+      return await this._execPmd3Set('::1', ctx.port, lat, lon)
+    }
+
+    return result
+  }
+
+  async _execPmd3Set(address, port, lat, lon) {
     return new Promise((resolve) => {
       const { PYTHON } = require('../../python-resolver')
       const { spawn } = require('child_process')
       const path = require('path')
       
-      const rsdAddress = ctx.address.includes(':') ? `[${ctx.address}]` : ctx.address
+      const rsdAddress = address.includes(':') ? `[${address}]` : address
       
       const args = [
         '-m', 'pymobiledevice3', 
         'developer', 'dvt', 'simulate-location', 'set',
-        '--rsd', rsdAddress, String(ctx.port),
+        '--rsd', rsdAddress, String(port),
         '--',
         String(lat), String(lon)
       ]

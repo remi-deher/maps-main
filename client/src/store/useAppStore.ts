@@ -50,6 +50,13 @@ export const useAppStore = create<AppStore>((set, get) => ({
 
   setIsMaintaining: (val) => set({ isMaintaining: val }),
 
+  reportRealLocation: (coords: Coords) => {
+    const { socket, isConnected } = get();
+    if (isConnected && socket) {
+      socket.emit('REAL_LOCATION', coords);
+    }
+  },
+
   connect: () => {
     const { serverIp, serverPort } = get();
     if (!serverIp) return;
