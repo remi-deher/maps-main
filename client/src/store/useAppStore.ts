@@ -37,8 +37,16 @@ export const useAppStore = create<AppStore>((set, get) => ({
     try {
       const ip = await AsyncStorage.getItem('serverIp');
       const port = await AsyncStorage.getItem('serverPort');
+      const mock = await AsyncStorage.getItem('MOCK_LOCATION');
+
       if (ip) set({ serverIp: ip });
       if (port) set({ serverPort: port });
+      if (mock) {
+        try {
+          const coords = JSON.parse(mock);
+          set({ simulatedCoords: coords });
+        } catch (e) {}
+      }
     } catch (e) {}
   },
 
@@ -109,6 +117,17 @@ export const useAppStore = create<AppStore>((set, get) => ({
             longitude: data.lastInjectedLocation.lon,
             name: data.lastInjectedLocation.name 
         } });
+      } else {
+        // Si le serveur est vide mais qu'on a une position locale, on restaure
+        const { simulatedCoords } = get();
+        if (simulatedCoords && socket?.connected) {
+          logEvent.add('🔄 Synchronisation : Restauration auto de la position', 'info');
+          socket.emit('SET_LOCATION', { 
+            lat: simulatedCoords.latitude, 
+            lon: simulatedCoords.longitude, 
+            name: simulatedCoords.name || "" 
+          });
+        }
       }
     });
 
