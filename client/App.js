@@ -1,3 +1,4 @@
+// Expo App - GPS Mock (v1.1.0-stab)
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { StyleSheet, View, TouchableWithoutFeedback, Keyboard, KeyboardAvoidingView, Platform, TouchableOpacity, Text, Animated, Easing, Alert } from 'react-native';
 import MapView, { Marker } from 'react-native-maps';
