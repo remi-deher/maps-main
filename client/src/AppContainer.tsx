@@ -171,6 +171,20 @@ export default function AppContainer() {
             <TouchableOpacity style={[styles.floatBtn, isMaintaining && styles.activeFloat, SHADOWS.light]} onPress={toggleBackground}>
               <Text style={{fontSize: 22}}>{isMaintaining ? '🛡️' : '💤'}</Text>
             </TouchableOpacity>
+            <TouchableOpacity 
+              style={[styles.floatBtn, SHADOWS.light]} 
+              onPress={async () => {
+                const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+                mapRef.current?.animateToRegion({
+                  latitude: loc.coords.latitude,
+                  longitude: loc.coords.longitude,
+                  latitudeDelta: 0.01,
+                  longitudeDelta: 0.01
+                }, 800);
+              }}
+            >
+              <Text style={{fontSize: 22}}>📍</Text>
+            </TouchableOpacity>
             <TouchableOpacity style={[styles.floatBtn, SHADOWS.light]} onPress={() => setIsFavsOpen(true)}>
               <Text style={{fontSize: 22}}>⭐</Text>
             </TouchableOpacity>

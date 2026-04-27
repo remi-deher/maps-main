@@ -69,6 +69,7 @@
     "vite": "^8.0.9"
   },
   "dependencies": {
+    "axios": "^1.15.2",
     "body-parser": "^2.2.2",
     "clsx": "^2.1.1",
     "express": "^5.2.1",
@@ -80,6 +81,8 @@
     "react-dom": "^19.2.5",
     "socket.io": "^4.8.3",
     "tailwind-merge": "^3.5.0",
+    "winston": "^3.19.0",
+    "winston-daily-rotate-file": "^5.0.0",
     "ws": "^8.20.0"
   }
 }

@@ -49,19 +49,23 @@ function App() {
   const { search, results, loading, reverseGeocode, setResults } = useSearch();
 
   useEffect(() => {
-    window.gps.getStatus().then(data => {
-      if (data.tunnelActive) {
-        setStatus({ 
-          state: data.state, 
-          message: data.state === 'running' ? 'Simulation active' : 'iPhone prêt', 
-          type: data.connectionType, 
-          device: data.deviceInfo,
+    const refreshStatus = () => {
+      window.gps.getStatus().then(data => {
+        setStatus(prev => ({ 
+          ...prev,
+          operationMode: data.operationMode,
+          state: data.tunnelActive ? data.state : prev.state,
+          message: data.tunnelActive ? (data.state === 'running' ? 'Simulation active' : 'iPhone prêt') : prev.message,
+          type: data.connectionType || prev.type,
+          device: data.deviceInfo || prev.device,
           verified: data.state === 'running'
-        });
-      }
-    });
+        }));
+      });
+    };
 
-    const removeListener = window.gps.onStatus((data) => {
+    refreshStatus();
+
+    const removeStatusListener = window.gps.onStatus((data) => {
       const timestamp = new Date().toLocaleTimeString();
 
       if (data.service === 'tunneld') {
@@ -83,12 +87,18 @@ function App() {
       } else if (data.service === 'location') {
         const { lat, lon, name } = data.data;
         setActiveSim({ lat, lon, name });
-        // Quand on reçoit une position via LOCATION, c'est qu'elle est en cours d'application
         setStatus(prev => ({ ...prev, verified: true, state: 'running', message: 'Simulation active' }));
       }
     });
 
-    return () => removeListener();
+    const removeSettingsListener = window.gps.onSettingsUpdated(() => {
+      refreshStatus();
+    });
+
+    return () => {
+      removeStatusListener();
+      removeSettingsListener();
+    };
   }, []);
 
   const handleMapClick = async (lat, lon) => {
@@ -392,12 +402,25 @@ function App() {
             />
           </div>
           <div className="flex items-center gap-3">
+            {status.operationMode && (
+              <div className={`px-2 py-0.5 rounded-md text-[9px] font-black uppercase tracking-tighter border ${
+                status.operationMode === 'autonomous' ? 'bg-amber-500/10 text-amber-500 border-amber-500/20' :
+                status.operationMode === 'client-server' ? 'bg-purple-500/10 text-purple-500 border-purple-500/20' :
+                'bg-blue-500/10 text-blue-500 border-blue-500/20'
+              }`}>
+                {status.operationMode === 'autonomous' ? 'PC Only' : 
+                 status.operationMode === 'client-server' ? 'Client Req' : 'Hybride'}
+              </div>
+            )}
             <Terminal 
-              className={`w-6 h-6 cursor-pointer transition-all hover:scale-110 active:scale-90 ${logsOpen ? 'text-blue-400' : 'text-blue-300/40'}`} 
+              className={`w-5 h-5 cursor-pointer transition-all hover:scale-110 active:scale-90 ${logsOpen ? 'text-blue-400' : 'text-blue-300/40'}`} 
               onClick={(e) => { e.stopPropagation(); setLogsOpen(!logsOpen); }} 
             />
             <QrCode 
-              className={`w-6 h-6 cursor-pointer transition-all hover:scale-110 active:scale-90 ${qrOpen ? 'text-white' : 'text-slate-300/40'}`} 
+              className={`w-5 h-5 cursor-pointer transition-all hover:scale-110 active:scale-90 ${
+                status.operationMode === 'autonomous' ? 'text-slate-700 pointer-events-none' :
+                (qrOpen ? 'text-white' : 'text-slate-300/40')
+              }`} 
               onClick={(e) => { e.stopPropagation(); setQrOpen(!qrOpen); }} 
             />
           </div>

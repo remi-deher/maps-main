@@ -1,11 +1,12 @@
 'use strict'
 
-const { app, BrowserWindow, Tray, Menu, nativeImage } = require('electron')
+const { app, BrowserWindow, Tray, Menu, nativeImage, ipcMain } = require('electron')
 const path = require('path')
 const { setWindow, dbg } = require('./logger')
 const tunnel = require('./tunneld-manager')
 const GpsSimulator = require('./services/gps/gps-simulator')
 const companionServer = require('./services/companion-server')
+const settings = require('./services/settings-manager')
 const { registerIpcHandlers } = require('./ipc/registry')
 
 let mainWindow
@@ -118,19 +119,68 @@ app.whenReady().then(() => {
   createTray()
   
   // Initialisation des services
-  gps = new GpsSimulator(tunnel)
   companion = new companionServer(tunnel)
+  gps = new GpsSimulator(tunnel, companion)
   
   // Enregistre les handlers IPC
   registerIpcHandlers(tunnel, gps, companion)
   
-  const initialSettings = require('./services/settings-manager').get()
+  const initialSettings = settings.get()
   
-  // Appliquer les réglages initiaux (IP Wifi, etc.)
-  tunnel.setWifiIpOverride(initialSettings.wifiIp, initialSettings.wifiPort)
+  try {
+    const clusterManager = require('./services/cluster-manager')
+    clusterManager.init()
+
+    // --- ÉVÉNEMENTS CLUSTER ---
+    clusterManager.on('role-changed', (role) => {
+      dbg(`[window] 🎭 Changement de rôle Cluster : ${role.toUpperCase()}`)
+      if (mainWindow) mainWindow.webContents.send('status-update', { service: 'cluster', state: role })
+      
+      if (role === 'master') {
+        tunnel.start()
+        if (initialSettings.operationMode !== 'autonomous') {
+          companion.start(initialSettings.companionPort)
+        }
+      } else {
+        tunnel.stop()
+        companion.stop()
+      }
+    })
+
+    companion.on('cluster-sync', ({ lat, lon, name, mode }) => {
+      if (clusterManager.role === 'slave') {
+        gps.lastCoords = { lat, lon, name }
+        if (mainWindow) {
+          mainWindow.webContents.send('status-update', { 
+              service: 'location', 
+              state: 'synced', 
+              data: { lat, lon, name: name + " (Sync Master)" } 
+          })
+        }
+      }
+    })
+
+    ipcMain.handle('takeover-cluster', async () => {
+      await clusterManager.takeover()
+      return { success: true }
+    })
+
+    clusterManager.on('status-updated', (status) => {
+      if (mainWindow) mainWindow.webContents.send('status-update', { service: 'cluster-dashboard', state: 'sync', data: status })
+    })
+
+    companion.on('settings-updated', (newSettings) => {
+        // Appeler les mêmes logiques que save-settings mais sans sauvegarder (car déjà fait par settings-updated)
+        if (mainWindow) mainWindow.webContents.send('settings-updated', newSettings)
+        tunnel.applySettings()
+    })
+  } catch (err) {
+    dbg(`[window] ❌ Erreur initialisation Cluster: ${err.message}`)
+  }
   
-  // Liaison Tunnel -> Companion
-  tunnel.setOnStatusChange((active) => companion.updateTunnelStatus(active))
+  // Liaison Tunnel -> Companion via événements
+  tunnel.on('ready', () => companion.updateTunnelStatus(true))
+  tunnel.on('lost', () => companion.updateTunnelStatus(false))
 
   gps.on('location-changed', ({ lat, lon, name }) => {
     companion.broadcastLocation(lat, lon, name)
@@ -139,6 +189,24 @@ app.whenReady().then(() => {
 
   gps.on('log', (msg) => {
     if (mainWindow) mainWindow.webContents.send('status-update', { service: 'server-log', state: 'new', data: msg })
+  })
+
+  // --- GESTION DES MODES DE FONCTIONNEMENT ---
+  ipcMain.removeHandler('save-settings') // On remplace le handler par défaut
+  ipcMain.handle('save-settings', async (event, newSettings) => {
+    const oldMode = settings.get('operationMode')
+    settings.save(newSettings)
+    
+    // Basculement à chaud du serveur compagnon
+    if (newSettings.operationMode === 'autonomous' && oldMode !== 'autonomous') {
+      companion.stop()
+    } else if (newSettings.operationMode !== 'autonomous' && oldMode === 'autonomous') {
+      companion.start(newSettings.companionPort || settings.get('companionPort'))
+    }
+    
+    tunnel.applySettings()
+    event.sender.send('settings-updated', settings.get())
+    return { success: true }
   })
 
   // --- AUTOMATISATION : Re-appliquer la position dès que le tunnel est prêt ---
@@ -161,20 +229,12 @@ app.whenReady().then(() => {
     }
   })
 
-  let ipDetectTimer = null
   companion.on('iphone-ip-detected', (ip) => {
-    if (ipDetectTimer) clearTimeout(ipDetectTimer)
-    
-    dbg(`[window] 📱 iPhone détecté (${ip}). Mise à jour IP compagnon.`)
-    tunnel.setWifiIpOverride(ip)
-    
-    // Pas de forceRefresh ici.
-    // Le tunnel go-ios est déjà en cours d'exécution et scanne le device USB
-    // de façon autonome. Un restart forcé à ce moment-là tuerait le processus
-    // pendant sa phase de détection et créerait une boucle d'instabilité.
-    // Si le tunnel est mort, c'est le watchdog interne (tunneld-service) qui
-    // le relancera, pas nous.
-    ipDetectTimer = null
+    dbg(`[window] 📱 iPhone détecté (${ip}). Mise à jour des réglages...`)
+    // On met à jour les réglages via le manager, ce qui déclenchera un refresh du tunnel
+    const current = settings.get()
+    settings.save({ ...current, wifiIp: ip })
+    tunnel.applySettings()
   })
 
   companion.on('favorites-updated', (favs) => {
@@ -189,9 +249,20 @@ app.whenReady().then(() => {
     if (mainWindow) mainWindow.webContents.send('status-update', { service: 'client-log', state: 'new', data: log })
   })
 
-  companion.start(initialSettings.companionPort)
-  
-  tunnel.startTunneld(initialSettings)
+  companion.on('client-log', (log) => {
+    if (mainWindow) mainWindow.webContents.send('status-update', { service: 'client-log', state: 'new', data: log })
+  })
+
+  // --- DÉMARRAGE DES SERVICES ---
+  // Si le cluster est désactivé, on démarre normalement.
+  // Sinon, c'est l'élection (via ClusterManager) qui déclenchera le démarrage.
+  if (initialSettings.clusterMode === 'off' || !initialSettings.clusterMode) {
+    clusterManager.role = 'master' // Seul serveur = Maître par défaut
+    if (initialSettings.operationMode !== 'autonomous') {
+        companion.start(initialSettings.companionPort)
+    }
+    tunnel.start()
+  }
 })
 
 app.on('before-quit', () => {

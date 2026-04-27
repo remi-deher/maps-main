@@ -27,6 +27,8 @@ class CompanionServer extends EventEmitter {
     this.port = null
     this.status = {}
     this.lastDriftRelance = 0
+    this._consecutiveValidationFailures = 0
+    this._lastAutoReinjectionTime = 0
     
     this.app.use(bodyParser.json())
     this._setupRoutes()
@@ -45,7 +47,11 @@ class CompanionServer extends EventEmitter {
     })
 
     if (this.tunnel) {
-      this.tunnel.setOnStatusChange(() => {
+      this.tunnel.on('ready', () => {
+        this._refreshStatus()
+        this._broadcast('STATUS', this.status)
+      })
+      this.tunnel.on('lost', () => {
         this._refreshStatus()
         this._broadcast('STATUS', this.status)
       })
@@ -84,7 +90,11 @@ class CompanionServer extends EventEmitter {
       wifiDriver: settings.get('wifiDriver'),
       fallbackEnabled: settings.get('fallbackEnabled'),
       favorites: favoritesManager.getFavorites(),
-      recentHistory: favoritesManager.getHistory()
+      recentHistory: favoritesManager.getHistory(),
+      cluster: {
+        role: require('./cluster-manager').role,
+        peers: settings.get('clusterNodes') || []
+      }
     }
   }
 
@@ -92,6 +102,18 @@ class CompanionServer extends EventEmitter {
     this.status.lastVerifiedLocation = { lat, lon, name, timestamp: Date.now() };
     this._refreshStatus();
     this._broadcast('STATUS', this.status);
+  }
+
+  addFavorite(fav) {
+    favoritesManager.addFavorite(fav)
+  }
+
+  removeFavorite(lat, lon) {
+    favoritesManager.removeFavorite(lat, lon)
+  }
+
+  renameFavorite(lat, lon, newName) {
+    favoritesManager.renameFavorite(lat, lon, newName)
   }
 
   _setupRoutes() {
@@ -125,6 +147,70 @@ class CompanionServer extends EventEmitter {
       if (now - this.lastDriftRelance < 45000) return res.json({ ignored: 'cooldown' })
       this.lastDriftRelance = now
       this.emit('request-location', { lat, lon, name, force: true })
+      res.json({ success: true })
+    })
+
+    // --- ROUTES CLUSTER ---
+    this.app.get('/api/cluster/ping', (req, res) => {
+      const clusterManager = require('./cluster-manager')
+      res.json(clusterManager.getStatus())
+    })
+
+    this.app.post('/api/cluster/sync', (req, res) => {
+      const { lat, lon, name, mode } = req.body
+      dbg(`[cluster] 📥 Synchro reçue du Maître : ${lat}, ${lon}`)
+      this.emit('cluster-sync', { lat, lon, name, mode })
+      res.json({ success: true })
+    })
+
+    this.app.post('/api/cluster/takeover', (req, res) => {
+      const clusterManager = require('./cluster-manager')
+      dbg(`[cluster] 📥 Demande de takeover reçue. Libération du rôle...`)
+      clusterManager.release()
+      res.json({ success: true })
+    })
+
+    this.app.get('/api/cluster/plists', (req, res) => {
+      const path = require('path')
+      const fs = require('fs')
+      const { app } = require('electron')
+      try {
+        const plists = []
+        const projectRoot = path.join(app.getAppPath(), '..')
+        
+        // 1. Identité serveur
+        const selfPath = path.join(projectRoot, 'selfIdentity.plist')
+        if (fs.existsSync(selfPath)) {
+          plists.push({ name: 'selfIdentity.plist', content: fs.readFileSync(selfPath, 'utf8') })
+        }
+
+        // 2. Records iPhone
+        let lockdownDir = process.platform === 'win32' ? 'C:\\ProgramData\\Apple\\Lockdown' : '/var/lib/lockdown'
+        if (fs.existsSync(lockdownDir)) {
+          const files = fs.readdirSync(lockdownDir).filter(f => f.endsWith('.plist'))
+          for (const f of files) {
+            plists.push({ name: f, content: fs.readFileSync(path.join(lockdownDir, f), 'utf8') })
+          }
+        }
+        res.json({ success: true, plists })
+      } catch (e) {
+        res.status(500).json({ success: false, error: e.message })
+      }
+    })
+
+    this.app.post('/api/cluster/sync-plist', async (req, res) => {
+      const { name, content } = req.body
+      const clusterManager = require('./cluster-manager')
+      dbg(`[cluster] 📥 Réception du certificat ${name} du Maître...`)
+      await clusterManager._saveLocalPlist(name, content)
+      res.json({ success: true })
+    })
+
+    this.app.post('/api/cluster/update-config', (req, res) => {
+      const newSettings = req.body
+      dbg(`[cluster] 📥 Mise à jour config à distance reçue`)
+      settings.save(newSettings)
+      this.emit('settings-updated', settings.get())
       res.json({ success: true })
     })
   }
@@ -179,6 +265,29 @@ class CompanionServer extends EventEmitter {
     }
   }
 
+  /**
+   * Arrête proprement le serveur compagnon
+   */
+  stop() {
+    if (this.io) {
+      this.io.close()
+      this.io = null
+    }
+    if (this.httpServer) {
+      this.httpServer.close()
+      this.httpServer = null
+    }
+    dbg('[companion-server] Serveur compagnon arrêté.')
+  }
+
+  /**
+   * Vérifie si au moins un client (iPhone) est connecté
+   */
+  hasActiveClients() {
+    if (!this.io) return false
+    return this.io.sockets.sockets.size > 0
+  }
+
   updateTunnelStatus(active) {
     this._refreshStatus()
     this.status.tunnelActive = active
@@ -193,8 +302,15 @@ class CompanionServer extends EventEmitter {
   _handleMessage(socket, payload) {
     switch (payload.type) {
       case 'HEARTBEAT': {
-        if (payload.data) this.status.maintainActive = payload.data.isMaintaining || false
+        const data = payload.data || {}
+        this.status.maintainActive = data.isMaintaining || false
         this.status.lastHeartbeat = Date.now()
+        
+        // Validation Active (Point 1)
+        if (data.latitude && data.longitude) {
+          this._validatePosition(data.latitude, data.longitude)
+        }
+
         this._updateFrontend()
         socket.emit('PONG', { timestamp: Date.now() })
         break
@@ -261,20 +377,7 @@ class CompanionServer extends EventEmitter {
       case 'REAL_LOCATION': {
         const { latitude, longitude } = payload.data || {}
         if (latitude !== undefined && longitude !== undefined) {
-          const target = this.status.lastInjectedLocation || this.status.lastVerifiedLocation
-          if (target) {
-            const dist = this._calculateDistance(latitude, longitude, target.lat, target.lon)
-            this.status.lastRealLocation = { lat: latitude, lon: longitude, drift: dist, timestamp: Date.now() }
-            
-            // Si la dérive est > 50m, on considère que la simulation a échoué ou dérivé
-            if (dist > 50) {
-              dbg(`[companion-server] ⚠️ DÉRIVE DÉTECTÉE : ${dist.toFixed(1)}m`)
-            } else {
-              // On peut confirmer que la location est bien appliquée
-              this.status.lastVerifiedLocation = { ...target, timestamp: Date.now() }
-            }
-            this._broadcast('STATUS_UPDATE', { lastRealLocation: this.status.lastRealLocation, lastVerifiedLocation: this.status.lastVerifiedLocation })
-          }
+          this._validatePosition(latitude, longitude)
         }
         break
       }
@@ -386,6 +489,45 @@ class CompanionServer extends EventEmitter {
     }
   }
 
+  /**
+   * Valide la position réelle de l'iPhone et ré-injecte si dérive critique
+   */
+  _validatePosition(realLat, realLon) {
+    const target = this.status.lastInjectedLocation || this.status.lastVerifiedLocation
+    if (!target) return
+
+    const dist = this._calculateDistance(realLat, realLon, target.lat, target.lon)
+    this.status.lastRealLocation = { lat: realLat, lon: realLon, drift: dist, timestamp: Date.now() }
+
+    // --- LOGIQUE DE BOUCLIER INTELLIGENT ---
+    // 1. Seuil de tolérance élevé (100m) pour éviter les faux positifs
+    if (dist > 100) {
+      this._consecutiveValidationFailures++
+      dbg(`[companion-server] 🛡️ Alerte dérive (${dist.toFixed(0)}m) - Échec ${this._consecutiveValidationFailures}/2`)
+
+      // 2. Double validation temporelle (nécessite 2 échecs consécutifs)
+      if (this._consecutiveValidationFailures >= 2) {
+        const now = Date.now()
+        // 3. Cooldown de sécurité (15s)
+        if (now - this._lastAutoReinjectionTime > 15000) {
+          dbg(`[companion-server] 🚨 Dérive critique confirmée. Ré-injection de sécurité forcée !`)
+          this.emit('request-location', { ...target, force: true })
+          this._lastAutoReinjectionTime = now
+          this._consecutiveValidationFailures = 0
+        }
+      }
+    } else {
+      // Position cohérente
+      this._consecutiveValidationFailures = 0
+      this.status.lastVerifiedLocation = { ...target, timestamp: Date.now() }
+    }
+
+    this._broadcast('STATUS_UPDATE', { 
+      lastRealLocation: this.status.lastRealLocation, 
+      lastVerifiedLocation: this.status.lastVerifiedLocation 
+    })
+  }
+
   _calculateDistance(lat1, lon1, lat2, lon2) {
     const R = 6371e3 // Rayon de la Terre en mètres
     const φ1 = lat1 * Math.PI / 180
@@ -397,6 +539,15 @@ class CompanionServer extends EventEmitter {
               Math.sin(Δλ / 2) * Math.sin(Δλ / 2)
     const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
     return R * c
+  }
+
+  getConnectionInfo() {
+    const ip = this._getLocalIp()
+    return {
+      ip,
+      port: this.port || settings.get('companionPort') || 8080,
+      url: `ws://${ip}:${this.port || settings.get('companionPort') || 8080}`
+    }
   }
 
   _getLocalIp() {

@@ -43,13 +43,18 @@ class SettingsManager {
       wifiPort: '', 
       companionPort: 8080,
       connectionMode: 'both',
+      operationMode: 'hybrid', // 'autonomous' | 'client-server' | 'hybrid'
+      isEveilMode: true,       // Micro-dérive pour éviter la mise en veille iOS
       usbDriver: 'go-ios',
       wifiDriver: 'pymobiledevice',
       fallbackEnabled: true,
       serverIp: null,
       preferredIp: '',
       favorites: [],
-      recentHistory: []
+      recentHistory: [],
+      clusterMode: 'off', // 'off' | 'auto' | 'standalone'
+      clusterNodes: [],    // Liste des { address, port }
+      serverName: ''      // Nom personnalisé de ce serveur
     }
 
     try {

@@ -29,11 +29,19 @@ try {
     renameFavorite: (lat, lon, newName) => ipcRenderer.invoke('rename-favorite', { lat, lon, newName }),
     getCompanionQr: () => ipcRenderer.invoke('get-companion-qr'),
     getNetworkInterfaces: () => ipcRenderer.invoke('get-network-interfaces'),
+    onSettingsUpdated: (cb) => {
+      const listener = (_e, data) => cb(data)
+      ipcRenderer.on('settings-updated', listener)
+      return () => ipcRenderer.removeListener('settings-updated', listener)
+    },
 
     // Gestion des certificats (.plist)
     importPlist:   (data) => ipcRenderer.invoke('import-plist', data),
     listPlists:    () => ipcRenderer.invoke('list-plists'),
     deletePlist:   (name) => ipcRenderer.invoke('delete-plist', name),
+
+    // Cluster
+    takeoverCluster: () => ipcRenderer.invoke('takeover-cluster'),
   })
   console.log('[Preload] Pont IPC exposé avec succès.');
 } catch (err) {

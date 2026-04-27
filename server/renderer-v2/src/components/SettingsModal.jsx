@@ -12,8 +12,14 @@ function SettingsModal({ isOpen, onClose }) {
     serverIp: '',
     usbDriver: 'go-ios',
     wifiDriver: 'pymobiledevice',
-    fallbackEnabled: true
+    fallbackEnabled: true,
+    clusterMode: 'off',
+    clusterNodes: [],
+    serverName: ''
   });
+  const [activeTab, setActiveTab] = useState('general');
+  const [newPeer, setNewPeer] = useState({ address: '', port: '8080' });
+  const [clusterDashboard, setClusterDashboard] = useState(null);
   const [interfaces, setInterfaces] = useState([]);
   const [plistData, setPlistData] = useState({ plists: [], hasSelfIdentity: false });
 
@@ -23,6 +29,21 @@ function SettingsModal({ isOpen, onClose }) {
       window.gps.getNetworkInterfaces().then(setInterfaces);
       window.gps.listPlists().then(setPlistData);
     }
+
+    const unSubStatus = window.gps.onStatus((payload) => {
+      if (payload.service === 'cluster-dashboard') {
+        setClusterDashboard(payload.data);
+      }
+    });
+
+    const unSubSettings = window.gps.onSettingsUpdated((newSettings) => {
+      setSettings(newSettings);
+    });
+
+    return () => {
+      unSubStatus();
+      unSubSettings();
+    };
   }, [isOpen]);
 
   const handleSave = async () => {
@@ -48,16 +69,31 @@ function SettingsModal({ isOpen, onClose }) {
         className="relative w-full max-w-xl glass-dark rounded-3xl shadow-2xl overflow-hidden border border-white/10"
       >
         <div className="p-6 border-b border-white/5 flex items-center justify-between">
-          <h2 className="text-xl font-bold flex items-center gap-2">
-            <Settings className="w-5 h-5 text-blue-400" />
-            Configuration
-          </h2>
+          <div className="flex items-center gap-6">
+            <button 
+              onClick={() => setActiveTab('general')}
+              className={`text-lg font-bold flex items-center gap-2 pb-1 border-b-2 transition-all ${activeTab === 'general' ? 'border-blue-500 text-white' : 'border-transparent text-slate-500 hover:text-slate-300'}`}
+            >
+              <Settings className="w-5 h-5" />
+              Général
+            </button>
+            <button 
+              onClick={() => setActiveTab('cluster')}
+              className={`text-lg font-bold flex items-center gap-2 pb-1 border-b-2 transition-all ${activeTab === 'cluster' ? 'border-purple-500 text-white' : 'border-transparent text-slate-500 hover:text-slate-300'}`}
+            >
+              <ShieldCheck className="w-5 h-5" />
+              Cluster (HA)
+            </button>
+          </div>
           <button onClick={onClose} className="p-2 hover:bg-white/10 rounded-xl transition-colors">
             <X className="w-6 h-6" />
           </button>
         </div>
 
         <div className="p-8 space-y-8 overflow-y-auto max-h-[70vh]">
+          {activeTab === 'general' ? (
+            <>
+              {/* Contenu Général existant... */}
           {/* Interface Réseau */}
           <section className="space-y-4">
             <label className="text-sm font-bold text-slate-400 uppercase tracking-wider">Interface Réseau (WebSocket)</label>
@@ -75,6 +111,65 @@ function SettingsModal({ isOpen, onClose }) {
                   </option>
                 ))}
               </select>
+            </div>
+          </section>
+
+          {/* Mode de fonctionnement */}
+          <section className="space-y-4">
+            <label className="text-sm font-bold text-slate-400 uppercase tracking-wider">Mode de fonctionnement</label>
+            <div className="grid grid-cols-3 gap-3">
+              <button 
+                onClick={() => setSettings({...settings, operationMode: 'autonomous'})}
+                className={`p-3 rounded-2xl border-2 transition-all text-center flex flex-col items-center gap-1 ${settings.operationMode === 'autonomous' ? 'border-amber-500 bg-amber-500/10' : 'border-white/5 bg-white/5 hover:bg-white/10'}`}
+              >
+                <p className="font-bold text-xs">Autonome</p>
+                <p className="text-[10px] opacity-50">PC Pur</p>
+              </button>
+              <button 
+                onClick={() => setSettings({...settings, operationMode: 'client-server'})}
+                className={`p-3 rounded-2xl border-2 transition-all text-center flex flex-col items-center gap-1 ${settings.operationMode === 'client-server' ? 'border-purple-500 bg-purple-500/10' : 'border-white/5 bg-white/5 hover:bg-white/10'}`}
+              >
+                <p className="font-bold text-xs">Client/Serv</p>
+                <p className="text-[10px] opacity-50">iPhone Requis</p>
+              </button>
+              <button 
+                onClick={() => setSettings({...settings, operationMode: 'hybrid'})}
+                className={`p-3 rounded-2xl border-2 transition-all text-center flex flex-col items-center gap-1 ${settings.operationMode === 'hybrid' || !settings.operationMode ? 'border-blue-500 bg-blue-500/10' : 'border-white/5 bg-white/5 hover:bg-white/10'}`}
+              >
+                <p className="font-bold text-xs">Hybride</p>
+                <p className="text-[10px] opacity-50">Mixte (Défaut)</p>
+              </button>
+            </div>
+            <p className="text-[10px] text-slate-500 px-1 italic">
+              {settings.operationMode === 'autonomous' && "💡 Le serveur WebSocket sera coupé. L'application iPhone ne pourra pas se connecter."}
+              {settings.operationMode === 'client-server' && "💡 L'injection de position sera bloquée si aucun iPhone n'est connecté."}
+              {settings.operationMode === 'hybrid' && "💡 Mode standard : injection libre, l'iPhone se connecte s'il le souhaite."}
+            </p>
+          </section>
+          
+          {/* Stabilisation iOS */}
+          <section className="space-y-4">
+            <label className="text-sm font-bold text-slate-400 uppercase tracking-wider flex items-center gap-2">
+              <ShieldCheck className="w-4 h-4 text-blue-400" />
+              Stabilisation iOS
+            </label>
+            <div className="flex items-center justify-between p-4 bg-blue-500/5 border border-blue-500/20 rounded-2xl">
+              <div className="space-y-1 pr-4">
+                <p className="text-sm font-bold text-white">Mode Éveil (Anti-Mise en veille)</p>
+                <p className="text-[10px] text-slate-400 leading-relaxed">
+                  Simule un micro-mouvement (±1m) toutes les 30s. 
+                  Indispensable pour empêcher iOS de "tuer" l'application lors d'une longue pause.
+                </p>
+              </div>
+              <div 
+                onClick={() => setSettings({...settings, isEveilMode: !settings.isEveilMode})}
+                className={`w-12 h-6 rounded-full p-1 cursor-pointer transition-colors ${settings.isEveilMode ? 'bg-blue-600' : 'bg-slate-700'}`}
+              >
+                <motion.div 
+                  animate={{ x: settings.isEveilMode ? 24 : 0 }}
+                  className="w-4 h-4 bg-white rounded-full shadow-lg"
+                />
+              </div>
             </div>
           </section>
 
@@ -308,6 +403,202 @@ function SettingsModal({ isOpen, onClose }) {
               </div>
             </div>
           </section>
+            </>
+          ) : (
+            <div className="space-y-8">
+              {/* Identification */}
+              <section className="space-y-4">
+                <label className="text-sm font-bold text-slate-400 uppercase tracking-wider">Identification du serveur local</label>
+                <div className="flex gap-3">
+                  <input 
+                    type="text" 
+                    placeholder="Nom du serveur (ex: PC Salon, Mac Bureau...)"
+                    value={settings.serverName || ''}
+                    onChange={(e) => setSettings({...settings, serverName: e.target.value})}
+                    className="flex-1 bg-white/5 border border-white/10 rounded-xl p-3 text-sm outline-none focus:border-purple-500"
+                  />
+                </div>
+              </section>
+
+              {/* Mode Cluster */}
+              <section className="space-y-4">
+                <label className="text-sm font-bold text-slate-400 uppercase tracking-wider">Mode de fonctionnement</label>
+                <div className="grid grid-cols-3 gap-3">
+                  <button 
+                    onClick={() => setSettings({...settings, clusterMode: 'off'})}
+                    className={`p-3 rounded-2xl border-2 transition-all text-center flex flex-col items-center gap-1 ${settings.clusterMode === 'off' ? 'border-slate-500 bg-slate-500/10' : 'border-white/5 bg-white/5 hover:bg-white/10'}`}
+                  >
+                    <p className="font-bold text-xs">Désactivé</p>
+                    <p className="text-[10px] opacity-50">Mode Solo</p>
+                  </button>
+                  <button 
+                    onClick={() => setSettings({...settings, clusterMode: 'auto'})}
+                    className={`p-3 rounded-2xl border-2 transition-all text-center flex flex-col items-center gap-1 ${settings.clusterMode === 'auto' ? 'border-purple-500 bg-purple-500/10' : 'border-white/5 bg-white/5 hover:bg-white/10'}`}
+                  >
+                    <p className="font-bold text-xs">Auto (HA)</p>
+                    <p className="text-[10px] opacity-50">Basculement 30s</p>
+                  </button>
+                  <button 
+                    onClick={() => setSettings({...settings, clusterMode: 'standalone'})}
+                    className={`p-3 rounded-2xl border-2 transition-all text-center flex flex-col items-center gap-1 ${settings.clusterMode === 'standalone' ? 'border-blue-500 bg-blue-500/10' : 'border-white/5 bg-white/5 hover:bg-white/10'}`}
+                  >
+                    <p className="font-bold text-xs">Manuel</p>
+                    <p className="text-[10px] opacity-50">Synchro seule</p>
+                  </button>
+                </div>
+              </section>
+
+              {/* Tableau de bord du Cluster */}
+              {settings.clusterMode !== 'off' && (
+                <section className="space-y-4">
+                  <label className="text-sm font-bold text-slate-400 uppercase tracking-wider">Tableau de bord du Cluster (Temps réel)</label>
+                  <div className="bg-white/5 border border-white/10 rounded-2xl overflow-hidden shadow-inner">
+                    <table className="w-full text-left text-xs">
+                      <thead className="bg-white/5 text-slate-500 font-bold uppercase tracking-tighter">
+                        <tr>
+                          <th className="px-4 py-3">Serveur</th>
+                          <th className="px-4 py-3">Rôle</th>
+                          <th className="px-4 py-3">Mode</th>
+                          <th className="px-4 py-3 text-right">Action</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-white/5">
+                        {/* Ce serveur */}
+                        <tr className="bg-purple-500/10">
+                          <td className="px-4 py-3">
+                            <div className="flex items-center gap-2">
+                              <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
+                              <span className="font-bold text-white">{settings.serverName || 'Ce PC (Local)'}</span>
+                            </div>
+                          </td>
+                          <td className="px-4 py-3">
+                            <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold ${clusterDashboard?.role === 'master' ? 'bg-purple-500 text-white' : 'bg-slate-700 text-slate-300'}`}>
+                              {clusterDashboard?.role?.toUpperCase() || 'OFFLINE'}
+                            </span>
+                          </td>
+                          <td className="px-4 py-3 text-slate-400">{settings.clusterMode}</td>
+                          <td className="px-4 py-3 text-right">
+                             <span className="text-[10px] text-purple-400 italic">Moi</span>
+                          </td>
+                        </tr>
+                        {/* Les pairs */}
+                        {clusterDashboard?.peers?.map((peer, i) => (
+                          <tr key={i} className="hover:bg-white/5 transition-colors">
+                            <td className="px-4 py-3">
+                              <div className="flex items-center gap-2">
+                                <div className={`w-2 h-2 rounded-full ${peer.online ? 'bg-green-500' : 'bg-red-500'}`} />
+                                <span className={peer.online ? 'text-slate-200' : 'text-slate-600'}>{peer.name}</span>
+                              </div>
+                            </td>
+                            <td className="px-4 py-3">
+                              <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold ${peer.role === 'master' ? 'bg-purple-500 text-white' : 'bg-slate-700 text-slate-300'}`}>
+                                {peer.role?.toUpperCase() || 'DISCONNECTED'}
+                              </span>
+                            </td>
+                            <td className="px-4 py-3 text-slate-400">{peer.mode || '-'}</td>
+                            <td className="px-4 py-3 text-right">
+                                {peer.online && (
+                                  <button 
+                                    onClick={() => alert("Fonctionnalité de contrôle à distance (Update Peer Mode) bientôt disponible !")}
+                                    className="p-1 hover:bg-white/10 rounded-lg"
+                                  >
+                                    <Settings className="w-3 h-3 text-slate-400" />
+                                  </button>
+                                )}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </section>
+              )}
+
+              {/* Gestion des Pairs */}
+              <section className="space-y-4">
+                <label className="text-sm font-bold text-slate-400 uppercase tracking-wider">Serveurs Pairs (Cluster Nodes)</label>
+                <div className="bg-white/5 border border-white/10 rounded-2xl p-4 space-y-4">
+                  <div className="flex gap-2">
+                    <input 
+                      type="text" 
+                      placeholder="Adresse IP (ex: 192.168.1.50)"
+                      value={newPeer.address}
+                      onChange={(e) => setNewPeer({...newPeer, address: e.target.value})}
+                      className="flex-1 bg-white/5 border border-white/10 rounded-xl p-2 text-sm outline-none focus:border-purple-500"
+                    />
+                    <input 
+                      type="number" 
+                      placeholder="Port"
+                      value={newPeer.port}
+                      onChange={(e) => setNewPeer({...newPeer, port: e.target.value})}
+                      className="w-20 bg-white/5 border border-white/10 rounded-xl p-2 text-sm outline-none focus:border-purple-500"
+                    />
+                    <button 
+                      onClick={() => {
+                        if (newPeer.address) {
+                          setSettings({
+                            ...settings, 
+                            clusterNodes: [...settings.clusterNodes, { ...newPeer, port: parseInt(newPeer.port) }]
+                          });
+                          setNewPeer({ address: '', port: '8080' });
+                        }
+                      }}
+                      className="px-4 bg-purple-600 hover:bg-purple-500 rounded-xl text-xs font-bold transition-colors"
+                    >
+                      Ajouter
+                    </button>
+                  </div>
+
+                  <div className="space-y-2 max-h-40 overflow-y-auto pr-1 custom-scrollbar">
+                    {settings.clusterNodes.length > 0 ? settings.clusterNodes.map((peer, i) => (
+                      <div key={i} className="flex items-center justify-between p-3 bg-white/5 border border-white/5 rounded-xl">
+                        <div className="flex items-center gap-3">
+                          <div className="w-2 h-2 rounded-full bg-purple-500/50 shadow-[0_0_8px_rgba(168,85,247,0.4)]" />
+                          <p className="text-sm font-mono text-slate-300">{peer.address}:{peer.port}</p>
+                        </div>
+                        <button 
+                          onClick={() => {
+                            const newNodes = [...settings.clusterNodes];
+                            newNodes.splice(i, 1);
+                            setSettings({...settings, clusterNodes: newNodes});
+                          }}
+                          className="p-1 hover:bg-white/10 text-slate-500 hover:text-red-400 rounded-lg transition-colors"
+                        >
+                          <X className="w-4 h-4" />
+                        </button>
+                      </div>
+                    )) : (
+                      <p className="text-center py-4 text-xs text-slate-600 italic">Aucun serveur pair configuré</p>
+                    )}
+                  </div>
+                </div>
+              </section>
+
+              {/* Actions de contrôle */}
+              <section className="space-y-4">
+                <label className="text-sm font-bold text-slate-400 uppercase tracking-wider">Contrôle du Cluster</label>
+                <div className="bg-purple-500/5 border border-purple-500/20 rounded-2xl p-5 space-y-4">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-sm font-bold text-white">Prendre le contrôle (Master)</p>
+                      <p className="text-[10px] text-slate-400 leading-relaxed">
+                        Force ce serveur à devenir le Maître. Les autres serveurs passeront en mode Esclave.
+                      </p>
+                    </div>
+                    <button 
+                      onClick={async () => {
+                        await window.gps.takeoverCluster();
+                        alert("Ce serveur est désormais le MAÎTRE du cluster.");
+                      }}
+                      className="px-4 py-2 bg-purple-600 hover:bg-purple-500 rounded-xl text-xs font-bold transition-all shadow-lg active:scale-95"
+                    >
+                      TAKEOVER
+                    </button>
+                  </div>
+                </div>
+              </section>
+            </div>
+          )}
         </div>
 
         <div className="p-6 bg-white/5 border-t border-white/5 flex gap-3">

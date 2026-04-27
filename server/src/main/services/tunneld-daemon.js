@@ -38,47 +38,60 @@ class TunneldDaemon extends EventEmitter {
 
   _handleOutput(text) {
     if (!text) return
+    const lines = text.split(/\r?\n/)
 
-    if (text.includes('Uvicorn running on')) {
-      this.isReady = true
-      dbg('[tunneld-daemon] Demon pret.')
-    }
+    lines.forEach(line => {
+      if (!line.trim()) return
 
-    // Detection device info
-    const matchId = text.match(/ID:([\w:.]+)/)
-    const matchVer = text.match(/VERSION:([\d.]+)/)
-    const matchType = text.match(/TYPE:([^ >]+)/)
-    if (matchId || matchVer || matchType) {
-      if (matchId) this.deviceInfo.ip = matchId[1]
-      if (matchVer) this.deviceInfo.version = matchVer[1]
-      if (matchType) this.deviceInfo.type = matchType[1].replace(/[,>]$/, '')
-    }
+      if (line.includes('Uvicorn running on')) {
+        this.isReady = true
+        dbg('[tunneld-daemon] Demon pret.')
+      }
 
-    // Capture du RSD avec filtrage IPv6
-    const matchRsd = text.match(/--rsd\s+([\w:.%]+)\s+(\d+)/)
-    if (matchRsd) {
-      let address = matchRsd[1]
-      const port = matchRsd[2]
-      const isUSB = text.toLowerCase().includes('usbmux') || text.toLowerCase().includes('-usb')
+      // Detection device info
+      const matchId = line.match(/ID:([\w:.]+)/)
+      const matchVer = line.match(/VERSION:([\d.]+)/)
+      const matchType = line.match(/TYPE:([^ >]+)/)
+      if (matchId || matchVer || matchType) {
+        if (matchId) this.deviceInfo.ip = matchId[1]
+        if (matchVer) this.deviceInfo.version = matchVer[1]
+        if (matchType) this.deviceInfo.type = matchType[1].replace(/[,>]$/, '')
+      }
 
-      // Sur Windows, PMD3 peut renvoyer des IPs de tunnel instables (fddc:..., fd75:...).
-      // Si la sortie suggère aussi localhost ou si on est en USB, on peut tenter de stabiliser.
-      // Note: On fait confiance à l'output de PMD3 mais on nettoie les résidus.
-      address = address.replace(/%[0-9]+$/, '') // Enlever le scope ID IPv6 (%12 etc)
+      // Capture du RSD avec filtrage IPv6 et détection stricte par ligne
+      const matchRsd = line.match(/(?:\[(USB|WIFI)\]\s+)?--rsd\s+([\w:.%]+)\s+(\d+)/i)
+      if (matchRsd) {
+        const prefix = (matchRsd[1] || '').toUpperCase()
+        let address = matchRsd[2]
+        const port = matchRsd[3]
+        
+        // Logique de décision ultra-stricte à la ligne
+        let isUSB = false
+        if (prefix === 'USB') isUSB = true
+        else if (prefix === 'WIFI') isUSB = false
+        else {
+          // Si pas de préfixe, l'USB n'est validé que si c'est localhost 
+          // ou si le mot usbmux est présent sur CETTE ligne précise.
+          isUSB = (address === '::1' || address === '127.0.0.1' || line.toLowerCase().includes('usbmux'))
+        }
 
-      dbg(`[tunneld-daemon] Connexion détectée : ${address}:${port} (${isUSB ? 'USB' : 'WiFi'})`)
-      
-      this.emit('connection', {
-        address,
-        port,
-        type: isUSB ? 'USB' : 'WiFi (Tunnel)',
-        deviceInfo: { ...this.deviceInfo }
-      })
-    }
+        address = address.replace(/%[0-9]+$/, '') // Enlever le scope ID IPv6
 
-    if (text.includes('Disconnected from tunnel') || text.includes('Tunnel task failed')) {
-      this.emit('disconnection')
-    }
+        const typeLabel = isUSB ? 'USB' : 'WiFi'
+        dbg(`[tunneld-daemon] Connexion détectée : ${address}:${port} (${typeLabel})`)
+        
+        this.emit('connection', {
+          address,
+          port,
+          type: typeLabel,
+          deviceInfo: { ...this.deviceInfo }
+        })
+      }
+
+      if (line.includes('Disconnected from tunnel') || line.includes('Tunnel task failed')) {
+        this.emit('disconnection')
+      }
+    })
   }
 
   stop() {

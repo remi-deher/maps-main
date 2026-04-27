@@ -4,41 +4,30 @@ const gpsBridge = require('./gps-bridge')
 const { dbg } = require('../../logger')
 
 /**
- * GpsCommander - Exécute les commandes via le pont Python persistant
+ * GpsCommander - Exécute les commandes via le pont de drivers
  */
 class GpsCommander {
   constructor() {
-    // Initialisation du pont au démarrage
-    gpsBridge.start()
+    // Le bridge est initialisé par l'orchestrateur
   }
 
-  async execute(command, rsdAddress, rsdPort, extraArgs = []) {
-    dbg(`[gps-commander] Commande via PONT : ${command} sur ${rsdAddress}:${rsdPort}`)
-    
-    let action = ''
-    let payload = {}
-
+  async execute(command, _unusedAddress, _unusedPort, extraArgs = []) {
     if (command === 'set') {
-      action = 'set_location'
-      payload = { lat: parseFloat(extraArgs[0]), lon: parseFloat(extraArgs[1]) }
+      const lat = parseFloat(extraArgs[0])
+      const lon = parseFloat(extraArgs[1])
+      return await gpsBridge.setLocation(lat, lon)
     } else if (command === 'clear') {
-      action = 'clear_location'
-    } else {
-      return { success: false, error: `Commande inconnue du pont: ${command}` }
-    }
-
-    // On passe par le pont au lieu du CLI
-    const result = await gpsBridge.sendCommand(action, rsdAddress, rsdPort, payload)
-    
-    if (!result.success) {
-      dbg(`[gps-commander] Echec via pont : ${result.error}`)
+      return await gpsBridge.clearLocation()
+    } else if (command === 'heartbeat') {
+      // Pour le heartbeat, on renvoie simplement un succès si le bridge est prêt
+      return { success: gpsBridge.isReady }
     }
     
-    return result
+    return { success: false, error: `Commande inconnue: ${command}` }
   }
 
   stop() {
-    // Le pont est géré globalement, on n'arrête rien ici
+    // Rien à faire ici
   }
 }
 

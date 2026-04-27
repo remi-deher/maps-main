@@ -1,0 +1,15 @@
+{
+    "keep": {
+        "days": true,
+        "amount": 30
+    },
+    "auditLog": "/app/server/logs/.9d761c76f4913783bb6e4d5833001f917adc45ea-audit.json",
+    "files": [
+        {
+            "date": 1777313302818,
+            "name": "/app/server/logs/gps-error-2026-04-27.log",
+            "hash": "2521a269bac87c50274ae279e8d387e281f4937dc4a7d8b3e58506a426a6c410"
+        }
+    ],
+    "hashType": "sha256"
+}
