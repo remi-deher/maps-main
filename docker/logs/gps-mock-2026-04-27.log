@@ -69,3 +69,5 @@
   ios tunnel ls [options]
   ios devmode (enable | get) [--enable-post-restart] [options]
 [17:56:50] [tunneld] processus arrete (code: 1, signal: null)
+[17:56:51] [tunneld-daemon] Demon pret.
+[17:56:54] [tunneld-service] Polling API go-ios démarré...
