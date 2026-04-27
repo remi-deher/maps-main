@@ -148,9 +148,6 @@ class ConnectionOrchestrator extends EventEmitter {
   }
 
   _stopAllHeartbeats() {
-    Object.values(this.daemons).forEach(d => {
-      if (d.stopHeartbeats) d.stopHeartbeats()
-    })
     for (const hb of this.heartbeatRunners.values()) {
       hb.stop()
     }

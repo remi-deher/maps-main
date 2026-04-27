@@ -201,6 +201,11 @@ class CompanionServer extends EventEmitter {
       }
       
       case 'SET_LOCATION': {
+        if (!this.status.tunnelActive) {
+          dbg(`[companion-server] ⚠️ SET_LOCATION ignoré : tunnel non prêt`)
+          socket.emit('STATUS_UPDATE', { error: 'Initialisation du tunnel...' })
+          break
+        }
         const { lat, lon, name } = payload.data || {}
         if (lat !== undefined && lon !== undefined) {
           dbg(`[CMD] iPhone demande position: ${lat}, ${lon}`)
@@ -213,6 +218,56 @@ class CompanionServer extends EventEmitter {
         break
       }
 
+      case 'PLAY_ROUTE':
+      case 'PLAY_SEQUENCE':
+      case 'PLAY_OSRM_ROUTE':
+      case 'PLAY_CUSTOM_GPX': {
+        if (!this.status.tunnelActive) {
+          dbg(`[companion-server] ⚠️ ${payload.type} ignoré : tunnel non prêt`)
+          socket.emit('STATUS_UPDATE', { error: 'Initialisation du tunnel...' })
+          break
+        }
+        this._handleRouteMessage(socket, payload)
+        break
+      }
+      
+      case 'ADD_HISTORY': {
+        if (payload.data) favoritesManager.addToHistory(payload.data)
+        break
+      }
+      
+      case 'ADD_FAVORITE': {
+        if (payload.data) favoritesManager.addFavorite(payload.data)
+        break
+      }
+      
+      case 'REMOVE_FAVORITE': {
+        if (payload.data) favoritesManager.removeFavorite(payload.data.lat, payload.data.lon)
+        break
+      }
+      
+      case 'RENAME_FAVORITE': {
+        if (payload.data) favoritesManager.renameFavorite(payload.data.lat, payload.data.lon, payload.data.newName)
+        break
+      }
+
+      case 'SAVE_SETTINGS': {
+        settings.save(payload.data)
+        this._refreshStatus()
+        this._broadcast('STATUS', this.status)
+        break
+      }
+
+      case 'GET_STATUS': {
+        this._refreshStatus()
+        socket.emit('STATUS', this.status)
+        break
+      }
+    }
+  }
+
+  _handleRouteMessage(socket, payload) {
+    switch (payload.type) {
       case 'PLAY_ROUTE': {
         const { endLat, endLon, speed } = payload.data || {}
         if (endLat !== undefined && endLon !== undefined) {
@@ -269,39 +324,6 @@ class CompanionServer extends EventEmitter {
           this.status.state = 'moving'
           this._broadcast('STATUS', this.status)
         }
-        break
-      }
-      
-      case 'ADD_HISTORY': {
-        if (payload.data) favoritesManager.addToHistory(payload.data)
-        break
-      }
-      
-      case 'ADD_FAVORITE': {
-        if (payload.data) favoritesManager.addFavorite(payload.data)
-        break
-      }
-      
-      case 'REMOVE_FAVORITE': {
-        if (payload.data) favoritesManager.removeFavorite(payload.data.lat, payload.data.lon)
-        break
-      }
-      
-      case 'RENAME_FAVORITE': {
-        if (payload.data) favoritesManager.renameFavorite(payload.data.lat, payload.data.lon, payload.data.newName)
-        break
-      }
-
-      case 'SAVE_SETTINGS': {
-        settings.save(payload.data)
-        this._refreshStatus()
-        this._broadcast('STATUS', this.status)
-        break
-      }
-
-      case 'GET_STATUS': {
-        this._refreshStatus()
-        socket.emit('STATUS', this.status)
         break
       }
     }

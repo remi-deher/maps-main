@@ -54,12 +54,19 @@ class TunneldDaemon extends EventEmitter {
       if (matchType) this.deviceInfo.type = matchType[1].replace(/[,>]$/, '')
     }
 
-    // Capture du RSD
+    // Capture du RSD avec filtrage IPv6
     const matchRsd = text.match(/--rsd\s+([\w:.%]+)\s+(\d+)/)
     if (matchRsd) {
-      const address = matchRsd[1]
+      let address = matchRsd[1]
       const port = matchRsd[2]
-      const isUSB = text.includes('usbmux') || text.includes('usb')
+      const isUSB = text.toLowerCase().includes('usbmux') || text.toLowerCase().includes('-usb')
+
+      // Sur Windows, PMD3 peut renvoyer des IPs de tunnel instables (fddc:..., fd75:...).
+      // Si la sortie suggère aussi localhost ou si on est en USB, on peut tenter de stabiliser.
+      // Note: On fait confiance à l'output de PMD3 mais on nettoie les résidus.
+      address = address.replace(/%[0-9]+$/, '') // Enlever le scope ID IPv6 (%12 etc)
+
+      dbg(`[tunneld-daemon] Connexion détectée : ${address}:${port} (${isUSB ? 'USB' : 'WiFi'})`)
       
       this.emit('connection', {
         address,

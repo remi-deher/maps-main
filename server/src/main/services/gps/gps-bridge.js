@@ -114,13 +114,17 @@ class GpsBridge extends EventEmitter {
       const { spawn } = require('child_process')
       const path = require('path')
       
+      const rsdAddress = ctx.address.includes(':') ? `[${ctx.address}]` : ctx.address
+      
       const args = [
         '-m', 'pymobiledevice3', 
         'developer', 'dvt', 'simulate-location', 'set',
-        '--rsd', ctx.address, String(ctx.port),
+        '--rsd', rsdAddress, String(ctx.port),
         '--',
         String(lat), String(lon)
       ]
+
+      dbg(`[gps-bridge] Exécution : ${PYTHON} ${args.join(' ')}`)
 
       const newProc = spawn(PYTHON, args, { shell: false, cwd: path.dirname(PYTHON) })
       this.pythonProcs.push(newProc)
@@ -158,12 +162,15 @@ class GpsBridge extends EventEmitter {
       const path = require('path')
 
       // Pour l'instant on garde PMD3 pour le GPX car go-ios REST ne supporte peut-être pas encore le play via HTTP de façon standard
+      const rsdAddress = ctx.address.includes(':') ? `[${ctx.address}]` : ctx.address
       const args = [
         '-m', 'pymobiledevice3', 
         'developer', 'dvt', 'simulate-location', 'play',
-        '--rsd', ctx.address, String(ctx.port),
+        '--rsd', rsdAddress, String(ctx.port),
         gpxPath
       ]
+
+      dbg(`[gps-bridge] Exécution GPX : ${PYTHON} ${args.join(' ')}`)
 
       const proc = spawn(PYTHON, args, { shell: false, cwd: path.dirname(PYTHON) })
       this.pythonProcs.push(proc)
@@ -187,9 +194,10 @@ class GpsBridge extends EventEmitter {
     } else {
       const { PYTHON } = require('../../python-resolver')
       const { spawn } = require('child_process')
+      const rsdAddress = ctx.address.includes(':') ? `[${ctx.address}]` : ctx.address
       spawn(PYTHON, [
         '-m', 'pymobiledevice3', 'developer', 'dvt', 'simulate-location', 'clear',
-        '--rsd', ctx.address, String(ctx.port)
+        '--rsd', rsdAddress, String(ctx.port)
       ])
     }
     return { success: true }
@@ -198,13 +206,6 @@ class GpsBridge extends EventEmitter {
   stop() {
     this.pythonProcs.forEach(p => { try { p.kill('SIGKILL') } catch(e) {} })
     this.pythonProcs = []
-    
-    if (process.platform === 'win32') {
-      try {
-        const { execSync } = require('child_process')
-        execSync('powershell "Stop-Process -Name python -Force -ErrorAction SilentlyContinue"', { stdio: 'ignore' })
-      } catch(e) {}
-    }
   }
 }
 
