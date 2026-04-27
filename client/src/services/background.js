@@ -27,10 +27,13 @@ const getDistance = (c1, c2) => {
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
 };
 
+// Verrou mémoire pour éviter les rafales dues à l'asynchronisme d'AsyncStorage
+let isRelanceInProgress = false;
+
 // Définition de la tâche de fond
 if (!TaskManager.isTaskDefined(LOCATION_TASK_NAME)) {
   TaskManager.defineTask(LOCATION_TASK_NAME, async ({ data, error }) => {
-    if (error) return;
+    if (error || isRelanceInProgress) return;
     
     if (data && data.locations && data.locations.length > 0) {
       const currentLoc = data.locations[0].coords;
@@ -45,36 +48,35 @@ if (!TaskManager.isTaskDefined(LOCATION_TASK_NAME)) {
         const dist = getDistance(currentLoc, mockCoords);
         
         // 3. Si dérive > 200m, la simulation est probablement tombée
-        // On ajoute un délai de persistance de 5s pour ignorer les micro-coupures de Jitter.
-        if (dist > 200) {
+        // On ignore les dérives délirantes (ex: 0,0 ou GPS non fixé)
+        if (dist > 200 && dist < 20000000) {
            const now = Date.now();
            let firstDriftTime = await AsyncStorage.getItem('FIRST_DRIFT_TIME');
            
            if (!firstDriftTime) {
              firstDriftTime = now.toString();
              await AsyncStorage.setItem('FIRST_DRIFT_TIME', firstDriftTime);
-             return; // On attend le prochain tick pour confirmer
+             return; 
            }
 
-           // On ne relance que si la dérive persiste depuis plus de 5 secondes
-           if (now - parseInt(firstDriftTime) < 5000) {
+           // Délai de persistance de 8s (plus robuste que 5s)
+           if (now - parseInt(firstDriftTime) < 8000) {
              return;
            }
 
            const lastRelance = await AsyncStorage.getItem('LAST_RELANCE_TIME');
            
-           if (!lastRelance || (now - parseInt(lastRelance)) > 60000) {
+           if (!lastRelance || (now - parseInt(lastRelance)) > 30000) {
               const configJson = await AsyncStorage.getItem('SERVER_CONFIG');
               if (configJson) {
                 const { ip, port } = JSON.parse(configJson);
                 
+                isRelanceInProgress = true;
                 await AsyncStorage.setItem('LAST_RELANCE_TIME', now.toString());
                 await AsyncStorage.removeItem('FIRST_DRIFT_TIME');
                 
-                // On envoie la VRAIE position GPS du téléphone (pas la cible simulée).
-                // Le serveur compare cette position réelle à sa cible injectée pour
-                // confirmer que la simulation a bien dérivé.
-                fetch(`http://${ip}:${port}/relance`, {
+                // Correction URL : ajout du préfixe /api/
+                fetch(`http://${ip}:${port}/api/relance`, {
                   method: 'POST',
                   headers: { 'Content-Type': 'application/json' },
                   body: JSON.stringify({
@@ -86,6 +88,8 @@ if (!TaskManager.isTaskDefined(LOCATION_TASK_NAME)) {
                   eventBus.emit({ type: 'LOG', message: `✅ Relance auto envoyée (Dérive: ${Math.round(dist)}m)` });
                 }).catch(() => {
                   // Erreur réseau
+                }).finally(() => {
+                  isRelanceInProgress = false;
                 });
               }
            }

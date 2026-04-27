@@ -108,6 +108,7 @@ class GpsBridge extends EventEmitter {
    * Injection via pymobiledevice3 (DVT)
    */
   async _setLocationPmd3(ctx, lat, lon) {
+    this.stop() // S'assurer qu'un seul processus d'injection tourne à la fois
     return new Promise((resolve) => {
       const { PYTHON } = require('../../python-resolver')
       const { spawn } = require('child_process')

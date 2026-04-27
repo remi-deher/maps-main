@@ -36,15 +36,15 @@ class TunneldService extends EventEmitter {
     this.runner.on('stderr', (text) => this._handleOutput(text))
     this.runner.on('exit', ({ code, signal }) => {
       if (this._isQuitting || this._isStarting) return
-      dbg(`[tunneld] Processus arrete (code ${code}, signal ${signal}). Relance dans 5s...`)
+      dbg(`[tunneld] Processus arrete (code ${code}, signal ${signal}). Relance dans 3s...`)
       this._stopPolling()
       this.activeConnection = null
       this.emit('disconnection', 'Processus tunnel arrete')
-      this._scheduleRestart(5000)
+      this._scheduleRestart(3000)
     })
   }
 
-  async start() {
+  async start(udid = null) {
     if (this._isQuitting) return
     if (this._restartTimer) { clearTimeout(this._restartTimer); this._restartTimer = null }
     if (this.runner.isRunning || this._isStarting) return
@@ -59,7 +59,18 @@ class TunneldService extends EventEmitter {
     const goIosDir = path.dirname(GOIOS)
     this.runner.options.cwd = goIosDir
 
+    // Utilisation de stopagent pour être sûr que tout est libéré
+    try {
+      dbg('[tunneld] Libération préventive du tunnel (stopagent)...')
+      const { execSync } = require('child_process')
+      execSync(`"${GOIOS}" tunnel stopagent`, { cwd: goIosDir, stdio: 'ignore' })
+    } catch (e) {}
+
     const args = ['tunnel', 'start', '--userspace']
+    if (udid) {
+      args.push('--udid', udid)
+      dbg(`[tunneld] Filtrage sur UDID : ${udid}`)
+    }
     dbg(`[tunneld] Commande finale : ${GOIOS} ${args.join(' ')}`)
 
     this.runner.spawn(GOIOS, args)
@@ -186,6 +197,13 @@ class TunneldService extends EventEmitter {
   stop() {
     this._stopPolling()
     if (this._restartTimer) { clearTimeout(this._restartTimer); this._restartTimer = null }
+    
+    const goIosDir = path.dirname(GOIOS)
+    try {
+      const { execSync } = require('child_process')
+      execSync(`"${GOIOS}" tunnel stopagent`, { cwd: goIosDir, stdio: 'ignore' })
+    } catch (e) {}
+    
     this.runner.stop()
     this.activeConnection = null
   }

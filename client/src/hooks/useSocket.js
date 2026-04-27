@@ -81,16 +81,26 @@ export function useSocket(ip, port, isMaintaining) {
     isConnecting.current = false;
   }, []);
 
+  // --- Cooldown restauration ---
+  const lastRestoreTs = useRef(0);
+
   // ─────────────────────────────────────────
   // Couche 2 : Replay des dernières coords
   // ─────────────────────────────────────────
 
   const replayLastCoords = useCallback(async (force = false) => {
     try {
+      const now = Date.now();
+      if (now - lastRestoreTs.current < 5000) {
+        logEvent.add('Restauration annulée (cooldown 5s)');
+        return;
+      }
+      lastRestoreTs.current = now;
+
       const raw = await AsyncStorage.getItem('MOCK_LOCATION');
       if (!raw) return;
       const saved = JSON.parse(raw);
-      const age = Date.now() - (saved.savedAt || 0);
+      const age = now - (saved.savedAt || 0);
 
       // Option C : On ignore le TTL si c'est une restauration forcée (serveur vide)
       if (!force && age > COORDS_TTL_MS) {

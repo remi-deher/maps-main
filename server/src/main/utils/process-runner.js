@@ -90,9 +90,9 @@ class ProcessRunner extends EventEmitter {
           const cleanCmd = 'powershell "Get-CimInstance Win32_Process -Filter \\"Name = \'ios.exe\' AND CommandLine LIKE \'%tunnel start%\'\\" | Stop-Process -Force -ErrorAction SilentlyContinue"'
           tasks.push(new Promise(r => exec(cleanCmd, () => r())))
 
-          const killPortCmd = 'powershell "Get-NetTCPConnection -LocalPort 28100,60105 -ErrorAction SilentlyContinue | ForEach-Object { Stop-Process -Id $_.OwningProcess -Force -ErrorAction SilentlyContinue }"'
+          const killPortCmd = 'powershell "Get-NetTCPConnection -LocalPort 28100 -ErrorAction SilentlyContinue | ForEach-Object { Stop-Process -Id $_.OwningProcess -Force -ErrorAction SilentlyContinue }"'
           tasks.push(new Promise(r => exec(killPortCmd, () => {
-            dbg(`[${this.name}] Ports 28100 et 60105 liberes.`)
+            dbg(`[${this.name}] Port 28100 libéré.`)
             r()
           })))
         }
