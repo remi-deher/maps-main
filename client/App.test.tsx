@@ -1,5 +1,5 @@
 import React from 'react';
-// App.test.tsx (v1.2.7-types-fix)
+// App.test.tsx (v1.2.8-expo-mocks-fix)
 import renderer from 'react-test-renderer';
 import App from './App';
 
@@ -17,6 +17,24 @@ jest.mock('socket.io-client', () => {
 jest.mock('@react-native-async-storage/async-storage', () =>
   require('@react-native-async-storage/async-storage/jest/async-storage-mock')
 );
+
+// Mock de Expo Task Manager
+jest.mock('expo-task-manager', () => ({
+  defineTask: jest.fn(),
+  isTaskRegisteredAsync: jest.fn(() => Promise.resolve(true)),
+  getRegisteredTasksAsync: jest.fn(() => Promise.resolve([])),
+}));
+
+// Mock de Expo Location
+jest.mock('expo-location', () => ({
+  requestForegroundPermissionsAsync: jest.fn(() => Promise.resolve({ status: 'granted' })),
+  requestBackgroundPermissionsAsync: jest.fn(() => Promise.resolve({ status: 'granted' })),
+  startLocationUpdatesAsync: jest.fn(),
+  stopLocationUpdatesAsync: jest.fn(),
+  Accuracy: { BestForNavigation: 5 },
+  geocodeAsync: jest.fn(),
+  reverseGeocodeAsync: jest.fn(),
+}));
 
 // Mock de MapView car c'est un composant natif complexe
 jest.mock('react-native-maps', () => {
