@@ -6,6 +6,7 @@ const { setWindow, dbg } = require('./logger')
 const tunnel = require('./tunneld-manager')
 const GpsSimulator = require('./services/gps/gps-simulator')
 const companionServer = require('./services/companion-server')
+const settings = require('./services/settings-manager')
 const { registerIpcHandlers } = require('./ipc/registry')
 
 let mainWindow
@@ -124,7 +125,7 @@ app.whenReady().then(() => {
   // Enregistre les handlers IPC
   registerIpcHandlers(tunnel, gps, companion)
   
-  const initialSettings = require('./services/settings-manager').get()
+  const initialSettings = settings.get()
   
   // Appliquer les réglages initiaux si nécessaire via le manager
   // (Le manager gère maintenant les réglages en interne via settings-manager)
