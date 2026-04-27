@@ -8,9 +8,10 @@ const GpsCommander = require('./gps-commander')
  * GpsSimulator - Orchestre la simulation GPS (Version Simplifiée / Zen)
  */
 class GpsSimulator extends EventEmitter {
-  constructor(tunnelManager) {
+  constructor(tunnelManager, companionServer = null) {
     super()
     this.tunnel = tunnelManager
+    this.companion = companionServer
     this.commander = new GpsCommander()
     this.lastCoords = null
     this.lastInjectionTime = 0
@@ -19,6 +20,17 @@ class GpsSimulator extends EventEmitter {
 
   async setLocation(lat, lon, name = null, force = false) {
     if (this._isQuitting) return { success: false, error: 'Simulation en fermeture' }
+
+    // Vérification du mode de fonctionnement
+    const settings = require('../settings-manager')
+    const mode = settings.get('operationMode')
+
+    if (mode === 'client-server') {
+      if (!this.companion || !this.companion.hasActiveClients()) {
+        dbg(`[gps-simulator] 🚫 Injection refusée : Aucun iPhone connecté (Mode Client/Serveur)`)
+        return { success: false, error: 'Mode Client/Serveur actif : Veuillez connecter votre iPhone' }
+      }
+    }
     
     // Throttling : éviter le spam (max 1 injection toutes les 500ms)
     const now = Date.now()

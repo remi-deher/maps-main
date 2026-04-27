@@ -119,8 +119,8 @@ app.whenReady().then(() => {
   createTray()
   
   // Initialisation des services
-  gps = new GpsSimulator(tunnel)
   companion = new companionServer(tunnel)
+  gps = new GpsSimulator(tunnel, companion)
   
   // Enregistre les handlers IPC
   registerIpcHandlers(tunnel, gps, companion)
@@ -141,6 +141,24 @@ app.whenReady().then(() => {
 
   gps.on('log', (msg) => {
     if (mainWindow) mainWindow.webContents.send('status-update', { service: 'server-log', state: 'new', data: msg })
+  })
+
+  // --- GESTION DES MODES DE FONCTIONNEMENT ---
+  ipcMain.removeHandler('save-settings') // On remplace le handler par défaut
+  ipcMain.handle('save-settings', async (event, newSettings) => {
+    const oldMode = settings.get('operationMode')
+    settings.save(newSettings)
+    
+    // Basculement à chaud du serveur compagnon
+    if (newSettings.operationMode === 'autonomous' && oldMode !== 'autonomous') {
+      companion.stop()
+    } else if (newSettings.operationMode !== 'autonomous' && oldMode === 'autonomous') {
+      companion.start(newSettings.companionPort || settings.get('companionPort'))
+    }
+    
+    tunnel.applySettings()
+    event.sender.send('settings-updated', settings.get())
+    return { success: true }
   })
 
   // --- AUTOMATISATION : Re-appliquer la position dès que le tunnel est prêt ---
@@ -183,7 +201,9 @@ app.whenReady().then(() => {
     if (mainWindow) mainWindow.webContents.send('status-update', { service: 'client-log', state: 'new', data: log })
   })
 
-  companion.start(initialSettings.companionPort)
+  if (initialSettings.operationMode !== 'autonomous') {
+    companion.start(initialSettings.companionPort)
+  }
   
   tunnel.start()
 })

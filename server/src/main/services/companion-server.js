@@ -183,6 +183,29 @@ class CompanionServer extends EventEmitter {
     }
   }
 
+  /**
+   * Arrête proprement le serveur compagnon
+   */
+  stop() {
+    if (this.io) {
+      this.io.close()
+      this.io = null
+    }
+    if (this.httpServer) {
+      this.httpServer.close()
+      this.httpServer = null
+    }
+    dbg('[companion-server] Serveur compagnon arrêté.')
+  }
+
+  /**
+   * Vérifie si au moins un client (iPhone) est connecté
+   */
+  hasActiveClients() {
+    if (!this.io) return false
+    return this.io.sockets.sockets.size > 0
+  }
+
   updateTunnelStatus(active) {
     this._refreshStatus()
     this.status.tunnelActive = active

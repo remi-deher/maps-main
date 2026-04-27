@@ -78,6 +78,39 @@ function SettingsModal({ isOpen, onClose }) {
             </div>
           </section>
 
+          {/* Mode de fonctionnement */}
+          <section className="space-y-4">
+            <label className="text-sm font-bold text-slate-400 uppercase tracking-wider">Mode de fonctionnement</label>
+            <div className="grid grid-cols-3 gap-3">
+              <button 
+                onClick={() => setSettings({...settings, operationMode: 'autonomous'})}
+                className={`p-3 rounded-2xl border-2 transition-all text-center flex flex-col items-center gap-1 ${settings.operationMode === 'autonomous' ? 'border-amber-500 bg-amber-500/10' : 'border-white/5 bg-white/5 hover:bg-white/10'}`}
+              >
+                <p className="font-bold text-xs">Autonome</p>
+                <p className="text-[10px] opacity-50">PC Pur</p>
+              </button>
+              <button 
+                onClick={() => setSettings({...settings, operationMode: 'client-server'})}
+                className={`p-3 rounded-2xl border-2 transition-all text-center flex flex-col items-center gap-1 ${settings.operationMode === 'client-server' ? 'border-purple-500 bg-purple-500/10' : 'border-white/5 bg-white/5 hover:bg-white/10'}`}
+              >
+                <p className="font-bold text-xs">Client/Serv</p>
+                <p className="text-[10px] opacity-50">iPhone Requis</p>
+              </button>
+              <button 
+                onClick={() => setSettings({...settings, operationMode: 'hybrid'})}
+                className={`p-3 rounded-2xl border-2 transition-all text-center flex flex-col items-center gap-1 ${settings.operationMode === 'hybrid' || !settings.operationMode ? 'border-blue-500 bg-blue-500/10' : 'border-white/5 bg-white/5 hover:bg-white/10'}`}
+              >
+                <p className="font-bold text-xs">Hybride</p>
+                <p className="text-[10px] opacity-50">Mixte (Défaut)</p>
+              </button>
+            </div>
+            <p className="text-[10px] text-slate-500 px-1 italic">
+              {settings.operationMode === 'autonomous' && "💡 Le serveur WebSocket sera coupé. L'application iPhone ne pourra pas se connecter."}
+              {settings.operationMode === 'client-server' && "💡 L'injection de position sera bloquée si aucun iPhone n'est connecté."}
+              {settings.operationMode === 'hybrid' && "💡 Mode standard : injection libre, l'iPhone se connecte s'il le souhaite."}
+            </p>
+          </section>
+
           {/* Map Provider */}
           <section className="space-y-4">
             <label className="text-sm font-bold text-slate-400 uppercase tracking-wider">Moteur de carte</label>

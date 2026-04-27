@@ -55,8 +55,8 @@ async function startServer() {
 
 
     // Initialisation comme dans window.js
-    const gps = new GpsSimulator(tunnelManager);
     const companion = new CompanionServer(tunnelManager);
+    const gps = new GpsSimulator(tunnelManager, companion);
 
     dbg('[server] Démarrage du companion-server...');
     
@@ -129,7 +129,8 @@ async function startServer() {
     // gps n'a pas de méthode init() - il s'initialise dans le constructeur
 
     // Liaison Tunnel -> Companion (comme dans window.js)
-    tunnelManager.setOnStatusChange((active) => companion.updateTunnelStatus(active));
+    tunnelManager.on('ready', () => companion.updateTunnelStatus(true));
+    tunnelManager.on('lost', () => companion.updateTunnelStatus(false));
 
     gps.on('location-changed', ({ lat, lon, name }) => {
       companion.broadcastLocation(lat, lon, name)
@@ -148,9 +149,11 @@ async function startServer() {
       tunnelManager.applySettings();
     });
 
-    // Lancement du companion server
+    // Lancement du companion server si pas en autonome
     const initialSettings = require('./services/settings-manager').get();
-    companion.start(initialSettings.companionPort || 8080);
+    if (initialSettings.operationMode !== 'autonomous') {
+      companion.start(initialSettings.companionPort || 8080);
+    }
 
     // 4. Lancer les drivers de tunnel
     dbg('[server] Lancement des services tunneld...');

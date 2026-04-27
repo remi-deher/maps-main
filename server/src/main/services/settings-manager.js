@@ -43,6 +43,7 @@ class SettingsManager {
       wifiPort: '', 
       companionPort: 8080,
       connectionMode: 'both',
+      operationMode: 'hybrid', // 'autonomous' | 'client-server' | 'hybrid'
       usbDriver: 'go-ios',
       wifiDriver: 'pymobiledevice',
       fallbackEnabled: true,

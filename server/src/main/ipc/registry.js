@@ -17,7 +17,8 @@ function registerIpcHandlers(tunnel, gps, companion) {
     tunnelReady: !!tunnel.getRsdAddress(),
     rsdAddress:  tunnel.getRsdAddress(),
     rsdPort:     tunnel.getRsdPort(),
-    connectionType: tunnel.getConnectionType()
+    connectionType: tunnel.getConnectionType(),
+    operationMode: settings.get('operationMode')
   }))
 
   ipcMain.handle('restart-tunnel', () => tunnel.forceRefresh())
