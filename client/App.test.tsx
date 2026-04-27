@@ -29,6 +29,8 @@ jest.mock('expo-task-manager', () => ({
 jest.mock('expo-location', () => ({
   requestForegroundPermissionsAsync: jest.fn(() => Promise.resolve({ status: 'granted' })),
   requestBackgroundPermissionsAsync: jest.fn(() => Promise.resolve({ status: 'granted' })),
+  getForegroundPermissionsAsync: jest.fn(() => Promise.resolve({ status: 'granted' })),
+  getBackgroundPermissionsAsync: jest.fn(() => Promise.resolve({ status: 'granted' })),
   startLocationUpdatesAsync: jest.fn(),
   stopLocationUpdatesAsync: jest.fn(),
   Accuracy: { BestForNavigation: 5 },
