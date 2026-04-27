@@ -59,19 +59,23 @@ class TunneldDaemon extends EventEmitter {
     if (matchRsd) {
       let address = matchRsd[1]
       const port = matchRsd[2]
-      const isUSB = text.toLowerCase().includes('usbmux') || text.toLowerCase().includes('-usb')
+      
+      // Détection plus fine du type de connexion
+      // ::1 ou 127.0.0.1 => Forcément USB (via usbmuxd local bridge)
+      // Si la ligne contient 'usbmux' juste à côté du RSD => USB
+      const isLoopback = address === '::1' || address === '127.0.0.1'
+      const hasUsbContext = text.toLowerCase().includes('usbmux') || text.toLowerCase().includes('-usb')
+      const isUSB = isLoopback || (hasUsbContext && !text.toLowerCase().includes('wifi'))
 
-      // Sur Windows, PMD3 peut renvoyer des IPs de tunnel instables (fddc:..., fd75:...).
-      // Si la sortie suggère aussi localhost ou si on est en USB, on peut tenter de stabiliser.
-      // Note: On fait confiance à l'output de PMD3 mais on nettoie les résidus.
-      address = address.replace(/%[0-9]+$/, '') // Enlever le scope ID IPv6 (%12 etc)
+      address = address.replace(/%[0-9]+$/, '') // Enlever le scope ID IPv6
 
-      dbg(`[tunneld-daemon] Connexion détectée : ${address}:${port} (${isUSB ? 'USB' : 'WiFi'})`)
+      const typeLabel = isUSB ? 'USB' : 'WiFi'
+      dbg(`[tunneld-daemon] Connexion détectée : ${address}:${port} (${typeLabel})`)
       
       this.emit('connection', {
         address,
         port,
-        type: isUSB ? 'USB' : 'WiFi (Tunnel)',
+        type: typeLabel,
         deviceInfo: { ...this.deviceInfo }
       })
     }
