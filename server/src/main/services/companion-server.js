@@ -169,6 +169,42 @@ class CompanionServer extends EventEmitter {
       clusterManager.release()
       res.json({ success: true })
     })
+
+    this.app.get('/api/cluster/plists', (req, res) => {
+      const path = require('path')
+      const fs = require('fs')
+      const { app } = require('electron')
+      try {
+        const plists = []
+        const projectRoot = path.join(app.getAppPath(), '..')
+        
+        // 1. Identité serveur
+        const selfPath = path.join(projectRoot, 'selfIdentity.plist')
+        if (fs.existsSync(selfPath)) {
+          plists.push({ name: 'selfIdentity.plist', content: fs.readFileSync(selfPath, 'utf8') })
+        }
+
+        // 2. Records iPhone
+        let lockdownDir = process.platform === 'win32' ? 'C:\\ProgramData\\Apple\\Lockdown' : '/var/lib/lockdown'
+        if (fs.existsSync(lockdownDir)) {
+          const files = fs.readdirSync(lockdownDir).filter(f => f.endsWith('.plist'))
+          for (const f of files) {
+            plists.push({ name: f, content: fs.readFileSync(path.join(lockdownDir, f), 'utf8') })
+          }
+        }
+        res.json({ success: true, plists })
+      } catch (e) {
+        res.status(500).json({ success: false, error: e.message })
+      }
+    })
+
+    this.app.post('/api/cluster/sync-plist', async (req, res) => {
+      const { name, content } = req.body
+      const clusterManager = require('./cluster-manager')
+      dbg(`[cluster] 📥 Réception du certificat ${name} du Maître...`)
+      await clusterManager._saveLocalPlist(name, content)
+      res.json({ success: true })
+    })
   }
 
   start(port = 8080) {

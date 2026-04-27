@@ -201,6 +201,13 @@ function registerIpcHandlers(tunnel, gps, companion) {
         if (!fs.existsSync(lockdownDir)) fs.mkdirSync(lockdownDir, { recursive: true })
         fs.writeFileSync(path.join(lockdownDir, name), content)
       }
+
+      // --- DIFFUSION CLUSTER ---
+      const clusterManager = require('../services/cluster-manager')
+      if (clusterManager.role === 'master') {
+        clusterManager.broadcastPlist(name, content)
+      }
+
       return { success: true }
     } catch (e) {
       return { success: false, error: e.message }

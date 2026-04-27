@@ -30,6 +30,48 @@ class ClusterManager extends EventEmitter {
 
     // Démarrage du cycle de surveillance
     this._startHeartbeat()
+
+    // Synchro initiale des plists si on est esclave
+    setTimeout(() => this._initialSync(), 2000)
+  }
+
+  async _initialSync() {
+    if (this.role === 'slave' && this.currentMaster) {
+      dbg(`[cluster] 📥 Tentative de synchronisation initiale des certificats...`)
+      try {
+        const url = `http://${this.currentMaster}:8080/api/cluster/plists` // On assume le port par défaut ou on le déduit
+        const res = await axios.get(url, { timeout: 10000 })
+        if (res.data && res.data.success) {
+          const { plists } = res.data
+          for (const p of plists) {
+            await this._saveLocalPlist(p.name, p.content)
+          }
+          dbg(`[cluster] ✅ ${plists.length} certificats synchronisés depuis le Maître`)
+        }
+      } catch (e) {
+        dbg(`[cluster] ❌ Échec synchro initiale: ${e.message}`)
+      }
+    }
+  }
+
+  async _saveLocalPlist(name, content) {
+    const fs = require('fs')
+    const path = require('path')
+    const { app } = require('electron')
+    
+    try {
+      const projectRoot = path.join(app.getAppPath(), '..')
+      if (name === 'selfIdentity.plist') {
+        fs.writeFileSync(path.join(projectRoot, 'selfIdentity.plist'), content)
+      } else {
+        let lockdownDir = process.platform === 'win32' ? 'C:\\ProgramData\\Apple\\Lockdown' : '/var/lib/lockdown'
+        if (fs.existsSync(lockdownDir)) {
+          fs.writeFileSync(path.join(lockdownDir, name), content)
+        }
+      }
+    } catch (e) {
+      dbg(`[cluster] ❌ Erreur sauvegarde plist ${name}: ${e.message}`)
+    }
   }
 
   _startHeartbeat() {
@@ -109,6 +151,18 @@ class ClusterManager extends EventEmitter {
       try {
         const url = `http://${peer.address}:${peer.port}/api/cluster/sync`
         await axios.post(url, data, { timeout: 2000 })
+      } catch (e) {}
+    }
+  }
+
+  async broadcastPlist(name, content) {
+    if (this.role !== 'master') return
+
+    dbg(`[cluster] 📤 Diffusion du certificat ${name} au cluster...`)
+    for (const peer of this.peers) {
+      try {
+        const url = `http://${peer.address}:${peer.port}/api/cluster/sync-plist`
+        await axios.post(url, { name, content }, { timeout: 5000 })
       } catch (e) {}
     }
   }
