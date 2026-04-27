@@ -29,4 +29,9 @@ export interface ServerStatus {
   fallbackEnabled: boolean;
   favorites: RawCoords[];
   recentHistory: RawCoords[];
+  cluster?: {
+    role: 'master' | 'slave' | 'standalone';
+    mode: 'auto' | 'manual';
+    peers: { address: string; port: number; status: string; lastSeen: number }[];
+  };
 }
