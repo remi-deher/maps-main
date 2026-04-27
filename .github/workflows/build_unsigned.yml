@@ -34,12 +34,12 @@ jobs:
           cd client/ios
           pod install --repo-update --silent
 
-      - name: 🔍 Type-check
+      - name: Type-check
         run: |
           cd client
           npx tsc --noEmit
 
-      - name: 🧪 Run Smoke Tests
+      - name: Run Smoke Tests
         run: |
           cd client
           npm test
@@ -47,7 +47,7 @@ jobs:
       - name: Build Unsigned App
         run: |
           cd client/ios
-          echo "🚀 Building iOS app... (Warnings are silenced)"
+          echo "Building iOS app... (Warnings are silenced)"
           xcodebuild -workspace *.xcworkspace \
                      -scheme client \
                      -configuration Release \
@@ -61,7 +61,7 @@ jobs:
                      CODE_SIGN_IDENTITY="" \
                      AD_HOC_CODE_SIGNING_ALLOWED=YES \
                      clean build > build.log 2>&1 || (cat build.log | grep -Ei "error:|failed:|note:.*error:" | head -n 50 && exit 1)
-          echo "✅ Build completed successfully."
+          echo "Build completed successfully."
 
       - name: Create IPA
         run: |

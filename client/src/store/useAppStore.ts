@@ -19,6 +19,7 @@ interface AppStore {
   connect: () => void;
   disconnect: () => void;
   sendAction: (type: string, data?: any) => void;
+  reportRealLocation: (coords: Coords) => void;
   loadSettings: () => Promise<void>;
 }
 
@@ -51,8 +52,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
   setIsMaintaining: (val) => set({ isMaintaining: val }),
 
   reportRealLocation: (coords: Coords) => {
-    const { socket, isConnected } = get();
-    if (isConnected && socket) {
+    if (socket?.connected) {
       socket.emit('REAL_LOCATION', coords);
     }
   },
