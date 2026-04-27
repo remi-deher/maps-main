@@ -22,7 +22,7 @@ jobs:
       - name: Install Dependencies
         run: |
           cd client
-          npm install
+          npm install --loglevel error
 
       - name: Expo Prebuild
         run: |
@@ -32,7 +32,7 @@ jobs:
       - name: Install Pods
         run: |
           cd client/ios
-          pod install --repo-update
+          pod install --repo-update --silent
 
       - name: Build Unsigned App
         run: |
@@ -43,6 +43,7 @@ jobs:
                      -sdk iphoneos \
                      -destination 'generic/platform=iOS' \
                      -derivedDataPath ./build \
+                     -quiet \
                      CODE_SIGNING_ALLOWED=NO \
                      CODE_SIGNING_REQUIRED=NO \
                      CODE_SIGN_IDENTITY="" \
