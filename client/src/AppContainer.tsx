@@ -193,6 +193,7 @@ export default function AppContainer() {
             onClose={() => setIsFavsOpen(false)}
             onTeleport={handleTeleport}
             onRemove={(f: any) => store.sendAction('REMOVE_FAVORITE', { lat: f.lat, lon: f.lon })}
+            onRename={(f: any, newName: string) => store.sendAction('RENAME_FAVORITE', { lat: f.lat, lon: f.lon, newName })}
           />
 
           <SettingsModal 

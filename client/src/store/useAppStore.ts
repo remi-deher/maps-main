@@ -86,8 +86,8 @@ export const useAppStore = create<AppStore>((set, get) => ({
       set({ serverStatus: data });
       if (data.lastInjectedLocation) {
         set({ simulatedCoords: { 
-            latitude: data.lastInjectedLocation.lat as any, 
-            longitude: data.lastInjectedLocation.lon as any,
+            latitude: data.lastInjectedLocation.lat, 
+            longitude: data.lastInjectedLocation.lon,
             name: data.lastInjectedLocation.name 
         } });
       }

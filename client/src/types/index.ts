@@ -5,6 +5,14 @@ export interface Coords {
   savedAt?: number;
 }
 
+// Interface pour les données brutes venant du serveur
+export interface RawCoords {
+  lat: number;
+  lon: number;
+  name?: string;
+  timestamp?: number;
+}
+
 export interface ServerStatus {
   state: 'idle' | 'ready' | 'starting' | 'running' | 'moving';
   tunnelActive: boolean;
@@ -14,27 +22,11 @@ export interface ServerStatus {
   deviceInfo: any | null;
   maintainActive: boolean;
   lastHeartbeat: number | null;
-  lastInjectedLocation: Coords | null;
-  lastVerifiedLocation: Coords | null;
+  lastInjectedLocation: RawCoords | null;
+  lastVerifiedLocation: RawCoords | null;
   usbDriver: string;
   wifiDriver: string;
   fallbackEnabled: boolean;
-  favorites: Coords[];
-  recentHistory: Coords[];
-}
-
-export interface AppState {
-  // Config
-  serverIp: string;
-  serverPort: string;
-  
-  // Status
-  status: string;
-  serverStatus: ServerStatus | null;
-  simulatedCoords: Coords | null;
-  verifiedLocation: any | null;
-  isMaintaining: boolean;
-  
-  // UI
-  isLowPowerMode: boolean;
+  favorites: RawCoords[];
+  recentHistory: RawCoords[];
 }
