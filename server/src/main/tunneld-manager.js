@@ -142,6 +142,9 @@ class ConnectionOrchestrator extends EventEmitter {
 
   getRsdAddress() { return this.activeConnection?.address }
   getRsdPort() { return this.activeConnection?.port }
+  getConnectionType() { return this.activeConnection?.type || 'NONE' }
+  getDeviceInfo() { return this.activeConnection?.deviceInfo || {} }
+  isStarting() { return Object.values(this.drivers).some(d => d.isStarting) }
   
   async forceRefresh() { 
     await this.stopTunneld()

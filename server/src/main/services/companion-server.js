@@ -45,7 +45,11 @@ class CompanionServer extends EventEmitter {
     })
 
     if (this.tunnel) {
-      this.tunnel.setOnStatusChange(() => {
+      this.tunnel.on('ready', () => {
+        this._refreshStatus()
+        this._broadcast('STATUS', this.status)
+      })
+      this.tunnel.on('lost', () => {
         this._refreshStatus()
         this._broadcast('STATUS', this.status)
       })
