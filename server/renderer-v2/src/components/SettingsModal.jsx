@@ -385,7 +385,6 @@ function SettingsModal({ isOpen, onClose }) {
                 )}
               </div>
             </div>
-            </div>
           </section>
             </>
           ) : (
