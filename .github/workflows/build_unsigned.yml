@@ -34,6 +34,11 @@ jobs:
           cd client/ios
           pod install --repo-update --silent
 
+      - name: 🔍 Type-check
+        run: |
+          cd client
+          npx tsc --noEmit
+
       - name: Build Unsigned App
         run: |
           cd client/ios
