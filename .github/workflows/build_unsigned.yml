@@ -39,6 +39,11 @@ jobs:
           cd client
           npx tsc --noEmit
 
+      - name: 🧪 Run Smoke Tests
+        run: |
+          cd client
+          npm test
+
       - name: Build Unsigned App
         run: |
           cd client/ios

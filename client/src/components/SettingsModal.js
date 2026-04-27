@@ -1,7 +1,12 @@
 'use strict'
 
+import React, { useState } from 'react';
+import { StyleSheet, View, Text, TextInput, TouchableOpacity, Modal, Dimensions } from 'react-native';
 import * as DocumentPicker from 'expo-document-picker';
 import * as FileSystem from 'expo-file-system';
+import { COLORS } from '../constants/theme';
+
+const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
 export default function SettingsModal({ 
   visible, onClose, initialIp, initialPort, initialUsbDriver, initialWifiDriver, onSave, onImportGpx,
