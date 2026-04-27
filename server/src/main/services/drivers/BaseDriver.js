@@ -60,6 +60,14 @@ class BaseDriver extends EventEmitter {
   getTunnelInfo() {
     return this.tunnelInfo
   }
+
+  /**
+   * Vérifie si le driver est toujours en bonne santé (connexion active, etc.)
+   * @returns {Promise<boolean>}
+   */
+  async checkHealth() {
+    return true
+  }
 }
 
 module.exports = BaseDriver

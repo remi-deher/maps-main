@@ -154,6 +154,40 @@ class Pmd3Driver extends BaseDriver {
       }
     })
   }
+
+  /**
+   * Vérifie la santé du driver en tentant une connexion TCP sur le port RSD
+   */
+  async checkHealth() {
+    if (!this.isActive || !this.tunnelInfo) return false
+
+    return new Promise((resolve) => {
+      const net = require('net')
+      const socket = new net.Socket()
+      let resolved = false
+
+      socket.setTimeout(2000)
+
+      socket.connect(this.tunnelInfo.port, this.tunnelInfo.address, () => {
+        if (!resolved) {
+          resolved = true
+          socket.destroy()
+          resolve(true)
+        }
+      })
+
+      const onFail = () => {
+        if (!resolved) {
+          resolved = true
+          socket.destroy()
+          resolve(false)
+        }
+      }
+
+      socket.on('error', onFail)
+      socket.on('timeout', onFail)
+    })
+  }
 }
 
 module.exports = Pmd3Driver

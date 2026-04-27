@@ -27,6 +27,8 @@ class CompanionServer extends EventEmitter {
     this.port = null
     this.status = {}
     this.lastDriftRelance = 0
+    this._consecutiveValidationFailures = 0
+    this._lastAutoReinjectionTime = 0
     
     this.app.use(bodyParser.json())
     this._setupRoutes()
@@ -220,8 +222,15 @@ class CompanionServer extends EventEmitter {
   _handleMessage(socket, payload) {
     switch (payload.type) {
       case 'HEARTBEAT': {
-        if (payload.data) this.status.maintainActive = payload.data.isMaintaining || false
+        const data = payload.data || {}
+        this.status.maintainActive = data.isMaintaining || false
         this.status.lastHeartbeat = Date.now()
+        
+        // Validation Active (Point 1)
+        if (data.latitude && data.longitude) {
+          this._validatePosition(data.latitude, data.longitude)
+        }
+
         this._updateFrontend()
         socket.emit('PONG', { timestamp: Date.now() })
         break
@@ -288,20 +297,7 @@ class CompanionServer extends EventEmitter {
       case 'REAL_LOCATION': {
         const { latitude, longitude } = payload.data || {}
         if (latitude !== undefined && longitude !== undefined) {
-          const target = this.status.lastInjectedLocation || this.status.lastVerifiedLocation
-          if (target) {
-            const dist = this._calculateDistance(latitude, longitude, target.lat, target.lon)
-            this.status.lastRealLocation = { lat: latitude, lon: longitude, drift: dist, timestamp: Date.now() }
-            
-            // Si la dérive est > 50m, on considère que la simulation a échoué ou dérivé
-            if (dist > 50) {
-              dbg(`[companion-server] ⚠️ DÉRIVE DÉTECTÉE : ${dist.toFixed(1)}m`)
-            } else {
-              // On peut confirmer que la location est bien appliquée
-              this.status.lastVerifiedLocation = { ...target, timestamp: Date.now() }
-            }
-            this._broadcast('STATUS_UPDATE', { lastRealLocation: this.status.lastRealLocation, lastVerifiedLocation: this.status.lastVerifiedLocation })
-          }
+          this._validatePosition(latitude, longitude)
         }
         break
       }
@@ -411,6 +407,45 @@ class CompanionServer extends EventEmitter {
       this.status.maintainActive = false
       this._updateFrontend()
     }
+  }
+
+  /**
+   * Valide la position réelle de l'iPhone et ré-injecte si dérive critique
+   */
+  _validatePosition(realLat, realLon) {
+    const target = this.status.lastInjectedLocation || this.status.lastVerifiedLocation
+    if (!target) return
+
+    const dist = this._calculateDistance(realLat, realLon, target.lat, target.lon)
+    this.status.lastRealLocation = { lat: realLat, lon: realLon, drift: dist, timestamp: Date.now() }
+
+    // --- LOGIQUE DE BOUCLIER INTELLIGENT ---
+    // 1. Seuil de tolérance élevé (100m) pour éviter les faux positifs
+    if (dist > 100) {
+      this._consecutiveValidationFailures++
+      dbg(`[companion-server] 🛡️ Alerte dérive (${dist.toFixed(0)}m) - Échec ${this._consecutiveValidationFailures}/2`)
+
+      // 2. Double validation temporelle (nécessite 2 échecs consécutifs)
+      if (this._consecutiveValidationFailures >= 2) {
+        const now = Date.now()
+        // 3. Cooldown de sécurité (15s)
+        if (now - this._lastAutoReinjectionTime > 15000) {
+          dbg(`[companion-server] 🚨 Dérive critique confirmée. Ré-injection de sécurité forcée !`)
+          this.emit('request-location', { ...target, force: true })
+          this._lastAutoReinjectionTime = now
+          this._consecutiveValidationFailures = 0
+        }
+      }
+    } else {
+      // Position cohérente
+      this._consecutiveValidationFailures = 0
+      this.status.lastVerifiedLocation = { ...target, timestamp: Date.now() }
+    }
+
+    this._broadcast('STATUS_UPDATE', { 
+      lastRealLocation: this.status.lastRealLocation, 
+      lastVerifiedLocation: this.status.lastVerifiedLocation 
+    })
   }
 
   _calculateDistance(lat1, lon1, lat2, lon2) {

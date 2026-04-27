@@ -23,8 +23,62 @@ class ConnectionOrchestrator extends EventEmitter {
     this.isCompanionConnected = false
     this.companionIp = null
     this._isQuitting = false
+    this.healthCheckInterval = null
+    this._reconnectTimer = null
+    this._consecutiveHealthFailures = 0
 
     this._initListeners()
+    this._startHealthCheck()
+    this._setupAutoReconnect()
+  }
+
+  _startHealthCheck() {
+    if (this.healthCheckInterval) clearInterval(this.healthCheckInterval)
+    this.healthCheckInterval = setInterval(async () => {
+      const activeDriver = this.drivers[this.activeDriverId]
+      if (activeDriver && activeDriver.isActive && !this.isStarting()) {
+        const isHealthy = await activeDriver.checkHealth()
+        if (!isHealthy) {
+          this._consecutiveHealthFailures++
+          dbg(`[orchestrator] 🩺 Alerte santé (Échec ${this._consecutiveHealthFailures}/2) sur ${this.activeDriverId}`)
+          
+          if (this._consecutiveHealthFailures >= 2) {
+            dbg(`[orchestrator] 🚨 Driver ${this.activeDriverId} corrompu. Redémarrage forcé...`)
+            this.forceRefresh()
+            this._consecutiveHealthFailures = 0
+          }
+        } else {
+          this._consecutiveHealthFailures = 0
+        }
+      }
+    }, 10000)
+  }
+
+  _setupAutoReconnect() {
+    // Si le driver émet une déconnexion, on tente de reconnecter
+    this.on('lost', () => {
+      if (this._reconnectTimer || this._isQuitting) return
+      
+      const interval = 3000 // Reconnexion agressive (3s)
+      dbg(`[orchestrator] 🔄 Perte de connexion. Tentative de reconnexion agressive toutes les ${interval/1000}s...`)
+      
+      this._reconnectTimer = setInterval(() => {
+        if (!this.activeDriverId && !this.isStarting() && !this._isQuitting) {
+          this.start()
+        } else if (this.activeDriverId) {
+          clearInterval(this._reconnectTimer)
+          this._reconnectTimer = null
+        }
+      }, interval)
+    })
+
+    this.on('ready', () => {
+      if (this._reconnectTimer) {
+        dbg(`[orchestrator] ✅ Connexion restaurée. Arrêt du cycle de reconnexion.`)
+        clearInterval(this._reconnectTimer)
+        this._reconnectTimer = null
+      }
+    })
   }
 
   _initListeners() {
