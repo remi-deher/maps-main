@@ -126,45 +126,47 @@ app.whenReady().then(() => {
   registerIpcHandlers(tunnel, gps, companion)
   
   const initialSettings = settings.get()
-  const clusterManager = require('./services/cluster-manager')
-  clusterManager.init()
+  
+  try {
+    const clusterManager = require('./services/cluster-manager')
+    clusterManager.init()
 
-  // --- ÉVÉNEMENTS CLUSTER ---
-  clusterManager.on('role-changed', (role) => {
-    dbg(`[window] 🎭 Changement de rôle Cluster : ${role.toUpperCase()}`)
-    if (mainWindow) mainWindow.webContents.send('status-update', { service: 'cluster', state: role })
-    
-    if (role === 'master') {
-      // Si on devient maître, on lance le tunnel
-      tunnel.start()
-      if (initialSettings.operationMode !== 'autonomous') {
-        companion.start(initialSettings.companionPort)
+    // --- ÉVÉNEMENTS CLUSTER ---
+    clusterManager.on('role-changed', (role) => {
+      dbg(`[window] 🎭 Changement de rôle Cluster : ${role.toUpperCase()}`)
+      if (mainWindow) mainWindow.webContents.send('status-update', { service: 'cluster', state: role })
+      
+      if (role === 'master') {
+        tunnel.start()
+        if (initialSettings.operationMode !== 'autonomous') {
+          companion.start(initialSettings.companionPort)
+        }
+      } else {
+        tunnel.stop()
+        companion.stop()
       }
-    } else {
-      // Si on devient esclave, on arrête les services pour libérer l'iPhone
-      tunnel.stop()
-      companion.stop()
-    }
-  })
+    })
 
-  companion.on('cluster-sync', ({ lat, lon, name, mode }) => {
-    // Un esclave reçoit la position du maître
-    if (clusterManager.role === 'slave') {
-      gps.lastCoords = { lat, lon, name }
-      if (mainWindow) {
-        mainWindow.webContents.send('status-update', { 
-            service: 'location', 
-            state: 'synced', 
-            data: { lat, lon, name: name + " (Sync Master)" } 
-        })
+    companion.on('cluster-sync', ({ lat, lon, name, mode }) => {
+      if (clusterManager.role === 'slave') {
+        gps.lastCoords = { lat, lon, name }
+        if (mainWindow) {
+          mainWindow.webContents.send('status-update', { 
+              service: 'location', 
+              state: 'synced', 
+              data: { lat, lon, name: name + " (Sync Master)" } 
+          })
+        }
       }
-    }
-  })
+    })
 
-  ipcMain.handle('takeover-cluster', async () => {
-    await clusterManager.takeover()
-    return { success: true }
-  })
+    ipcMain.handle('takeover-cluster', async () => {
+      await clusterManager.takeover()
+      return { success: true }
+    })
+  } catch (err) {
+    dbg(`[window] ❌ Erreur initialisation Cluster: ${err.message}`)
+  }
   
   // Liaison Tunnel -> Companion via événements
   tunnel.on('ready', () => companion.updateTunnelStatus(true))
