@@ -40,7 +40,7 @@ class Pmd3Driver extends BaseDriver {
       if (!this.runner.isRunning) return resolve(true)
       
       dbg(`[${this.id}] Demande de fermeture gracieuse du démon...`)
-      this.runner.child.kill('SIGINT') // Envoie CTRL+C
+      this.runner.process.kill('SIGINT') // Envoie CTRL+C
       
       // On laisse un délai de grâce pour le nettoyage (Keep-Alive, TUN close)
       const timer = setTimeout(() => {
