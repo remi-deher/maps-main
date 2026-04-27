@@ -128,7 +128,9 @@ class GpsBridge extends EventEmitter {
       const { spawn } = require('child_process')
       const path = require('path')
       
-      const rsdAddress = address.includes(':') ? `[${address}]` : address
+      // IMPORTANT: En ligne de commande --rsd, pymobiledevice3 attend l'adresse brute
+      // SANS les crochets [ ], contrairement aux URLs.
+      const rsdAddress = address
       
       const args = [
         '-m', 'pymobiledevice3', 
@@ -144,22 +146,29 @@ class GpsBridge extends EventEmitter {
       this.pythonProcs.push(newProc)
 
       let resolved = false
+      let lastStderr = ''
       const done = (success, error) => {
         if (resolved) return
         resolved = true
+        clearTimeout(timer)
         resolve({ success, error })
       }
 
-      newProc.stdout.on('data', (d) => { if (d.toString().toLowerCase().includes('enter')) done(true) })
-      newProc.stderr.on('data', (d) => { if (d.toString().toLowerCase().includes('enter')) done(true) })
+      newProc.stdout.on('data', (d) => { 
+        const msg = d.toString()
+        if (msg.toLowerCase().includes('enter') || msg.toLowerCase().includes('success')) done(true) 
+      })
+      newProc.stderr.on('data', (d) => { 
+        lastStderr += d.toString()
+        dbg(`[gps-bridge] STDERR: ${d.toString().trim()}`)
+      })
       
-      const timer = setTimeout(() => done(false, 'Timeout PMD3'), 5000)
+      const timer = setTimeout(() => done(false, `Timeout PMD3 ${lastStderr ? ': ' + lastStderr : ''}`), 10000)
 
       newProc.on('close', (code) => {
-        clearTimeout(timer)
         this.pythonProcs = this.pythonProcs.filter(p => p !== newProc)
         if (code === 0) done(true)
-        else done(false, `Code ${code}`)
+        else done(false, `Code ${code}${lastStderr ? ' - ' + lastStderr : ''}`)
       })
     })
   }
