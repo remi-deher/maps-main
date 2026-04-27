@@ -14,10 +14,12 @@ function SettingsModal({ isOpen, onClose }) {
     wifiDriver: 'pymobiledevice',
     fallbackEnabled: true,
     clusterMode: 'off',
-    clusterNodes: []
+    clusterNodes: [],
+    serverName: ''
   });
   const [activeTab, setActiveTab] = useState('general');
   const [newPeer, setNewPeer] = useState({ address: '', port: '8080' });
+  const [clusterDashboard, setClusterDashboard] = useState(null);
   const [interfaces, setInterfaces] = useState([]);
   const [plistData, setPlistData] = useState({ plists: [], hasSelfIdentity: false });
 
@@ -27,6 +29,21 @@ function SettingsModal({ isOpen, onClose }) {
       window.gps.getNetworkInterfaces().then(setInterfaces);
       window.gps.listPlists().then(setPlistData);
     }
+
+    const unSubStatus = window.gps.onStatus((payload) => {
+      if (payload.service === 'cluster-dashboard') {
+        setClusterDashboard(payload.data);
+      }
+    });
+
+    const unSubSettings = window.gps.onSettingsUpdated((newSettings) => {
+      setSettings(newSettings);
+    });
+
+    return () => {
+      unSubStatus();
+      unSubSettings();
+    };
   }, [isOpen]);
 
   const handleSave = async () => {
@@ -389,9 +406,23 @@ function SettingsModal({ isOpen, onClose }) {
             </>
           ) : (
             <div className="space-y-8">
+              {/* Identification */}
+              <section className="space-y-4">
+                <label className="text-sm font-bold text-slate-400 uppercase tracking-wider">Identification du serveur local</label>
+                <div className="flex gap-3">
+                  <input 
+                    type="text" 
+                    placeholder="Nom du serveur (ex: PC Salon, Mac Bureau...)"
+                    value={settings.serverName || ''}
+                    onChange={(e) => setSettings({...settings, serverName: e.target.value})}
+                    className="flex-1 bg-white/5 border border-white/10 rounded-xl p-3 text-sm outline-none focus:border-purple-500"
+                  />
+                </div>
+              </section>
+
               {/* Mode Cluster */}
               <section className="space-y-4">
-                <label className="text-sm font-bold text-slate-400 uppercase tracking-wider">Mode de fonctionnement du Cluster</label>
+                <label className="text-sm font-bold text-slate-400 uppercase tracking-wider">Mode de fonctionnement</label>
                 <div className="grid grid-cols-3 gap-3">
                   <button 
                     onClick={() => setSettings({...settings, clusterMode: 'off'})}
@@ -417,6 +448,72 @@ function SettingsModal({ isOpen, onClose }) {
                 </div>
               </section>
 
+              {/* Tableau de bord du Cluster */}
+              {settings.clusterMode !== 'off' && (
+                <section className="space-y-4">
+                  <label className="text-sm font-bold text-slate-400 uppercase tracking-wider">Tableau de bord du Cluster (Temps réel)</label>
+                  <div className="bg-white/5 border border-white/10 rounded-2xl overflow-hidden shadow-inner">
+                    <table className="w-full text-left text-xs">
+                      <thead className="bg-white/5 text-slate-500 font-bold uppercase tracking-tighter">
+                        <tr>
+                          <th className="px-4 py-3">Serveur</th>
+                          <th className="px-4 py-3">Rôle</th>
+                          <th className="px-4 py-3">Mode</th>
+                          <th className="px-4 py-3 text-right">Action</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-white/5">
+                        {/* Ce serveur */}
+                        <tr className="bg-purple-500/10">
+                          <td className="px-4 py-3">
+                            <div className="flex items-center gap-2">
+                              <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
+                              <span className="font-bold text-white">{settings.serverName || 'Ce PC (Local)'}</span>
+                            </div>
+                          </td>
+                          <td className="px-4 py-3">
+                            <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold ${clusterDashboard?.role === 'master' ? 'bg-purple-500 text-white' : 'bg-slate-700 text-slate-300'}`}>
+                              {clusterDashboard?.role?.toUpperCase() || 'OFFLINE'}
+                            </span>
+                          </td>
+                          <td className="px-4 py-3 text-slate-400">{settings.clusterMode}</td>
+                          <td className="px-4 py-3 text-right">
+                             <span className="text-[10px] text-purple-400 italic">Moi</span>
+                          </td>
+                        </tr>
+                        {/* Les pairs */}
+                        {clusterDashboard?.peers?.map((peer, i) => (
+                          <tr key={i} className="hover:bg-white/5 transition-colors">
+                            <td className="px-4 py-3">
+                              <div className="flex items-center gap-2">
+                                <div className={`w-2 h-2 rounded-full ${peer.online ? 'bg-green-500' : 'bg-red-500'}`} />
+                                <span className={peer.online ? 'text-slate-200' : 'text-slate-600'}>{peer.name}</span>
+                              </div>
+                            </td>
+                            <td className="px-4 py-3">
+                              <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold ${peer.role === 'master' ? 'bg-purple-500 text-white' : 'bg-slate-700 text-slate-300'}`}>
+                                {peer.role?.toUpperCase() || 'DISCONNECTED'}
+                              </span>
+                            </td>
+                            <td className="px-4 py-3 text-slate-400">{peer.mode || '-'}</td>
+                            <td className="px-4 py-3 text-right">
+                                {peer.online && (
+                                  <button 
+                                    onClick={() => alert("Fonctionnalité de contrôle à distance (Update Peer Mode) bientôt disponible !")}
+                                    className="p-1 hover:bg-white/10 rounded-lg"
+                                  >
+                                    <Settings className="w-3 h-3 text-slate-400" />
+                                  </button>
+                                )}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </section>
+              )}
+
               {/* Gestion des Pairs */}
               <section className="space-y-4">
                 <label className="text-sm font-bold text-slate-400 uppercase tracking-wider">Serveurs Pairs (Cluster Nodes)</label>
@@ -439,6 +536,17 @@ function SettingsModal({ isOpen, onClose }) {
                     <button 
                       onClick={() => {
                         if (newPeer.address) {
+                          const unSubStatus = window.gps.onStatus((payload) => {
+                            if (payload.service === 'cluster-dashboard') {
+                              setClusterDashboard(payload.data);
+                            }
+                          });
+
+                          return () => {
+                            unSubSettings();
+                            unSubStatus();
+                          };
+                        }, []);
                           setSettings({
                             ...settings, 
                             clusterNodes: [...settings.clusterNodes, { ...newPeer, port: parseInt(newPeer.port) }]

@@ -205,6 +205,14 @@ class CompanionServer extends EventEmitter {
       await clusterManager._saveLocalPlist(name, content)
       res.json({ success: true })
     })
+
+    this.app.post('/api/cluster/update-config', (req, res) => {
+      const newSettings = req.body
+      dbg(`[cluster] 📥 Mise à jour config à distance reçue`)
+      settings.save(newSettings)
+      this.emit('settings-updated', settings.get())
+      res.json({ success: true })
+    })
   }
 
   start(port = 8080) {

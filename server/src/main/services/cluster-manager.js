@@ -97,24 +97,51 @@ class ClusterManager extends EventEmitter {
 
   async _checkPeers() {
     let masterFound = false
+    const updatedPeers = []
     
     for (const peer of this.peers) {
       try {
         const url = `http://${peer.address}:${peer.port}/api/cluster/ping`
         const res = await axios.get(url, { timeout: 3000 })
         
+        const peerData = {
+          ...peer,
+          online: true,
+          role: res.data.role,
+          mode: res.data.mode,
+          name: res.data.serverName || peer.address,
+          tunnelActive: res.data.tunnelActive,
+          lastSeen: Date.now()
+        }
+
         if (res.data && res.data.role === 'master') {
           this.currentMaster = peer.address
           this.lastMasterSeen = Date.now()
           masterFound = true
         }
+        updatedPeers.push(peerData)
       } catch (e) {
-        // Peer offline, ignoré
+        updatedPeers.push({ ...peer, online: false, role: 'unknown' })
       }
     }
 
+    this.peerStatus = updatedPeers
     if (!masterFound) {
       this.currentMaster = null
+    }
+
+    // Notification à l'UI via événement
+    this.emit('status-updated', this.getStatus())
+  }
+
+  async updatePeerConfig(peerAddress, peerPort, newConfig) {
+    dbg(`[cluster] 📤 Envoi mise à jour config vers ${peerAddress}:${peerPort}...`)
+    try {
+      const url = `http://${peerAddress}:${peerPort}/api/cluster/update-config`
+      await axios.post(url, newConfig, { timeout: 5000 })
+      return { success: true }
+    } catch (e) {
+      return { success: false, error: e.message }
     }
   }
 
@@ -168,12 +195,15 @@ class ClusterManager extends EventEmitter {
   }
 
   getStatus() {
+    const os = require('os')
     return {
       role: this.role,
       mode: settings.get('clusterMode'),
-      peers: this.peers,
+      serverName: settings.get('serverName') || os.hostname(),
+      peers: this.peerStatus || this.peers,
       currentMaster: this.currentMaster,
-      lastMasterSeen: this.lastMasterSeen
+      lastMasterSeen: this.lastMasterSeen,
+      tunnelActive: require('./tunneld-manager').getRsdAddress() !== null
     }
   }
 

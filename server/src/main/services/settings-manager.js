@@ -53,7 +53,8 @@ class SettingsManager {
       favorites: [],
       recentHistory: [],
       clusterMode: 'off', // 'off' | 'auto' | 'standalone'
-      clusterNodes: []    // Liste des { address, port }
+      clusterNodes: [],    // Liste des { address, port }
+      serverName: ''      // Nom personnalisé de ce serveur
     }
 
     try {

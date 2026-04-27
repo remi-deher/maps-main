@@ -164,6 +164,16 @@ app.whenReady().then(() => {
       await clusterManager.takeover()
       return { success: true }
     })
+
+    clusterManager.on('status-updated', (status) => {
+      if (mainWindow) mainWindow.webContents.send('status-update', { service: 'cluster-dashboard', state: 'sync', data: status })
+    })
+
+    companion.on('settings-updated', (newSettings) => {
+        // Appeler les mêmes logiques que save-settings mais sans sauvegarder (car déjà fait par settings-updated)
+        if (mainWindow) mainWindow.webContents.send('settings-updated', newSettings)
+        tunnel.applySettings()
+    })
   } catch (err) {
     dbg(`[window] ❌ Erreur initialisation Cluster: ${err.message}`)
   }
