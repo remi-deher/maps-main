@@ -126,11 +126,12 @@ app.whenReady().then(() => {
   
   const initialSettings = require('./services/settings-manager').get()
   
-  // Appliquer les réglages initiaux (IP Wifi, etc.)
-  tunnel.setWifiIpOverride(initialSettings.wifiIp, initialSettings.wifiPort)
+  // Appliquer les réglages initiaux si nécessaire via le manager
+  // (Le manager gère maintenant les réglages en interne via settings-manager)
   
-  // Liaison Tunnel -> Companion
-  tunnel.setOnStatusChange((active) => companion.updateTunnelStatus(active))
+  // Liaison Tunnel -> Companion via événements
+  tunnel.on('ready', () => companion.updateTunnelStatus(true))
+  tunnel.on('lost', () => companion.updateTunnelStatus(false))
 
   gps.on('location-changed', ({ lat, lon, name }) => {
     companion.broadcastLocation(lat, lon, name)
@@ -161,20 +162,12 @@ app.whenReady().then(() => {
     }
   })
 
-  let ipDetectTimer = null
   companion.on('iphone-ip-detected', (ip) => {
-    if (ipDetectTimer) clearTimeout(ipDetectTimer)
-    
-    dbg(`[window] 📱 iPhone détecté (${ip}). Mise à jour IP compagnon.`)
-    tunnel.setWifiIpOverride(ip)
-    
-    // Pas de forceRefresh ici.
-    // Le tunnel go-ios est déjà en cours d'exécution et scanne le device USB
-    // de façon autonome. Un restart forcé à ce moment-là tuerait le processus
-    // pendant sa phase de détection et créerait une boucle d'instabilité.
-    // Si le tunnel est mort, c'est le watchdog interne (tunneld-service) qui
-    // le relancera, pas nous.
-    ipDetectTimer = null
+    dbg(`[window] 📱 iPhone détecté (${ip}). Mise à jour des réglages...`)
+    // On met à jour les réglages via le manager, ce qui déclenchera un refresh du tunnel
+    const current = settings.get()
+    settings.save({ ...current, wifiIp: ip })
+    tunnel.applySettings()
   })
 
   companion.on('favorites-updated', (favs) => {
@@ -191,7 +184,7 @@ app.whenReady().then(() => {
 
   companion.start(initialSettings.companionPort)
   
-  tunnel.startTunneld(initialSettings)
+  tunnel.start()
 })
 
 app.on('before-quit', () => {

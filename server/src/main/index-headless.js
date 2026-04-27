@@ -142,17 +142,19 @@ async function startServer() {
 
     // 3. Gérer la logique de reconnexion automatique
     companion.on('iphone-ip-detected', (ip) => {
-      dbg(`[server] 📱 iPhone détecté à l'IP : ${ip}`);
-      tunnelManager.setWifiIpOverride(ip);
+      dbg(`[server] 📱 iPhone détecté à l'IP : ${ip}. Mise à jour des réglages...`);
+      const current = require('./services/settings-manager').get();
+      require('./services/settings-manager').save({ ...current, wifiIp: ip });
+      tunnelManager.applySettings();
     });
 
     // Lancement du companion server
     const initialSettings = require('./services/settings-manager').get();
     companion.start(initialSettings.companionPort || 8080);
 
-    // 4. Lancer le service de tunnel go-ios
-    dbg('[server] Lancement du service tunneld...');
-    tunnelManager.startTunneld(initialSettings);
+    // 4. Lancer les drivers de tunnel
+    dbg('[server] Lancement des services tunneld...');
+    tunnelManager.start();
 
     dbg('[server] ✅ Serveur prêt et accessible sur le port 8080');
     
@@ -163,9 +165,9 @@ async function startServer() {
 }
 
 // Gestion propre de l'arrêt
-process.on('SIGINT', () => {
+process.on('SIGINT', async () => {
   dbg('[server] Arrêt du serveur...');
-  tunneldService.stop();
+  await tunnelManager.stopTunneld();
   process.exit(0);
 });
 
