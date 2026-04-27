@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+// App.tsx (v1.2.0-full-ts-zustand)
 import { View, ActivityIndicator, Text, StyleSheet, Alert } from 'react-native';
 import { COLORS } from './src/constants/theme';
 import { initServices } from './src/services/init';
