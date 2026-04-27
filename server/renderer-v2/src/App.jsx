@@ -368,7 +368,7 @@ function App() {
 
       {/* 🛡️ OMNIBAR 🛡️ */}
       <div 
-        className="absolute top-6 left-0 right-0 mx-auto w-full max-w-2xl z-[10000] px-6"
+        className="absolute top-6 left-0 right-0 mx-auto w-full max-w-2xl z-50 px-6"
         style={{ pointerEvents: 'none' }} 
       >
         <div 
