@@ -9,7 +9,7 @@ function SettingsModal({ isOpen, onClose }) {
     companionPort: 8081,
     wifiIp: '',
     wifiPort: 32498,
-    preferredIp: '',
+    serverIp: '',
     usbDriver: 'go-ios',
     wifiDriver: 'pymobiledevice',
     fallbackEnabled: true
@@ -64,8 +64,8 @@ function SettingsModal({ isOpen, onClose }) {
             <div className="space-y-2">
               <p className="text-xs text-slate-500 px-1">Choisissez la carte réseau à utiliser pour la connexion iPhone</p>
               <select 
-                value={settings.preferredIp}
-                onChange={(e) => setSettings({...settings, preferredIp: e.target.value})}
+                value={settings.serverIp || ''}
+                onChange={(e) => setSettings({...settings, serverIp: e.target.value})}
                 className="w-full bg-white/5 border border-white/10 rounded-xl p-3 outline-none focus:border-blue-500 transition-colors text-white appearance-none cursor-pointer"
               >
                 <option value="" className="bg-slate-900">Auto-détection (recommandé)</option>

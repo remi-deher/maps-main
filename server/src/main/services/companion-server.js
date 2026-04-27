@@ -505,15 +505,15 @@ class CompanionServer extends EventEmitter {
   }
 
   _getLocalIp() {
-    const preferredIp = settings.get('preferredIp')
+    const serverIp = settings.get('serverIp')
     const interfaces = os.networkInterfaces()
     
-    // Si une IP est préférée, on vérifie si elle est toujours disponible
-    if (preferredIp) {
+    // Si une IP est forcée, on vérifie si elle est toujours disponible
+    if (serverIp) {
       for (const name of Object.keys(interfaces)) {
         for (const iface of interfaces[name]) {
-          if (iface.family === 'IPv4' && iface.address === preferredIp) {
-            return preferredIp
+          if (iface.family === 'IPv4' && iface.address === serverIp) {
+            return serverIp
           }
         }
       }

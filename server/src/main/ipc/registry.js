@@ -157,7 +157,24 @@ function registerIpcHandlers(tunnel, gps, companion) {
   
   ipcMain.handle('get-settings', () => settings.get())
 
-  ipcMain.handle('save-settings', (_event, newSettings) => {
+  ipcMain.handle('get-network-interfaces', async () => {
+    const os = require('os')
+    const interfaces = os.networkInterfaces()
+    const results = []
+    for (const name of Object.keys(interfaces)) {
+      for (const iface of interfaces[name]) {
+        if (iface.family === 'IPv4' && !iface.internal) {
+          results.push({
+            name,
+            address: iface.address
+          })
+        }
+      }
+    }
+    return results
+  })
+
+  ipcMain.handle('save-settings', async (event, newSettings) => {
     settings.save(newSettings)
     // Synchronisation complète avec l'orchestrateur de tunnels
     tunnel.applySettings(settings.get())
@@ -165,6 +182,10 @@ function registerIpcHandlers(tunnel, gps, companion) {
     if (newSettings.companionPort) {
       companion.start(newSettings.companionPort)
     }
+    
+    // Notifier le frontend que les réglages ont changé (pour rafraîchir le QR Code etc.)
+    event.sender.send('settings-updated', settings.get())
+    
     return { success: true }
   })
 
@@ -205,9 +226,7 @@ function registerIpcHandlers(tunnel, gps, companion) {
     }
   })
 
-  ipcMain.handle('get-network-interfaces', () => {
-    return companion.getNetworkInterfaces ? companion.getNetworkInterfaces() : []
-  })
+
 
   ipcMain.handle('open-logs', async () => {
     await shell.openPath(app.getPath('logs'))

@@ -167,10 +167,12 @@ class ConnectionOrchestrator extends EventEmitter {
 
     // Démarrer les daemons nécessaires en parallèle
     const needed = [...new Set([s.usbDriver, s.wifiDriver])]
+    dbg(`[orchestrator] Drivers à lancer : ${needed.join(', ')}`)
+    
     Promise.all(needed.map(driverId => {
       const daemon = this.daemons[driverId]
       if (daemon) {
-        dbg(`[orchestrator] Lancement du driver : ${driverId}`)
+        dbg(`[orchestrator] Lancement effectif du driver : ${driverId}`)
         return daemon.start()
       }
       return Promise.resolve()

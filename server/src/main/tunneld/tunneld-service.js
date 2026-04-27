@@ -23,7 +23,7 @@ const POLL_INTERVAL_MS = 2000   // Interroge l'API go-ios toutes les 2s
 class TunneldService extends EventEmitter {
   constructor() {
     super()
-    this.runner = new ProcessRunner('tunneld')
+    this.runner = new ProcessRunner('tunneld', { priority: 0 })
     this.activeConnection = null
     this.deviceInfo = { name: 'iPhone', version: 'Inconnue', type: 'USB', paired: true, ip: null }
     this._isQuitting = false
@@ -59,16 +59,16 @@ class TunneldService extends EventEmitter {
     const goIosDir = path.dirname(GOIOS)
     this.runner.options.cwd = goIosDir
 
-    const args = ['tunnel', 'start']
-    dbg(`[tunneld] Commande (Minimaliste) : ${GOIOS} ${args.join(' ')}`)
+    const args = ['tunnel', 'start', '--userspace']
+    dbg(`[tunneld] Commande finale : ${GOIOS} ${args.join(' ')}`)
 
     this.runner.spawn(GOIOS, args)
 
-    // Début du polling API après 2s (laisser le processus démarrer)
+    // Début du polling API après 4s (laisser le processus démarrer et se stabiliser)
     setTimeout(() => {
       this._isStarting = false
       this._startPolling()
-    }, 2000)
+    }, 4000)
   }
 
   _handleOutput(text) {

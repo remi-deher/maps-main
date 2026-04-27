@@ -46,6 +46,7 @@ class SettingsManager {
       usbDriver: 'go-ios',
       wifiDriver: 'pymobiledevice',
       fallbackEnabled: true,
+      serverIp: null,
       preferredIp: '',
       favorites: [],
       recentHistory: []

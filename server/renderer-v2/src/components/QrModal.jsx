@@ -6,7 +6,7 @@ function QrModal({ isOpen, onClose }) {
   const [qrData, setQrData] = useState(null);
   const [connInfo, setConnInfo] = useState(null);
   const [interfaces, setInterfaces] = useState([]);
-  const [preferredIp, setPreferredIp] = useState('');
+  const [serverIp, setServerIp] = useState('');
 
   const refreshQr = async () => {
     const res = await window.gps.getCompanionQr();
@@ -19,16 +19,16 @@ function QrModal({ isOpen, onClose }) {
   useEffect(() => {
     if (isOpen) {
       window.gps.getNetworkInterfaces().then(setInterfaces);
-      window.gps.getSettings().then(s => setPreferredIp(s.preferredIp || ''));
+      window.gps.getSettings().then(s => setServerIp(s.serverIp || ''));
       refreshQr();
     }
   }, [isOpen]);
 
   const handleInterfaceChange = async (ip) => {
-    setPreferredIp(ip);
-    await window.gps.saveSettings({ preferredIp: ip });
-    // Attendre un tout petit peu que le backend prenne en compte le changement
-    setTimeout(refreshQr, 100);
+    setServerIp(ip);
+    await window.gps.saveSettings({ serverIp: ip });
+    // Attendre un tout petit peu que le backend mette à jour les réglages
+    setTimeout(refreshQr, 150);
   };
 
   if (!isOpen) return null;
@@ -73,7 +73,7 @@ function QrModal({ isOpen, onClose }) {
         <div className="mb-6 space-y-2 text-left">
           <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest px-1">Choix de l'interface réseau</label>
           <select 
-            value={preferredIp}
+            value={serverIp}
             onChange={(e) => handleInterfaceChange(e.target.value)}
             className="w-full bg-white/5 border border-white/10 rounded-xl p-3 outline-none focus:border-blue-500 transition-colors text-white text-xs appearance-none cursor-pointer"
           >
