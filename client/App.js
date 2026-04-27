@@ -29,6 +29,10 @@ if (global.ErrorUtils) {
 }
 
 export default function App() {
+  useEffect(() => {
+    Alert.alert("Debug", "Le composant App a bien été monté !");
+  }, []);
+
   // Hooks de logique
   const { serverIp, serverPort, saveSettings } = useStorage();
   const { isMaintaining, requestPermissions, toggleBackground, searchAddress, reverseGeocode } = useLocation();
@@ -210,36 +214,14 @@ export default function App() {
     <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{flex: 1}}>
       <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
         <View style={styles.container}>
-          <MapView
-            ref={mapRef}
-            style={StyleSheet.absoluteFill}
-            mapType={mapType}
-            initialRegion={{ latitude: 48.8566, longitude: 2.3522, latitudeDelta: 0.01, longitudeDelta: 0.01 }}
-            onLongPress={async (e) => {
-              const coords = e.nativeEvent.coordinate;
-              setPendingCoords({ ...coords, name: "Recherche..." });
-              const address = await reverseGeocode(coords.latitude, coords.longitude);
-              setPendingCoords({ ...coords, name: address });
-            }}
-          >
+          <View style={[StyleSheet.absoluteFill, { backgroundColor: '#1e293b', justifyContent: 'center', alignItems: 'center' }]}>
+            <Text style={{ color: '#fff', fontSize: 18 }}>Système de simulation actif</Text>
             {simulatedCoords && (
-              <Marker coordinate={simulatedCoords} anchor={{x: 0.5, y: 0.5}} flat={false}>
-                <View style={styles.markerContainer}>
-                  <Animated.View 
-                    style={[
-                      styles.pulseHalo, 
-                      { 
-                        transform: [{ scale: pulseScale }],
-                        opacity: pulseOpacity
-                      }
-                    ]} 
-                  />
-                  <View style={styles.blueDot} />
-                </View>
-              </Marker>
+              <Text style={{ color: COLORS.primary, marginTop: 10 }}>
+                Cible : {simulatedCoords.latitude.toFixed(4)}, {simulatedCoords.longitude.toFixed(4)}
+              </Text>
             )}
-            {pendingCoords && <Marker coordinate={pendingCoords} pinColor={COLORS.error} />}
-          </MapView>
+          </View>
 
           <View style={styles.omnibarContainer}>
             <Omnibar 
