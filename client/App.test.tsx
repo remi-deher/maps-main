@@ -1,4 +1,5 @@
 import React from 'react';
+// App.test.tsx (v1.2.7-types-fix)
 import renderer from 'react-test-renderer';
 import App from './App';
 
