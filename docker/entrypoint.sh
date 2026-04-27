@@ -1,5 +1,4 @@
-#!/bin/bash
-
+#!/bin/sh
 echo "[entrypoint] Analyse de l'environnement de connexion iPhone..."
 
 # 1. Vérification si on est sur Windows/Mac (Docker Desktop)
@@ -11,7 +10,7 @@ if getent hosts host.docker.internal > /dev/null; then
     socat UNIX-LISTEN:/var/run/usbmuxd,fork,group=root,mode=777 TCP:host.docker.internal:27015 &
     sleep 2
 elif [ -S /var/run/usbmuxd ]; then
-    echo "[entrypoint] Environnement Linux avec socket partagé détecté (TrueNAS/Scale)."
+    echo "[entrypoint] Environnement Linux avec socket partagé détecté."
     echo "[entrypoint] Utilisation du socket hôte existant."
 else
     echo "[entrypoint] Environnement Linux standard détecté."

@@ -56,9 +56,20 @@ ENV PORT=8080
 # Exposition du port (Dashboard + WS)
 EXPOSE 8080
 
-# Copie et configuration du script d'entrée
-COPY docker/entrypoint.sh /usr/local/bin/
-RUN chmod +x /usr/local/bin/entrypoint.sh
-
-# Commande de démarrage (Mode Headless via Entrypoint)
-ENTRYPOINT ["entrypoint.sh"]
+# Commande de démarrage directe (sans script externe pour éviter les erreurs Windows/Docker)
+CMD sh -c '\
+echo "[boot] Analyse environnement..."; \
+if getent hosts host.docker.internal > /dev/null; then \
+    echo "[boot] Windows détecté. Pont socat vers l hôte..."; \
+    mkdir -p /var/run && rm -rf /var/run/usbmuxd; \
+    socat UNIX-LISTEN:/var/run/usbmuxd,fork,group=root,mode=777 TCP:host.docker.internal:27015 & \
+elif [ -S /var/run/usbmuxd ]; then \
+    echo "[boot] Socket partagé détecté."; \
+else \
+    echo "[boot] Linux standard. Démarrage usbmuxd..."; \
+    mkdir -p /var/run && rm -rf /var/run/usbmuxd; \
+    usbmuxd --user root & \
+fi; \
+sleep 2; \
+echo "[boot] Lancement Node.js..."; \
+cd /app && exec node server/src/main/index-headless.js'

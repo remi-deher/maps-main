@@ -365,6 +365,8 @@ class CompanionServer extends EventEmitter {
     if (this.io) {
       this.io.emit(event, data)
     }
+    // Événement interne pour index-headless (Docker SSE)
+    this.emit('broadcast', { event, data })
   }
 
   _updateFrontend() {

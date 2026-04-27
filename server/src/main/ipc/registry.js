@@ -26,9 +26,11 @@ function registerIpcHandlers(tunnel, gps, companion) {
   
   ipcMain.handle('set-location', async (_event, { lat, lon, name }) => {
     try {
+      if (!tunnel.getRsdAddress()) throw new Error('Tunnel non prêt')
       const result = await gps.setLocation(lat, lon, name)
       if (result.success) {
-        companion.broadcastLocation(lat, lon, name)
+        companion.status.lastInjectedLocation = { lat, lon, name }
+        companion._broadcast('STATUS', companion.status)
       }
       return result
     } catch (e) {
@@ -45,28 +47,11 @@ function registerIpcHandlers(tunnel, gps, companion) {
     }
   })
 
-  ipcMain.handle('play-route', async (_event, { endLat, endLon, speed }) => {
+  ipcMain.handle('play-route', async (_event, data) => {
     try {
-      const routeGenerator = require('../services/gps/route-generator')
-      const gpsBridge = require('../services/gps/gps-bridge')
-      
-      const start = companion.status.lastVerifiedLocation || companion.status.lastInjectedLocation
-      if (!start) throw new Error('Position de départ inconnue')
-
-      const gpxPath = routeGenerator.generateOrthodromicGpx(
-        { lat: start.lat, lon: start.lon },
-        { lat: endLat, lon: endLon },
-        speed || 5
-      )
-
-      const result = await gpsBridge.playGpx(gpxPath)
-      
-      if (result.success) {
-        companion.status.state = 'moving'
-        companion._broadcast({ type: 'STATUS', data: companion.status })
-      }
-      
-      return result
+      if (!tunnel.getRsdAddress()) throw new Error('Tunnel non prêt')
+      companion._handleRouteMessage(null, { type: 'PLAY_ROUTE', data })
+      return { success: true }
     } catch (e) {
       return { success: false, error: e.message }
     }
@@ -87,48 +72,21 @@ function registerIpcHandlers(tunnel, gps, companion) {
     return { success: false }
   })
 
-  ipcMain.handle('play-custom-gpx', async (_event, { gpxContent, speed }) => {
+  ipcMain.handle('play-custom-gpx', async (_event, data) => {
     try {
-      const routeGenerator = require('../services/gps/route-generator')
-      const gpsBridge = require('../services/gps/gps-bridge')
-      
-      const gpxPath = routeGenerator.processExternalGpx(gpxContent, speed)
-      const result = await gpsBridge.playGpx(gpxPath)
-      
-      if (result.success) {
-        companion.status.state = 'moving'
-        companion._broadcast({ type: 'STATUS', data: companion.status })
-      }
-      
-      return result
+      if (!tunnel.getRsdAddress()) throw new Error('Tunnel non prêt')
+      companion._handleRouteMessage(null, { type: 'PLAY_CUSTOM_GPX', data })
+      return { success: true }
     } catch (e) {
       return { success: false, error: e.message }
     }
   })
 
-  ipcMain.handle('play-osrm-route', async (_event, { endLat, endLon, profile, speed }) => {
+  ipcMain.handle('play-osrm-route', async (_event, data) => {
     try {
-      const routeGenerator = require('../services/gps/route-generator')
-      const gpsBridge = require('../services/gps/gps-bridge')
-      
-      const start = companion.status.lastVerifiedLocation || companion.status.lastInjectedLocation
-      if (!start) throw new Error('Position de départ inconnue')
-
-      const gpxPath = await routeGenerator.generateOsrmRoute(
-        { lat: start.lat, lon: start.lon },
-        { lat: endLat, lon: endLon },
-        profile || 'driving',
-        speed
-      )
-
-      const result = await gpsBridge.playGpx(gpxPath)
-      
-      if (result.success) {
-        companion.status.state = 'moving'
-        companion._broadcast({ type: 'STATUS', data: companion.status })
-      }
-      
-      return result
+      if (!tunnel.getRsdAddress()) throw new Error('Tunnel non prêt')
+      companion._handleRouteMessage(null, { type: 'PLAY_OSRM_ROUTE', data })
+      return { success: true }
     } catch (e) {
       return { success: false, error: e.message }
     }
@@ -136,18 +94,9 @@ function registerIpcHandlers(tunnel, gps, companion) {
 
   ipcMain.handle('play-sequence', async (_event, legs) => {
     try {
-      const routeGenerator = require('../services/gps/route-generator')
-      const gpsBridge = require('../services/gps/gps-bridge')
-      
-      const gpxPath = await routeGenerator.generateMultimodalGpx(legs)
-      const result = await gpsBridge.playGpx(gpxPath)
-      
-      if (result.success) {
-        companion.status.state = 'moving'
-        companion._broadcast({ type: 'STATUS', data: companion.status })
-      }
-      
-      return result
+      if (!tunnel.getRsdAddress()) throw new Error('Tunnel non prêt')
+      companion._handleRouteMessage(null, { type: 'PLAY_SEQUENCE', data: { legs } })
+      return { success: true }
     } catch (e) {
       return { success: false, error: e.message }
     }

@@ -93,19 +93,24 @@ async function startServer() {
       const onStatus = (data) => res.write(`data: ${JSON.stringify({ type: 'status-update', data })}\n\n`);
       const onDebug = (msg) => res.write(`data: ${JSON.stringify({ type: 'debug-log', data: msg })}\n\n`);
 
-      // Ecouter les events depuis companion ou tunnel
-      // Pour simuler ipcRenderer.send('status-update'), on override la méthode dbg/sendStatus ou on ajoute un event listener
-      const sendStatusCb = (data) => onStatus(data);
-      const debugLogCb = (msg) => onDebug(msg);
+      const onBroadcast = ({ event, data }) => {
+        if (event === 'STATUS' || event === 'STATUS_UPDATE') {
+          onStatus({ ...data, service: 'tunneld' })
+        } else if (event === 'LOCATION') {
+          onStatus({ data, service: 'location' })
+        }
+      }
 
-      // Hack pour s'abonner aux logs et statuts
-      const logger = require('./logger');
-      logger._headlessEventSubscribers = logger._headlessEventSubscribers || [];
-      logger._headlessEventSubscribers.push({ onStatus, onDebug });
+      companion.on('broadcast', onBroadcast)
+      
+      const logger = require('./logger')
+      logger._headlessEventSubscribers = logger._headlessEventSubscribers || []
+      logger._headlessEventSubscribers.push({ onStatus, onDebug })
 
       req.on('close', () => {
-        logger._headlessEventSubscribers = logger._headlessEventSubscribers.filter(sub => sub.onStatus !== onStatus);
-      });
+        companion.off('broadcast', onBroadcast)
+        logger._headlessEventSubscribers = logger._headlessEventSubscribers.filter(sub => sub.onStatus !== onStatus)
+      })
     });
 
     // On expose également le dashboard statique (React/Vite)
