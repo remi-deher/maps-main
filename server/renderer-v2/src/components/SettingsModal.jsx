@@ -536,17 +536,6 @@ function SettingsModal({ isOpen, onClose }) {
                     <button 
                       onClick={() => {
                         if (newPeer.address) {
-                          const unSubStatus = window.gps.onStatus((payload) => {
-                            if (payload.service === 'cluster-dashboard') {
-                              setClusterDashboard(payload.data);
-                            }
-                          });
-
-                          return () => {
-                            unSubSettings();
-                            unSubStatus();
-                          };
-                        }, []);
                           setSettings({
                             ...settings, 
                             clusterNodes: [...settings.clusterNodes, { ...newPeer, port: parseInt(newPeer.port) }]
