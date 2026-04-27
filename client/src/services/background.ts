@@ -1,4 +1,5 @@
 import * as TaskManager from 'expo-task-manager';
+// background.ts (v1.2.3-events-fix)
 import * as Location from 'expo-location';
 import { EventEmitter } from 'events';
 
