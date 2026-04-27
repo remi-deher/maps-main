@@ -126,9 +126,10 @@ app.whenReady().then(() => {
   registerIpcHandlers(tunnel, gps, companion)
   
   const initialSettings = settings.get()
+  let clusterManager = null
   
   try {
-    const clusterManager = require('./services/cluster-manager')
+    clusterManager = require('./services/cluster-manager')
     clusterManager.init()
 
     // --- ÉVÉNEMENTS CLUSTER ---
@@ -257,7 +258,7 @@ app.whenReady().then(() => {
   // Si le cluster est désactivé, on démarre normalement.
   // Sinon, c'est l'élection (via ClusterManager) qui déclenchera le démarrage.
   if (initialSettings.clusterMode === 'off' || !initialSettings.clusterMode) {
-    clusterManager.role = 'master' // Seul serveur = Maître par défaut
+    if (clusterManager) clusterManager.role = 'master'
     if (initialSettings.operationMode !== 'autonomous') {
         companion.start(initialSettings.companionPort)
     }
