@@ -90,7 +90,11 @@ class CompanionServer extends EventEmitter {
       wifiDriver: settings.get('wifiDriver'),
       fallbackEnabled: settings.get('fallbackEnabled'),
       favorites: favoritesManager.getFavorites(),
-      recentHistory: favoritesManager.getHistory()
+      recentHistory: favoritesManager.getHistory(),
+      cluster: {
+        role: require('./cluster-manager').role,
+        peers: settings.get('clusterNodes') || []
+      }
     }
   }
 
@@ -131,6 +135,26 @@ class CompanionServer extends EventEmitter {
       if (now - this.lastDriftRelance < 45000) return res.json({ ignored: 'cooldown' })
       this.lastDriftRelance = now
       this.emit('request-location', { lat, lon, name, force: true })
+      res.json({ success: true })
+    })
+
+    // --- ROUTES CLUSTER ---
+    this.app.get('/api/cluster/ping', (req, res) => {
+      const clusterManager = require('./cluster-manager')
+      res.json(clusterManager.getStatus())
+    })
+
+    this.app.post('/api/cluster/sync', (req, res) => {
+      const { lat, lon, name, mode } = req.body
+      dbg(`[cluster] 📥 Synchro reçue du Maître : ${lat}, ${lon}`)
+      this.emit('cluster-sync', { lat, lon, name, mode })
+      res.json({ success: true })
+    })
+
+    this.app.post('/api/cluster/takeover', (req, res) => {
+      const clusterManager = require('./cluster-manager')
+      dbg(`[cluster] 📥 Demande de takeover reçue. Libération du rôle...`)
+      clusterManager.release()
       res.json({ success: true })
     })
   }

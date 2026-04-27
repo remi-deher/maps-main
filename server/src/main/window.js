@@ -126,9 +126,45 @@ app.whenReady().then(() => {
   registerIpcHandlers(tunnel, gps, companion)
   
   const initialSettings = settings.get()
-  
-  // Appliquer les réglages initiaux si nécessaire via le manager
-  // (Le manager gère maintenant les réglages en interne via settings-manager)
+  const clusterManager = require('./services/cluster-manager')
+  clusterManager.init()
+
+  // --- ÉVÉNEMENTS CLUSTER ---
+  clusterManager.on('role-changed', (role) => {
+    dbg(`[window] 🎭 Changement de rôle Cluster : ${role.toUpperCase()}`)
+    if (mainWindow) mainWindow.webContents.send('status-update', { service: 'cluster', state: role })
+    
+    if (role === 'master') {
+      // Si on devient maître, on lance le tunnel
+      tunnel.start()
+      if (initialSettings.operationMode !== 'autonomous') {
+        companion.start(initialSettings.companionPort)
+      }
+    } else {
+      // Si on devient esclave, on arrête les services pour libérer l'iPhone
+      tunnel.stop()
+      companion.stop()
+    }
+  })
+
+  companion.on('cluster-sync', ({ lat, lon, name, mode }) => {
+    // Un esclave reçoit la position du maître
+    if (clusterManager.role === 'slave') {
+      gps.lastCoords = { lat, lon, name }
+      if (mainWindow) {
+        mainWindow.webContents.send('status-update', { 
+            service: 'location', 
+            state: 'synced', 
+            data: { lat, lon, name: name + " (Sync Master)" } 
+        })
+      }
+    }
+  })
+
+  ipcMain.handle('takeover-cluster', async () => {
+    await clusterManager.takeover()
+    return { success: true }
+  })
   
   // Liaison Tunnel -> Companion via événements
   tunnel.on('ready', () => companion.updateTunnelStatus(true))
@@ -201,11 +237,20 @@ app.whenReady().then(() => {
     if (mainWindow) mainWindow.webContents.send('status-update', { service: 'client-log', state: 'new', data: log })
   })
 
-  if (initialSettings.operationMode !== 'autonomous') {
-    companion.start(initialSettings.companionPort)
+  companion.on('client-log', (log) => {
+    if (mainWindow) mainWindow.webContents.send('status-update', { service: 'client-log', state: 'new', data: log })
+  })
+
+  // --- DÉMARRAGE DES SERVICES ---
+  // Si le cluster est désactivé, on démarre normalement.
+  // Sinon, c'est l'élection (via ClusterManager) qui déclenchera le démarrage.
+  if (initialSettings.clusterMode === 'off' || !initialSettings.clusterMode) {
+    clusterManager.role = 'master' // Seul serveur = Maître par défaut
+    if (initialSettings.operationMode !== 'autonomous') {
+        companion.start(initialSettings.companionPort)
+    }
+    tunnel.start()
   }
-  
-  tunnel.start()
 })
 
 app.on('before-quit', () => {

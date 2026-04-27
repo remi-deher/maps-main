@@ -8,6 +8,7 @@ interface AppStore {
   // States
   serverIp: string;
   serverPort: string;
+  peerServers: { address: string, port: number }[];
   status: string;
   serverStatus: ServerStatus | null;
   simulatedCoords: Coords | null;
@@ -16,7 +17,7 @@ interface AppStore {
   // Actions
   setSettings: (ip: string, port: string) => Promise<void>;
   setIsMaintaining: (val: boolean) => void;
-  connect: () => void;
+  connect: (retryIndex?: number) => void;
   disconnect: () => void;
   sendAction: (type: string, data?: any) => void;
   reportRealLocation: (coords: Coords) => void;
@@ -28,6 +29,7 @@ let socket: Socket | null = null;
 export const useAppStore = create<AppStore>((set, get) => ({
   serverIp: '',
   serverPort: '8080',
+  peerServers: [],
   status: 'Déconnecté',
   serverStatus: null,
   simulatedCoords: null,
@@ -65,52 +67,66 @@ export const useAppStore = create<AppStore>((set, get) => ({
     }
   },
 
-  connect: () => {
-    const { serverIp, serverPort } = get();
-    if (!serverIp) return;
+  connect: (retryIndex = -1) => {
+    const { serverIp, serverPort, peerServers } = get();
+    
+    let targetIp = serverIp;
+    let targetPort = serverPort;
+
+    if (retryIndex >= 0 && peerServers.length > 0) {
+      const peer = peerServers[retryIndex % peerServers.length];
+      targetIp = peer.address;
+      targetPort = String(peer.port);
+      logEvent.add(`🔄 Essai serveur cluster : ${targetIp}:${targetPort}`, 'info');
+    }
+
+    if (!targetIp) return;
 
     if (socket) {
       socket.disconnect();
     }
 
-    const url = `http://${serverIp}:${serverPort}`;
-    logEvent.add(`🔌 Connexion Socket.io à ${url}`);
+    const url = `http://${targetIp}:${targetPort}`;
+    logEvent.add(`🔌 Connexion à ${url}`);
     
     socket = io(url, {
-      reconnectionAttempts: 10,
+      reconnectionAttempts: 5,
       reconnectionDelay: 2000,
       transports: ['websocket']
     });
 
-    socket?.on('connect', () => {
-      set({ status: 'Connecté' });
-      logEvent.add('✅ Socket.io connecté', 'success');
+    socket.on('connect', () => {
+      set({ status: 'Connecté', serverIp: targetIp, serverPort: targetPort });
+      logEvent.add('✅ Connecté au cluster', 'success');
       socket?.emit('GET_STATUS');
 
-      // Lancement du Heartbeat périodique
       const heartbeatInterval = setInterval(() => {
         if (socket?.connected) {
           const { isMaintaining } = get();
-          socket?.emit('HEARTBEAT', { 
-            isMaintaining,
-            timestamp: Date.now()
-          });
+          socket?.emit('HEARTBEAT', { isMaintaining, timestamp: Date.now() });
         }
       }, 15000);
 
       socket?.on('disconnect', () => {
         clearInterval(heartbeatInterval);
         set({ status: 'Déconnecté' });
-        logEvent.add('❌ Socket.io déconnecté', 'info');
+        logEvent.add('❌ Déconnecté', 'info');
       });
     });
 
-    socket?.on('error', (err) => {
-      logEvent.add(`⚠️ Erreur Socket: ${err.message}`, 'error');
+    socket.on('connect_error', () => {
+      setTimeout(() => {
+        get().connect(retryIndex + 1);
+      }, 5000);
     });
 
-    socket?.on('STATUS', (data: ServerStatus) => {
+    socket.on('STATUS', (data: ServerStatus) => {
       set({ serverStatus: data });
+      // Mise à jour de la liste des pairs du cluster
+      if (data.cluster && data.cluster.peers) {
+        set({ peerServers: data.cluster.peers });
+      }
+
       if (data.lastInjectedLocation) {
         set({ simulatedCoords: { 
             latitude: data.lastInjectedLocation.lat, 
@@ -118,10 +134,8 @@ export const useAppStore = create<AppStore>((set, get) => ({
             name: data.lastInjectedLocation.name 
         } });
       } else {
-        // Si le serveur est vide mais qu'on a une position locale, on restaure
         const { simulatedCoords } = get();
         if (simulatedCoords && socket?.connected) {
-          logEvent.add('🔄 Synchronisation : Restauration auto de la position', 'info');
           socket.emit('SET_LOCATION', { 
             lat: simulatedCoords.latitude, 
             lon: simulatedCoords.longitude, 
@@ -131,7 +145,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
       }
     });
 
-    socket?.on('LOCATION', (data: any) => {
+    socket.on('LOCATION', (data: any) => {
       const coords = {
         latitude: data.lat,
         longitude: data.lon,
@@ -142,11 +156,10 @@ export const useAppStore = create<AppStore>((set, get) => ({
       AsyncStorage.setItem('MOCK_LOCATION', JSON.stringify(coords));
     });
 
-    socket?.on('ACK', (data: any) => {
+    socket.on('ACK', (data: any) => {
        logEvent.add(`ACK reçu pour ${data.lat?.toFixed(4)}`, 'success');
     });
 
-    // Remontée des logs vers le serveur
     logEvent.subscribe((history) => {
       const last = history[0];
       if (last && socket?.connected) {
@@ -165,8 +178,6 @@ export const useAppStore = create<AppStore>((set, get) => ({
   sendAction: (type, data) => {
     if (socket?.connected) {
       socket.emit(type, data);
-    } else {
-      logEvent.add(`Action ${type} impossible (Hors ligne)`, 'info');
     }
   }
 }));

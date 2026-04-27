@@ -51,7 +51,9 @@ class SettingsManager {
       serverIp: null,
       preferredIp: '',
       favorites: [],
-      recentHistory: []
+      recentHistory: [],
+      clusterMode: 'off', // 'off' | 'auto' | 'standalone'
+      clusterNodes: []    // Liste des { address, port }
     }
 
     try {

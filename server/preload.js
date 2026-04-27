@@ -39,6 +39,9 @@ try {
     importPlist:   (data) => ipcRenderer.invoke('import-plist', data),
     listPlists:    () => ipcRenderer.invoke('list-plists'),
     deletePlist:   (name) => ipcRenderer.invoke('delete-plist', name),
+
+    // Cluster
+    takeoverCluster: () => ipcRenderer.invoke('takeover-cluster'),
   })
   console.log('[Preload] Pont IPC exposé avec succès.');
 } catch (err) {

@@ -63,6 +63,14 @@ class GpsSimulator extends EventEmitter {
   async setLocation(lat, lon, name = null, force = false) {
     if (this._isQuitting) return { success: false, error: 'Simulation en fermeture' }
 
+    // Vérification Cluster
+    const clusterManager = require('../cluster-manager')
+    if (clusterManager.role === 'slave' && !force) {
+      dbg(`[gps-simulator] 🛡️ Injection ignorée : Le serveur est actuellement ESCLAVE.`)
+      this.lastCoords = { lat, lon, name }
+      return { success: true, synced: true }
+    }
+
     // Vérification du mode de fonctionnement
     const settings = require('../settings-manager')
     const mode = settings.get('operationMode')
@@ -96,6 +104,10 @@ class GpsSimulator extends EventEmitter {
       if (result.success) {
         this.lastCoords = { lat, lon, name }
         this.emit('location-changed', { lat, lon, name })
+
+        // Diffusion au Cluster
+        const clusterManager = require('../cluster-manager')
+        clusterManager.broadcastSync({ lat, lon, name, mode })
       } else {
         dbg(`[gps-simulator] ❌ Échec simulation: ${result.error}`)
       }
