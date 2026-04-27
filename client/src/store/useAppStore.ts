@@ -74,7 +74,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
       transports: ['websocket']
     });
 
-    socket.on('connect', () => {
+    socket?.on('connect', () => {
       set({ status: 'Connecté' });
       logEvent.add('✅ Socket.io connecté', 'success');
       socket?.emit('GET_STATUS');
@@ -83,27 +83,25 @@ export const useAppStore = create<AppStore>((set, get) => ({
       const heartbeatInterval = setInterval(() => {
         if (socket?.connected) {
           const { isMaintaining } = get();
-          // On essaie de récupérer la dernière position connue pour le heartbeat
-          // (Elle sera mise à jour via reportRealLocation)
-          socket.emit('HEARTBEAT', { 
+          socket?.emit('HEARTBEAT', { 
             isMaintaining,
             timestamp: Date.now()
           });
         }
       }, 15000);
 
-      socket.on('disconnect', () => {
+      socket?.on('disconnect', () => {
         clearInterval(heartbeatInterval);
         set({ status: 'Déconnecté' });
         logEvent.add('❌ Socket.io déconnecté', 'info');
       });
     });
 
-    socket.on('error', (err) => {
+    socket?.on('error', (err) => {
       logEvent.add(`⚠️ Erreur Socket: ${err.message}`, 'error');
     });
 
-    socket.on('STATUS', (data: ServerStatus) => {
+    socket?.on('STATUS', (data: ServerStatus) => {
       set({ serverStatus: data });
       if (data.lastInjectedLocation) {
         set({ simulatedCoords: { 
@@ -114,7 +112,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
       }
     });
 
-    socket.on('LOCATION', (data: any) => {
+    socket?.on('LOCATION', (data: any) => {
       const coords = {
         latitude: data.lat,
         longitude: data.lon,
@@ -125,7 +123,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
       AsyncStorage.setItem('MOCK_LOCATION', JSON.stringify(coords));
     });
 
-    socket.on('ACK', (data: any) => {
+    socket?.on('ACK', (data: any) => {
        logEvent.add(`ACK reçu pour ${data.lat?.toFixed(4)}`, 'success');
     });
   },
