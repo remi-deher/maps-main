@@ -162,8 +162,14 @@ class ConnectionOrchestrator extends EventEmitter {
     
     gpsBridge.start()
 
-    // Démarrer les daemons nécessaires en parallèle
-    const needed = [...new Set([s.usbDriver, s.wifiDriver])]
+    // Sécurité : Ne jamais lancer go-ios et pymobiledevice en même temps
+    // Pymobiledevice3 est prioritaire car il gère mieux l'USB et le WiFi simultanément.
+    let needed = [...new Set([s.usbDriver, s.wifiDriver])]
+    if (needed.includes('pymobiledevice') && needed.includes('go-ios')) {
+      dbg('[orchestrator] ⚠️ Conflit détecté entre go-ios et pymobiledevice. Priorité donnée à pymobiledevice.')
+      needed = ['pymobiledevice']
+    }
+
     dbg(`[orchestrator] Drivers à lancer : ${needed.join(', ')}`)
     
     Promise.all(needed.map(driverId => {
