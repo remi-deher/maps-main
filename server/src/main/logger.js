@@ -1,100 +1,110 @@
 'use strict'
 
-let app = null;
-try {
-  const electron = require('electron');
-  app = electron.app;
-} catch (e) {}
-
-const fs = require('fs')
+const winston = require('winston')
+require('winston-daily-rotate-file')
 const path = require('path')
+const fs = require('fs')
 const Encoder = require('./utils/encoder')
 
+let app = null
+try {
+  const electron = require('electron')
+  app = electron.app
+} catch (e) {}
+
 let _mainWindow = null
-let _logStream = null
+const logDir = app ? app.getPath('logs') : path.join(__dirname, '..', '..', 'logs')
 
-function initLogs() {
-  const logDir = app ? app.getPath('logs') : path.join(__dirname, '..', '..', 'logs')
-  if (!fs.existsSync(logDir)) {
-    fs.mkdirSync(logDir, { recursive: true })
-  }
-
-  const dateStr = new Date().toISOString().split('T')[0]
-  const logFile = path.join(logDir, `gps-mock-${dateStr}.log`)
-  _logStream = fs.createWriteStream(logFile, { flags: 'a' })
-
-  // Rotation : garder 7 jours
-  try {
-    const files = fs.readdirSync(logDir)
-    const now = Date.now()
-    const SEVEN_DAYS = 7 * 24 * 60 * 60 * 1000
-    for (const file of files) {
-      if (!file.startsWith('gps-mock-')) continue
-      const filePath = path.join(logDir, file)
-      const stats = fs.statSync(filePath)
-      if (now - stats.mtimeMs > SEVEN_DAYS) {
-        fs.unlinkSync(filePath)
-      }
-    }
-  } catch (_) { }
+if (!fs.existsSync(logDir)) {
+  fs.mkdirSync(logDir, { recursive: true })
 }
 
-if (app) {
-  app.whenReady().then(initLogs)
-} else {
-  initLogs()
-}
+// Configuration de Winston
+const logger = winston.createLogger({
+  level: 'debug',
+  format: winston.format.combine(
+    winston.format.timestamp({ format: 'HH:mm:ss' }),
+    winston.format.printf(({ timestamp, level, message }) => {
+      return `[${timestamp}] [${level.toUpperCase()}] ${message}`
+    })
+  ),
+  transports: [
+    // 1. Console avec couleurs
+    new winston.transports.Console({
+      format: winston.format.combine(
+        winston.format.colorize(),
+        winston.format.printf(({ timestamp, level, message }) => {
+          return `[${timestamp}] [${level}] ${message}`
+        })
+      )
+    }),
+    // 2. Fichier tournant pour tous les logs
+    new winston.transports.DailyRotateFile({
+      filename: path.join(logDir, 'gps-combined-%DATE%.log'),
+      datePattern: 'YYYY-MM-DD',
+      maxFiles: '14d',
+      maxSize: '20m'
+    }),
+    // 3. Fichier tournant spécifique pour les erreurs
+    new winston.transports.DailyRotateFile({
+      level: 'error',
+      filename: path.join(logDir, 'gps-error-%DATE%.log'),
+      datePattern: 'YYYY-MM-DD',
+      maxFiles: '30d'
+    })
+  ]
+})
 
 /**
- * Injecter la référence à mainWindow après createWindow()
- * @param {Electron.BrowserWindow} win
+ * Injecter la référence à mainWindow
  */
 function setWindow(win) {
   _mainWindow = win
 }
 
 /**
- * Log horodaté dans la console + envoi vers le renderer via IPC debug-log
- * @param {string} msg
+ * Log compatible avec l'ancien système mais propulsé par Winston
  */
-function dbg(msg) {
+function dbg(msg, level = 'info') {
   const cleanMsg = Encoder.decode(msg)
-  const d = new Date()
-  const time = d.toLocaleTimeString('fr-FR')
-  const logLine = `[${time}] ${cleanMsg}\n`
   
-  console.log(`[${time}] ${cleanMsg}`)
+  // Log via Winston
+  logger.log(level, cleanMsg)
   
-  if (_logStream) {
-    _logStream.write(logLine)
-  }
-  
+  // Rétrocompatibilité IPC (Electron)
   if (_mainWindow && !_mainWindow.isDestroyed()) {
     _mainWindow.webContents.send('debug-log', cleanMsg)
   }
-
+  
+  // Rétrocompatibilité SSE (Docker)
   if (module.exports._headlessEventSubscribers) {
-    module.exports._headlessEventSubscribers.forEach(sub => sub.onDebug(cleanMsg));
+    module.exports._headlessEventSubscribers.forEach(sub => sub.onDebug(cleanMsg))
   }
 }
 
 /**
- * Envoie une mise à jour de statut au renderer via IPC status-update
- * @param {string} service
- * @param {'starting'|'ready'|'stopped'} state
- * @param {string} message
- * @param {object} [data] Données supplémentaires
+ * Envoie une mise à jour de statut
  */
 function sendStatus(service, state, message, data = {}) {
   const cleanMsg = Encoder.decode(message)
-  const payload = { service, state, message: cleanMsg, ...data };
+  const payload = { service, state, message: cleanMsg, ...data }
+  
+  // On log le statut en mode "info" dans Winston
+  logger.info(`[STATUS][${service}] ${state}: ${cleanMsg}`)
+
   if (_mainWindow && !_mainWindow.isDestroyed()) {
     _mainWindow.webContents.send('status-update', payload)
   }
   
   if (module.exports._headlessEventSubscribers) {
-    module.exports._headlessEventSubscribers.forEach(sub => sub.onStatus(payload));
+    module.exports._headlessEventSubscribers.forEach(sub => sub.onStatus(payload))
   }
 }
 
-module.exports = { setWindow, dbg, sendStatus, _headlessEventSubscribers: [] }
+module.exports = { 
+  setWindow, 
+  dbg, 
+  sendStatus, 
+  logger, // Accès direct au logger winston si besoin
+  _headlessEventSubscribers: [] 
+}
