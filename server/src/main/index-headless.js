@@ -73,8 +73,18 @@ async function startServer() {
       const handler = ipcHandlers[action];
       if (handler) {
         try {
-          // req.body est notre data
-          const result = await handler(null, req.body);
+          // Mock de l'objet event d'Electron
+          const mockEvent = {
+            sender: {
+              send: (channel, data) => {
+                if (channel === 'settings-updated') {
+                  companion.emit('settings-updated', data);
+                }
+              }
+            }
+          };
+          
+          const result = await handler(mockEvent, req.body);
           res.json(result || { success: true });
         } catch (e) {
           res.status(500).json({ success: false, error: e.message });
@@ -92,6 +102,7 @@ async function startServer() {
 
       const onStatus = (data) => res.write(`data: ${JSON.stringify({ type: 'status-update', data })}\n\n`);
       const onDebug = (msg) => res.write(`data: ${JSON.stringify({ type: 'debug-log', data: msg })}\n\n`);
+      const onSettings = (data) => res.write(`data: ${JSON.stringify({ type: 'settings-updated', data })}\n\n`);
 
       const onBroadcast = ({ event, data }) => {
         if (event === 'STATUS' || event === 'STATUS_UPDATE') {
@@ -102,13 +113,15 @@ async function startServer() {
       }
 
       companion.on('broadcast', onBroadcast)
+      companion.on('settings-updated', onSettings)
       
       const logger = require('./logger')
       logger._headlessEventSubscribers = logger._headlessEventSubscribers || []
-      logger._headlessEventSubscribers.push({ onStatus, onDebug })
+      logger._headlessEventSubscribers.push({ onStatus, onDebug, onSettings })
 
       req.on('close', () => {
         companion.off('broadcast', onBroadcast)
+        companion.off('settings-updated', onSettings)
         logger._headlessEventSubscribers = logger._headlessEventSubscribers.filter(sub => sub.onStatus !== onStatus)
       })
     });

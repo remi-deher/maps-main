@@ -3,7 +3,8 @@ if (!window.gps) {
 
   const listeners = {
     status: new Set(),
-    debug: new Set()
+    debug: new Set(),
+    settings: new Set()
   };
 
   const eventSource = new EventSource('/api/events');
@@ -14,6 +15,8 @@ if (!window.gps) {
         listeners.status.forEach(cb => cb(payload.data));
       } else if (payload.type === 'debug-log') {
         listeners.debug.forEach(cb => cb(payload.data));
+      } else if (payload.type === 'settings-updated') {
+        listeners.settings.forEach(cb => cb(payload.data));
       }
     } catch (err) {}
   };
@@ -60,9 +63,15 @@ if (!window.gps) {
 
     getSettings:   () => invoke('get-settings'),
     saveSettings:  (settings) => invoke('save-settings', settings),
+    onSettingsUpdated: (cb) => {
+      listeners.settings.add(cb);
+      return () => listeners.settings.delete(cb);
+    },
     
     addFavorite:   (fav) => invoke('add-favorite', fav),
     removeFavorite:(lat, lon) => invoke('remove-favorite', { lat, lon }),
-    renameFavorite:(lat, lon, newName) => invoke('rename-favorite', { lat, lon, newName })
+    renameFavorite:(lat, lon, newName) => invoke('rename-favorite', { lat, lon, newName }),
+
+    takeoverCluster: () => invoke('takeover-cluster')
   };
 }

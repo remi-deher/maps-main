@@ -114,8 +114,15 @@ export default function AppContainer() {
       <View style={styles.scanner}>
         <CameraView onBarcodeScanned={({data}) => {
           setShowScanner(false);
-          const match = data.match(/http:\/\/([^:]+):(\d+)/);
-          if (match) store.setSettings(match[1], match[2]);
+          // Regex plus souple pour supporter ws:// ou http://
+          const match = data.match(/(?:ws|http):\/\/([^:]+):(\d+)/);
+          if (match) {
+            store.setSettings(match[1], String(match[2]));
+          } else {
+            // Si c'est juste une IP:Port sans protocole
+            const directMatch = data.match(/^([^:]+):(\d+)$/);
+            if (directMatch) store.setSettings(directMatch[1], String(directMatch[2]));
+          }
         }} style={StyleSheet.absoluteFill} />
         <TouchableOpacity style={styles.closeScanner} onPress={() => setShowScanner(false)}><Text style={styles.closeText}>ANNULER</Text></TouchableOpacity>
       </View>

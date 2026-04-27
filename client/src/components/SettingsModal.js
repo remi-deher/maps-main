@@ -1,7 +1,7 @@
 'use strict'
 
 import React, { useState } from 'react';
-import { StyleSheet, View, Text, TextInput, TouchableOpacity, Modal, Dimensions } from 'react-native';
+import { StyleSheet, View, Text, TextInput, TouchableOpacity, Modal, Dimensions, Keyboard } from 'react-native';
 import * as DocumentPicker from 'expo-document-picker';
 import * as FileSystem from 'expo-file-system';
 import { COLORS } from '../constants/theme';
@@ -49,7 +49,9 @@ export default function SettingsModal({
               onChangeText={setIp}
               placeholder="ex: 192.168.1.15"
               placeholderTextColor={COLORS.textMuted}
-              keyboardType="numeric"
+              keyboardType="url"
+              returnKeyType="done"
+              onSubmitEditing={() => Keyboard.dismiss()}
             />
           </View>
 
@@ -61,7 +63,9 @@ export default function SettingsModal({
               onChangeText={setPort}
               placeholder="8080"
               placeholderTextColor={COLORS.textMuted}
-              keyboardType="numeric"
+              keyboardType="number-pad"
+              returnKeyType="done"
+              onSubmitEditing={() => Keyboard.dismiss()}
             />
           </View>
 

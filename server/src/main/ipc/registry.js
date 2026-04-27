@@ -134,7 +134,9 @@ function registerIpcHandlers(tunnel, gps, companion) {
     }
     
     // Notifier le frontend que les réglages ont changé (pour rafraîchir le QR Code etc.)
-    event.sender.send('settings-updated', settings.get())
+    if (event && event.sender && typeof event.sender.send === 'function') {
+      event.sender.send('settings-updated', settings.get())
+    }
     
     return { success: true }
   })
