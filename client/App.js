@@ -18,6 +18,16 @@ import DebugModal from './src/components/DebugModal';
 import SequenceModal from './src/components/SequenceModal';
 import { ActionPanel, FavoritesPanel, QuickFavorites } from './src/components/Panels';
 
+// Diagnostic de crash au démarrage
+if (global.ErrorUtils) {
+  const previousHandler = global.ErrorUtils.getGlobalHandler();
+  global.ErrorUtils.setGlobalHandler((error, isFatal) => {
+    console.error("GLOBAL_CRASH", error);
+    Alert.alert("Désolé, l'app a crashé", error.message || "Erreur inconnue");
+    if (previousHandler) previousHandler(error, isFatal);
+  });
+}
+
 export default function App() {
   // Hooks de logique
   const { serverIp, serverPort, saveSettings } = useStorage();

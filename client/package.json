@@ -17,6 +17,7 @@
     "expo-document-picker": "~14.0.8",
     "expo-file-system": "~19.0.21",
     "expo-location": "~19.0.8",
+    "expo-modules-core": "~3.0.29",
     "expo-status-bar": "~3.0.9",
     "expo-task-manager": "~14.0.9",
     "react": "19.1.0",
