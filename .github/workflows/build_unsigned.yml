@@ -37,19 +37,21 @@ jobs:
       - name: Build Unsigned App
         run: |
           cd client/ios
+          echo "🚀 Building iOS app... (Warnings are silenced)"
           xcodebuild -workspace *.xcworkspace \
                      -scheme client \
                      -configuration Release \
                      -sdk iphoneos \
                      -destination 'generic/platform=iOS' \
                      -derivedDataPath ./build \
-                     -quiet \
                      GCC_WARN_INHIBIT_ALL_WARNINGS=YES \
+                     SWIFT_SUPPRESS_WARNINGS=YES \
                      CODE_SIGNING_ALLOWED=NO \
                      CODE_SIGNING_REQUIRED=NO \
                      CODE_SIGN_IDENTITY="" \
                      AD_HOC_CODE_SIGNING_ALLOWED=YES \
-                     clean build
+                     clean build > build.log 2>&1 || (cat build.log | grep -Ei "error:|failed:|note:.*error:" | head -n 50 && exit 1)
+          echo "✅ Build completed successfully."
 
       - name: Create IPA
         run: |
