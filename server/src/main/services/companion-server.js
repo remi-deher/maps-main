@@ -104,6 +104,18 @@ class CompanionServer extends EventEmitter {
     this._broadcast('STATUS', this.status);
   }
 
+  addFavorite(fav) {
+    favoritesManager.addFavorite(fav)
+  }
+
+  removeFavorite(lat, lon) {
+    favoritesManager.removeFavorite(lat, lon)
+  }
+
+  renameFavorite(lat, lon, newName) {
+    favoritesManager.renameFavorite(lat, lon, newName)
+  }
+
   _setupRoutes() {
     this.app.post('/api/enroll', (req, res) => {
       const { udid, selfIdentity, deviceRecord } = req.body
@@ -483,6 +495,15 @@ class CompanionServer extends EventEmitter {
               Math.sin(Δλ / 2) * Math.sin(Δλ / 2)
     const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
     return R * c
+  }
+
+  getConnectionInfo() {
+    const ip = this._getLocalIp()
+    return {
+      ip,
+      port: this.port || settings.get('companionPort') || 8080,
+      url: `ws://${ip}:${this.port || settings.get('companionPort') || 8080}`
+    }
   }
 
   _getLocalIp() {
