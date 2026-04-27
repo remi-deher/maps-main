@@ -22,7 +22,7 @@ jobs:
       - name: Install Dependencies
         run: |
           cd client
-          npm install --loglevel error
+          npm install --loglevel error --legacy-peer-deps
 
       - name: Expo Prebuild
         run: |
