@@ -12,6 +12,7 @@ const { dbg, sendStatus } = require('../logger')
 const favoritesManager = require('./favorites-manager')
 const settings = require('./settings-manager')
 const routeGenerator = require('./gps/route-generator')
+const gpsBridge = require('./gps/gps-bridge')
 
 /**
  * CompanionServer - Gere la communication via Socket.io avec l'application iOS
@@ -146,7 +147,12 @@ class CompanionServer extends EventEmitter {
       })
 
       this.io.on('connection', (socket) => {
-        dbg(`[companion-server] Nouveau client connecte : ${socket.id}`)
+        let clientIp = socket.handshake.address
+        if (clientIp.startsWith('::ffff:')) clientIp = clientIp.substring(7)
+        
+        dbg(`[companion-server] Client connecte : ${socket.id} (${clientIp})`)
+        this.emit('iphone-ip-detected', clientIp)
+        
         this._refreshStatus()
         socket.emit('STATUS', this.status)
 
@@ -207,21 +213,82 @@ class CompanionServer extends EventEmitter {
         break
       }
 
-      case 'PLAY_ROUTE':
-      case 'PLAY_SEQUENCE':
-      case 'PLAY_OSRM_ROUTE':
+      case 'PLAY_ROUTE': {
+        const { endLat, endLon, speed } = payload.data || {}
+        if (endLat !== undefined && endLon !== undefined) {
+          const start = this.status.lastVerifiedLocation || this.status.lastInjectedLocation
+          if (!start) break
+          const gpxPath = routeGenerator.generateOrthodromicGpx(
+            { lat: start.lat, lon: start.lon },
+            { lat: endLat, lon: endLon },
+            speed || 5
+          )
+          gpsBridge.playGpx(gpxPath)
+          this.status.state = 'moving'
+          this._broadcast('STATUS', this.status)
+        }
+        break
+      }
+
+      case 'PLAY_SEQUENCE': {
+        const { legs } = payload.data || {}
+        if (legs && legs.length > 0) {
+          routeGenerator.generateMultimodalGpx(legs).then(gpxPath => {
+            gpsBridge.playGpx(gpxPath)
+            this.status.state = 'moving'
+            this._broadcast('STATUS', this.status)
+          })
+        }
+        break
+      }
+
+      case 'PLAY_OSRM_ROUTE': {
+        const { endLat, endLon, profile, speed } = payload.data || {}
+        if (endLat !== undefined && endLon !== undefined) {
+          const start = this.status.lastVerifiedLocation || this.status.lastInjectedLocation
+          if (!start) break
+          routeGenerator.generateOsrmRoute(
+            { lat: start.lat, lon: start.lon },
+            { lat: endLat, lon: endLon },
+            profile || 'driving',
+            speed
+          ).then(gpxPath => {
+            gpsBridge.playGpx(gpxPath)
+            this.status.state = 'moving'
+            this._broadcast('STATUS', this.status)
+          })
+        }
+        break
+      }
+
       case 'PLAY_CUSTOM_GPX': {
-        // Logique métier déléguée (inchangée mais adaptée aux events)
-        this.emit(payload.type, payload.data)
-        this.status.state = 'moving'
-        this._broadcast('STATUS', this.status)
+        const { gpxContent, speed } = payload.data || {}
+        if (gpxContent) {
+          const gpxPath = routeGenerator.processExternalGpx(gpxContent, speed)
+          gpsBridge.playGpx(gpxPath)
+          this.status.state = 'moving'
+          this._broadcast('STATUS', this.status)
+        }
         break
       }
       
-      case 'ADD_FAVORITE':
-      case 'REMOVE_FAVORITE':
+      case 'ADD_HISTORY': {
+        if (payload.data) favoritesManager.addToHistory(payload.data)
+        break
+      }
+      
+      case 'ADD_FAVORITE': {
+        if (payload.data) favoritesManager.addFavorite(payload.data)
+        break
+      }
+      
+      case 'REMOVE_FAVORITE': {
+        if (payload.data) favoritesManager.removeFavorite(payload.data.lat, payload.data.lon)
+        break
+      }
+      
       case 'RENAME_FAVORITE': {
-        this.emit(payload.type, payload.data)
+        if (payload.data) favoritesManager.renameFavorite(payload.data.lat, payload.data.lon, payload.data.newName)
         break
       }
 
