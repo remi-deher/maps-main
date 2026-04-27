@@ -145,6 +145,14 @@ export const useAppStore = create<AppStore>((set, get) => ({
     socket?.on('ACK', (data: any) => {
        logEvent.add(`ACK reçu pour ${data.lat?.toFixed(4)}`, 'success');
     });
+
+    // Remontée des logs vers le serveur
+    logEvent.subscribe((history) => {
+      const last = history[0];
+      if (last && socket?.connected) {
+        socket.emit('DEBUG_LOG', `[iPhone] ${last.message}`);
+      }
+    });
   },
 
   disconnect: () => {
