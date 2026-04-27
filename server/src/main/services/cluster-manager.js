@@ -77,22 +77,29 @@ class ClusterManager extends EventEmitter {
   _startHeartbeat() {
     if (this._heartbeatInterval) clearInterval(this._heartbeatInterval)
     this._heartbeatInterval = setInterval(async () => {
-      if (this._isQuitting) return
-
-      const mode = settings.get('clusterMode')
-      if (mode === 'off') return
-
-      await this._checkPeers()
-      
-      // Logique de Failover Automatique (30s)
-      if (mode === 'auto' && this.role === 'slave') {
-        const now = Date.now()
-        if (this.currentMaster === null || (now - this.lastMasterSeen > 30000)) {
-          dbg(`[cluster] ⚠️ Maître absent depuis > 30s. Tentative de prise de contrôle automatique...`)
-          await this.takeover()
+      try {
+        if (this._isQuitting) return
+        await this._checkPeers()
+        if (this.role === 'slave') {
+          await this._checkMasterHealth()
         }
+      } catch (e) {
+        dbg(`[cluster] ⚠️ Erreur cycle Heartbeat: ${e.message}`)
       }
-    }, 10000) // Vérification toutes les 10s
+    }, 10000)
+  }
+
+  async _checkMasterHealth() {
+    try {
+      const now = Date.now()
+      // Si on n'a pas vu le maître depuis 30s et qu'on est en mode Auto
+      if (settings.get('clusterMode') === 'auto' && this.currentMaster && (now - this.lastMasterSeen > 30000)) {
+        dbg(`[cluster] 🚨 Maître (${this.currentMaster}) injoignable depuis 30s. Tentative de Takeover !`)
+        await this.takeover()
+      }
+    } catch (e) {
+      dbg(`[cluster] ❌ Erreur CheckMasterHealth: ${e.message}`)
+    }
   }
 
   async _checkPeers() {
