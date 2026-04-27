@@ -19,10 +19,21 @@ class TunneldDaemon extends EventEmitter {
     this.runner.on('stderr', (msg) => this._handleOutput(msg))
   }
 
-  start() {
+  async start() {
     if (this.runner.isRunning) return
+    await this.stop()
     dbg('[tunneld-daemon] Lancement du demon global...')
-    this.runner.spawn(PYTHON, ['-m', 'pymobiledevice3', 'remote', 'tunneld'])
+    
+    const settings = require('./settings-manager')
+    const args = ['-m', 'pymobiledevice3', 'remote', 'tunneld']
+    
+    // Si go-ios est le driver préféré pour l'USB, on demande à PMD3 d'ignorer l'USB
+    // pour éviter les conflits de ports locaux (bind error 60106)
+    if (settings.get('usbDriver') === 'go-ios') {
+      args.push('--no-usbmux') 
+    }
+    
+    this.runner.spawn(PYTHON, args)
   }
 
   _handleOutput(text) {
@@ -43,12 +54,19 @@ class TunneldDaemon extends EventEmitter {
       if (matchType) this.deviceInfo.type = matchType[1].replace(/[,>]$/, '')
     }
 
-    // Capture du RSD
+    // Capture du RSD avec filtrage IPv6
     const matchRsd = text.match(/--rsd\s+([\w:.%]+)\s+(\d+)/)
     if (matchRsd) {
-      const address = matchRsd[1]
+      let address = matchRsd[1]
       const port = matchRsd[2]
-      const isUSB = text.includes('usbmux') || text.includes('usb')
+      const isUSB = text.toLowerCase().includes('usbmux') || text.toLowerCase().includes('-usb')
+
+      // Sur Windows, PMD3 peut renvoyer des IPs de tunnel instables (fddc:..., fd75:...).
+      // Si la sortie suggère aussi localhost ou si on est en USB, on peut tenter de stabiliser.
+      // Note: On fait confiance à l'output de PMD3 mais on nettoie les résidus.
+      address = address.replace(/%[0-9]+$/, '') // Enlever le scope ID IPv6 (%12 etc)
+
+      dbg(`[tunneld-daemon] Connexion détectée : ${address}:${port} (${isUSB ? 'USB' : 'WiFi'})`)
       
       this.emit('connection', {
         address,

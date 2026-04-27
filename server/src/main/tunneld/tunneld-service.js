@@ -23,7 +23,7 @@ const POLL_INTERVAL_MS = 2000   // Interroge l'API go-ios toutes les 2s
 class TunneldService extends EventEmitter {
   constructor() {
     super()
-    this.runner = new ProcessRunner('tunneld')
+    this.runner = new ProcessRunner('tunneld', { priority: 0 })
     this.activeConnection = null
     this.deviceInfo = { name: 'iPhone', version: 'Inconnue', type: 'USB', paired: true, ip: null }
     this._isQuitting = false
@@ -36,15 +36,15 @@ class TunneldService extends EventEmitter {
     this.runner.on('stderr', (text) => this._handleOutput(text))
     this.runner.on('exit', ({ code, signal }) => {
       if (this._isQuitting || this._isStarting) return
-      dbg(`[tunneld] Processus arrete (code ${code}, signal ${signal}). Relance dans 5s...`)
+      dbg(`[tunneld] Processus arrete (code ${code}, signal ${signal}). Relance dans 3s...`)
       this._stopPolling()
       this.activeConnection = null
       this.emit('disconnection', 'Processus tunnel arrete')
-      this._scheduleRestart(5000)
+      this._scheduleRestart(3000)
     })
   }
 
-  start() {
+  async start(udid = null) {
     if (this._isQuitting) return
     if (this._restartTimer) { clearTimeout(this._restartTimer); this._restartTimer = null }
     if (this.runner.isRunning || this._isStarting) return
@@ -53,28 +53,39 @@ class TunneldService extends EventEmitter {
     dbg('[tunneld-service] Lancement de ios tunnel start...')
     sendStatus('tunneld', 'starting', 'Initialisation du tunnel go-ios...')
 
-    // On ne redémarre plus Bonjour automatiquement ici car cela provoque des micro-coupures WiFi
-    // qui déclenchent des boucles de reconnexion infinies.
+    // On s'assure que le port est libre avant de lancer
+    await this.runner.stop()
 
     const goIosDir = path.dirname(GOIOS)
     this.runner.options.cwd = goIosDir
 
-    // Lancer le tunnel sans variables d'environnement restrictives pour tester la stabilité brute
-    this.runner.spawn(GOIOS, ['tunnel', 'start', `--tunnel-info-port=${TUNNEL_INFO_PORT}`])
+    // Utilisation de stopagent pour être sûr que tout est libéré
+    try {
+      dbg('[tunneld] Libération préventive du tunnel (stopagent)...')
+      const { execSync } = require('child_process')
+      execSync(`"${GOIOS}" tunnel stopagent`, { cwd: goIosDir, stdio: 'ignore' })
+    } catch (e) {}
 
-    // Début du polling API après 2s (laisser le processus démarrer)
+    const args = ['tunnel', 'start', '--userspace']
+    if (udid) {
+      args.push('--udid', udid)
+      dbg(`[tunneld] Filtrage sur UDID : ${udid}`)
+    }
+    dbg(`[tunneld] Commande finale : ${GOIOS} ${args.join(' ')}`)
+
+    this.runner.spawn(GOIOS, args)
+
+    // Début du polling API après 4s (laisser le processus démarrer et se stabiliser)
     setTimeout(() => {
       this._isStarting = false
       this._startPolling()
-    }, 2000)
+    }, 4000)
   }
 
   _handleOutput(text) {
     if (!text || !text.trim()) return
     
-    // Ignorer les messages d'événement go-ios qui polluent la console
-    if (text.includes('"msg":"event: 0"')) return
-
+    // On affiche tout pour le debug
     dbg(`[tunneld] ${text.trim()}`)
   }
 
@@ -186,6 +197,13 @@ class TunneldService extends EventEmitter {
   stop() {
     this._stopPolling()
     if (this._restartTimer) { clearTimeout(this._restartTimer); this._restartTimer = null }
+    
+    const goIosDir = path.dirname(GOIOS)
+    try {
+      const { execSync } = require('child_process')
+      execSync(`"${GOIOS}" tunnel stopagent`, { cwd: goIosDir, stdio: 'ignore' })
+    } catch (e) {}
+    
     this.runner.stop()
     this.activeConnection = null
   }

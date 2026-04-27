@@ -26,9 +26,11 @@ function registerIpcHandlers(tunnel, gps, companion) {
   
   ipcMain.handle('set-location', async (_event, { lat, lon, name }) => {
     try {
+      if (!tunnel.getRsdAddress()) throw new Error('Tunnel non prêt')
       const result = await gps.setLocation(lat, lon, name)
       if (result.success) {
-        companion.broadcastLocation(lat, lon, name)
+        companion.status.lastInjectedLocation = { lat, lon, name }
+        companion._broadcast('STATUS', companion.status)
       }
       return result
     } catch (e) {
@@ -45,28 +47,11 @@ function registerIpcHandlers(tunnel, gps, companion) {
     }
   })
 
-  ipcMain.handle('play-route', async (_event, { endLat, endLon, speed }) => {
+  ipcMain.handle('play-route', async (_event, data) => {
     try {
-      const routeGenerator = require('../services/gps/route-generator')
-      const gpsBridge = require('../services/gps/gps-bridge')
-      
-      const start = companion.status.lastVerifiedLocation || companion.status.lastInjectedLocation
-      if (!start) throw new Error('Position de départ inconnue')
-
-      const gpxPath = routeGenerator.generateOrthodromicGpx(
-        { lat: start.lat, lon: start.lon },
-        { lat: endLat, lon: endLon },
-        speed || 5
-      )
-
-      const result = await gpsBridge.playGpx(gpxPath)
-      
-      if (result.success) {
-        companion.status.state = 'moving'
-        companion._broadcast({ type: 'STATUS', data: companion.status })
-      }
-      
-      return result
+      if (!tunnel.getRsdAddress()) throw new Error('Tunnel non prêt')
+      companion._handleRouteMessage(null, { type: 'PLAY_ROUTE', data })
+      return { success: true }
     } catch (e) {
       return { success: false, error: e.message }
     }
@@ -87,48 +72,21 @@ function registerIpcHandlers(tunnel, gps, companion) {
     return { success: false }
   })
 
-  ipcMain.handle('play-custom-gpx', async (_event, { gpxContent, speed }) => {
+  ipcMain.handle('play-custom-gpx', async (_event, data) => {
     try {
-      const routeGenerator = require('../services/gps/route-generator')
-      const gpsBridge = require('../services/gps/gps-bridge')
-      
-      const gpxPath = routeGenerator.processExternalGpx(gpxContent, speed)
-      const result = await gpsBridge.playGpx(gpxPath)
-      
-      if (result.success) {
-        companion.status.state = 'moving'
-        companion._broadcast({ type: 'STATUS', data: companion.status })
-      }
-      
-      return result
+      if (!tunnel.getRsdAddress()) throw new Error('Tunnel non prêt')
+      companion._handleRouteMessage(null, { type: 'PLAY_CUSTOM_GPX', data })
+      return { success: true }
     } catch (e) {
       return { success: false, error: e.message }
     }
   })
 
-  ipcMain.handle('play-osrm-route', async (_event, { endLat, endLon, profile, speed }) => {
+  ipcMain.handle('play-osrm-route', async (_event, data) => {
     try {
-      const routeGenerator = require('../services/gps/route-generator')
-      const gpsBridge = require('../services/gps/gps-bridge')
-      
-      const start = companion.status.lastVerifiedLocation || companion.status.lastInjectedLocation
-      if (!start) throw new Error('Position de départ inconnue')
-
-      const gpxPath = await routeGenerator.generateOsrmRoute(
-        { lat: start.lat, lon: start.lon },
-        { lat: endLat, lon: endLon },
-        profile || 'driving',
-        speed
-      )
-
-      const result = await gpsBridge.playGpx(gpxPath)
-      
-      if (result.success) {
-        companion.status.state = 'moving'
-        companion._broadcast({ type: 'STATUS', data: companion.status })
-      }
-      
-      return result
+      if (!tunnel.getRsdAddress()) throw new Error('Tunnel non prêt')
+      companion._handleRouteMessage(null, { type: 'PLAY_OSRM_ROUTE', data })
+      return { success: true }
     } catch (e) {
       return { success: false, error: e.message }
     }
@@ -136,18 +94,9 @@ function registerIpcHandlers(tunnel, gps, companion) {
 
   ipcMain.handle('play-sequence', async (_event, legs) => {
     try {
-      const routeGenerator = require('../services/gps/route-generator')
-      const gpsBridge = require('../services/gps/gps-bridge')
-      
-      const gpxPath = await routeGenerator.generateMultimodalGpx(legs)
-      const result = await gpsBridge.playGpx(gpxPath)
-      
-      if (result.success) {
-        companion.status.state = 'moving'
-        companion._broadcast({ type: 'STATUS', data: companion.status })
-      }
-      
-      return result
+      if (!tunnel.getRsdAddress()) throw new Error('Tunnel non prêt')
+      companion._handleRouteMessage(null, { type: 'PLAY_SEQUENCE', data: { legs } })
+      return { success: true }
     } catch (e) {
       return { success: false, error: e.message }
     }
@@ -157,16 +106,35 @@ function registerIpcHandlers(tunnel, gps, companion) {
   
   ipcMain.handle('get-settings', () => settings.get())
 
-  ipcMain.handle('save-settings', (_event, newSettings) => {
-    settings.save(newSettings)
-    // Synchronisation immédiate avec le tunnel manager
-    tunnel.setWifiIpOverride(newSettings.wifiIp || null, newSettings.wifiPort || null)
-    if (newSettings.connectionMode) {
-      tunnel.applyConnectionMode(newSettings.connectionMode)
+  ipcMain.handle('get-network-interfaces', async () => {
+    const os = require('os')
+    const interfaces = os.networkInterfaces()
+    const results = []
+    for (const name of Object.keys(interfaces)) {
+      for (const iface of interfaces[name]) {
+        if (iface.family === 'IPv4' && !iface.internal) {
+          results.push({
+            name,
+            address: iface.address
+          })
+        }
+      }
     }
+    return results
+  })
+
+  ipcMain.handle('save-settings', async (event, newSettings) => {
+    settings.save(newSettings)
+    // Synchronisation complète avec l'orchestrateur de tunnels
+    tunnel.applySettings(settings.get())
+    
     if (newSettings.companionPort) {
       companion.start(newSettings.companionPort)
     }
+    
+    // Notifier le frontend que les réglages ont changé (pour rafraîchir le QR Code etc.)
+    event.sender.send('settings-updated', settings.get())
+    
     return { success: true }
   })
 
@@ -207,9 +175,7 @@ function registerIpcHandlers(tunnel, gps, companion) {
     }
   })
 
-  ipcMain.handle('get-network-interfaces', () => {
-    return companion.getNetworkInterfaces ? companion.getNetworkInterfaces() : []
-  })
+
 
   ipcMain.handle('open-logs', async () => {
     await shell.openPath(app.getPath('logs'))
@@ -220,8 +186,12 @@ function registerIpcHandlers(tunnel, gps, companion) {
     const path = require('path')
     try {
       const projectRoot = path.join(app.getAppPath(), '..')
+      const certsDir = path.join(projectRoot, 'certs')
+      
       if (name === 'selfIdentity.plist') {
-        fs.writeFileSync(path.join(projectRoot, 'selfIdentity.plist'), content)
+        // On enregistre dans certs/ si le dossier existe (Docker), sinon à la racine
+        const targetDir = fs.existsSync(certsDir) ? certsDir : projectRoot
+        fs.writeFileSync(path.join(targetDir, 'selfIdentity.plist'), content)
       } else {
         let lockdownDir = 'C:\\ProgramData\\Apple\\Lockdown'
         if (process.platform === 'linux') {
@@ -245,7 +215,10 @@ function registerIpcHandlers(tunnel, gps, companion) {
       
       const files = fs.existsSync(lockdownDir) ? fs.readdirSync(lockdownDir).filter(f => f.endsWith('.plist')) : []
       const projectRoot = path.join(app.getAppPath(), '..')
-      const hasSelfIdentity = fs.existsSync(path.join(projectRoot, 'selfIdentity.plist'))
+      const certsDir = path.join(projectRoot, 'certs')
+      
+      const hasSelfIdentity = fs.existsSync(path.join(projectRoot, 'selfIdentity.plist')) || 
+                             (fs.existsSync(certsDir) && fs.existsSync(path.join(certsDir, 'selfIdentity.plist')))
       
       return { success: true, plists: files, hasSelfIdentity }
     } catch (e) {

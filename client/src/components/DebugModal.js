@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { StyleSheet, View, Text, ScrollView, TouchableOpacity, Modal, SafeAreaView } from 'react-native';
+import { StyleSheet, View, Text, ScrollView, TouchableOpacity, Modal, SafeAreaView, Platform } from 'react-native';
 import { COLORS } from '../constants/theme';
 import { logEvent } from '../services/logger';
 

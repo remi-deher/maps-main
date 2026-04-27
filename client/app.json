@@ -23,9 +23,10 @@
         ],
         "NSLocationAlwaysAndWhenInUseUsageDescription": "Required to maintain the developer tunnel alive during simulation.",
         "NSLocationWhenInUseUsageDescription": "Required to show your current simulated position.",
-        "NSLocationAlwaysUsageDescription": "Required to maintain the developer tunnel alive during simulation."
+        "NSLocationAlwaysUsageDescription": "Required to maintain the developer tunnel alive during simulation.",
+        "NSCameraUsageDescription": "Required to scan the server QR Code."
       },
-      "deploymentTarget": "13.0"
+      "deploymentTarget": "15.1"
     },
     "android": {
       "adaptiveIcon": {
@@ -46,7 +47,17 @@
           "isAndroidBackgroundLocationEnabled": true
         }
       ],
-      "expo-camera"
+      "expo-camera",
+      "expo-task-manager",
+      [
+        "expo-build-properties",
+        {
+          "ios": {
+            "deploymentTarget": "15.1",
+            "useFrameworks": "static"
+          }
+        }
+      ]
     ]
   }
 }
