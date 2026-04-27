@@ -110,6 +110,32 @@ function SettingsModal({ isOpen, onClose }) {
               {settings.operationMode === 'hybrid' && "💡 Mode standard : injection libre, l'iPhone se connecte s'il le souhaite."}
             </p>
           </section>
+          
+          {/* Stabilisation iOS */}
+          <section className="space-y-4">
+            <label className="text-sm font-bold text-slate-400 uppercase tracking-wider flex items-center gap-2">
+              <ShieldCheck className="w-4 h-4 text-blue-400" />
+              Stabilisation iOS
+            </label>
+            <div className="flex items-center justify-between p-4 bg-blue-500/5 border border-blue-500/20 rounded-2xl">
+              <div className="space-y-1 pr-4">
+                <p className="text-sm font-bold text-white">Mode Éveil (Anti-Mise en veille)</p>
+                <p className="text-[10px] text-slate-400 leading-relaxed">
+                  Simule un micro-mouvement (±1m) toutes les 30s. 
+                  Indispensable pour empêcher iOS de "tuer" l'application lors d'une longue pause.
+                </p>
+              </div>
+              <div 
+                onClick={() => setSettings({...settings, isEveilMode: !settings.isEveilMode})}
+                className={`w-12 h-6 rounded-full p-1 cursor-pointer transition-colors ${settings.isEveilMode ? 'bg-blue-600' : 'bg-slate-700'}`}
+              >
+                <motion.div 
+                  animate={{ x: settings.isEveilMode ? 24 : 0 }}
+                  className="w-4 h-4 bg-white rounded-full shadow-lg"
+                />
+              </div>
+            </div>
+          </section>
 
           {/* Map Provider */}
           <section className="space-y-4">

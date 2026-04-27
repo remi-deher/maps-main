@@ -44,6 +44,7 @@ class SettingsManager {
       companionPort: 8080,
       connectionMode: 'both',
       operationMode: 'hybrid', // 'autonomous' | 'client-server' | 'hybrid'
+      isEveilMode: true,       // Micro-dérive pour éviter la mise en veille iOS
       usbDriver: 'go-ios',
       wifiDriver: 'pymobiledevice',
       fallbackEnabled: true,
