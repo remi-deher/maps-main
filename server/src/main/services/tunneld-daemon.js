@@ -54,18 +54,21 @@ class TunneldDaemon extends EventEmitter {
       if (matchType) this.deviceInfo.type = matchType[1].replace(/[,>]$/, '')
     }
 
-    // Capture du RSD avec filtrage IPv6
-    const matchRsd = text.match(/--rsd\s+([\w:.%]+)\s+(\d+)/)
+    // Capture du RSD avec filtrage IPv6 et détection du préfixe [USB] / [WIFI]
+    const matchRsd = text.match(/(?:\[(USB|WIFI)\]\s+)?--rsd\s+([\w:.%]+)\s+(\d+)/i)
     if (matchRsd) {
-      let address = matchRsd[1]
-      const port = matchRsd[2]
+      const prefix = (matchRsd[1] || '').toUpperCase()
+      let address = matchRsd[2]
+      const port = matchRsd[3]
       
-      // Détection plus fine du type de connexion
-      // ::1 ou 127.0.0.1 => Forcément USB (via usbmuxd local bridge)
-      // Si la ligne contient 'usbmux' juste à côté du RSD => USB
-      const isLoopback = address === '::1' || address === '127.0.0.1'
-      const hasUsbContext = text.toLowerCase().includes('usbmux') || text.toLowerCase().includes('-usb')
-      const isUSB = isLoopback || (hasUsbContext && !text.toLowerCase().includes('wifi'))
+      // Logique de décision stricte
+      let isUSB = false
+      if (prefix === 'USB') isUSB = true
+      else if (prefix === 'WIFI') isUSB = false
+      else {
+        // Si pas de préfixe, on se base sur l'adresse
+        isUSB = (address === '::1' || address === '127.0.0.1' || text.toLowerCase().includes('usbmux'))
+      }
 
       address = address.replace(/%[0-9]+$/, '') // Enlever le scope ID IPv6
 
