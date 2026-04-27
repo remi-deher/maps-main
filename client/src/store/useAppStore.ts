@@ -78,11 +78,25 @@ export const useAppStore = create<AppStore>((set, get) => ({
       set({ status: 'Connecté' });
       logEvent.add('✅ Socket.io connecté', 'success');
       socket?.emit('GET_STATUS');
-    });
 
-    socket.on('disconnect', () => {
-      set({ status: 'Déconnecté' });
-      logEvent.add('❌ Socket.io déconnecté', 'info');
+      // Lancement du Heartbeat périodique
+      const heartbeatInterval = setInterval(() => {
+        if (socket?.connected) {
+          const { isMaintaining } = get();
+          // On essaie de récupérer la dernière position connue pour le heartbeat
+          // (Elle sera mise à jour via reportRealLocation)
+          socket.emit('HEARTBEAT', { 
+            isMaintaining,
+            timestamp: Date.now()
+          });
+        }
+      }, 15000);
+
+      socket.on('disconnect', () => {
+        clearInterval(heartbeatInterval);
+        set({ status: 'Déconnecté' });
+        logEvent.add('❌ Socket.io déconnecté', 'info');
+      });
     });
 
     socket.on('error', (err) => {
