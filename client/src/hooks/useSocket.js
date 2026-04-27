@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-// useSocket.js (v1.1.4-aligned-final)
+// useSocket.js (v1.1.5-new-arch-test)
 import { AppState } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { eventBus } from '../services/background';
