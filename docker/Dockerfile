@@ -34,6 +34,7 @@ RUN pip3 install --no-cache-dir pymobiledevice3
 RUN curl -L https://github.com/danielpaulus/go-ios/releases/download/v1.0.211/go-ios-linux.zip -o /tmp/go-ios.zip && \
     apt-get update && apt-get install -y unzip && \
     unzip /tmp/go-ios.zip -d /usr/local/bin/ && \
+    mv /usr/local/bin/ios-amd64 /usr/local/bin/ios && \
     chmod +x /usr/local/bin/ios && \
     rm /tmp/go-ios.zip
 
