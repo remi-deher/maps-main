@@ -30,4 +30,30 @@ contextBridge.exposeInMainWorld('gps', {
   importPlist:   (data) => ipcRenderer.invoke('import-plist', data),
   listPlists:    () => ipcRenderer.invoke('list-plists'),
   deletePlist:   (name) => ipcRenderer.invoke('delete-plist', name),
+  
+  // Diagnostics et Maintenance
+  runDiag:       (type) => ipcRenderer.invoke('diag:run', type),
+  startDriver:   (driverId) => ipcRenderer.invoke('diag:start-driver', { value: driverId }),
+  stopDriver:    (driverId) => ipcRenderer.invoke('diag:stop-driver', { value: driverId }),
+  stopTunnels:   () => ipcRenderer.invoke('diag:stop-tunnels'),
+  takeoverCluster: () => ipcRenderer.invoke('takeover-cluster'),
+  getNetworkInterfaces: () => ipcRenderer.invoke('get-network-interfaces'),
+  getCompanionQr: () => ipcRenderer.invoke('get-companion-qr'),
+
+  // Événements
+  onStatus:      (cb) => {
+    const listener = (_e, data) => cb(data);
+    ipcRenderer.on('status-update', listener);
+    return () => ipcRenderer.removeListener('status-update', listener);
+  },
+  onSettingsUpdated: (cb) => {
+    const listener = (_e, data) => cb(data);
+    ipcRenderer.on('settings-updated', listener);
+    return () => ipcRenderer.removeListener('settings-updated', listener);
+  },
+  onEvent: (event, cb) => {
+    const listener = (_e, data) => cb(data);
+    ipcRenderer.on(event, listener);
+    return () => ipcRenderer.removeListener(event, listener);
+  }
 })

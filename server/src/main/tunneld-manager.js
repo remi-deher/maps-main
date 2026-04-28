@@ -35,6 +35,9 @@ class ConnectionOrchestrator extends EventEmitter {
   _startHealthCheck() {
     if (this.healthCheckInterval) clearInterval(this.healthCheckInterval)
     this.healthCheckInterval = setInterval(async () => {
+      const s = settings.get()
+      if (s.manualTunnelMode) return
+
       const activeDriver = this.drivers[this.activeDriverId]
       if (activeDriver && activeDriver.isActive && !this.isStarting()) {
         const isHealthy = await activeDriver.checkHealth()
@@ -57,7 +60,8 @@ class ConnectionOrchestrator extends EventEmitter {
   _setupAutoReconnect() {
     // Si le driver émet une déconnexion, on tente de reconnecter
     this.on('lost', () => {
-      if (this._reconnectTimer || this._isQuitting) return
+      const s = settings.get()
+      if (this._reconnectTimer || this._isQuitting || s.manualTunnelMode) return
       
       const interval = 3000 // Reconnexion agressive (3s)
       dbg(`[orchestrator] 🔄 Perte de connexion. Tentative de reconnexion agressive toutes les ${interval/1000}s...`)
@@ -90,33 +94,22 @@ class ConnectionOrchestrator extends EventEmitter {
 
   async _onDriverConnection(driverId, conn) {
     const s = settings.get()
-    const connType = conn.type?.toUpperCase().includes('WIFI') ? 'WIFI' : 'USB'
-    const preferredDriver = connType === 'WIFI' ? s.wifiDriver : s.usbDriver
+    
+    // Sécurité : on ignore si le driver n'est pas celui préféré (sauf si fallback)
+    if (driverId !== s.preferredDriver && !s.fallbackEnabled) return
 
-    dbg(`[orchestrator] Détection via ${driverId} (${connType}). Préféré: ${preferredDriver}`)
-
-    // Si on a déjà une connexion active via le driver préféré, on ignore le reste
-    if (this.activeDriverId === preferredDriver && driverId !== preferredDriver) {
-      return
-    }
-
-    // Basculement à chaud si le nouveau driver est le préféré
-    if (driverId === preferredDriver && this.activeDriverId !== preferredDriver) {
-      dbg(`[orchestrator] 🔄 Basculement à chaud vers le driver préféré : ${driverId}`)
-    }
+    dbg(`[orchestrator] 🎯 iPhone détecté via ${driverId} (${conn.type || 'USB'})`)
 
     this.activeDriverId = driverId
     this.activeConnection = { ...conn, driver: driverId }
     
-    // On branche le driver sur le Bridge GPS
     gpsBridge.setActiveDriver(this.drivers[driverId])
-    
     this._handleNewConnection(this.activeConnection)
   }
 
   _onDriverDisconnection(driverId) {
     if (this.activeDriverId === driverId) {
-      dbg(`[orchestrator] Driver actif ${driverId} déconnecté.`)
+      dbg(`[orchestrator] Driver ${driverId} déconnecté.`)
       this._handleDisconnection()
     }
   }
@@ -137,7 +130,7 @@ class ConnectionOrchestrator extends EventEmitter {
     this.activeDriverId = null
     gpsBridge.setActiveDriver(null)
     this._stopAllHeartbeats()
-    sendStatus('tunneld', 'scanning', 'Connexion perdue, recherche...')
+    sendStatus('tunneld', 'scanning', 'Recherche iPhone...')
     this.emit('lost')
   }
 
@@ -145,20 +138,14 @@ class ConnectionOrchestrator extends EventEmitter {
     if (this._isQuitting) return
     const s = settings.get()
     
-    dbg(`[orchestrator] Initialisation des drivers (USB: ${s.usbDriver}, WiFi: ${s.wifiDriver})...`)
+    const driverId = s.preferredDriver || 'go-ios'
+    dbg(`[orchestrator] Démarrage du driver unique : ${driverId}`)
     
-    // Sécurité anti-conflit
-    let needed = [...new Set([s.usbDriver, s.wifiDriver])]
-    if (needed.includes('pymobiledevice') && needed.includes('go-ios')) {
-      dbg('[orchestrator] ⚠️ Priorité PMD3 : go-ios sera désactivé.')
-      needed = ['pymobiledevice']
+    if (this.drivers[driverId]) {
+      await this.drivers[driverId].startTunnel()
     }
 
-    for (const id of needed) {
-      await this.drivers[id].startTunnel()
-    }
-
-    sendStatus('tunneld', 'scanning', `Recherche iPhone (${needed.join(', ')})...`)
+    sendStatus('tunneld', 'scanning', `Recherche iPhone (${driverId})...`)
   }
 
   async stopTunneld() {
@@ -202,7 +189,10 @@ class ConnectionOrchestrator extends EventEmitter {
   
   async forceRefresh() { 
     await this.stopTunneld()
-    setTimeout(() => this.start(), 1000)
+    const s = settings.get()
+    if (!s.manualTunnelMode) {
+      setTimeout(() => this.start(), 1000)
+    }
   }
 
   applySettings() { this.forceRefresh() }

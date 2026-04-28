@@ -11,10 +11,18 @@ const settings = require('./settings-manager')
 class ClusterManager extends EventEmitter {
   constructor() {
     super()
-    this.peers = []
-    this.role = 'slave' // 'master' | 'slave'
-    this.currentMaster = null
-    this.lastMasterSeen = 0
+    this.peers = settings.get('clusterNodes') || []
+    
+    // En mode standalone, on est forcément MAITRE
+    if (settings.get('clusterMode') === 'standalone') {
+      this.role = 'master'
+      this.currentMaster = 'me'
+      dbg('[cluster] 👑 Mode Standalone détecté : Auto-promotion MAÎTRE.')
+    } else {
+      this.role = 'slave'
+      this.currentMaster = null
+    }
+
     this._heartbeatInterval = null
     this._isQuitting = false
   }
@@ -77,22 +85,29 @@ class ClusterManager extends EventEmitter {
   _startHeartbeat() {
     if (this._heartbeatInterval) clearInterval(this._heartbeatInterval)
     this._heartbeatInterval = setInterval(async () => {
-      if (this._isQuitting) return
-
-      const mode = settings.get('clusterMode')
-      if (mode === 'off') return
-
-      await this._checkPeers()
-      
-      // Logique de Failover Automatique (30s)
-      if (mode === 'auto' && this.role === 'slave') {
-        const now = Date.now()
-        if (this.currentMaster === null || (now - this.lastMasterSeen > 30000)) {
-          dbg(`[cluster] ⚠️ Maître absent depuis > 30s. Tentative de prise de contrôle automatique...`)
-          await this.takeover()
+      try {
+        if (this._isQuitting) return
+        await this._checkPeers()
+        if (this.role === 'slave') {
+          await this._checkMasterHealth()
         }
+      } catch (e) {
+        dbg(`[cluster] ⚠️ Erreur cycle Heartbeat: ${e.message}`)
       }
-    }, 10000) // Vérification toutes les 10s
+    }, 10000)
+  }
+
+  async _checkMasterHealth() {
+    try {
+      const now = Date.now()
+      // Si on n'a pas vu le maître depuis 30s et qu'on est en mode Auto
+      if (settings.get('clusterMode') === 'auto' && this.currentMaster && (now - this.lastMasterSeen > 30000)) {
+        dbg(`[cluster] 🚨 Maître (${this.currentMaster}) injoignable depuis 30s. Tentative de Takeover !`)
+        await this.takeover()
+      }
+    } catch (e) {
+      dbg(`[cluster] ❌ Erreur CheckMasterHealth: ${e.message}`)
+    }
   }
 
   async _checkPeers() {
@@ -148,19 +163,20 @@ class ClusterManager extends EventEmitter {
   async takeover() {
     dbg(`[cluster] 👑 Prise de contrôle du cluster...`)
     
-    // 1. Notifier les pairs qu'on prend le relais
-    for (const peer of this.peers) {
-      try {
-        const url = `http://${peer.address}:${peer.port}/api/cluster/takeover`
-        await axios.post(url, { newMaster: 'me' }, { timeout: 3000 })
-      } catch (e) {}
-    }
-
-    // 2. Changer de rôle localement
+    // 1. Changer de rôle localement d'abord
     this.role = 'master'
     this.currentMaster = 'me'
     this.lastMasterSeen = Date.now()
     this.emit('role-changed', 'master')
+    this.emit('status-updated', this.getStatus())
+
+    // 2. Notifier les pairs qu'on prend le relais (en arrière-plan)
+    for (const peer of this.peers) {
+      try {
+        const url = `http://${peer.address}:${peer.port}/api/cluster/takeover`
+        axios.post(url, { newMaster: 'me' }, { timeout: 3000 }).catch(() => {})
+      } catch (e) {}
+    }
   }
 
   async release() {

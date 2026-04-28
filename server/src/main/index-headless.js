@@ -19,7 +19,10 @@ Module.prototype.require = function(id) {
     return {
       ipcMain: {
         handle: (channel, listener) => { ipcHandlers[channel] = listener; },
-        on: (channel, listener) => { ipcHandlers[channel] = listener; }
+        handleOnce: (channel, listener) => { ipcHandlers[channel] = listener; },
+        removeHandler: (channel) => { delete ipcHandlers[channel]; },
+        on: (channel, listener) => { ipcHandlers[channel] = listener; },
+        off: (channel) => { delete ipcHandlers[channel]; }
       },
       app: { 
         getPath: () => path.join(__dirname, '../../logs'), 
@@ -73,8 +76,22 @@ async function startServer() {
       const handler = ipcHandlers[action];
       if (handler) {
         try {
-          // req.body est notre data
-          const result = await handler(null, req.body);
+          dbg(`[api] IPC Action: ${action} | Data: ${JSON.stringify(req.body)}`);
+          // Mock de l'objet event d'Electron
+          const mockEvent = {
+            sender: {
+              send: (channel, data) => {
+                if (channel === 'settings-updated') {
+                  companion.emit('settings-updated', data);
+                } else {
+                  // Relais générique vers SSE
+                  companion.emit('broadcast', { event: channel, data });
+                }
+              }
+            }
+          };
+          
+          const result = await handler(mockEvent, req.body);
           res.json(result || { success: true });
         } catch (e) {
           res.status(500).json({ success: false, error: e.message });
@@ -92,6 +109,7 @@ async function startServer() {
 
       const onStatus = (data) => res.write(`data: ${JSON.stringify({ type: 'status-update', data })}\n\n`);
       const onDebug = (msg) => res.write(`data: ${JSON.stringify({ type: 'debug-log', data: msg })}\n\n`);
+      const onSettings = (data) => res.write(`data: ${JSON.stringify({ type: 'settings-updated', data })}\n\n`);
 
       const onBroadcast = ({ event, data }) => {
         if (event === 'STATUS' || event === 'STATUS_UPDATE') {
@@ -102,20 +120,27 @@ async function startServer() {
       }
 
       companion.on('broadcast', onBroadcast)
+      companion.on('settings-updated', onSettings)
       
       const logger = require('./logger')
       logger._headlessEventSubscribers = logger._headlessEventSubscribers || []
-      logger._headlessEventSubscribers.push({ onStatus, onDebug })
+      logger._headlessEventSubscribers.push({ onStatus, onDebug, onSettings })
 
       req.on('close', () => {
         companion.off('broadcast', onBroadcast)
+        companion.off('settings-updated', onSettings)
         logger._headlessEventSubscribers = logger._headlessEventSubscribers.filter(sub => sub.onStatus !== onStatus)
       })
     });
 
     // On expose également le dashboard statique (React/Vite)
-    // Les assets sont générés dans dist-web/assets, et le HTML dans dist-web/renderer-v2
-    const webDistRoot = path.join(__dirname, '..', '..', 'dist-web');
+    const fs = require('fs');
+    let webDistRoot = path.join(__dirname, '..', '..', 'dist-web');
+    if (!fs.existsSync(webDistRoot)) {
+      webDistRoot = path.join(__dirname, '..', '..', '..', 'dist-web');
+    }
+    
+    dbg(`[server] Dashboard servi depuis : ${webDistRoot}`);
     companion.app.use(express.static(webDistRoot));
     
     // Route de secours pour le SPA (Single Page Application)
@@ -143,10 +168,16 @@ async function startServer() {
 
     // 3. Gérer la logique de reconnexion automatique
     companion.on('iphone-ip-detected', (ip) => {
-      dbg(`[server] 📱 iPhone détecté à l'IP : ${ip}. Mise à jour des réglages...`);
       const current = require('./services/settings-manager').get();
+      if (current.wifiIp === ip) return; // Évite la boucle infinie
+
+      dbg(`[server] 📱 iPhone détecté à l'IP : ${ip}. Mise à jour de l'IP WiFi...`);
       require('./services/settings-manager').save({ ...current, wifiIp: ip });
-      tunnelManager.applySettings();
+      
+      // On ne rafraîchit que si on n'est pas déjà prêt
+      if (!tunnelManager.getRsdAddress()) {
+        tunnelManager.applySettings();
+      }
     });
 
     // Lancement du companion server si pas en autonome

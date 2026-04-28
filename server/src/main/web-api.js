@@ -3,8 +3,11 @@ if (!window.gps) {
 
   const listeners = {
     status: new Set(),
-    debug: new Set()
+    debug: new Set(),
+    settings: new Set()
   };
+
+  window.gps = {};
 
   const eventSource = new EventSource('/api/events');
   eventSource.onmessage = (e) => {
@@ -12,8 +15,12 @@ if (!window.gps) {
       const payload = JSON.parse(e.data);
       if (payload.type === 'status-update') {
         listeners.status.forEach(cb => cb(payload.data));
+      } else if (payload.type === 'settings-updated') {
+        listeners.settings.forEach(cb => cb(payload.data));
       } else if (payload.type === 'debug-log') {
-        listeners.debug.forEach(cb => cb(payload.data));
+        listeners.status.forEach(cb => cb({ service: 'server-log', data: payload.data }));
+      } else {
+        window.postMessage({ type: 'sse-event', event: payload.type, data: payload.data }, '*');
       }
     } catch (err) {}
   };
@@ -23,7 +30,7 @@ if (!window.gps) {
       const res = await fetch(`/api/ipc/${action}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(data)
+        body: JSON.stringify(typeof data === 'object' && data !== null ? data : { value: data })
       });
       return await res.json();
     } catch (e) {
@@ -32,7 +39,7 @@ if (!window.gps) {
     }
   }
 
-  window.gps = {
+  Object.assign(window.gps, {
     setLocation:   (lat, lon, name) => invoke('set-location', { lat, lon, name }),
     clearLocation: () => invoke('clear-location'),
     playRoute:     (data) => invoke('play-route', data),
@@ -60,9 +67,26 @@ if (!window.gps) {
 
     getSettings:   () => invoke('get-settings'),
     saveSettings:  (settings) => invoke('save-settings', settings),
+    onSettingsUpdated: (cb) => {
+      listeners.settings.add(cb);
+      return () => listeners.settings.delete(cb);
+    },
     
     addFavorite:   (fav) => invoke('add-favorite', fav),
     removeFavorite:(lat, lon) => invoke('remove-favorite', { lat, lon }),
-    renameFavorite:(lat, lon, newName) => invoke('rename-favorite', { lat, lon, newName })
-  };
+    renameFavorite:(lat, lon, newName) => invoke('rename-favorite', { lat, lon, newName }),
+
+    takeoverCluster: () => invoke('takeover-cluster'),
+    runDiag: (type) => invoke('diag:run', type),
+    stopTunnels: () => invoke('diag:stop-tunnels'),
+    startDriver: (id) => invoke('diag:start-driver', id),
+    stopDriver: (id) => invoke('diag:stop-driver', id),
+    onEvent: (channel, callback) => {
+        window.addEventListener('message', (e) => {
+            if (e.data?.type === 'sse-event' && e.data?.event === channel) {
+                callback(e.data.data);
+            }
+        });
+    }
+  });
 }
