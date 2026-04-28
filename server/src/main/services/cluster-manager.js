@@ -219,7 +219,7 @@ class ClusterManager extends EventEmitter {
       peers: this.peerStatus || this.peers,
       currentMaster: this.currentMaster,
       lastMasterSeen: this.lastMasterSeen,
-      tunnelActive: require('./tunneld-manager').getRsdAddress() !== null
+      tunnelActive: require('../tunneld-manager').getRsdAddress() !== null
     }
   }
 
