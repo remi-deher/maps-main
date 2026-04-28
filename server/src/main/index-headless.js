@@ -19,7 +19,10 @@ Module.prototype.require = function(id) {
     return {
       ipcMain: {
         handle: (channel, listener) => { ipcHandlers[channel] = listener; },
-        on: (channel, listener) => { ipcHandlers[channel] = listener; }
+        handleOnce: (channel, listener) => { ipcHandlers[channel] = listener; },
+        removeHandler: (channel) => { delete ipcHandlers[channel]; },
+        on: (channel, listener) => { ipcHandlers[channel] = listener; },
+        off: (channel) => { delete ipcHandlers[channel]; }
       },
       app: { 
         getPath: () => path.join(__dirname, '../../logs'), 
