@@ -45,8 +45,7 @@ class SettingsManager {
       connectionMode: 'both',
       operationMode: 'hybrid', // 'autonomous' | 'client-server' | 'hybrid'
       isEveilMode: true,       // Micro-dérive pour éviter la mise en veille iOS
-      usbDriver: 'go-ios',
-      wifiDriver: 'pymobiledevice',
+      preferredDriver: 'go-ios', // 'go-ios' ou 'pymobiledevice'
       fallbackEnabled: true,
       serverIp: null,
       preferredIp: '',
@@ -54,7 +53,8 @@ class SettingsManager {
       recentHistory: [],
       clusterMode: 'off', // 'off' | 'auto' | 'standalone'
       clusterNodes: [],    // Liste des { address, port }
-      serverName: ''      // Nom personnalisé de ce serveur
+      serverName: '',      // Nom personnalisé de ce serveur
+      manualTunnelMode: false // Force la coupure des tunnels sans relance
     }
 
     try {

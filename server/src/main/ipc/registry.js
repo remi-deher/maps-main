@@ -255,6 +255,90 @@ function registerIpcHandlers(tunnel, gps, companion) {
       return { success: false, error: e.message }
     }
   })
+
+  // ─── Cluster & Diag ────────────────────────────────────────────────────────
+  
+  // Sécurité anti-doublon
+  ipcMain.removeHandler('takeover-cluster');
+  ipcMain.handle('takeover-cluster', async () => {
+    const clusterManager = require('../services/cluster-manager')
+    await clusterManager.takeover()
+    return { success: true }
+  })
+
+  ipcMain.handle('diag:run', async (_event, data) => {
+    const { exec } = require('child_process')
+    // Extraction du type (supporte valeur directe ou objet {value})
+    const type = typeof data === 'string' ? data : (data?.value || data?.type)
+    
+    let cmd = ''
+    switch(type) {
+      case 'avahi': cmd = 'avahi-browse -rt _apple-mobdev2._tcp'; break
+      case 'pmd3':  cmd = 'pymobiledevice3 usbmux list'; break
+      case 'go-ios': cmd = 'ios list'; break
+      default: return { success: false, error: `Type ${type} inconnu` }
+    }
+
+    return new Promise((resolve) => {
+      exec(cmd, (error, stdout, stderr) => {
+        resolve({
+          success: !error,
+          output: stdout || stderr || (error ? error.message : 'Aucune sortie')
+        })
+      })
+    })
+  })
+
+  ipcMain.handle('diag:stop-tunnels', async () => {
+    const tunnelManager = require('../tunneld-manager')
+    await tunnelManager.stopTunneld()
+    return { success: true, output: 'Tous les tunnels ont été coupés et les ports libérés.' }
+  })
+
+  ipcMain.handle('diag:start-driver', async (event, data) => {
+    const tunnelManager = require('../tunneld-manager')
+    const rawId = typeof data === 'string' ? data : data.value
+    const driverId = rawId === 'go-ios' ? 'goios' : (rawId === 'pmd3' ? 'pymobiledevice' : rawId)
+    
+    const driver = tunnelManager.drivers[driverId]
+    if (!driver) return { success: false, error: `Driver ${driverId} inconnu` }
+
+    try {
+      await driver.stopTunnel()
+      
+      // On redirige la sortie vers le Dashboard via un événement spécial
+      const onData = (msg) => {
+        event.sender.send('diag-log', { driverId, msg })
+      }
+      driver.on('stdout', onData)
+      driver.on('stderr', onData)
+      
+      // On stocke la fonction pour pouvoir la retirer plus tard
+      driver._diagListener = onData
+
+      await driver.startTunnel()
+      return { success: true }
+    } catch (e) {
+      return { success: false, error: e.message }
+    }
+  })
+
+  ipcMain.handle('diag:stop-driver', async (_event, data) => {
+    const tunnelManager = require('../tunneld-manager')
+    const rawId = typeof data === 'string' ? data : data.value
+    const driverId = rawId === 'go-ios' ? 'goios' : (rawId === 'pmd3' ? 'pymobiledevice' : rawId)
+    
+    const driver = tunnelManager.drivers[driverId]
+    if (driver) {
+      if (driver._diagListener) {
+        driver.off('stdout', driver._diagListener)
+        driver.off('stderr', driver._diagListener)
+        delete driver._diagListener
+      }
+      await driver.stopTunnel()
+    }
+    return { success: true }
+  })
 }
 
 module.exports = { registerIpcHandlers }

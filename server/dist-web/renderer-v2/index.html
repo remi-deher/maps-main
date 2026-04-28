@@ -10,14 +10,12 @@
         const isFile = window.location.protocol === 'file:';
         const isElectron = navigator.userAgent.includes('Electron');
         if (!isFile && !isElectron) {
-          const s = document.createElement('script');
-          s.src = '/web-api.js';
-          document.head.appendChild(s);
+          document.write('<script src="/web-api.js"><\/script>');
         }
       })();
     </script>
-    <script type="module" crossorigin src="../assets/index-j9OdPIBC.js"></script>
-    <link rel="stylesheet" crossorigin href="../assets/index-BB3ZlKcA.css">
+    <script type="module" crossorigin src="../assets/index-1U2Y6Q36.js"></script>
+    <link rel="stylesheet" crossorigin href="../assets/index-BkZdt54H.css">
   </head>
   <body>
     <div id="root"></div>

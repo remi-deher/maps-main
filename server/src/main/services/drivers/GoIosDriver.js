@@ -14,28 +14,40 @@ class GoIosDriver extends BaseDriver {
   async startTunnel() {
     if (this.process) return true
     this.isStarting = true
-    dbg(`[${this.id}] Lancement du tunnel ios tunnel start...`)
-
-    // On utilise le binaire ios présent dans les ressources
-    const iosBin = path.join(__dirname, '..', '..', '..', 'resources', 'bin', 'ios.exe')
+    const { GOIOS } = require('../../goios-resolver')
+    const settings = require('../settings-manager')
+    const args = ['tunnel', 'start']
+    dbg(`[${this.id}] 🚀 Lancement : ${GOIOS} ${args.join(' ')}`)
     
-    // Commande de démarrage du tunnel RSD userspace
-    this.process = spawn(iosBin, ['tunnel', 'start', '--userspace'])
+    this.process = spawn(GOIOS, args)
 
     this.process.stdout.on('data', (data) => {
       const text = data.toString()
+      if (text.includes('"event: 0"')) return // Filtrage spam heartbeat go-ios
+      
+      dbg(`[${this.id}] stdout: ${text.trim()}`)
+      this.emit('stdout', text)
+      
       // go-ios affiche l'adresse RSD une fois prêt
       const match = text.match(/RSD address: ([\w:.%]+):(\d+)/)
       if (match) {
         this.tunnelInfo = {
           address: match[1],
           port: match[2],
-          type: 'USB (go-ios)'
+          type: 'WIFI (go-ios forced IP)'
         }
         this.isActive = true
         this.isStarting = false
         this.emit('connection', this.tunnelInfo)
       }
+    })
+
+    this.process.stderr.on('data', (data) => {
+      const text = data.toString()
+      if (text.includes('"event: 0"')) return // Filtrage spam heartbeat go-ios
+      
+      dbg(`[${this.id}] stderr: ${text.trim()}`)
+      this.emit('stderr', text)
     })
 
     this.process.on('close', () => {
@@ -77,20 +89,26 @@ class GoIosDriver extends BaseDriver {
   }
 
   async setLocation(lat, lon) {
-    if (!this.isActive) return { success: false, error: 'Tunnel go-ios non prêt' }
+    if (!this.isActive || !this.tunnelInfo) return { success: false, error: 'Tunnel go-ios non prêt' }
     
-    const iosBin = path.join(__dirname, '..', '..', '..', 'resources', 'bin', 'ios.exe')
-    const args = ['setlocation', String(lat), String(lon)]
+    const { GOIOS } = require('../../goios-resolver')
+    const { address, port } = this.tunnelInfo
+    
+    // On utilise l'adresse RSD du tunnel déjà ouvert pour être plus rapide
+    const args = ['setlocation', '--rsd', `${address}:${port}`, String(lat), String(lon)]
     
     return new Promise((resolve) => {
-      const proc = spawn(iosBin, args)
+      dbg(`[${this.id}] Injection via go-ios : ${lat}, ${lon} (RSD: ${address}:${port})`)
+      const proc = spawn(GOIOS, args)
       proc.on('close', (code) => resolve({ success: code === 0 }))
     })
   }
 
   async clearLocation() {
-    const iosBin = path.join(__dirname, '..', '..', '..', 'resources', 'bin', 'ios.exe')
-    const proc = spawn(iosBin, ['setlocation', 'reset'])
+    if (!this.isActive || !this.tunnelInfo) return { success: false }
+    const { GOIOS } = require('../../goios-resolver')
+    const { address, port } = this.tunnelInfo
+    const proc = spawn(GOIOS, ['setlocation', '--rsd', `${address}:${port}`, 'reset'])
     return new Promise(res => proc.on('close', code => res({ success: code === 0 })))
   }
 }

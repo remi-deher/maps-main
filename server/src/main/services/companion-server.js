@@ -551,21 +551,28 @@ class CompanionServer extends EventEmitter {
   }
 
   _getLocalIp() {
-    const serverIp = settings.get('serverIp')
     const interfaces = os.networkInterfaces()
-    if (serverIp) {
-      for (const name of Object.keys(interfaces)) {
-        for (const iface of interfaces[name]) {
-          if (iface.family === 'IPv4' && iface.address === serverIp) return serverIp
+    const candidates = []
+    
+    // On cherche d'abord les interfaces physiques (eth, en, br)
+    for (const name of Object.keys(interfaces)) {
+      for (const iface of interfaces[name]) {
+        if (iface.family === 'IPv4' && !iface.internal) {
+          if (name.startsWith('eth') || name.startsWith('en') || name.startsWith('br')) {
+            return iface.address
+          }
+          candidates.push(iface.address)
         }
       }
     }
-    for (const name of Object.keys(interfaces)) {
-      for (const iface of interfaces[name]) {
-        if (iface.family === 'IPv4' && !iface.internal) return iface.address
-      }
+    
+    // Si on a une IP forcée en config, on vérifie qu'elle existe vraiment
+    const serverIp = settings.get('serverIp')
+    if (serverIp && candidates.includes(serverIp)) {
+      return serverIp
     }
-    return '127.0.0.1'
+
+    return candidates[0] || '127.0.0.1'
   }
 }
 

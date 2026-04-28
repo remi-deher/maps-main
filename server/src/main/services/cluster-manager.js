@@ -11,10 +11,18 @@ const settings = require('./settings-manager')
 class ClusterManager extends EventEmitter {
   constructor() {
     super()
-    this.peers = []
-    this.role = 'slave' // 'master' | 'slave'
-    this.currentMaster = null
-    this.lastMasterSeen = 0
+    this.peers = settings.get('clusterNodes') || []
+    
+    // En mode standalone, on est forcément MAITRE
+    if (settings.get('clusterMode') === 'standalone') {
+      this.role = 'master'
+      this.currentMaster = 'me'
+      dbg('[cluster] 👑 Mode Standalone détecté : Auto-promotion MAÎTRE.')
+    } else {
+      this.role = 'slave'
+      this.currentMaster = null
+    }
+
     this._heartbeatInterval = null
     this._isQuitting = false
   }
@@ -155,19 +163,20 @@ class ClusterManager extends EventEmitter {
   async takeover() {
     dbg(`[cluster] 👑 Prise de contrôle du cluster...`)
     
-    // 1. Notifier les pairs qu'on prend le relais
-    for (const peer of this.peers) {
-      try {
-        const url = `http://${peer.address}:${peer.port}/api/cluster/takeover`
-        await axios.post(url, { newMaster: 'me' }, { timeout: 3000 })
-      } catch (e) {}
-    }
-
-    // 2. Changer de rôle localement
+    // 1. Changer de rôle localement d'abord
     this.role = 'master'
     this.currentMaster = 'me'
     this.lastMasterSeen = Date.now()
     this.emit('role-changed', 'master')
+    this.emit('status-updated', this.getStatus())
+
+    // 2. Notifier les pairs qu'on prend le relais (en arrière-plan)
+    for (const peer of this.peers) {
+      try {
+        const url = `http://${peer.address}:${peer.port}/api/cluster/takeover`
+        axios.post(url, { newMaster: 'me' }, { timeout: 3000 }).catch(() => {})
+      } catch (e) {}
+    }
   }
 
   async release() {

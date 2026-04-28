@@ -66,7 +66,7 @@ class TunneldService extends EventEmitter {
       execSync(`"${GOIOS}" tunnel stopagent`, { cwd: goIosDir, stdio: 'ignore' })
     } catch (e) {}
 
-    const args = ['tunnel', 'start', '--userspace']
+    const args = ['tunnel', 'start']
     if (udid) {
       args.push('--udid', udid)
       dbg(`[tunneld] Filtrage sur UDID : ${udid}`)
@@ -84,6 +84,7 @@ class TunneldService extends EventEmitter {
 
   _handleOutput(text) {
     if (!text || !text.trim()) return
+    if (text.includes('"event: 0"')) return // Filtrage spam heartbeat go-ios
     
     // On affiche tout pour le debug
     dbg(`[tunneld] ${text.trim()}`)

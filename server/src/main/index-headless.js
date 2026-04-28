@@ -73,12 +73,16 @@ async function startServer() {
       const handler = ipcHandlers[action];
       if (handler) {
         try {
+          dbg(`[api] IPC Action: ${action} | Data: ${JSON.stringify(req.body)}`);
           // Mock de l'objet event d'Electron
           const mockEvent = {
             sender: {
               send: (channel, data) => {
                 if (channel === 'settings-updated') {
                   companion.emit('settings-updated', data);
+                } else {
+                  // Relais générique vers SSE
+                  companion.emit('broadcast', { event: channel, data });
                 }
               }
             }
@@ -127,8 +131,13 @@ async function startServer() {
     });
 
     // On expose également le dashboard statique (React/Vite)
-    // Les assets sont générés dans dist-web/assets, et le HTML dans dist-web/renderer-v2
-    const webDistRoot = path.join(__dirname, '..', '..', 'dist-web');
+    const fs = require('fs');
+    let webDistRoot = path.join(__dirname, '..', '..', 'dist-web');
+    if (!fs.existsSync(webDistRoot)) {
+      webDistRoot = path.join(__dirname, '..', '..', '..', 'dist-web');
+    }
+    
+    dbg(`[server] Dashboard servi depuis : ${webDistRoot}`);
     companion.app.use(express.static(webDistRoot));
     
     // Route de secours pour le SPA (Single Page Application)
@@ -156,10 +165,16 @@ async function startServer() {
 
     // 3. Gérer la logique de reconnexion automatique
     companion.on('iphone-ip-detected', (ip) => {
-      dbg(`[server] 📱 iPhone détecté à l'IP : ${ip}. Mise à jour des réglages...`);
       const current = require('./services/settings-manager').get();
+      if (current.wifiIp === ip) return; // Évite la boucle infinie
+
+      dbg(`[server] 📱 iPhone détecté à l'IP : ${ip}. Mise à jour de l'IP WiFi...`);
       require('./services/settings-manager').save({ ...current, wifiIp: ip });
-      tunnelManager.applySettings();
+      
+      // On ne rafraîchit que si on n'est pas déjà prêt
+      if (!tunnelManager.getRsdAddress()) {
+        tunnelManager.applySettings();
+      }
     });
 
     // Lancement du companion server si pas en autonome

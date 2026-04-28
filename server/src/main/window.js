@@ -82,7 +82,7 @@ function createWindow() {
     height: 750,
     title: 'GPS Mock — iPhone Location Spoofer',
     webPreferences: {
-      preload: path.join(__dirname, '..', '..', 'preload.js'),
+      preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
       nodeIntegration: false,
     },
@@ -231,11 +231,16 @@ app.whenReady().then(() => {
   })
 
   companion.on('iphone-ip-detected', (ip) => {
-    dbg(`[window] 📱 iPhone détecté (${ip}). Mise à jour des réglages...`)
-    // On met à jour les réglages via le manager, ce qui déclenchera un refresh du tunnel
     const current = settings.get()
+    if (current.wifiIp === ip) return // Évite la boucle infinie si l'IP n'a pas changé
+
+    dbg(`[window] 📱 iPhone détecté (${ip}). Mise à jour de l'IP WiFi...`)
     settings.save({ ...current, wifiIp: ip })
-    tunnel.applySettings()
+    
+    // On ne redémarre le tunnel que si on n'est pas déjà connecté en USB
+    if (tunnel.getConnectionType() !== 'USB') {
+      tunnel.applySettings()
+    }
   })
 
   companion.on('favorites-updated', (favs) => {

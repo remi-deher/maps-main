@@ -23,12 +23,7 @@ class Pmd3Driver extends BaseDriver {
     dbg(`[${this.id}] Lancement du démon tunneld...`)
     
     const settings = require('../settings-manager')
-    const args = ['-m', 'pymobiledevice3', 'remote', 'tunneld']
-    
-    // Priorité PMD3 : si go-ios est préféré pour l'USB, on ignore l'USB ici
-    if (settings.get('usbDriver') === 'go-ios') {
-      args.push('--no-usbmux') 
-    }
+    const args = ['-u', '-m', 'pymobiledevice3', 'remote', 'tunneld']
     
     this.runner.spawn(PYTHON, args)
     return true

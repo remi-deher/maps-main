@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { X, Save, ShieldCheck, Settings } from 'lucide-react';
+import { X, Save, ShieldCheck, Settings, Activity, Terminal, Globe, Cpu, Smartphone, RefreshCw, Trash2, Search, Play, Pause, AlertTriangle } from 'lucide-react';
 
 function SettingsModal({ isOpen, onClose }) {
   const [settings, setSettings] = useState({
@@ -18,14 +18,92 @@ function SettingsModal({ isOpen, onClose }) {
     serverName: ''
   });
   const [activeTab, setActiveTab] = useState('general');
+  const [diagLogs, setDiagLogs] = useState('');
+  const [isDiagRunning, setIsDiagRunning] = useState(false);
+  const [manualDrivers, setManualDrivers] = useState({ pmd3: false, goios: false });
   const [newPeer, setNewPeer] = useState({ address: '', port: '8080' });
   const [clusterDashboard, setClusterDashboard] = useState(null);
   const [interfaces, setInterfaces] = useState([]);
   const [plistData, setPlistData] = useState({ plists: [], hasSelfIdentity: false });
 
+  const runDiagnostic = async (type) => {
+    setIsDiagRunning(true);
+    setDiagLogs(prev => prev + `\n[${new Date().toLocaleTimeString()}] Lancement scan ${type.toUpperCase()}...\n`);
+    try {
+      const res = await window.gps.runDiag(type);
+      setDiagLogs(prev => prev + res.output + '\n-------------------\n');
+    } catch (e) {
+      setDiagLogs(prev => prev + `\n[ERREUR] ${e.message}\n`);
+    }
+    setIsDiagRunning(false);
+  };
+
+  const toggleDriver = async (id) => {
+    const isActivating = !manualDrivers[id];
+    setManualDrivers(prev => ({ ...prev, [id]: isActivating }));
+    
+    setDiagLogs(prev => prev + `\n[${new Date().toLocaleTimeString()}] ${isActivating ? '⚡ Démarrage' : '🛑 Arrêt'} manuel : ${id}...\n`);
+    
+    try {
+      if (isActivating) {
+        await window.gps.startDriver(id);
+      } else {
+        await window.gps.stopDriver(id);
+      }
+    } catch (e) {
+      setDiagLogs(prev => prev + `\n[ERREUR] ${e.message}\n`);
+      setManualDrivers(prev => ({ ...prev, [id]: !isActivating }));
+    }
+  };
+
+  const handleManualModeToggle = async () => {
+    const newVal = !settings.manualTunnelMode;
+    const updated = { ...settings, manualTunnelMode: newVal };
+    setSettings(updated);
+    
+    if (!newVal) {
+      setDiagLogs(prev => prev + `\n[${new Date().toLocaleTimeString()}] ♻️ Reprise de contrôle par le serveur. Nettoyage...\n`);
+      setManualDrivers({ pmd3: false, goios: false });
+      await window.gps.stopTunnels();
+    }
+    await window.gps.saveSettings(updated);
+  };
+
+  const stopAllTunnels = async () => {
+    setIsDiagRunning(true);
+    setDiagLogs(prev => prev + `\n[${new Date().toLocaleTimeString()}] 🛑 Demande d'arrêt forcé de tous les tunnels...\n`);
+    try {
+      const res = await window.gps.stopTunnels();
+      setDiagLogs(prev => prev + res.output + '\n-------------------\n');
+    } catch (e) {
+      setDiagLogs(prev => prev + `\n[ERREUR] ${e.message}\n`);
+    }
+    setIsDiagRunning(false);
+  };
+
+  const forceStartDriver = async (id) => {
+    setIsDiagRunning(true);
+    setDiagLogs(prev => prev + `\n[${new Date().toLocaleTimeString()}] ⚡ Tentative de démarrage forcé : ${id}...\n`);
+    try {
+      const res = await window.gps.startDriver(id);
+      setDiagLogs(prev => prev + res.output + '\n-------------------\n');
+    } catch (e) {
+      setDiagLogs(prev => prev + `\n[ERREUR] ${e.message}\n`);
+    }
+    setIsDiagRunning(false);
+  };
+
   useEffect(() => {
     if (isOpen) {
       window.gps.getSettings().then(setSettings);
+      
+      // Écoute des logs de diagnostic en temps réel
+      if (window.gps.onEvent) {
+        window.gps.onEvent('diag-log', (data) => {
+          setDiagLogs(prev => prev + `[${data.driverId}] ${data.msg}\n`);
+        });
+      }
+
       window.gps.getNetworkInterfaces().then(setInterfaces);
       window.gps.listPlists().then(setPlistData);
     }
@@ -84,6 +162,13 @@ function SettingsModal({ isOpen, onClose }) {
               <ShieldCheck className="w-5 h-5" />
               Cluster (HA)
             </button>
+            <button 
+              onClick={() => setActiveTab('diag')}
+              className={`text-lg font-bold flex items-center gap-2 pb-1 border-b-2 transition-all ${activeTab === 'diag' ? 'border-emerald-500 text-white' : 'border-transparent text-slate-500 hover:text-slate-300'}`}
+            >
+              <Activity className="w-5 h-5" />
+              Diag
+            </button>
           </div>
           <button onClick={onClose} className="p-2 hover:bg-white/10 rounded-xl transition-colors">
             <X className="w-6 h-6" />
@@ -91,7 +176,7 @@ function SettingsModal({ isOpen, onClose }) {
         </div>
 
         <div className="p-8 space-y-8 overflow-y-auto max-h-[70vh]">
-          {activeTab === 'general' ? (
+          {activeTab === 'general' && (
             <>
               {/* Contenu Général existant... */}
           {/* Interface Réseau */}
@@ -173,6 +258,30 @@ function SettingsModal({ isOpen, onClose }) {
             </div>
           </section>
 
+          {/* Mode Manuel / Maintenance */}
+          <section className="space-y-4">
+            <div className="flex items-center justify-between p-4 bg-amber-500/5 border border-amber-500/20 rounded-2xl">
+              <div className="space-y-1 pr-4">
+                <div className="flex items-center gap-2">
+                  <AlertTriangle className="w-4 h-4 text-amber-500" />
+                  <p className="text-sm font-bold text-white">Mode Manuel (Diagnostic)</p>
+                </div>
+                <p className="text-[10px] text-slate-400 leading-relaxed">
+                  Désactive la relance automatique du tunnel. Utile pour tester des commandes manuellement.
+                </p>
+              </div>
+              <div 
+                onClick={() => setSettings({...settings, manualTunnelMode: !settings.manualTunnelMode})}
+                className={`w-12 h-6 rounded-full p-1 cursor-pointer transition-colors ${settings.manualTunnelMode ? 'bg-amber-600' : 'bg-slate-700'}`}
+              >
+                <motion.div 
+                  animate={{ x: settings.manualTunnelMode ? 24 : 0 }}
+                  className="w-4 h-4 bg-white rounded-full shadow-lg"
+                />
+              </div>
+            </div>
+          </section>
+
           {/* Map Provider */}
           <section className="space-y-4">
             <label className="text-sm font-bold text-slate-400 uppercase tracking-wider">Moteur de carte</label>
@@ -242,31 +351,18 @@ function SettingsModal({ isOpen, onClose }) {
 
           {/* Driver Selection */}
           <section className="space-y-4">
-            <label className="text-sm font-bold text-slate-400 uppercase tracking-wider">Moteurs de connexion (Drivers)</label>
+            <label className="text-sm font-bold text-slate-400 uppercase tracking-wider">Moteur de connexion (Driver unique)</label>
             <div className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <p className="text-xs text-slate-500 px-1">Mode USB</p>
-                  <select 
-                    value={settings.usbDriver}
-                    onChange={(e) => setSettings({...settings, usbDriver: e.target.value})}
-                    className="w-full bg-white/5 border border-white/10 rounded-xl p-3 outline-none focus:border-blue-500 transition-colors text-white appearance-none cursor-pointer"
-                  >
-                    <option value="go-ios" className="bg-slate-900">go-ios (Recommandé)</option>
-                    <option value="pymobiledevice" className="bg-slate-900">pymobiledevice3</option>
-                  </select>
-                </div>
-                <div className="space-y-2">
-                  <p className="text-xs text-slate-500 px-1">Mode WiFi</p>
-                  <select 
-                    value={settings.wifiDriver}
-                    onChange={(e) => setSettings({...settings, wifiDriver: e.target.value})}
-                    className="w-full bg-white/5 border border-white/10 rounded-xl p-3 outline-none focus:border-blue-500 transition-colors text-white appearance-none cursor-pointer"
-                  >
-                    <option value="pymobiledevice" className="bg-slate-900">pymobiledevice3 (Défaut)</option>
-                    <option value="go-ios" className="bg-slate-900">go-ios</option>
-                  </select>
-                </div>
+              <div className="space-y-2">
+                <p className="text-xs text-slate-500 px-1">Choisissez l'outil de tunneling global (USB & WiFi)</p>
+                <select 
+                  value={settings.preferredDriver}
+                  onChange={(e) => setSettings({...settings, preferredDriver: e.target.value})}
+                  className="w-full bg-white/5 border border-white/10 rounded-xl p-3 outline-none focus:border-blue-500 transition-colors text-white appearance-none cursor-pointer"
+                >
+                  <option value="go-ios" className="bg-slate-900">go-ios (Recommandé - Rapide & Stable)</option>
+                  <option value="pymobiledevice" className="bg-slate-900">pymobiledevice3 (Défaut - Complet)</option>
+                </select>
               </div>
               <div className="flex items-center gap-3 p-3 bg-white/5 border border-white/10 rounded-xl">
                 <input 
@@ -277,7 +373,7 @@ function SettingsModal({ isOpen, onClose }) {
                 />
                 <div>
                   <p className="text-sm font-bold text-white">Activer le basculement automatique</p>
-                  <p className="text-[10px] text-slate-500">Tente l'autre driver si le préféré échoue.</p>
+                  <p className="text-[10px] text-slate-500">Tente l'autre driver si le préféré ne trouve rien après 30s.</p>
                 </div>
               </div>
             </div>
@@ -404,7 +500,9 @@ function SettingsModal({ isOpen, onClose }) {
             </div>
           </section>
             </>
-          ) : (
+          )}
+
+          {activeTab === 'cluster' && (
             <div className="space-y-8">
               {/* Identification */}
               <section className="space-y-4">
@@ -598,6 +696,115 @@ function SettingsModal({ isOpen, onClose }) {
                 </div>
               </section>
             </div>
+          )}
+
+          {/* ONGLET DIAGNOSTIC */}
+          {activeTab === 'diag' && (
+              <div className="space-y-6">
+                <div>
+                  <h3 className="text-lg font-bold mb-1">Outils de Diagnostic</h3>
+                  <p className="text-slate-400 text-xs">Testez la visibilité mDNS et les drivers sans interférence.</p>
+                </div>
+
+                {/* Mode Manuel directement accessible ici */}
+                <div className="flex items-center justify-between p-4 bg-amber-500/10 border border-amber-500/20 rounded-2xl">
+                  <div className="space-y-1">
+                    <div className="flex items-center gap-2">
+                      <AlertTriangle className="w-4 h-4 text-amber-500" />
+                      <p className="text-xs font-bold text-white">Mode Maintenance (Manuel)</p>
+                    </div>
+                    <p className="text-[10px] text-amber-200/60 leading-relaxed">
+                      Débraye l'automate pour tester les drivers individuellement.
+                    </p>
+                  </div>
+                  <div 
+                    onClick={handleManualModeToggle}
+                    className={`w-10 h-5 rounded-full p-1 cursor-pointer transition-colors ${settings.manualTunnelMode ? 'bg-amber-600' : 'bg-slate-700'}`}
+                  >
+                    <motion.div 
+                      animate={{ x: settings.manualTunnelMode ? 20 : 0 }}
+                      className="w-3 h-3 bg-white rounded-full shadow-lg"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-3 gap-4">
+                  <button 
+                    disabled={isDiagRunning}
+                    onClick={() => runDiagnostic('avahi')}
+                    className="flex flex-col items-center gap-3 p-4 bg-white/5 border border-white/10 rounded-2xl hover:bg-white/10 transition-all group disabled:opacity-50"
+                  >
+                    <div className="p-3 bg-blue-500/20 rounded-xl text-blue-400 group-hover:scale-110 transition-transform">
+                      <Globe className="w-6 h-6" />
+                    </div>
+                    <span className="text-[10px] font-bold uppercase tracking-widest text-center">Scan Bonjour (Avahi)</span>
+                  </button>
+
+                  <button 
+                    disabled={isDiagRunning}
+                    onClick={() => runDiagnostic('pmd3')}
+                    className="flex flex-col items-center gap-3 p-4 bg-white/5 border border-white/10 rounded-2xl hover:bg-white/10 transition-all group disabled:opacity-50"
+                  >
+                    <div className="p-3 bg-emerald-500/20 rounded-xl text-emerald-400 group-hover:scale-110 transition-transform">
+                      <Smartphone className="w-6 h-6" />
+                    </div>
+                    <span className="text-[10px] font-bold uppercase tracking-widest text-center">PMD3 Driver Check</span>
+                  </button>
+
+                  <button 
+                    disabled={isDiagRunning}
+                    onClick={() => runDiagnostic('go-ios')}
+                    className="flex flex-col items-center gap-3 p-4 bg-white/5 border border-white/10 rounded-2xl hover:bg-white/10 transition-all group disabled:opacity-50"
+                  >
+                    <div className="p-3 bg-rose-500/20 rounded-xl text-rose-400 group-hover:scale-110 transition-transform">
+                      <Terminal className="w-6 h-6" />
+                    </div>
+                    <span className="text-[10px] font-bold uppercase tracking-widest text-center">GO-IOS List</span>
+                  </button>
+                </div>
+
+                <div className="relative">
+                  <div className="absolute top-4 left-4 flex items-center gap-2">
+                    <Terminal className="w-3 h-3 text-slate-500" />
+                    <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Console de sortie</span>
+                  </div>
+                  <button 
+                    onClick={() => setDiagLogs('')}
+                    className="absolute top-4 right-4 text-[10px] font-bold text-slate-500 hover:text-white uppercase"
+                  >
+                    Effacer
+                  </button>
+                  <pre className="w-full h-80 bg-black/40 border border-white/10 rounded-2xl p-10 pt-12 font-mono text-[11px] text-emerald-500 overflow-y-auto custom-scrollbar">
+                    {diagLogs || "Prêt pour le diagnostic..."}
+                    {isDiagRunning && <span className="animate-pulse">_</span>}
+                  </pre>
+                </div>
+
+
+                <div className="pt-4 border-t border-white/5 space-y-4">
+                  <h4 className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Actions de Maintenance</h4>
+                  <div className="flex gap-3">
+                    <button 
+                      onClick={stopAllTunnels}
+                      className="flex-1 px-4 py-2 bg-rose-500/10 border border-rose-500/20 text-rose-400 rounded-xl text-[10px] font-bold hover:bg-rose-500 hover:text-white transition-all uppercase tracking-tight"
+                    >
+                      Libérer Tunnels & Ports
+                    </button>
+                    <button 
+                      onClick={() => toggleDriver('pmd3')}
+                      className={`flex-1 px-4 py-2 border rounded-xl text-[10px] font-bold transition-all uppercase tracking-tight ${manualDrivers.pmd3 ? 'bg-emerald-500 border-emerald-400 text-white shadow-[0_0_15px_rgba(16,185,129,0.4)]' : 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400 hover:bg-emerald-500/20'}`}
+                    >
+                      {manualDrivers.pmd3 ? 'PMD3 : ACTIF' : 'PMD3 : OFF'}
+                    </button>
+                    <button 
+                      onClick={() => toggleDriver('goios')}
+                      className={`flex-1 px-4 py-2 border rounded-xl text-[10px] font-bold transition-all uppercase tracking-tight ${manualDrivers.goios ? 'bg-blue-500 border-blue-400 text-white shadow-[0_0_15px_rgba(59,130,246,0.4)]' : 'bg-blue-500/10 border-blue-500/20 text-blue-400 hover:bg-blue-500/20'}`}
+                    >
+                      {manualDrivers.goios ? 'GO-IOS : ACTIF' : 'GO-IOS : OFF'}
+                    </button>
+                  </div>
+                </div>
+              </div>
           )}
         </div>
 
