@@ -35,11 +35,11 @@ if getent hosts host.docker.internal > /dev/null; then
     mkdir -p /var/run && rm -rf /var/run/usbmuxd
     socat UNIX-LISTEN:/var/run/usbmuxd,fork,group=root,mode=777 TCP:host.docker.internal:27015 &
 elif [ -S /var/run/usbmuxd ]; then
-    echo "[boot] Socket partagé détecté."
+    echo "[boot] Socket usbmuxd partagé détecté dans /var/run/usbmuxd"
 else
-    echo "[boot] Linux standard. Démarrage usbmuxd..."
+    echo "[boot] Linux standard. Démarrage usbmuxd local (verbose)..."
     mkdir -p /var/run && rm -rf /var/run/usbmuxd
-    usbmuxd --user root &
+    usbmuxd --user root --foreground --verbose &
 fi
 
 sleep 2
