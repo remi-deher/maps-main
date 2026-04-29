@@ -17,6 +17,14 @@ class GoIosDriver extends BaseDriver {
     const { GOIOS } = require('../../goios-resolver')
     const settings = require('../settings-manager')
     const args = ['tunnel', 'start']
+    
+    // Si une IP manuelle est configurée, on force go-ios à se connecter dessus (WiFi)
+    const manualIp = settings.get('wifiIp')
+    if (manualIp) {
+      args.push('--address', manualIp)
+      dbg(`[${this.id}] 🌐 IP Manuelle configurée : ${manualIp}`)
+    }
+
     dbg(`[${this.id}] 🚀 Lancement : ${GOIOS} ${args.join(' ')}`)
     
     this.process = spawn(GOIOS, args)
