@@ -4,6 +4,7 @@ const { EventEmitter } = require('events')
 const axios = require('axios')
 const { dbg } = require('../logger')
 const settings = require('./settings-manager')
+const tunnelManager = require('../tunneld-manager')
 
 /**
  * ClusterManager - Gère la haute disponibilité entre plusieurs serveurs
@@ -219,7 +220,7 @@ class ClusterManager extends EventEmitter {
       peers: this.peerStatus || this.peers,
       currentMaster: this.currentMaster,
       lastMasterSeen: this.lastMasterSeen,
-      tunnelActive: require('../tunneld-manager').getRsdAddress() !== null
+      tunnelActive: tunnelManager.getRsdAddress() !== null
     }
   }
 

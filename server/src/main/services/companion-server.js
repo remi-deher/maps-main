@@ -13,6 +13,8 @@ const favoritesManager = require('./favorites-manager')
 const settings = require('./settings-manager')
 const routeGenerator = require('./gps/route-generator')
 const gpsBridge = require('./gps/gps-bridge')
+const clusterManager = require('./cluster-manager')
+const { app } = require('electron')
 
 /**
  * CompanionServer - Gere la communication via Socket.io avec l'application iOS
@@ -92,7 +94,7 @@ class CompanionServer extends EventEmitter {
       favorites: favoritesManager.getFavorites(),
       recentHistory: favoritesManager.getHistory(),
       cluster: {
-        role: require('./cluster-manager').role,
+        role: clusterManager.role,
         peers: settings.get('clusterNodes') || []
       }
     }
@@ -152,7 +154,6 @@ class CompanionServer extends EventEmitter {
 
     // --- ROUTES CLUSTER ---
     this.app.get('/api/cluster/ping', (req, res) => {
-      const clusterManager = require('./cluster-manager')
       res.json(clusterManager.getStatus())
     })
 
@@ -164,16 +165,12 @@ class CompanionServer extends EventEmitter {
     })
 
     this.app.post('/api/cluster/takeover', (req, res) => {
-      const clusterManager = require('./cluster-manager')
       dbg(`[cluster] 📥 Demande de takeover reçue. Libération du rôle...`)
       clusterManager.release()
       res.json({ success: true })
     })
 
     this.app.get('/api/cluster/plists', (req, res) => {
-      const path = require('path')
-      const fs = require('fs')
-      const { app } = require('electron')
       try {
         const plists = []
         const projectRoot = path.join(app.getAppPath(), '..')
@@ -200,7 +197,6 @@ class CompanionServer extends EventEmitter {
 
     this.app.post('/api/cluster/sync-plist', async (req, res) => {
       const { name, content } = req.body
-      const clusterManager = require('./cluster-manager')
       dbg(`[cluster] 📥 Réception du certificat ${name} du Maître...`)
       await clusterManager._saveLocalPlist(name, content)
       res.json({ success: true })

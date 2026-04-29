@@ -4,6 +4,11 @@ const { ipcMain, app, shell } = require('electron')
 const settings = require('../services/settings-manager')
 const QRCode = require('qrcode')
 const { getNetworkInterfaces } = require('../utils/network')
+const clusterManager = require('../services/cluster-manager')
+const tunnelManager = require('../tunneld-manager')
+const fs = require('fs')
+const path = require('path')
+const { exec } = require('child_process')
 
 /**
  * Registre central des IPC Handlers.
@@ -185,8 +190,6 @@ function registerIpcHandlers(tunnel, gps, companion) {
   })
 
   ipcMain.handle('import-plist', async (_event, { name, content }) => {
-    const fs = require('fs')
-    const path = require('path')
     try {
       const projectRoot = path.join(app.getAppPath(), '..')
       const certsDir = path.join(projectRoot, 'certs')
@@ -205,7 +208,6 @@ function registerIpcHandlers(tunnel, gps, companion) {
       }
 
       // --- DIFFUSION CLUSTER ---
-      const clusterManager = require('../services/cluster-manager')
       if (clusterManager.role === 'master') {
         clusterManager.broadcastPlist(name, content)
       }
@@ -217,8 +219,6 @@ function registerIpcHandlers(tunnel, gps, companion) {
   })
 
   ipcMain.handle('list-plists', async () => {
-    const fs = require('fs')
-    const path = require('path')
     try {
       let lockdownDir = 'C:\\ProgramData\\Apple\\Lockdown'
       if (process.platform === 'linux') lockdownDir = '/var/lib/lockdown'
@@ -237,8 +237,6 @@ function registerIpcHandlers(tunnel, gps, companion) {
   })
 
   ipcMain.handle('delete-plist', async (_event, name) => {
-    const fs = require('fs')
-    const path = require('path')
     try {
       const projectRoot = path.join(app.getAppPath(), '..')
       if (name === 'selfIdentity.plist') {
@@ -261,13 +259,11 @@ function registerIpcHandlers(tunnel, gps, companion) {
   // Sécurité anti-doublon
   ipcMain.removeHandler('takeover-cluster');
   ipcMain.handle('takeover-cluster', async () => {
-    const clusterManager = require('../services/cluster-manager')
     await clusterManager.takeover()
     return { success: true }
   })
 
   ipcMain.handle('diag:run', async (_event, data) => {
-    const { exec } = require('child_process')
     // Extraction du type (supporte valeur directe ou objet {value})
     const type = typeof data === 'string' ? data : (data?.value || data?.type)
     
@@ -290,13 +286,11 @@ function registerIpcHandlers(tunnel, gps, companion) {
   })
 
   ipcMain.handle('diag:stop-tunnels', async () => {
-    const tunnelManager = require('../tunneld-manager')
     await tunnelManager.stopTunneld()
     return { success: true, output: 'Tous les tunnels ont été coupés et les ports libérés.' }
   })
 
   ipcMain.handle('diag:start-driver', async (event, data) => {
-    const tunnelManager = require('../tunneld-manager')
     const rawId = typeof data === 'string' ? data : data.value
     const driverId = rawId === 'go-ios' ? 'goios' : (rawId === 'pmd3' ? 'pymobiledevice' : rawId)
     
@@ -324,7 +318,6 @@ function registerIpcHandlers(tunnel, gps, companion) {
   })
 
   ipcMain.handle('diag:stop-driver', async (_event, data) => {
-    const tunnelManager = require('../tunneld-manager')
     const rawId = typeof data === 'string' ? data : data.value
     const driverId = rawId === 'go-ios' ? 'goios' : (rawId === 'pmd3' ? 'pymobiledevice' : rawId)
     
