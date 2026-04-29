@@ -7,7 +7,7 @@ const { dbg, sendStatus } = require('../logger')
 const { GOIOS } = require('../goios-resolver')
 const ProcessRunner = require('../utils/process-runner')
 
-const TUNNEL_INFO_PORT = 28100  // Port HTTP local exposé par go-ios
+const TUNNEL_INFO_PORT = process.platform === 'linux' ? 60105 : 28100;  // Port HTTP local exposé par go-ios
 const POLL_INTERVAL_MS = 2000   // Interroge l'API go-ios toutes les 2s
 
 /**
