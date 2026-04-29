@@ -10,10 +10,12 @@ rm -f /var/run/dbus/pid /var/run/avahi-daemon/pid
 # 2. Configuration Réseau & Avahi
 # Forcer l'activation de l'IPv6 (crucial pour le service 'remoted')
 sysctl -w net.ipv6.conf.all.disable_ipv6=0 || true
-sysctl -w net.ipv6.conf.eth0.disable_ipv6=0 || true
+sysctl -w net.ipv6.conf.default.disable_ipv6=0 || true
 
 echo "[boot] État réseau IPv6 :"
-ip -6 addr show eth0 || echo "Pas d'IPv6 sur eth0"
+ip -6 addr show || echo "Pas d'IPv6 détecté"
+echo "[boot] Liste des interfaces :"
+ip addr show | grep 'state UP' -A2 || true
 
 sed -i 's/.*use-ipv6=.*/use-ipv6=yes/' /etc/avahi/avahi-daemon.conf
 sed -i 's/.*enable-dbus=.*/enable-dbus=yes/' /etc/avahi/avahi-daemon.conf
