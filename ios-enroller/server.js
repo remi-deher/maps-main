@@ -101,8 +101,8 @@ app.post('/api/transfer', async (req, res) => {
             return res.status(400).json({ success: false, error: `Fichier de pairage introuvable. L'appareil est-il bien enrôlé ? (${lockdownPath})` });
         }
 
-        const selfIdentityData = fs.readFileSync(SELF_IDENTITY_PATH, 'utf8');
-        const deviceRecordData = fs.readFileSync(lockdownPath, 'utf8');
+        const selfIdentityData = fs.readFileSync(SELF_IDENTITY_PATH).toString('base64');
+        const deviceRecordData = fs.readFileSync(lockdownPath).toString('base64');
 
         // Construire l'URL du serveur (ajout auto de http:// et port 8080 si non spécifié)
         let url = targetIp;
