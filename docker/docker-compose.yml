@@ -15,9 +15,9 @@ services:
     # ATTENTION: Sur Windows Docker Desktop, network_mode: host ne mappe pas les ports vers localhost.
     # Pour tester sur Windows, on désactive network_mode: host et on utilise ports.
     # Lors du déploiement sur TrueNAS (Linux), décommentez network_mode: host et supprimez ports.
-    # network_mode: host # Crucial pour mDNS sur TrueNAS / Linux
-    ports:
-      - "8080:8080"
+    network_mode: host # Crucial pour mDNS sur TrueNAS / Linux
+    # ports:
+    #   - "8080:8080"
     # sysctls:
     #   - net.ipv6.conf.all.disable_ipv6=0
     #   - net.ipv6.conf.default.disable_ipv6=0
