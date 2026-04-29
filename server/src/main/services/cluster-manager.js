@@ -71,11 +71,15 @@ class ClusterManager extends EventEmitter {
     try {
       const projectRoot = path.join(app.getAppPath(), '..')
       if (name === 'selfIdentity.plist') {
-        fs.writeFileSync(path.join(projectRoot, 'selfIdentity.plist'), content)
+        const buffer = content.includes('base64,') ? Buffer.from(content.split(',')[1], 'base64') : 
+                      (content.length % 4 === 0 && /^[A-Za-z0-9+/=]+$/.test(content) ? Buffer.from(content, 'base64') : content)
+        fs.writeFileSync(path.join(projectRoot, 'selfIdentity.plist'), buffer)
       } else {
         let lockdownDir = process.platform === 'win32' ? 'C:\\ProgramData\\Apple\\Lockdown' : '/var/lib/lockdown'
         if (fs.existsSync(lockdownDir)) {
-          fs.writeFileSync(path.join(lockdownDir, name), content)
+          const buffer = content.includes('base64,') ? Buffer.from(content.split(',')[1], 'base64') : 
+                        (content.length % 4 === 0 && /^[A-Za-z0-9+/=]+$/.test(content) ? Buffer.from(content, 'base64') : content)
+          fs.writeFileSync(path.join(lockdownDir, name), buffer)
         }
       }
     } catch (e) {

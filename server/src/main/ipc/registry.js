@@ -197,14 +197,18 @@ function registerIpcHandlers(tunnel, gps, companion) {
       if (name === 'selfIdentity.plist') {
         // On enregistre dans certs/ si le dossier existe (Docker), sinon à la racine
         const targetDir = fs.existsSync(certsDir) ? certsDir : projectRoot
-        fs.writeFileSync(path.join(targetDir, 'selfIdentity.plist'), content)
+        const buffer = content.includes('base64,') ? Buffer.from(content.split(',')[1], 'base64') : 
+                      (content.length % 4 === 0 && /^[A-Za-z0-9+/=]+$/.test(content) ? Buffer.from(content, 'base64') : content)
+        fs.writeFileSync(path.join(targetDir, 'selfIdentity.plist'), buffer)
       } else {
         let lockdownDir = 'C:\\ProgramData\\Apple\\Lockdown'
         if (process.platform === 'linux') {
           lockdownDir = '/var/lib/lockdown'
         }
         if (!fs.existsSync(lockdownDir)) fs.mkdirSync(lockdownDir, { recursive: true })
-        fs.writeFileSync(path.join(lockdownDir, name), content)
+        const buffer = content.includes('base64,') ? Buffer.from(content.split(',')[1], 'base64') : 
+                      (content.length % 4 === 0 && /^[A-Za-z0-9+/=]+$/.test(content) ? Buffer.from(content, 'base64') : content)
+        fs.writeFileSync(path.join(lockdownDir, name), buffer)
       }
 
       // --- DIFFUSION CLUSTER ---
