@@ -17,6 +17,7 @@ class GoIosDriver extends BaseDriver {
     const { GOIOS } = require('../../goios-resolver')
     const settings = require('../settings-manager')
     const args = ['tunnel', 'start']
+
     dbg(`[${this.id}] 🚀 Lancement : ${GOIOS} ${args.join(' ')}`)
     
     this.process = spawn(GOIOS, args)

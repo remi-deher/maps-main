@@ -401,9 +401,10 @@ function SettingsModal({ isOpen, onClose }) {
                     for (const file of files) {
                       const reader = new FileReader();
                       reader.onload = async (event) => {
+                        const content = event.target.result; // C'est une DataURL (base64)
                         const res = await window.gps.importPlist({
                           name: file.name,
-                          content: event.target.result
+                          content: content
                         });
                         if (res.success) {
                           alert(`Fichier ${file.name} importé avec succès !`);
@@ -411,7 +412,7 @@ function SettingsModal({ isOpen, onClose }) {
                           alert(`Erreur pour ${file.name}: ${res.error}`);
                         }
                       };
-                      reader.readAsText(file);
+                      reader.readAsDataURL(file);
                     }
                   }}
                   className="block w-full text-sm text-slate-400

@@ -13,6 +13,8 @@ const favoritesManager = require('./favorites-manager')
 const settings = require('./settings-manager')
 const routeGenerator = require('./gps/route-generator')
 const gpsBridge = require('./gps/gps-bridge')
+const clusterManager = require('./cluster-manager')
+const { app } = require('electron')
 
 /**
  * CompanionServer - Gere la communication via Socket.io avec l'application iOS
@@ -92,7 +94,7 @@ class CompanionServer extends EventEmitter {
       favorites: favoritesManager.getFavorites(),
       recentHistory: favoritesManager.getHistory(),
       cluster: {
-        role: require('./cluster-manager').role,
+        role: clusterManager.role,
         peers: settings.get('clusterNodes') || []
       }
     }
@@ -121,15 +123,24 @@ class CompanionServer extends EventEmitter {
       const { udid, selfIdentity, deviceRecord } = req.body
       if (!udid || !selfIdentity || !deviceRecord) return res.status(400).json({ error: 'Données manquantes' })
       try {
-        const projectRoot = path.join(__dirname, '..', '..', '..')
-        fs.writeFileSync(path.join(projectRoot, 'selfIdentity.plist'), selfIdentity)
+        const projectRoot = process.platform === 'linux' ? '/app' : path.join(app.getAppPath(), '..')
+        
+        const decodeAndWrite = (filePath, content) => {
+          const buffer = content.includes('base64,') ? Buffer.from(content.split(',')[1], 'base64') : 
+                        (content.length % 4 === 0 && /^[A-Za-z0-9+/=]+$/.test(content) ? Buffer.from(content, 'base64') : content)
+          fs.writeFileSync(filePath, buffer)
+        }
+
+        decodeAndWrite(path.join(projectRoot, 'selfIdentity.plist'), selfIdentity)
+        
         let lockdownDir = 'C:\\ProgramData\\Apple\\Lockdown'
         if (process.platform === 'linux') {
           lockdownDir = '/var/lib/lockdown'
           if (!fs.existsSync(lockdownDir)) fs.mkdirSync(lockdownDir, { recursive: true })
         }
         const devicePath = path.join(lockdownDir, `${udid}.plist`)
-        fs.writeFileSync(devicePath, deviceRecord)
+        decodeAndWrite(devicePath, deviceRecord)
+        
         res.json({ success: true, message: 'Enrôlement réussi' })
       } catch (err) {
         res.status(500).json({ error: err.message })
@@ -152,7 +163,6 @@ class CompanionServer extends EventEmitter {
 
     // --- ROUTES CLUSTER ---
     this.app.get('/api/cluster/ping', (req, res) => {
-      const clusterManager = require('./cluster-manager')
       res.json(clusterManager.getStatus())
     })
 
@@ -164,24 +174,20 @@ class CompanionServer extends EventEmitter {
     })
 
     this.app.post('/api/cluster/takeover', (req, res) => {
-      const clusterManager = require('./cluster-manager')
       dbg(`[cluster] 📥 Demande de takeover reçue. Libération du rôle...`)
       clusterManager.release()
       res.json({ success: true })
     })
 
     this.app.get('/api/cluster/plists', (req, res) => {
-      const path = require('path')
-      const fs = require('fs')
-      const { app } = require('electron')
       try {
         const plists = []
-        const projectRoot = path.join(app.getAppPath(), '..')
+        const projectRoot = process.platform === 'linux' ? '/app' : path.join(app.getAppPath(), '..')
         
         // 1. Identité serveur
         const selfPath = path.join(projectRoot, 'selfIdentity.plist')
         if (fs.existsSync(selfPath)) {
-          plists.push({ name: 'selfIdentity.plist', content: fs.readFileSync(selfPath, 'utf8') })
+          plists.push({ name: 'selfIdentity.plist', content: fs.readFileSync(selfPath).toString('base64') })
         }
 
         // 2. Records iPhone
@@ -189,7 +195,7 @@ class CompanionServer extends EventEmitter {
         if (fs.existsSync(lockdownDir)) {
           const files = fs.readdirSync(lockdownDir).filter(f => f.endsWith('.plist'))
           for (const f of files) {
-            plists.push({ name: f, content: fs.readFileSync(path.join(lockdownDir, f), 'utf8') })
+            plists.push({ name: f, content: fs.readFileSync(path.join(lockdownDir, f)).toString('base64') })
           }
         }
         res.json({ success: true, plists })
@@ -200,7 +206,6 @@ class CompanionServer extends EventEmitter {
 
     this.app.post('/api/cluster/sync-plist', async (req, res) => {
       const { name, content } = req.body
-      const clusterManager = require('./cluster-manager')
       dbg(`[cluster] 📥 Réception du certificat ${name} du Maître...`)
       await clusterManager._saveLocalPlist(name, content)
       res.json({ success: true })

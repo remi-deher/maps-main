@@ -35,7 +35,7 @@ Module.prototype.require = function(id) {
       BrowserWindow: {}, Tray: {}, Menu: {}, nativeImage: {}
     };
   }
-  return originalRequire.apply(this, arguments);
+  return originalRequire.call(this, id);
 };
 
 const { dbg } = require('./logger');
