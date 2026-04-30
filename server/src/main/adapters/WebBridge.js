@@ -108,7 +108,6 @@ class WebBridge {
     })
 
     // Settings
-    const settings = require('../core/services/settings-manager')
     this.app.get('/api/settings', (req, res) => res.json(settings.get()))
     this.app.post('/api/settings', (req, res) => {
       settings.save(req.body)
