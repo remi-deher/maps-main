@@ -169,7 +169,33 @@ class WebBridge {
     this.app.get('/web-api.js', (req, res) => {
       res.setHeader('Content-Type', 'application/javascript')
       res.send(`
-        console.log('[web-api] 🛠️ Injection du polyfill GPS pour le mode Web');
+        console.log('[web-api] 🛠️ Injection du polyfill GPS (Socket.io Edition)');
+        
+        // Chargement dynamique de Socket.io client
+        const script = document.createElement('script');
+        script.src = '/socket.io/socket.io.js';
+        document.head.appendChild(script);
+
+        const statusCallbacks = new Set();
+        const settingsCallbacks = new Set();
+        let socket = null;
+
+        script.onload = () => {
+          console.log('[web-api] 🔌 Socket.io client chargé');
+          socket = io();
+          socket.on('status-update', (data) => {
+            statusCallbacks.forEach(cb => cb(data));
+          });
+          socket.on('debug-log', (msg) => {
+            // On transforme les logs de debug en événements de statut pour le Dashboard
+            statusCallbacks.forEach(cb => cb({ service: 'server-log', data: msg }));
+          });
+          socket.on('STATUS', (data) => {
+            // Compatibilité avec le format STATUS global
+            statusCallbacks.forEach(cb => cb({ service: 'tunneld', state: data.state, message: 'Update', ...data }));
+          });
+        };
+
         window.gps = {
           isElectron: false,
           getStatus: () => fetch('/api/status').then(r => r.json()),
@@ -182,8 +208,15 @@ class WebBridge {
           getNetworkInterfaces: () => fetch('/api/diagnostic/interfaces').then(r => r.json()).catch(() => []),
           getCompanionQr: () => fetch('/api/diagnostic/qr').then(r => r.json()),
           listPlists: () => fetch('/api/diagnostic/plists').then(r => r.json()).catch(() => ({ plists: [] })),
-          onStatus: (cb) => { console.log('[web-api] onStatus enregistré'); return () => {} },
-          onSettingsUpdated: (cb) => { return () => {} },
+          
+          onStatus: (cb) => { 
+            statusCallbacks.add(cb); 
+            return () => statusCallbacks.delete(cb); 
+          },
+          onSettingsUpdated: (cb) => { 
+            settingsCallbacks.add(cb); 
+            return () => settingsCallbacks.delete(cb); 
+          },
           onEvent: (name, cb) => { return () => {} },
           openGpxDialog: () => Promise.resolve({ success: false, error: 'Non supporté en mode Web' }),
           playCustomGpx: () => Promise.resolve({ success: false })

@@ -65,6 +65,15 @@ class CompanionServer extends EventEmitter {
         this._broadcast('STATUS', this.status)
       })
     }
+
+    // Enregistrement comme abonné aux logs pour redirection vers le Dashboard
+    const loggerModule = require('../../logger')
+    if (loggerModule._headlessEventSubscribers) {
+      loggerModule._headlessEventSubscribers.push({
+        onDebug: (msg) => this._broadcast('debug-log', msg),
+        onStatus: (payload) => this._broadcast('status-update', payload)
+      })
+    }
   }
 
   _refreshStatus() {
