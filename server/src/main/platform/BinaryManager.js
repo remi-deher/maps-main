@@ -10,12 +10,15 @@ const { dbg } = require('../logger')
 class BinaryManager {
   constructor() {
     this.isWin = process.platform === 'win32'
+    this.cachedPython = null
   }
 
   /**
    * Retourne l'exécutable Python correct (python vs python3 vs embedded)
    */
   getPython() {
+    if (this.cachedPython) return this.cachedPython
+
     const fs = require('fs')
     const { execSync } = require('child_process')
     const { getResourcePath } = require('./PathResolver')
@@ -26,6 +29,7 @@ class BinaryManager {
     try {
       execSync(`${systemAlias} -m pymobiledevice3 --version`, { stdio: 'ignore' })
       dbg(`[binary] 🐍 Utilisation de la version du système (${systemAlias})`)
+      this.cachedPython = systemAlias
       return systemAlias
     } catch (e) {
       // 2. Fallback sur la version embarquée
@@ -35,12 +39,14 @@ class BinaryManager {
 
       if (fs.existsSync(embeddedPath)) {
         dbg(`[binary] 🐍 Utilisation de la version du projet (embarqué) : ${embeddedPath}`)
+        this.cachedPython = embeddedPath
         return embeddedPath
       }
     }
 
     // 3. Ultime recours (peut-être que python est là mais sans le module, ou inversement)
     dbg(`[binary] ⚠️ Aucune version de Python valide trouvée. Tentative avec l'alias par défaut.`)
+    this.cachedPython = systemAlias
     return systemAlias
   }
 
