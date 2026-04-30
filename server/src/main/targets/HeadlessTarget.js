@@ -39,6 +39,7 @@ class HeadlessTarget {
 
   stop() {
     orchestrator.setQuitting()
+    this.companion.stop()
     this.simulator.destroy()
     cluster.destroy()
   }

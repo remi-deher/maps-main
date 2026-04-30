@@ -24,6 +24,11 @@ class ElectronTarget {
       await orchestrator.start()
       await cluster.init()
 
+      // 3. Démarrage du serveur compagnon
+      const settings = require('../core/services/settings-manager')
+      const port = settings.get('companionPort') || 8080
+      this.companion.start(port)
+
       // 3. Liaison Simulator -> Cluster
       this.simulator.on('location-changed', (data) => {
         cluster.broadcastSync(data)
@@ -38,6 +43,7 @@ class ElectronTarget {
 
   stop() {
     orchestrator.setQuitting()
+    this.companion.stop()
     this.simulator.destroy()
     cluster.destroy()
   }

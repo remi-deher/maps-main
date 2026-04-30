@@ -38,7 +38,7 @@ class RegistryBridge {
           }
         }
 
-        let companionLabel = companionConnected ? 'iPhone Connecté (App Mobile)' : 'Attente App Mobile...'
+        let companionLabel = companionConnected ? 'iPhone prêt' : 'En attente de l\'application client...'
         let companionStatus = companionConnected ? 'ready' : 'idle'
 
         // Ajustement selon le mode
