@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { X, Save, ShieldCheck, Settings, Activity, Terminal, Globe, Cpu, Smartphone, RefreshCw, Trash2, Search, Play, Pause, AlertTriangle } from 'lucide-react';
+import { X, Save, ShieldCheck, Settings, Activity, Terminal, Globe, Monitor, Smartphone, RotateCcw, Trash2, Search, Play, Pause, AlertTriangle } from 'lucide-react';
 
 function SettingsModal({ isOpen, onClose }) {
   const [settings, setSettings] = useState({
@@ -15,7 +15,9 @@ function SettingsModal({ isOpen, onClose }) {
     fallbackEnabled: true,
     clusterMode: 'off',
     clusterNodes: [],
-    serverName: ''
+    serverName: '',
+    networkOnlyMode: false,
+    manualTunnelAddress: ''
   });
   const [activeTab, setActiveTab] = useState('general');
   const [diagLogs, setDiagLogs] = useState('');
@@ -318,6 +320,37 @@ function SettingsModal({ isOpen, onClose }) {
           <section className="space-y-4">
             <label className="text-sm font-bold text-slate-400 uppercase tracking-wider">Réglages avancés (Connexion iPhone)</label>
             <div className="grid grid-cols-2 gap-4">
+              {/* Mode Réseau Seul (VM) */}
+              <div className="space-y-2 col-span-2">
+                <div className="flex items-center justify-between p-3 bg-white/5 border border-white/10 rounded-xl">
+                  <div>
+                    <p className="text-sm font-bold text-white">Mode Réseau Seul (VM/Docker)</p>
+                    <p className="text-[10px] text-slate-500">Désactive la recherche USB pour privilégier le réseau local.</p>
+                  </div>
+                  <div 
+                    onClick={() => setSettings({...settings, networkOnlyMode: !settings.networkOnlyMode})}
+                    className={`w-10 h-5 rounded-full p-1 cursor-pointer transition-colors ${settings.networkOnlyMode ? 'bg-blue-600' : 'bg-slate-700'}`}
+                  >
+                    <motion.div 
+                      animate={{ x: settings.networkOnlyMode ? 20 : 0 }}
+                      className="w-3 h-3 bg-white rounded-full shadow-lg"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Manual RSD Address */}
+              <div className="space-y-2 col-span-2">
+                <p className="text-xs text-slate-500 px-1">Adresse Manuelle Tunnel RSD (iOS 17+)</p>
+                <input 
+                  type="text" 
+                  value={settings.manualTunnelAddress}
+                  onChange={(e) => setSettings({...settings, manualTunnelAddress: e.target.value})}
+                  placeholder="ex: [fe80::...]:port"
+                  className="w-full bg-white/5 border border-white/10 rounded-xl p-3 outline-none focus:border-blue-500 transition-colors"
+                />
+              </div>
+
               <div className="space-y-2 col-span-2">
                 <p className="text-xs text-slate-500 px-1">Adresse IP de l'iPhone (Force Override)</p>
                 <input 
@@ -761,6 +794,20 @@ function SettingsModal({ isOpen, onClose }) {
                       <Terminal className="w-6 h-6" />
                     </div>
                     <span className="text-[10px] font-bold uppercase tracking-widest text-center">GO-IOS List</span>
+                  </button>
+                </div>
+
+                <div className="p-4 bg-blue-500/5 border border-blue-500/20 rounded-2xl flex items-center justify-between">
+                  <div className="space-y-1">
+                    <p className="text-sm font-bold text-white">Maintenance Réseau</p>
+                    <p className="text-[10px] text-slate-400">Relance les services mDNS (Bonjour) et réinitialise le tunnel RSD.</p>
+                  </div>
+                  <button 
+                    onClick={() => window.gps.restartTunnel()} 
+                    className="py-2 px-4 rounded-xl bg-blue-600/20 hover:bg-blue-600/40 text-blue-400 text-xs font-black uppercase tracking-widest transition-all flex items-center gap-2 border border-blue-500/20 group"
+                  >
+                    <RotateCcw className="w-4 h-4 group-hover:rotate-180 transition-transform duration-500" />
+                    Redémarrer
                   </button>
                 </div>
 

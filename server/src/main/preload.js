@@ -16,6 +16,7 @@ contextBridge.exposeInMainWorld('gps', {
   onDebug:       (cb) => ipcRenderer.on('debug-log', (_e, msg) => cb(msg)),
   openLogs:      () => ipcRenderer.invoke('open-logs'),
   restartTunnel: () => ipcRenderer.invoke('restart-tunnel'),
+  listPmd3Devices: () => ipcRenderer.invoke('list-pmd3-devices'),
 
   // Paramètres
   getSettings:   () => ipcRenderer.invoke('get-settings'),
@@ -41,11 +42,6 @@ contextBridge.exposeInMainWorld('gps', {
   getCompanionQr: () => ipcRenderer.invoke('get-companion-qr'),
 
   // Événements
-  onStatus:      (cb) => {
-    const listener = (_e, data) => cb(data);
-    ipcRenderer.on('status-update', listener);
-    return () => ipcRenderer.removeListener('status-update', listener);
-  },
   onSettingsUpdated: (cb) => {
     const listener = (_e, data) => cb(data);
     ipcRenderer.on('settings-updated', listener);

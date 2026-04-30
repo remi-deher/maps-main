@@ -28,6 +28,14 @@ function registerIpcHandlers(tunnel, gps, companion) {
 
   ipcMain.handle('restart-tunnel', () => tunnel.forceRefresh())
 
+  ipcMain.handle('list-pmd3-devices', async () => {
+    const pmd3 = tunnel.drivers['pymobiledevice']
+    if (pmd3 && typeof pmd3.listDevices === 'function') {
+      return await pmd3.listDevices()
+    }
+    return []
+  })
+
   // ─── GPS Simulation ────────────────────────────────────────────────────────
   
   ipcMain.handle('set-location', async (_event, { lat, lon, name }) => {

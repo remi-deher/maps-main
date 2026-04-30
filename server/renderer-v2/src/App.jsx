@@ -21,8 +21,13 @@ function App() {
   const [clientLogs, setClientLogs] = useState([]);
   const [serverLogs, setServerLogs] = useState([]);
   
+  const [deviceList, setDeviceList] = useState([]);
   const searchInputRef = useRef(null);
   const { history, favorites, addToHistory, addFavorite, removeFavorite } = useStorage();
+
+  const fetchDevices = () => {
+    window.gps.listPmd3Devices().then(setDeviceList);
+  };
 
   const isFavorite = (lat, lon) => favorites.some(f => Math.abs(f.lat - lat) < 0.0001 && Math.abs(f.lon - lon) < 0.0001);
   const toggleFavorite = async (pos) => {
@@ -100,6 +105,12 @@ function App() {
       removeSettingsListener();
     };
   }, []);
+
+  useEffect(() => {
+    if (sidebarOpen) {
+      fetchDevices();
+    }
+  }, [sidebarOpen]);
 
   const handleMapClick = async (lat, lon) => {
     const name = await reverseGeocode(lat, lon);
@@ -186,39 +197,34 @@ function App() {
                 </button>
               </div>
               <div className="flex-1 overflow-y-auto space-y-8 pr-2 custom-scrollbar">
-                {/* DEVICE INFO SECTION */}
+
+                {/* LISTE DES APPAREILS DÉTECTÉS */}
                 <section>
-                  <div className="flex items-center gap-2 text-sm font-semibold text-slate-400 mb-3 px-2">
-                    <Monitor className="w-4 h-4 text-emerald-400" /> <span>APPAREIL</span>
-                  </div>
-                  <div className="mx-2 p-5 rounded-2xl bg-gradient-to-br from-white/10 to-white/5 border border-white/10 shadow-xl space-y-4">
-                    <div className="flex justify-between items-center group">
-                      <span className="text-[10px] text-slate-500 uppercase font-black tracking-widest">Modèle</span>
-                      <span className="text-sm font-bold text-white group-hover:text-blue-400 transition-colors">{status.device?.type || 'iPhone'}</span>
+                  <div className="flex items-center justify-between text-sm font-semibold text-slate-400 mb-3 px-2">
+                    <div className="flex items-center gap-2">
+                      <Monitor className="w-4 h-4 text-blue-400" /> <span>APPAREILS</span>
                     </div>
-                    <div className="flex justify-between items-center group">
-                      <span className="text-[10px] text-slate-500 uppercase font-black tracking-widest">Version iOS</span>
-                      <span className="text-sm font-mono text-slate-300">{status.device?.version || 'Detecting...'}</span>
-                    </div>
-                    <div className="flex justify-between items-center group">
-                      <span className="text-[10px] text-slate-500 uppercase font-black tracking-widest">IP / RSD</span>
-                      <span className="text-sm font-mono text-blue-300">{status.type === 'USB' ? 'USB Native' : (status.device?.ip || '192.168.x.x')}</span>
-                    </div>
-                    <div className="flex justify-between items-center pt-3 border-t border-white/10">
-                      <span className="text-[10px] text-slate-500 uppercase font-black tracking-widest">Connexion</span>
-                      <span className={`text-xs font-black flex items-center gap-2 px-2 py-1 rounded-full ${status.type ? 'bg-emerald-500/10 text-emerald-400' : 'bg-amber-500/10 text-amber-400'}`}>
-                        <div className={`w-2 h-2 rounded-full ${status.type ? 'bg-emerald-500 animate-pulse' : 'bg-amber-500'} shadow-[0_0_8px_rgba(16,185,129,0.5)]`} /> 
-                        {status.type || 'Scanning...'}
-                      </span>
-                    </div>
-                    
-                    <button 
-                      onClick={() => window.gps.restartTunnel()} 
-                      className="w-full mt-2 py-2 px-4 rounded-xl bg-blue-600/10 hover:bg-blue-600/20 text-blue-400 text-[10px] font-black uppercase tracking-widest transition-all flex items-center justify-center gap-2 border border-blue-500/20 group"
-                    >
-                      <RotateCcw className="w-3.5 h-3.5 group-hover:rotate-180 transition-transform duration-500" />
-                      Redémarrer Tunnel & Bonjour
+                    <button onClick={fetchDevices} className="p-1 hover:bg-white/10 rounded-md transition-colors group">
+                      <RotateCcw className="w-3.5 h-3.5 group-active:rotate-180 transition-transform" />
                     </button>
+                  </div>
+                  <div className="space-y-2">
+                    {deviceList.length > 0 ? deviceList.map((dev, i) => (
+                      <div key={i} className="mx-2 p-3 rounded-xl bg-white/5 border border-white/5 hover:border-blue-500/30 transition-all group/dev">
+                        <div className="flex justify-between items-start mb-1">
+                          <p className="font-bold text-xs text-white truncate max-w-[140px]">{dev.DeviceName}</p>
+                          <span className={`text-[8px] px-1.5 py-0.5 rounded-full font-black uppercase ${dev.ConnectionType === 'Network' ? 'bg-purple-500/20 text-purple-400' : 'bg-blue-500/20 text-blue-400'}`}>
+                            {dev.ConnectionType}
+                          </span>
+                        </div>
+                        <div className="flex justify-between text-[9px] text-slate-500">
+                          <span>{dev.DeviceClass} {dev.ProductVersion}</span>
+                          <span className="font-mono opacity-50">{dev.UniqueDeviceID.substring(0, 8)}...</span>
+                        </div>
+                      </div>
+                    )) : (
+                      <p className="px-4 py-2 text-center text-slate-600 italic text-[10px]">Aucun appareil détecté via usbmuxd</p>
+                    )}
                   </div>
                 </section>
                 {/* FAVORIS SECTION */}
