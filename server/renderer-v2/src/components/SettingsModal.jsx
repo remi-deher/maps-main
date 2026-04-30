@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { X, Save, ShieldCheck, Settings, Activity, Terminal, Globe, Cpu, Smartphone, RefreshCw, Trash2, Search, Play, Pause, AlertTriangle } from 'lucide-react';
+import { X, Save, ShieldCheck, Settings, Activity, Terminal, Globe, Monitor, Smartphone, RotateCcw, Trash2, Search, Play, Pause, AlertTriangle } from 'lucide-react';
+import gps from '../utils/gps-bridge';
 
 function SettingsModal({ isOpen, onClose }) {
   const [settings, setSettings] = useState({
@@ -15,7 +16,9 @@ function SettingsModal({ isOpen, onClose }) {
     fallbackEnabled: true,
     clusterMode: 'off',
     clusterNodes: [],
-    serverName: ''
+    serverName: '',
+    networkOnlyMode: false,
+    manualTunnelAddress: ''
   });
   const [activeTab, setActiveTab] = useState('general');
   const [diagLogs, setDiagLogs] = useState('');
@@ -30,7 +33,7 @@ function SettingsModal({ isOpen, onClose }) {
     setIsDiagRunning(true);
     setDiagLogs(prev => prev + `\n[${new Date().toLocaleTimeString()}] Lancement scan ${type.toUpperCase()}...\n`);
     try {
-      const res = await window.gps.runDiag(type);
+      const res = await gps.runDiag(type);
       setDiagLogs(prev => prev + res.output + '\n-------------------\n');
     } catch (e) {
       setDiagLogs(prev => prev + `\n[ERREUR] ${e.message}\n`);
@@ -46,9 +49,9 @@ function SettingsModal({ isOpen, onClose }) {
     
     try {
       if (isActivating) {
-        await window.gps.startDriver(id);
+        await gps.startDriver(id);
       } else {
-        await window.gps.stopDriver(id);
+        await gps.stopDriver(id);
       }
     } catch (e) {
       setDiagLogs(prev => prev + `\n[ERREUR] ${e.message}\n`);
@@ -64,16 +67,16 @@ function SettingsModal({ isOpen, onClose }) {
     if (!newVal) {
       setDiagLogs(prev => prev + `\n[${new Date().toLocaleTimeString()}] ♻️ Reprise de contrôle par le serveur. Nettoyage...\n`);
       setManualDrivers({ pmd3: false, goios: false });
-      await window.gps.stopTunnels();
+      await gps.stopTunnels();
     }
-    await window.gps.saveSettings(updated);
+    await gps.saveSettings(updated);
   };
 
   const stopAllTunnels = async () => {
     setIsDiagRunning(true);
     setDiagLogs(prev => prev + `\n[${new Date().toLocaleTimeString()}] 🛑 Demande d'arrêt forcé de tous les tunnels...\n`);
     try {
-      const res = await window.gps.stopTunnels();
+      const res = await gps.stopTunnels();
       setDiagLogs(prev => prev + res.output + '\n-------------------\n');
     } catch (e) {
       setDiagLogs(prev => prev + `\n[ERREUR] ${e.message}\n`);
@@ -85,7 +88,7 @@ function SettingsModal({ isOpen, onClose }) {
     setIsDiagRunning(true);
     setDiagLogs(prev => prev + `\n[${new Date().toLocaleTimeString()}] ⚡ Tentative de démarrage forcé : ${id}...\n`);
     try {
-      const res = await window.gps.startDriver(id);
+      const res = await gps.startDriver(id);
       setDiagLogs(prev => prev + res.output + '\n-------------------\n');
     } catch (e) {
       setDiagLogs(prev => prev + `\n[ERREUR] ${e.message}\n`);
@@ -95,26 +98,26 @@ function SettingsModal({ isOpen, onClose }) {
 
   useEffect(() => {
     if (isOpen) {
-      window.gps.getSettings().then(setSettings);
+      gps.getSettings().then(setSettings);
       
       // Écoute des logs de diagnostic en temps réel
-      if (window.gps.onEvent) {
-        window.gps.onEvent('diag-log', (data) => {
+      if (gps.onEvent) {
+        gps.onEvent('diag-log', (data) => {
           setDiagLogs(prev => prev + `[${data.driverId}] ${data.msg}\n`);
         });
       }
 
-      window.gps.getNetworkInterfaces().then(setInterfaces);
-      window.gps.listPlists().then(setPlistData);
+      gps.getNetworkInterfaces().then(setInterfaces);
+      gps.listPlists().then(setPlistData);
     }
 
-    const unSubStatus = window.gps.onStatus((payload) => {
+    const unSubStatus = gps.onStatus((payload) => {
       if (payload.service === 'cluster-dashboard') {
         setClusterDashboard(payload.data);
       }
     });
 
-    const unSubSettings = window.gps.onSettingsUpdated((newSettings) => {
+    const unSubSettings = gps.onSettingsUpdated((newSettings) => {
       setSettings(newSettings);
     });
 
@@ -125,7 +128,7 @@ function SettingsModal({ isOpen, onClose }) {
   }, [isOpen]);
 
   const handleSave = async () => {
-    await window.gps.saveSettings(settings);
+    await gps.saveSettings(settings);
     onClose();
   };
 
@@ -318,6 +321,37 @@ function SettingsModal({ isOpen, onClose }) {
           <section className="space-y-4">
             <label className="text-sm font-bold text-slate-400 uppercase tracking-wider">Réglages avancés (Connexion iPhone)</label>
             <div className="grid grid-cols-2 gap-4">
+              {/* Mode Réseau Seul (VM) */}
+              <div className="space-y-2 col-span-2">
+                <div className="flex items-center justify-between p-3 bg-white/5 border border-white/10 rounded-xl">
+                  <div>
+                    <p className="text-sm font-bold text-white">Mode Réseau Seul (VM/Docker)</p>
+                    <p className="text-[10px] text-slate-500">Désactive la recherche USB pour privilégier le réseau local.</p>
+                  </div>
+                  <div 
+                    onClick={() => setSettings({...settings, networkOnlyMode: !settings.networkOnlyMode})}
+                    className={`w-10 h-5 rounded-full p-1 cursor-pointer transition-colors ${settings.networkOnlyMode ? 'bg-blue-600' : 'bg-slate-700'}`}
+                  >
+                    <motion.div 
+                      animate={{ x: settings.networkOnlyMode ? 20 : 0 }}
+                      className="w-3 h-3 bg-white rounded-full shadow-lg"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Manual RSD Address */}
+              <div className="space-y-2 col-span-2">
+                <p className="text-xs text-slate-500 px-1">Adresse Manuelle Tunnel RSD (iOS 17+)</p>
+                <input 
+                  type="text" 
+                  value={settings.manualTunnelAddress}
+                  onChange={(e) => setSettings({...settings, manualTunnelAddress: e.target.value})}
+                  placeholder="ex: [fe80::...]:port"
+                  className="w-full bg-white/5 border border-white/10 rounded-xl p-3 outline-none focus:border-blue-500 transition-colors"
+                />
+              </div>
+
               <div className="space-y-2 col-span-2">
                 <p className="text-xs text-slate-500 px-1">Adresse IP de l'iPhone (Force Override)</p>
                 <input 
@@ -402,7 +436,7 @@ function SettingsModal({ isOpen, onClose }) {
                       const reader = new FileReader();
                       reader.onload = async (event) => {
                         const content = event.target.result; // C'est une DataURL (base64)
-                        const res = await window.gps.importPlist({
+                        const res = await gps.importPlist({
                           name: file.name,
                           content: content
                         });
@@ -433,7 +467,7 @@ function SettingsModal({ isOpen, onClose }) {
               <span>Certificats Installés</span>
               <button 
                 onClick={() => {
-                  window.gps.listPlists().then(res => {
+                  gps.listPlists().then(res => {
                     if (res.success) {
                       setPlistData(res);
                     }
@@ -457,8 +491,8 @@ function SettingsModal({ isOpen, onClose }) {
                 <button 
                   onClick={async () => {
                     if (confirm("Voulez-vous vraiment réinitialiser l'identité du serveur ? Cela cassera le jumelage avec tous les iPhones.")) {
-                      await window.gps.deletePlist('selfIdentity.plist');
-                      const res = await window.gps.listPlists();
+                      await gps.deletePlist('selfIdentity.plist');
+                      const res = await gps.listPlists();
                       setPlistData(res);
                     }
                   }}
@@ -483,8 +517,8 @@ function SettingsModal({ isOpen, onClose }) {
                       <button 
                         onClick={async () => {
                           if (confirm(`Supprimer le certificat pour ${name} ?`)) {
-                            await window.gps.deletePlist(name);
-                            const res = await window.gps.listPlists();
+                            await gps.deletePlist(name);
+                            const res = await gps.listPlists();
                             setPlistData(res);
                           }
                         }}
@@ -686,7 +720,7 @@ function SettingsModal({ isOpen, onClose }) {
                     </div>
                     <button 
                       onClick={async () => {
-                        await window.gps.takeoverCluster();
+                        await gps.takeoverCluster();
                         alert("Ce serveur est désormais le MAÎTRE du cluster.");
                       }}
                       className="px-4 py-2 bg-purple-600 hover:bg-purple-500 rounded-xl text-xs font-bold transition-all shadow-lg active:scale-95"
@@ -761,6 +795,20 @@ function SettingsModal({ isOpen, onClose }) {
                       <Terminal className="w-6 h-6" />
                     </div>
                     <span className="text-[10px] font-bold uppercase tracking-widest text-center">GO-IOS List</span>
+                  </button>
+                </div>
+
+                <div className="p-4 bg-blue-500/5 border border-blue-500/20 rounded-2xl flex items-center justify-between">
+                  <div className="space-y-1">
+                    <p className="text-sm font-bold text-white">Maintenance Réseau</p>
+                    <p className="text-[10px] text-slate-400">Relance les services mDNS (Bonjour) et réinitialise le tunnel RSD.</p>
+                  </div>
+                  <button 
+                    onClick={() => gps.restartTunnel()} 
+                    className="py-2 px-4 rounded-xl bg-blue-600/20 hover:bg-blue-600/40 text-blue-400 text-xs font-black uppercase tracking-widest transition-all flex items-center gap-2 border border-blue-500/20 group"
+                  >
+                    <RotateCcw className="w-4 h-4 group-hover:rotate-180 transition-transform duration-500" />
+                    Redémarrer
                   </button>
                 </div>
 

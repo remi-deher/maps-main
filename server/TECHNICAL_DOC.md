@@ -11,8 +11,10 @@ Pour éviter les conflits entre les connexions USB et WiFi, un orchestrateur cen
 
 ## 2. Le Tunnel RSD (Remote Service Discovery)
 iOS 17+ impose l'utilisation de tunnels RSD sur IPv6.
-- **Dymanisme** : À chaque création de tunnel, une **IP IPv6** (ex: `fdf7:...`) et un **Port** (ex: `55447`) sont générés aléatoirement.
-- **Capture** : Le serveur analyse en temps réel les sorties de `pymobiledevice3 remote tunneld` pour extraire ces informations et les propager au reste du système.
+- **Daemon Persistant** : L'architecture utilise désormais `pymobiledevice3 remote tunneld`. Ce mode daemon permet de gérer dynamiquement les connexions USB et WiFi sans avoir à relancer le processus manuellement.
+- **Capture Automatique** : Le serveur analyse en temps réel les sorties de la commande.
+    - Format détecté : `Created tunnel --rsd <IPv6> <Port>`
+- **Dymanisme** : À chaque détection (nouvel appareil ou reconnexion), les informations RSD sont mises à jour et persistées dans `storage/tunnel_state.json`.
 
 ## 3. Le Pont Python (Bridge CLI-Based)
 Pour résoudre les problèmes de stabilité réseau sur Windows, le pont Python (`bridge.py`) a été conçu comme un gestionnaire de processus asynchrone :

@@ -54,7 +54,9 @@ class SettingsManager {
       clusterMode: 'off', // 'off' | 'auto' | 'standalone'
       clusterNodes: [],    // Liste des { address, port }
       serverName: '',      // Nom personnalisé de ce serveur
-      manualTunnelMode: false // Force la coupure des tunnels sans relance
+      manualTunnelMode: false, // Force la coupure des tunnels sans relance
+      networkOnlyMode: false,  // Désactive la recherche USB pour privilégier le réseau (VM)
+      manualTunnelAddress: ''  // IP manuelle du tunnel RSD
     }
 
     try {

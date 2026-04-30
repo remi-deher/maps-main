@@ -1,29 +1,52 @@
 'use strict'
 
 const BaseDriver = require('./BaseDriver')
-const { PYTHON } = require('../../python-resolver')
+const { PYTHON, checkServiceStatus } = require('../../python-resolver')
 const ProcessRunner = require('../../utils/process-runner')
 const { dbg } = require('../../logger')
 const { spawn } = require('child_process')
-const Encoder = require('../../utils/encoder')
+const path = require('path')
+const fs = require('fs')
 
 class Pmd3Driver extends BaseDriver {
   constructor() {
     super('pymobiledevice')
     this.runner = new ProcessRunner('pmd3-daemon', { priority: -5 })
     this.deviceInfo = {}
+    this.networkOnlyMode = false
     
+    // Chemin pour le cache RSD
+    try {
+      const { app } = require('electron')
+      const storageDir = app ? app.getPath('userData') : path.join(__dirname, '..', '..', '..', '..', 'storage')
+      this.statePath = path.join(storageDir, 'tunnel_state.json')
+    } catch (e) {
+      this.statePath = path.join(__dirname, '..', '..', '..', '..', 'storage', 'tunnel_state.json')
+    }
+
     this.runner.on('stdout', (msg) => this._handleOutput(msg))
     this.runner.on('stderr', (msg) => this._handleOutput(msg))
   }
 
   async startTunnel() {
     if (this.runner.isRunning) return true
+
+    // Vérification Bonjour/Avahi
+    if (!checkServiceStatus()) {
+      dbg(`[${this.id}] ⚠️ Service mDNS (Bonjour/Avahi) non détecté ou arrêté.`)
+    }
+
     this.isStarting = true
-    dbg(`[${this.id}] Lancement du démon tunneld...`)
-    
-    const settings = require('../settings-manager')
-    const args = ['-u', '-m', 'pymobiledevice3', 'remote', 'tunneld']
+    // 1. Montage automatique du DDI (nécessaire pour DVT/GPS)
+    try {
+      dbg(`[${this.id}] Montage automatique de l'image DDI...`)
+      spawn(PYTHON, ['-m', 'pymobiledevice3', 'mounter', 'auto-mount'])
+    } catch (e) {
+      dbg(`[${this.id}] ⚠️ Erreur lors du montage DDI (peut-être déjà monté)`)
+    }
+
+    // 2. Lancement du tunnel RSD
+    const args = ['-m', 'pymobiledevice3', 'lockdown', 'start-tunnel']
     
     this.runner.spawn(PYTHON, args)
     return true
@@ -31,17 +54,21 @@ class Pmd3Driver extends BaseDriver {
 
   async stopTunnel() {
     await super.stopTunnel()
+    // Nettoyage du cache au stop
+    if (fs.existsSync(this.statePath)) {
+      try { fs.unlinkSync(this.statePath) } catch (e) {}
+    }
+
     return new Promise((resolve) => {
       if (!this.runner.isRunning) return resolve(true)
       
       dbg(`[${this.id}] Demande de fermeture gracieuse du démon...`)
       this.runner.process.kill('SIGINT') // Envoie CTRL+C
       
-      // On laisse un délai de grâce pour le nettoyage (Keep-Alive, TUN close)
       const timer = setTimeout(() => {
         if (this.runner.isRunning) {
           dbg(`[${this.id}] Le démon ne répond pas, arrêt forcé.`)
-          this.runner.stop() // SIGKILL final
+          this.runner.stop()
         }
         resolve(true)
       }, 3000)
@@ -62,8 +89,10 @@ class Pmd3Driver extends BaseDriver {
 
     return new Promise((resolve) => {
       const { address, port } = this.tunnelInfo
-      dbg(`[${this.id}] Injection : ${lat}, ${lon} (RSD: ${address}:${port})`)
+      dbg(`[${this.id}] Injection : ${lat}, ${lon} (RSD: [${address}]:${port})`)
 
+      // IPv6 doit être entouré de guillemets/crochets si nécessaire, 
+      // mais ici on passe les arguments individuellement à spawn qui gère l'escaping.
       const args = [
         '-m', 'pymobiledevice3', 
         'developer', 'dvt', 'simulate-location', 'set',
@@ -104,7 +133,6 @@ class Pmd3Driver extends BaseDriver {
 
   async clearLocation() {
     if (!this.tunnelInfo) return { success: false }
-    // Implémentation via 'stop'
     const { address, port } = this.tunnelInfo
     const args = ['-m', 'pymobiledevice3', 'developer', 'dvt', 'simulate-location', 'clear', '--rsd', address, String(port)]
     const proc = spawn(PYTHON, args)
@@ -118,27 +146,37 @@ class Pmd3Driver extends BaseDriver {
     lines.forEach(line => {
       if (!line.trim()) return
 
-      if (line.includes('Uvicorn running on')) {
-        this.isReady = true
-        this.isStarting = false
-      }
+      // Parsing amélioré selon spécifications
+      const matchAddr = line.match(/(?<=RSD Address: )([a-f0-9:]+)/i)
+      const matchPort = line.match(/(?<=RSD Port: )(\d+)/i)
 
-      // Capture RSD et Type
-      const matchRsd = line.match(/(?:\[(USB|WIFI)\]\s+)?--rsd\s+([\w:.%]+)\s+(\d+)/i)
-      if (matchRsd) {
-        const prefix = (matchRsd[1] || '').toUpperCase()
-        let address = matchRsd[2]
-        const port = matchRsd[3]
+      if (matchAddr) this._pendingAddr = matchAddr[1]
+      if (matchPort) this._pendingPort = matchPort[1]
+
+      if (this._pendingAddr && this._pendingPort) {
+        const address = this._pendingAddr
+        const port = this._pendingPort
         
-        let isUSB = false
-        if (prefix === 'USB') isUSB = true
-        else if (prefix === 'WIFI') isUSB = false
-        else isUSB = (address === '::1' || address === '127.0.0.1' || line.toLowerCase().includes('usbmux'))
+        this._pendingAddr = null
+        this._pendingPort = null
 
-        address = address.replace(/%[0-9]+$/, '') // Clean scope ID
+        this.tunnelInfo = { 
+          address, 
+          port, 
+          type: (address === '::1' || address === '127.0.0.1') ? 'USB' : 'WiFi',
+          timestamp: new Date().toISOString()
+        }
 
-        this.tunnelInfo = { address, port, type: isUSB ? 'USB' : 'WiFi' }
+        // Persistance vers tunnel_state.json
+        try {
+          fs.writeFileSync(this.statePath, JSON.stringify(this.tunnelInfo, null, 2))
+          dbg(`[${this.id}] 💾 RSD Cache mis à jour : ${this.statePath}`)
+        } catch (e) {
+          dbg(`[${this.id}] ⚠️ Erreur écriture cache RSD: ${e.message}`)
+        }
+
         this.isActive = true
+        this.isStarting = false
         this.emit('connection', this.tunnelInfo)
       }
 
@@ -146,13 +184,13 @@ class Pmd3Driver extends BaseDriver {
         this.isActive = false
         this.tunnelInfo = null
         this.emit('disconnection')
+        if (fs.existsSync(this.statePath)) {
+          try { fs.unlinkSync(this.statePath) } catch (e) {}
+        }
       }
     })
   }
 
-  /**
-   * Vérifie la santé du driver en tentant une connexion TCP sur le port RSD
-   */
   async checkHealth() {
     if (!this.isActive || !this.tunnelInfo) return false
 
@@ -181,6 +219,37 @@ class Pmd3Driver extends BaseDriver {
 
       socket.on('error', onFail)
       socket.on('timeout', onFail)
+    })
+  }
+
+  async listDevices() {
+    return new Promise((resolve) => {
+      const args = ['-m', 'pymobiledevice3', 'usbmux', 'list']
+      const proc = spawn(PYTHON, args)
+      let stdout = ''
+      let stderr = ''
+
+      proc.stdout.on('data', (d) => stdout += d.toString())
+      proc.stderr.on('data', (d) => stderr += d.toString())
+
+      proc.on('close', (code) => {
+        if (code !== 0) {
+          dbg(`[${this.id}] Erreur listDevices (code ${code}): ${stderr}`)
+          return resolve([])
+        }
+        try {
+          // On nettoie l'éventuel texte avant/après le JSON si PMD3 envoie des logs sur stdout
+          const jsonMatch = stdout.match(/\[[\s\S]*\]/)
+          if (jsonMatch) {
+            resolve(JSON.parse(jsonMatch[0]))
+          } else {
+            resolve([])
+          }
+        } catch (e) {
+          dbg(`[${this.id}] Erreur parsing listDevices: ${e.message}`)
+          resolve([])
+        }
+      })
     })
   }
 }

@@ -138,10 +138,42 @@ class ConnectionOrchestrator extends EventEmitter {
     if (this._isQuitting) return
     const s = settings.get()
     
+    // 1. Support de l'adresse tunnel manuelle (iOS 17+ VM / Docker)
+    if (s.manualTunnelAddress && s.manualTunnelAddress.includes(':')) {
+      const parts = s.manualTunnelAddress.split(':')
+      const port = parts.pop()
+      const address = parts.join(':').replace(/[\[\]]/g, '')
+      
+      dbg(`[orchestrator] 🛠️ Utilisation de l'adresse RSD manuelle : ${address}:${port}`)
+      
+      this.activeDriverId = s.preferredDriver || 'pymobiledevice'
+      const driver = this.drivers[this.activeDriverId]
+      
+      if (driver) {
+        const conn = { 
+          address, 
+          port: parseInt(port), 
+          type: 'MANUAL', 
+          driver: this.activeDriverId 
+        }
+        this.activeConnection = conn
+        driver.tunnelInfo = conn
+        driver.isActive = true
+        gpsBridge.setActiveDriver(driver)
+        this._handleNewConnection(conn)
+        return
+      }
+    }
+
+    // 2. Mode standard (Auto-détection)
     const driverId = s.preferredDriver || 'go-ios'
     dbg(`[orchestrator] Démarrage du driver unique : ${driverId}`)
     
     if (this.drivers[driverId]) {
+      // Transmission du mode réseau seul pour PMD3
+      if (driverId === 'pymobiledevice') {
+        this.drivers[driverId].networkOnlyMode = s.networkOnlyMode
+      }
       await this.drivers[driverId].startTunnel()
     }
 

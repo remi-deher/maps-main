@@ -8,7 +8,6 @@ mkdir -p /var/run/dbus /var/run/avahi-daemon
 rm -f /var/run/dbus/pid /var/run/avahi-daemon/pid
 
 # 2. Configuration Réseau & Avahi
-# Forcer l'activation de l'IPv6 (crucial pour le service 'remoted')
 sysctl -w net.ipv6.conf.all.disable_ipv6=0 || true
 sysctl -w net.ipv6.conf.default.disable_ipv6=0 || true
 
@@ -25,7 +24,6 @@ echo "[boot] Démarrage D-Bus..."
 dbus-daemon --system --fork || true
 
 echo "[boot] Démarrage Avahi..."
-# On donne les droits au dossier de socket
 chown -R avahi:avahi /var/run/avahi-daemon
 avahi-daemon --daemonize --no-drop-root || true
 
@@ -37,12 +35,21 @@ if getent hosts host.docker.internal > /dev/null; then
 elif [ -S /var/run/usbmuxd ]; then
     echo "[boot] Socket usbmuxd partagé détecté dans /var/run/usbmuxd"
 else
-    echo "[boot] Linux standard. Démarrage usbmuxd local (verbose)..."
-    mkdir -p /var/run && rm -rf /var/run/usbmuxd
-    usbmuxd --user root --foreground --verbose &
+    echo "[boot] Analyse socket usbmuxd..."
+    if [ -S /var/run/usbmuxd ] || mountpoint -q /var/run/usbmuxd; then
+        echo "[boot] Socket usbmuxd partagé détecté. Utilisation du service hôte."
+    else
+        echo "[boot] Aucun service usbmuxd détecté. Démarrage local..."
+        mkdir -p /var/run
+        if ! mountpoint -q /var/run/usbmuxd; then
+            rm -rf /var/run/usbmuxd
+        fi
+        usbmuxd --user root --foreground &
+    fi
 fi
 
 sleep 2
 
 echo "[boot] Lancement Node.js..."
-cd /app && exec node server/src/main/index-headless.js
+cd /app
+exec node server/src/main/index-headless.js
