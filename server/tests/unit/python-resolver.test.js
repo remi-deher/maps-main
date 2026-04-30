@@ -51,12 +51,13 @@ describe('PythonResolver', () => {
     expect(result).not.toContain('mock')
   })
 
-  test('should fallback to python3 if no bundled exe is found', () => {
+  test('should fallback to correct command if no bundled exe is found', () => {
     app.isPackaged = false
     fs.existsSync.mockReturnValue(false)
     
     const result = resolvePython()
+    const expectedFallback = process.platform === 'win32' ? 'python' : 'python3'
     
-    expect(result).toBe('python3')
+    expect(result).toBe(expectedFallback)
   })
 })

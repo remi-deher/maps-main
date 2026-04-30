@@ -10,6 +10,7 @@ services:
       - NET_ADMIN
     devices:
       - /dev/net/tun:/dev/net/tun
+      - /dev/bus/usb:/dev/bus/usb
     extra_hosts:
       - "host.docker.internal:host-gateway"
     # ATTENTION: Sur Windows Docker Desktop, network_mode: host ne mappe pas les ports vers localhost.

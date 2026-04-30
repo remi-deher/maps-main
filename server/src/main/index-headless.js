@@ -44,6 +44,7 @@ const { dbg } = require('./logger');
 const CompanionServer = require('./services/companion-server');
 const tunnelManager = require('./tunneld-manager');
 const GpsSimulator = require('./services/gps/gps-simulator');
+const clusterManager = require('./services/cluster-manager');
 const { registerIpcHandlers } = require('./ipc/registry');
 
 dbg('-------------------------------------------');
@@ -54,15 +55,9 @@ async function startServer() {
   try {
     dbg('[server] Initialisation des services...');
     
-    // usbmuxd est maintenant géré par l'entrypoint.sh au niveau système
-
-
-    // Initialisation comme dans window.js
     const companion = new CompanionServer(tunnelManager);
     const gps = new GpsSimulator(tunnelManager, companion);
 
-    dbg('[server] Démarrage du companion-server...');
-    
     // Enregistrement des handlers IPC (vers notre mock)
     registerIpcHandlers(tunnelManager, gps, companion);
 
@@ -133,7 +128,7 @@ async function startServer() {
       })
     });
 
-    // On expose également le dashboard statique (React/Vite)
+    // Dashboard statique
     const fs = require('fs');
     let webDistRoot = path.join(__dirname, '..', '..', 'dist-web');
     if (!fs.existsSync(webDistRoot)) {
@@ -143,17 +138,12 @@ async function startServer() {
     dbg(`[server] Dashboard servi depuis : ${webDistRoot}`);
     companion.app.use(express.static(webDistRoot));
     
-    // Route de secours pour le SPA (Single Page Application)
     companion.app.use((req, res, next) => {
       if (req.path.startsWith('/api')) return next();
       res.sendFile(path.join(webDistRoot, 'renderer-v2', 'index.html'));
     });
 
-    // 2. Initialiser le simulateur GPS
-    dbg('[server] Initialisation du simulateur GPS...');
-    // gps n'a pas de méthode init() - il s'initialise dans le constructeur
-
-    // Liaison Tunnel -> Companion (comme dans window.js)
+    // Liaison Tunnel -> Companion
     tunnelManager.on('ready', () => companion.updateTunnelStatus(true));
     tunnelManager.on('lost', () => companion.updateTunnelStatus(false));
 
@@ -166,31 +156,57 @@ async function startServer() {
       gps.setLocation(lat, lon, name || "Position iPhone")
     })
 
-    // 3. Gérer la logique de reconnexion automatique
     companion.on('iphone-ip-detected', (ip) => {
       const current = require('./services/settings-manager').get();
-      if (current.wifiIp === ip) return; // Évite la boucle infinie
+      if (current.wifiIp === ip) return;
 
       dbg(`[server] 📱 iPhone détecté à l'IP : ${ip}. Mise à jour de l'IP WiFi...`);
       require('./services/settings-manager').save({ ...current, wifiIp: ip });
       
-      // On ne rafraîchit que si on n'est pas déjà prêt
       if (!tunnelManager.getRsdAddress()) {
         tunnelManager.applySettings();
       }
     });
 
-    // Lancement du companion server si pas en autonome
+    // --- LOGIQUE CLUSTER (HEADLESS) ---
+    clusterManager.on('role-changed', (role) => {
+      dbg(`[server] 🎭 Changement de rôle Cluster : ${role.toUpperCase()}`);
+      if (role === 'master') {
+        const currentSettings = require('./services/settings-manager').get();
+        if (currentSettings.operationMode !== 'autonomous') {
+          companion.start(currentSettings.companionPort || 8080);
+        }
+        tunnelManager.start();
+      } else {
+        tunnelManager.stopTunneld();
+        companion.stop();
+      }
+    });
+
+    // Synchro Slave
+    companion.on('cluster-sync', ({ lat, lon, name }) => {
+      if (clusterManager.role === 'slave') {
+        gps.lastCoords = { lat, lon, name };
+      }
+    });
+
+    // --- DÉMARRAGE DES SERVICES ---
     const initialSettings = require('./services/settings-manager').get();
-    if (initialSettings.operationMode !== 'autonomous') {
-      companion.start(initialSettings.companionPort || 8080);
+    
+    // Initialisation forcée du rôle master si cluster désactivé (centralisé dans ClusterManager)
+    await clusterManager.init();
+
+    if (clusterManager.role === 'master') {
+      dbg('[server] Rôle MAÎTRE détecté. Lancement des services...');
+      if (initialSettings.operationMode !== 'autonomous') {
+        companion.start(initialSettings.companionPort || 8080);
+      }
+      tunnelManager.start();
+    } else {
+      dbg('[server] Rôle ESCLAVE détecté. En attente du Maître...');
     }
 
-    // 4. Lancer les drivers de tunnel
-    dbg('[server] Lancement des services tunneld...');
-    tunnelManager.start();
-
-    dbg('[server] ✅ Serveur prêt et accessible sur le port 8080');
+    dbg('[server] ✅ Serveur initialisé');
     
   } catch (err) {
     console.error('[CRITICAL ERROR] Échec du démarrage du serveur :', err);
@@ -198,7 +214,6 @@ async function startServer() {
   }
 }
 
-// Gestion propre de l'arrêt
 process.on('SIGINT', async () => {
   dbg('[server] Arrêt du serveur...');
   await tunnelManager.stopTunneld();

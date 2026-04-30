@@ -161,11 +161,6 @@ app.whenReady().then(() => {
       }
     })
 
-    ipcMain.handle('takeover-cluster', async () => {
-      await clusterManager.takeover()
-      return { success: true }
-    })
-
     clusterManager.on('status-updated', (status) => {
       if (mainWindow) mainWindow.webContents.send('status-update', { service: 'cluster-dashboard', state: 'sync', data: status })
     })
@@ -260,10 +255,8 @@ app.whenReady().then(() => {
   })
 
   // --- DÉMARRAGE DES SERVICES ---
-  // Si le cluster est désactivé, on démarre normalement.
-  // Sinon, c'est l'élection (via ClusterManager) qui déclenchera le démarrage.
-  if (initialSettings.clusterMode === 'off' || !initialSettings.clusterMode) {
-    if (clusterManager) clusterManager.role = 'master'
+  // Si le rôle est déjà Master (cas standalone/off), on démarre les services.
+  if (clusterManager && clusterManager.role === 'master') {
     if (initialSettings.operationMode !== 'autonomous') {
         companion.start(initialSettings.companionPort)
     }
