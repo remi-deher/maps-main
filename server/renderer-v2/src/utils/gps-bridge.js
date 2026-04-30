@@ -28,20 +28,19 @@ if (!isElectron) {
     getCompanionQr: () => axios.get('/api/diagnostic/qr').then(r => r.data),
     listPlists: () => axios.get('/api/diagnostic/plists').then(r => r.data).catch(() => ({ plists: [] })),
     
-    // Listeners
-    onStatus: (cb) => {
-      return () => {}; 
-    },
-    onSettingsUpdated: (cb) => {
-      return () => {};
-    },
-    onEvent: (name, cb) => {
-      return () => {};
-    },
+    // Listeners (Nop en mode Web pur, à moins d'utiliser du polling ou WS)
+    onStatus: (cb) => { return () => {} },
+    onSettingsUpdated: (cb) => { return () => {} },
+    onEvent: (name, cb) => { return () => {} },
     
     openGpxDialog: () => Promise.resolve({ success: false, error: 'Non supporté en mode Web' }),
     playCustomGpx: () => Promise.resolve({ success: false })
   };
+  window.gps = gps;
+}
+
+if (!gps) {
+    gps = { isElectron: false, getStatus: () => Promise.resolve({}), onStatus: () => () => {} };
 }
 
 export default gps;

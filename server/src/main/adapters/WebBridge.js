@@ -165,6 +165,12 @@ class WebBridge {
     this.app.use(express.static(distPath))
     this.app.use('/renderer-v2', express.static(path.join(distPath, 'renderer-v2')))
     
+    // Polyfill web-api.js pour éviter le 404 dans index.html
+    this.app.get('/web-api.js', (req, res) => {
+      res.setHeader('Content-Type', 'application/javascript')
+      res.send('// Web API Polyfill active')
+    })
+    
     // Fallback pour le routage React (doit être la DERNIÈRE route)
     this.app.use((req, res) => {
       res.sendFile(path.join(distPath, 'renderer-v2', 'index.html'))
