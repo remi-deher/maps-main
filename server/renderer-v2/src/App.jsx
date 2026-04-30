@@ -7,6 +7,7 @@ import QrModal from './components/QrModal';
 import LogsModal from './components/LogsModal';
 import { useStorage } from './hooks/useStorage';
 import { useSearch } from './hooks/useSearch';
+import gps from './utils/gps-bridge';
 
 function App() {
   const [status, setStatus] = useState({ state: 'starting', message: 'Initialisation...', type: null, device: null });
@@ -26,28 +27,28 @@ function App() {
   const { history, favorites, addToHistory, addFavorite, removeFavorite } = useStorage();
 
   const fetchDevices = () => {
-    window.gps.listPmd3Devices().then(setDeviceList);
+    gps.listPmd3Devices().then(setDeviceList);
   };
 
   const isFavorite = (lat, lon) => favorites.some(f => Math.abs(f.lat - lat) < 0.0001 && Math.abs(f.lon - lon) < 0.0001);
   const toggleFavorite = async (pos) => {
     if (isFavorite(pos.lat, pos.lon)) {
-      await window.gps.removeFavorite(pos.lat, pos.lon);
+      await gps.removeFavorite(pos.lat, pos.lon);
     } else {
-      await window.gps.addFavorite({ name: pos.name || "Lieu favori", lat: pos.lat, lon: pos.lon });
+      await gps.addFavorite({ name: pos.name || "Lieu favori", lat: pos.lat, lon: pos.lon });
     }
   };
 
   const renameFavorite = async (fav) => {
     const newName = prompt("Nouveau nom pour ce lieu :", fav.name);
     if (newName && newName.trim()) {
-      await window.gps.renameFavorite(fav.lat, fav.lon, newName.trim());
+      await gps.renameFavorite(fav.lat, fav.lon, newName.trim());
     }
   };
 
   const handleDeleteFavorite = async (fav) => {
     if (confirm(`Supprimer "${fav.name}" des favoris ?`)) {
-      await window.gps.removeFavorite(fav.lat, fav.lon);
+      await gps.removeFavorite(fav.lat, fav.lon);
     }
   };
 
@@ -55,7 +56,7 @@ function App() {
 
   useEffect(() => {
     const refreshStatus = () => {
-      window.gps.getStatus().then(data => {
+      gps.getStatus().then(data => {
         setStatus(prev => ({ 
           ...prev,
           operationMode: data.operationMode,
@@ -70,7 +71,7 @@ function App() {
 
     refreshStatus();
 
-    const removeStatusListener = window.gps.onStatus((data) => {
+    const removeStatusListener = gps.onStatus((data) => {
       const timestamp = new Date().toLocaleTimeString();
 
       if (data.service === 'tunneld') {
@@ -96,7 +97,7 @@ function App() {
       }
     });
 
-    const removeSettingsListener = window.gps.onSettingsUpdated(() => {
+    const removeSettingsListener = gps.onSettingsUpdated(() => {
       refreshStatus();
     });
 
@@ -125,7 +126,7 @@ function App() {
 
   const teleport = async () => {
     if (!selectedPos) return;
-    const res = await window.gps.setLocation(selectedPos.lat, selectedPos.lon, selectedPos.name);
+    const res = await gps.setLocation(selectedPos.lat, selectedPos.lon, selectedPos.name);
     if (res.success) {
       setActiveSim(selectedPos);
       addToHistory(selectedPos);
@@ -139,7 +140,7 @@ function App() {
     if (!endLat || !endLon) return;
     
     const speed = parseFloat(prompt("Vitesse (km/h) :", "5")) || 5;
-    const res = await window.gps.playRoute({ endLat, endLon, speed });
+    const res = await gps.playRoute({ endLat, endLon, speed });
     if (res.success) {
       setActiveSim({ lat: endLat, lon: endLon, name: "Navigation..." });
       setSelectedPos(null);
@@ -154,7 +155,7 @@ function App() {
     const speedStr = profile === 'driving' ? "" : (profile === 'walking' ? "5" : "20");
     const speed = parseFloat(prompt(`Vitesse (km/h) [Profil: ${profile}] :`, speedStr)) || null;
     
-    const res = await window.gps.playOsrmRoute({ endLat, endLon, profile, speed });
+    const res = await gps.playOsrmRoute({ endLat, endLon, profile, speed });
     if (res.success) {
       setActiveSim({ lat: endLat, lon: endLon, name: `Navigation (${profile})...` });
       setSelectedPos(null);
@@ -162,7 +163,7 @@ function App() {
   };
 
   const resetLocation = async () => {
-    await window.gps.clearLocation();
+    await gps.clearLocation();
     setSelectedPos(null);
     setActiveSim(null);
   };
@@ -305,10 +306,10 @@ function App() {
               </div>
               <button 
                 onClick={async () => {
-                  const res = await window.gps.openGpxDialog();
+                  const res = await gps.openGpxDialog();
                   if (res.success) {
                     const speed = parseFloat(prompt("Vitesse (km/h) - Laissez vide pour vitesse réelle :", ""));
-                    await window.gps.playCustomGpx({ gpxContent: res.content, speed: isNaN(speed) ? null : speed });
+                    await gps.playCustomGpx({ gpxContent: res.content, speed: isNaN(speed) ? null : speed });
                     setSidebarOpen(false);
                   }
                 }} 

@@ -51,5 +51,6 @@ contextBridge.exposeInMainWorld('gps', {
     const listener = (_e, data) => cb(data);
     ipcRenderer.on(event, listener);
     return () => ipcRenderer.removeListener(event, listener);
-  }
+  },
+  isElectron: true
 })
