@@ -2,7 +2,7 @@
 
 const os = require('os')
 const { spawn } = require('child_process')
-const { dbg } = require('../logger')
+const { dbg } = require('../../logger')
 
 /**
  * MdnsManager - Envoie des requêtes "Browse" mDNS pour réveiller les iPhones.
