@@ -6,6 +6,7 @@ const gpsBridge = require('./gps/gps-bridge')
 const settings = require('./settings-manager')
 const Pmd3Driver = require('../drivers/Pmd3Driver')
 const GoIosDriver = require('../drivers/GoIosDriver')
+const mdns = require('./MdnsManager')
 
 /**
  * TunnelManager (V2) - Orchestrateur de connexion unifié.
@@ -17,6 +18,8 @@ class TunnelManager extends EventEmitter {
       'pymobiledevice': new Pmd3Driver(),
       'go-ios': new GoIosDriver()
     }
+    
+    mdns.start()
     
     this.activeConnection = null
     this.activeDriverId = null
@@ -62,6 +65,7 @@ class TunnelManager extends EventEmitter {
       if (this._isQuitting || s.manualTunnelMode) return
 
       if (!this.activeDriverId && !this.isStarting()) {
+        mdns.start()
         this.start().catch(e => dbg(`[orchestrator] ⚠️ Autostart fail: ${e.message}`))
       }
     }
@@ -98,6 +102,7 @@ class TunnelManager extends EventEmitter {
   }
 
   _handleNewConnection(conn) {
+    mdns.stop()
     const typeLabel = conn.type || 'USB'
     sendStatus('tunneld', 'ready', `Connecté via ${typeLabel} (${conn.driver})`, {
       type: typeLabel,
@@ -112,6 +117,7 @@ class TunnelManager extends EventEmitter {
     this.activeDriverId = null
     gpsBridge.setActiveDriver(null)
     this._stopAllHeartbeats()
+    mdns.start()
     sendStatus('tunneld', 'scanning', 'Recherche iPhone...')
     this.emit('lost')
   }
@@ -210,6 +216,7 @@ class TunnelManager extends EventEmitter {
 
   setQuitting() { 
     this._isQuitting = true
+    mdns.stop()
     this.stopTunneld()
   }
 }
