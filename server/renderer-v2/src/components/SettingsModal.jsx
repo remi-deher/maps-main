@@ -18,7 +18,8 @@ function SettingsModal({ isOpen, onClose }) {
     clusterNodes: [],
     serverName: '',
     networkOnlyMode: false,
-    manualTunnelAddress: ''
+    manualTunnelAddress: '',
+    logLevel: 'info'
   });
   const [activeTab, setActiveTab] = useState('general');
   const [diagLogs, setDiagLogs] = useState('');
@@ -410,6 +411,26 @@ function SettingsModal({ isOpen, onClose }) {
                   <p className="text-[10px] text-slate-500">Tente l'autre driver si le préféré ne trouve rien après 30s.</p>
                 </div>
               </div>
+            </div>
+          </section>
+
+          {/* Verbosity Level */}
+          <section className="space-y-4">
+            <label className="text-sm font-bold text-slate-400 uppercase tracking-wider flex items-center gap-2">
+              <Terminal className="w-4 h-4 text-blue-400" />
+              Verbocité des Logs
+            </label>
+            <div className="space-y-2">
+              <p className="text-xs text-slate-500 px-1">Définissez le niveau de détails affichés dans les logs.</p>
+              <select 
+                value={settings.logLevel}
+                onChange={(e) => setSettings({...settings, logLevel: e.target.value})}
+                className="w-full bg-white/5 border border-white/10 rounded-xl p-3 outline-none focus:border-blue-500 transition-colors text-white appearance-none cursor-pointer"
+              >
+                <option value="info" className="bg-slate-900">PROD (Messages importants uniquement)</option>
+                <option value="debug" className="bg-slate-900">DEV (Détails des injections & tunnel)</option>
+                <option value="silly" className="bg-slate-900">TRACE (Flux complet - Très verbeux)</option>
+              </select>
             </div>
           </section>
 

@@ -8,7 +8,11 @@
 const companionServer = require('./src/main/core/services/companion-server')
 const HeadlessTarget = require('./src/main/targets/HeadlessTarget')
 const orchestrator = require('./src/main/core/services/TunnelManager')
-const { dbg } = require('./src/main/logger')
+const { dbg, setLogLevel } = require('./src/main/logger')
+const settings = require('./src/main/core/services/settings-manager')
+
+// Initialisation de la verbosité
+setLogLevel(settings.get('logLevel') || 'info')
 
 dbg('--- GPS MOCK HEADLESS MODE ---')
 

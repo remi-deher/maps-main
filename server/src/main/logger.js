@@ -101,8 +101,22 @@ function sendStatus(service, state, message, data = {}) {
   }
 }
 
+/**
+ * Met à jour le niveau de verbosité de Winston
+ * @param {string} newLevel 'info' (PROD), 'debug' (DEV), 'silly' (TRACE)
+ */
+function setLogLevel(newLevel) {
+  const levels = ['error', 'warn', 'info', 'http', 'verbose', 'debug', 'silly']
+  if (levels.includes(newLevel)) {
+    logger.level = newLevel
+    logger.transports.forEach(t => t.level = newLevel)
+    logger.info(`[logger] Niveau de verbosité réglé sur : ${newLevel.toUpperCase()}`)
+  }
+}
+
 module.exports = { 
   setWindow, 
+  setLogLevel,
   dbg, 
   sendStatus, 
   logger, // Accès direct au logger winston si besoin

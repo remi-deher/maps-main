@@ -411,6 +411,10 @@ class CompanionServer extends EventEmitter {
 
       case 'SAVE_SETTINGS': {
         settings.save(payload.data)
+        if (payload.data.logLevel) {
+          const { setLogLevel } = require('../../logger')
+          setLogLevel(payload.data.logLevel)
+        }
         this._refreshStatus()
         this._broadcast('STATUS', this.status)
         break

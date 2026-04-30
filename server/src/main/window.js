@@ -6,9 +6,13 @@ process.on('unhandledRejection', (reason, promise) => {
 
 const { app, BrowserWindow, Tray, Menu, nativeImage, ipcMain } = require('electron')
 const path = require('path')
-const { setWindow, dbg } = require('./logger')
+const { setWindow, dbg, setLogLevel } = require('./logger')
+const settings = require('./core/services/settings-manager')
 const companionServer = require('./core/services/companion-server')
 const ElectronTarget = require('./targets/ElectronTarget')
+
+// Initialisation de la verbosité
+setLogLevel(settings.get('logLevel') || 'info')
 
 let mainWindow
 let target
