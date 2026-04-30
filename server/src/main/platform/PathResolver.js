@@ -8,13 +8,8 @@ const os = require('os')
  */
 
 // Détection du mode (Electron vs Headless)
-let isElectron = false
-try {
-  require('electron')
-  isElectron = true
-} catch (e) {
-  isElectron = false
-}
+// On vérifie process.versions.electron car require('electron') peut réussir dans un environnement Node standard si le package est présent
+const isElectron = !!(process.versions && process.versions.electron)
 
 /**
  * Retourne le chemin racine de l'application
@@ -22,7 +17,9 @@ try {
 function getAppRoot() {
   if (isElectron) {
     const { app } = require('electron')
-    return app.getAppPath()
+    if (app && typeof app.getAppPath === 'function') {
+      return app.getAppPath()
+    }
   }
   // En mode headless, on suppose que __dirname est dans src/main/platform
   return path.join(__dirname, '../../..')
@@ -34,12 +31,14 @@ function getAppRoot() {
 function getResourcePath(fileName = '') {
   if (isElectron) {
     const { app } = require('electron')
-    // En Electron packagé, les ressources sont dans process.resourcesPath
+    if (app) {
+      // En Electron packagé, les ressources sont dans process.resourcesPath
     if (app.isPackaged) {
       return path.join(process.resourcesPath, fileName)
     }
     // En dev Electron, elles sont dans le dossier resources/
     return path.join(getAppRoot(), 'resources', fileName)
+    }
   }
 
   // En mode Headless, on cherche dans le dossier resources/ à la racine du projet
@@ -52,8 +51,10 @@ function getResourcePath(fileName = '') {
 function getStoragePath(fileName = '') {
   if (isElectron) {
     const { app } = require('electron')
-    const userData = app.getPath('userData')
-    return path.join(userData, fileName)
+    if (app && typeof app.getPath === 'function') {
+      const userData = app.getPath('userData')
+      return path.join(userData, fileName)
+    }
   }
 
   // En mode Headless, on utilise un dossier 'storage' à la racine

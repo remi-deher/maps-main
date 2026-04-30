@@ -9,8 +9,7 @@ const { dbg } = require('../logger')
  */
 class BinaryManager {
   constructor() {
-    this.platform = os.platform() // 'win32', 'linux', etc.
-    this.isWin = this.platform === 'win32'
+    this.isWin = process.platform === 'win32'
   }
 
   /**
@@ -55,7 +54,7 @@ class BinaryManager {
 
     switch (alias) {
       case 'pmd3':
-        return { exe: python, args: ['-m', 'pymobiledevice3'] }
+        return { exe: python, args: ['-u', '-m', 'pymobiledevice3'] }
       
       case 'go-ios':
         // Le chemin vers go-ios dépend si on est en Electron (resources) ou en Headless
