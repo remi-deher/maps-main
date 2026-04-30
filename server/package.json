@@ -5,6 +5,7 @@
   "main": "main.js",
   "scripts": {
     "start": "npm run vite:build && electron .",
+    "start:headless": "node headless-entry.js",
     "dev": "vite",
     "build": "electron-builder --win --x64",
     "vite:build": "vite build",

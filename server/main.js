@@ -1,5 +1,9 @@
 'use strict'
 
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('⚠️ UNHANDLED REJECTION:', reason);
+});
+
 /**
  * main.js — Point d'entrée Electron
  *
