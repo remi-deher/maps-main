@@ -46,7 +46,8 @@ class SettingsManager {
       serverName: '',      
       manualTunnelMode: false, 
       networkOnlyMode: false,  
-      manualTunnelAddress: ''  
+      manualTunnelAddress: '',
+      logLevel: 'info'
     }
 
     try {

@@ -111,6 +111,10 @@ class WebBridge {
     this.app.get('/api/settings', (req, res) => res.json(settings.get()))
     this.app.post('/api/settings', (req, res) => {
       settings.save(req.body)
+      if (req.body.logLevel) {
+        const { setLogLevel } = require('../logger')
+        setLogLevel(req.body.logLevel)
+      }
       this.orchestrator.applySettings()
       res.json({ success: true })
     })
