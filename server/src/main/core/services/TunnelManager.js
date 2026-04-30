@@ -57,26 +57,19 @@ class TunnelManager extends EventEmitter {
   }
 
   _setupAutoReconnect() {
-    this.on('lost', () => {
+    const checkAndStart = () => {
       const s = settings.get()
-      if (this._reconnectTimer || this._isQuitting || s.manualTunnelMode) return
-      
-      this._reconnectTimer = setInterval(() => {
-        if (!this.activeDriverId && !this.isStarting() && !this._isQuitting) {
-          this.start()
-        } else if (this.activeDriverId) {
-          clearInterval(this._reconnectTimer)
-          this._reconnectTimer = null
-        }
-      }, 3000)
-    })
+      if (this._isQuitting || s.manualTunnelMode) return
 
-    this.on('ready', () => {
-      if (this._reconnectTimer) {
-        clearInterval(this._reconnectTimer)
-        this._reconnectTimer = null
+      if (!this.activeDriverId && !this.isStarting()) {
+        this.start().catch(e => dbg(`[orchestrator] ⚠️ Autostart fail: ${e.message}`))
       }
-    })
+    }
+
+    this._reconnectTimer = setInterval(checkAndStart, 10000)
+    
+    // Premier lancement immédiat
+    setTimeout(checkAndStart, 1000)
   }
 
   _initListeners() {

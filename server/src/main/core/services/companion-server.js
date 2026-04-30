@@ -7,6 +7,7 @@ const fs = require('fs')
 const path = require('path')
 const express = require('express')
 const bodyParser = require('body-parser')
+const QRCode = require('qrcode')
 const { EventEmitter } = require('events')
 const { dbg, sendStatus } = require('../../logger')
 const favoritesManager = require('./favorites-manager')
@@ -226,6 +227,22 @@ class CompanionServer extends EventEmitter {
     })
   }
 
+  async getCompanionQr() {
+    try {
+      const ip = this.getLocalIp()
+      const port = this.port || 8080
+      const url = `ws://${ip}:${port}`
+      const dataUrl = await QRCode.toDataURL(url, {
+        margin: 2,
+        scale: 8,
+        color: { dark: '#2d3748', light: '#ffffff' }
+      })
+      return { success: true, dataUrl, ip, port, url }
+    } catch (e) {
+      return { success: false, error: e.message }
+    }
+  }
+
   start(port = 8080) {
     if (this.httpServer) this.stop()
 
@@ -236,7 +253,7 @@ class CompanionServer extends EventEmitter {
         cors: { origin: "*" }
       })
       
-      const ip = this._getLocalIp()
+      const ip = this.getLocalIp()
       
       this.httpServer.listen(port, () => {
         dbg(`[companion-server] Serveur (Socket.io) demarre sur ${ip}:${port}`)
@@ -553,7 +570,7 @@ class CompanionServer extends EventEmitter {
   }
 
   getConnectionInfo() {
-    const ip = this._getLocalIp()
+    const ip = this.getLocalIp()
     return {
       ip,
       port: this.port || settings.get('companionPort') || 8080,
@@ -561,7 +578,7 @@ class CompanionServer extends EventEmitter {
     }
   }
 
-  _getLocalIp() {
+  getLocalIp() {
     const interfaces = os.networkInterfaces()
     const candidates = []
     

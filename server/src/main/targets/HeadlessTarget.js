@@ -24,9 +24,10 @@ class HeadlessTarget {
     await orchestrator.start()
     await cluster.init()
 
-    // 2. Initialisation du pont Web API
+    // 2. Initialisation du pont Web API & Compagnon (Partage du même port)
     const port = settings.get('companionPort') || 8080
-    this.bridge.init(port)
+    this.companion.start(port)
+    this.bridge.init(this.companion.app)
 
     // 3. Liaison Simulator -> Cluster
     this.simulator.on('location-changed', (data) => {

@@ -14,11 +14,35 @@ class BinaryManager {
   }
 
   /**
-   * Retourne l'exécutable Python correct (python vs python3)
+   * Retourne l'exécutable Python correct (python vs python3 vs embedded)
    */
   getPython() {
-    // Sur Windows, 'python' est l'alias standard. Sur Linux, on privilégie 'python3'.
-    return this.isWin ? 'python' : 'python3'
+    const fs = require('fs')
+    const { execSync } = require('child_process')
+    const { getResourcePath } = require('./PathResolver')
+    
+    const systemAlias = this.isWin ? 'python' : 'python3'
+    
+    // 1. Tester la version système (PATH)
+    try {
+      execSync(`${systemAlias} -m pymobiledevice3 --version`, { stdio: 'ignore' })
+      dbg(`[binary] 🐍 Utilisation de la version du système (${systemAlias})`)
+      return systemAlias
+    } catch (e) {
+      // 2. Fallback sur la version embarquée
+      const embeddedPath = this.isWin 
+        ? getResourcePath('python/python.exe')
+        : getResourcePath('python/bin/python3')
+
+      if (fs.existsSync(embeddedPath)) {
+        dbg(`[binary] 🐍 Utilisation de la version du projet (embarqué) : ${embeddedPath}`)
+        return embeddedPath
+      }
+    }
+
+    // 3. Ultime recours (peut-être que python est là mais sans le module, ou inversement)
+    dbg(`[binary] ⚠️ Aucune version de Python valide trouvée. Tentative avec l'alias par défaut.`)
+    return systemAlias
   }
 
   /**

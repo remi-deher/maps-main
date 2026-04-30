@@ -24,6 +24,11 @@ class Pmd3Driver extends BaseDriver {
 
     this.runner.on('stdout', (msg) => this._handleOutput(msg))
     this.runner.on('stderr', (msg) => this._handleOutput(msg))
+    this.runner.on('exit', () => {
+      this.isStarting = false
+      this.isActive = false
+      this.tunnelInfo = null
+    })
   }
 
   async startTunnel() {
@@ -45,6 +50,14 @@ class Pmd3Driver extends BaseDriver {
     dbg(`[${this.id}] Lancement du tunnel RSD (Mode Unifié)...`)
     const { exe, fullArgs } = bin.getSpawnArgs('pmd3', ['lockdown', 'start-tunnel'])
     this.runner.spawn(exe, fullArgs)
+    
+    // Sécurité : si après 15s on n'a rien, on débloque le flag isStarting
+    setTimeout(() => {
+      if (this.isStarting) {
+        dbg(`[${this.id}] ⚠️ Timeout initialisation tunnel, réinitialisation...`)
+        this.isStarting = false
+      }
+    }, 15000)
     
     return true
   }

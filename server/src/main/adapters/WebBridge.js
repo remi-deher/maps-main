@@ -16,8 +16,24 @@ class WebBridge {
     this.app.use(express.json())
   }
 
-  init(port = 8080) {
-    dbg(`[bridge] 🌐 Initialisation du pont Web API sur le port ${port}`)
+  init(portOrApp = 8080) {
+    if (typeof portOrApp !== 'number' && portOrApp !== null) {
+      // On attache les routes à une app existante (ex: CompanionServer)
+      this.app = portOrApp
+      dbg(`[bridge] 🔗 Attachement des routes WebBridge à l'application existante`)
+      this._setupRoutes()
+    } else {
+      // On crée notre propre serveur
+      const port = portOrApp || 8080
+      dbg(`[bridge] 🌐 Initialisation du pont Web API sur le port ${port}`)
+      this._setupRoutes()
+      this.app.listen(port, () => {
+        dbg(`[web-bridge] 🚀 Dashboard accessible sur http://localhost:${port}`)
+      })
+    }
+  }
+
+  _setupRoutes() {
 
     // API de Statut (Polyfill pour window.gps.getStatus)
     this.app.get('/api/status', (req, res) => {
@@ -67,6 +83,40 @@ class WebBridge {
       res.json({ success: true })
     })
 
+    // Diagnostics
+    this.app.get('/api/diagnostic/pmd3-devices', async (req, res) => {
+      const driver = this.orchestrator.drivers['pymobiledevice']
+      res.json(driver ? await driver.listDevices() : [])
+    })
+
+    this.app.post('/api/diagnostic/restart-tunnel', async (req, res) => {
+      await this.orchestrator.forceRefresh()
+      res.json({ success: true })
+    })
+
+    this.app.get('/api/diagnostic/interfaces', (req, res) => {
+      const os = require('os')
+      const interfaces = os.networkInterfaces()
+      const results = []
+      for (const name of Object.keys(interfaces)) {
+        for (const iface of interfaces[name]) {
+          if (iface.family === 'IPv4' && !iface.internal) {
+            results.push({ name, address: iface.address })
+          }
+        }
+      }
+      res.json(results)
+    })
+
+    this.app.get('/api/diagnostic/qr', async (req, res) => {
+      res.json(await this.companion.getCompanionQr())
+    })
+
+    this.app.get('/api/diagnostic/plists', async (req, res) => {
+      // Pour l'instant on mocke ou on délègue si implémenté dans un service
+      res.json({ plists: [], hasSelfIdentity: false })
+    })
+
     // Serveur de fichiers statiques (Dashboard Web)
     const path = require('path')
     const { getAppRoot } = require('../platform/PathResolver')
@@ -78,10 +128,6 @@ class WebBridge {
     // Fallback pour le routage React
     this.app.get('*', (req, res) => {
       res.sendFile(path.join(distPath, 'renderer-v2', 'index.html'))
-    })
-
-    this.app.listen(port, () => {
-      dbg(`[web-bridge] 🚀 Dashboard accessible sur http://localhost:${port}`)
     })
   }
 }

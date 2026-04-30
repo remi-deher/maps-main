@@ -27,6 +27,14 @@ class GoIosDriver extends BaseDriver {
       this.isStarting = false
     })
 
+    // Sécurité : déblocage automatique si rien ne se passe
+    setTimeout(() => {
+      if (this.isStarting) {
+        dbg(`[${this.id}] ⚠️ Timeout initialisation tunnel, réinitialisation...`)
+        this.isStarting = false
+      }
+    }, 15000)
+
     this.process.stdout.on('data', (data) => {
       const text = data.toString()
       const match = text.match(/RSD address: ([\w:.%]+):(\d+)/)
@@ -44,6 +52,7 @@ class GoIosDriver extends BaseDriver {
 
     this.process.on('close', () => {
       this.process = null; this.isActive = false; this.tunnelInfo = null;
+      this.isStarting = false
       this.emit('disconnection')
     })
 

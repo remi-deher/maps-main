@@ -5,7 +5,7 @@
 
 import axios from 'axios';
 
-const isElectron = !!(window && window.process && window.process.type) || !!(window.gps && window.gps.isElectron);
+const isElectron = !!(window.gps && window.gps.isElectron);
 
 let gps = window.gps;
 
@@ -24,18 +24,21 @@ if (!isElectron) {
     
     listPmd3Devices: () => axios.get('/api/diagnostic/pmd3-devices').then(r => r.data).catch(() => []),
     restartTunnel: () => axios.post('/api/diagnostic/restart-tunnel').then(r => r.data),
+    getNetworkInterfaces: () => axios.get('/api/diagnostic/interfaces').then(r => r.data).catch(() => []),
+    getCompanionQr: () => axios.get('/api/diagnostic/qr').then(r => r.data),
+    listPlists: () => axios.get('/api/diagnostic/plists').then(r => r.data).catch(() => ({ plists: [] })),
     
-    // Listeners (Simulés via polling ou SSE si besoin)
+    // Listeners
     onStatus: (cb) => {
-      // Pour le mode web, on pourrait utiliser des WebSockets ou SSE
-      // Ici on simule un abonnement vide pour éviter les crashs
       return () => {}; 
     },
     onSettingsUpdated: (cb) => {
       return () => {};
     },
+    onEvent: (name, cb) => {
+      return () => {};
+    },
     
-    // GPX (Plus complexe en Web, nécessite une gestion de fichiers via input HTML)
     openGpxDialog: () => Promise.resolve({ success: false, error: 'Non supporté en mode Web' }),
     playCustomGpx: () => Promise.resolve({ success: false })
   };
