@@ -20,6 +20,18 @@ class GpsSimulator extends EventEmitter {
     this._eveilInterval = null
 
     this._startEveilCycle()
+
+    if (this.companion) {
+      this.companion.on('request-location', (data) => {
+        dbg(`[gps-simulator] 📲 Commande iPhone reçue : ${data.lat}, ${data.lon}`)
+        this.setLocation(data.lat, data.lon, data.name)
+      })
+      
+      this.companion.on('request-clear', () => {
+        dbg(`[gps-simulator] 📲 Commande iPhone reçue : Clear`)
+        this.clearLocation()
+      })
+    }
   }
 
   _startEveilCycle() {

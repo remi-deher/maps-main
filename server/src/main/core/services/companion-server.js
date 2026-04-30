@@ -362,7 +362,12 @@ class CompanionServer extends EventEmitter {
         break
       }
 
-      case 'PLAY_ROUTE':
+      case 'CLEAR_LOCATION': {
+        dbg(`[CMD] iPhone demande suppression position`)
+        this.emit('request-clear')
+        socket.emit('ACK', { timestamp: Date.now() })
+        break
+      }
       case 'PLAY_SEQUENCE':
       case 'PLAY_OSRM_ROUTE':
       case 'PLAY_CUSTOM_GPX': {
