@@ -160,7 +160,7 @@ class WebBridge {
     // Serveur de fichiers statiques (Dashboard Web)
     const path = require('path')
     const { getAppRoot } = require('../platform/PathResolver')
-    const distPath = path.join(getAppRoot(), 'server', 'dist-web')
+    const distPath = path.join(getAppRoot(), 'dist-web')
     
     this.app.use(express.static(distPath))
     this.app.use('/renderer-v2', express.static(path.join(distPath, 'renderer-v2')))
