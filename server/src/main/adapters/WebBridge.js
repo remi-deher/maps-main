@@ -166,7 +166,7 @@ class WebBridge {
     this.app.use('/renderer-v2', express.static(path.join(distPath, 'renderer-v2')))
     
     // Fallback pour le routage React
-    this.app.get('*', (req, res) => {
+    this.app.get('(.*)', (req, res) => {
       res.sendFile(path.join(distPath, 'renderer-v2', 'index.html'))
     })
   }
