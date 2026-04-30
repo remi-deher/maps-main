@@ -46,17 +46,14 @@ class Pmd3Driver extends BaseDriver {
       dbg(`[${this.id}] ⚠️ Erreur lors du montage DDI (peut-être déjà monté)`)
     }
 
-    // 2. Lancement du tunnel RSD
-    dbg(`[${this.id}] Lancement du tunnel RSD (Mode Unifié)...`)
-    const { exe, fullArgs } = bin.getSpawnArgs('pmd3', ['lockdown', 'start-tunnel'])
+    // 2. Lancement du tunnel RSD (Mode Daemon/Tunneld)
+    dbg(`[${this.id}] Lancement du daemon tunneld (Mode Reconnect)...`)
+    const { exe, fullArgs } = bin.getSpawnArgs('pmd3', ['remote', 'tunneld'])
     this.runner.spawn(exe, fullArgs)
     
-    // Sécurité : si après 15s on n'a rien, on débloque le flag isStarting
+    // Sécurité : déblocage si rien ne se passe
     setTimeout(() => {
-      if (this.isStarting) {
-        dbg(`[${this.id}] ⚠️ Timeout initialisation tunnel, réinitialisation...`)
-        this.isStarting = false
-      }
+      if (this.isStarting) this.isStarting = false
     }, 15000)
     
     return true
@@ -70,20 +67,7 @@ class Pmd3Driver extends BaseDriver {
 
     return new Promise((resolve) => {
       if (!this.runner.isRunning) return resolve(true)
-      this.runner.process.kill('SIGINT')
-      
-      const timer = setTimeout(() => {
-        if (this.runner.isRunning) this.runner.stop()
-        resolve(true)
-      }, 3000)
-
-      const check = setInterval(() => {
-        if (!this.runner.isRunning) {
-          clearInterval(check)
-          clearTimeout(timer)
-          resolve(true)
-        }
-      }, 200)
+      this.runner.stop().then(() => resolve(true))
     })
   }
 
@@ -93,6 +77,9 @@ class Pmd3Driver extends BaseDriver {
     return new Promise((resolve) => {
       const { address, port } = this.tunnelInfo
       dbg(`[${this.id}] Injection : ${lat}, ${lon} (RSD: [${address}]:${port})`)
+
+      // On utilise les crochets pour l'IPv6 si nécessaire
+      const rsdAddr = address.includes(':') ? `[${address}]` : address
 
       const { exe, fullArgs } = bin.getSpawnArgs('pmd3', [
         'developer', 'dvt', 'simulate-location', 'set',
@@ -141,25 +128,44 @@ class Pmd3Driver extends BaseDriver {
     if (!text) return
     const lines = text.split(/\r?\n/)
     lines.forEach(line => {
+      // Nouveau format : Created tunnel --rsd fd91:cdc1:ca4d::1 51139
+      const matchTunneld = line.match(/Created tunnel --rsd\s+([a-f0-9:]+)\s+(\d+)/i)
+      
+      // Ancien format (fallback)
       const matchAddr = line.match(/(?<=RSD Address: )([a-f0-9:]+)/i)
       const matchPort = line.match(/(?<=RSD Port: )(\d+)/i)
-      if (matchAddr) this._pendingAddr = matchAddr[1]
-      if (matchPort) this._pendingPort = matchPort[1]
 
-      if (this._pendingAddr && this._pendingPort) {
+      let addr = null, port = null
+
+      if (matchTunneld) {
+        addr = matchTunneld[1]
+        port = matchTunneld[2]
+      } else {
+        if (matchAddr) this._pendingAddr = matchAddr[1]
+        if (matchPort) this._pendingPort = matchPort[1]
+        if (this._pendingAddr && this._pendingPort) {
+          addr = this._pendingAddr
+          port = this._pendingPort
+          this._pendingAddr = null; this._pendingPort = null;
+        }
+      }
+
+      if (addr && port) {
+        dbg(`[pmd3] 🎯 Tunnel détecté : [${addr}]:${port}`)
         this.tunnelInfo = { 
-          address: this._pendingAddr, 
-          port: this._pendingPort, 
-          type: (this._pendingAddr === '::1' || this._pendingAddr === '127.0.0.1') ? 'USB' : 'WiFi',
+          address: addr, 
+          port: port, 
+          type: (addr === '::1' || addr === '127.0.0.1' || addr.startsWith('fe80')) ? 'USB' : 'WiFi',
           timestamp: new Date().toISOString()
         }
-        this._pendingAddr = null; this._pendingPort = null;
         try { fs.writeFileSync(this.statePath, JSON.stringify(this.tunnelInfo, null, 2)) } catch (e) {}
         this.isActive = true
         this.isStarting = false
         this.emit('connection', this.tunnelInfo)
       }
-      if (line.includes('Disconnected from tunnel') || line.includes('Tunnel task failed')) {
+
+      if (line.includes('Disconnected') || line.includes('Tunnel task failed') || line.includes('Stopping tunnel')) {
+        dbg(`[pmd3] 🔌 Déconnexion détectée`)
         this.isActive = false
         this.tunnelInfo = null
         this.emit('disconnection')
