@@ -2,6 +2,25 @@
 
 const path = require('path')
 const fs   = require('fs')
+const { execSync } = require('child_process')
+
+/**
+ * Vérifie si le service mDNS (Bonjour/Avahi) est actif.
+ */
+function checkServiceStatus() {
+  try {
+    if (process.platform === 'win32') {
+      const status = execSync('powershell -Command "Get-Service -Name \'Bonjour Service\' -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Status"', { encoding: 'utf8' }).trim()
+      return status === 'Running'
+    } else if (process.platform === 'linux') {
+      const status = execSync('systemctl is-active avahi-daemon', { encoding: 'utf8' }).trim()
+      return status === 'active'
+    }
+  } catch (e) {
+    return false
+  }
+  return false
+}
 
 /**
  * Résout le chemin vers python.exe à utiliser.
@@ -54,4 +73,4 @@ function resolveScript(scriptName) {
 
 const PYTHON = resolvePython()
 
-module.exports = { PYTHON, resolvePython, resolveScript }
+module.exports = { PYTHON, resolvePython, resolveScript, checkServiceStatus }
