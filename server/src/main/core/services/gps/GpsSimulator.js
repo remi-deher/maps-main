@@ -97,6 +97,10 @@ class GpsSimulator extends EventEmitter {
     return await this.commander.execute('clear', rsdAddress, rsdPort)
   }
 
+  isActive() {
+    return !!this.lastCoords
+  }
+
   stop() { this.commander.stop() }
   destroy() { this._isQuitting = true; this.stop(); this.lastCoords = null; }
 }

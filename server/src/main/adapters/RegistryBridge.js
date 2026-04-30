@@ -21,10 +21,43 @@ class RegistryBridge {
     // System
     ipcMain.handle('get-status', () => {
       try {
+        const mode = settings.get('operationMode') || 'hybrid'
+        const tunnelConnected = !!this.orchestrator.activeConnection
+        const companionConnected = this.companion.hasActiveClients()
+        const simulationActive = this.simulator.isActive()
+        
+        let tunnelLabel = tunnelConnected ? 'iPhone détecté' : 'iPhone non détecté (Recherche...)'
+        let tunnelStatus = this.orchestrator.isStarting() ? 'scanning' : 'idle'
+        
+        if (tunnelConnected) {
+          tunnelStatus = 'ready'
+          if (simulationActive) {
+            tunnelLabel += ' - Simulation en cours'
+          } else {
+            tunnelLabel += ' - Prêt à envoyer une localisation'
+          }
+        }
+
+        let companionLabel = companionConnected ? 'iPhone Connecté (App Mobile)' : 'Attente App Mobile...'
+        let companionStatus = companionConnected ? 'ready' : 'idle'
+
+        // Ajustement selon le mode
+        if (mode === 'client-server' && !companionConnected) {
+          tunnelLabel = 'Attente de l\'application mobile (Localisation bloquée)'
+          tunnelStatus = 'blocked'
+          companionLabel = '⚠️ Application mobile requise'
+          companionStatus = 'warning'
+        } else if (mode === 'autonomous') {
+          companionLabel = 'Mode Autonome (Désactivé)'
+          companionStatus = 'disabled'
+        } else if (mode === 'hybrid' && !companionConnected) {
+          companionLabel = 'Mode Hybride (App mobile optionnelle)'
+        }
+
         return {
           tunnel: {
-            status: this.orchestrator.activeConnection ? 'ready' : (this.orchestrator.isStarting() ? 'scanning' : 'idle'),
-            label: this.orchestrator.activeConnection ? `Connecté (${this.orchestrator.activeConnection.driver})` : 'Recherche...',
+            status: tunnelStatus,
+            label: tunnelLabel,
             type: this.orchestrator.activeConnection?.type,
             driver: this.orchestrator.activeDriverId,
             device: {
@@ -34,8 +67,8 @@ class RegistryBridge {
             }
           },
           companion: {
-            status: this.companion.hasActiveClients() ? 'ready' : 'idle',
-            label: this.companion.hasActiveClients() ? 'iPhone Connecté' : 'Attente App Mobile...',
+            status: companionStatus,
+            label: companionLabel,
             ip: this.companion.getLocalIp()
           }
         }
@@ -104,6 +137,65 @@ class RegistryBridge {
       } catch (e) {
         dbg(`[bridge] ❌ Error in save-settings: ${e.message}`)
         return false
+      }
+    })
+
+    // Diagnostics & Network
+    ipcMain.handle('get-network-interfaces', () => {
+      try {
+        const os = require('os')
+        const interfaces = os.networkInterfaces()
+        const results = []
+        for (const name of Object.keys(interfaces)) {
+          for (const iface of interfaces[name]) {
+            if (iface.family === 'IPv4' && !iface.internal) {
+              results.push({ name, address: iface.address })
+            }
+          }
+        }
+        return results
+      } catch (e) {
+        dbg(`[bridge] ❌ Error in get-network-interfaces: ${e.message}`)
+        return []
+      }
+    })
+
+    ipcMain.handle('get-companion-qr', async () => {
+      try {
+        return await this.companion.getCompanionQr()
+      } catch (e) {
+        dbg(`[bridge] ❌ Error in get-companion-qr: ${e.message}`)
+        return { error: e.message }
+      }
+    })
+
+    ipcMain.handle('list-plists', async () => {
+      try {
+        const fs = require('fs')
+        const { getResourcePath } = require('../platform/PathResolver')
+        const resourcesDir = getResourcePath()
+        
+        const files = fs.readdirSync(resourcesDir)
+        const plists = files.filter(f => f.endsWith('.plist'))
+        const hasSelfIdentity = files.includes('selfIdentity.plist')
+        
+        return { plists, hasSelfIdentity }
+      } catch (e) {
+        dbg(`[bridge] ❌ Error in list-plists: ${e.message}`)
+        return { plists: [], hasSelfIdentity: false }
+      }
+    })
+
+    ipcMain.handle('run-diag', async (e, type) => {
+      try {
+        if (type === 'pmd3-devices') {
+          const driver = this.orchestrator.drivers['pymobiledevice']
+          const devices = driver ? await driver.listDevices() : []
+          return { output: JSON.stringify(devices, null, 2) }
+        }
+        return { output: `Scan ${type} non supporté en mode direct` }
+      } catch (e) {
+        return { output: `Erreur diag: ${e.message}` }
       }
     })
 

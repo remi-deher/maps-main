@@ -34,24 +34,65 @@ class WebBridge {
   }
 
   _setupRoutes() {
+    const settings = require('../core/services/settings-manager')
 
     // API de Statut (Polyfill pour window.gps.getStatus)
     this.app.get('/api/status', (req, res) => {
-      res.json({
-        tunnel: {
-          status: this.orchestrator.activeConnection ? 'ready' : (this.orchestrator.isStarting() ? 'scanning' : 'idle'),
-          label: this.orchestrator.activeConnection ? `Connecté (${this.orchestrator.activeConnection.driver})` : 'Recherche...',
-          type: this.orchestrator.activeConnection?.type,
-          driver: this.orchestrator.activeDriverId,
-          device: {
-            ip: this.orchestrator.activeConnection?.address
+      try {
+        const mode = settings.get('operationMode') || 'hybrid'
+        const tunnelConnected = !!this.orchestrator.activeConnection
+        const companionConnected = this.companion.hasActiveClients()
+        const simulationActive = this.simulator.isActive()
+        
+        let tunnelLabel = tunnelConnected ? 'iPhone détecté' : 'iPhone non détecté (Recherche...)'
+        let tunnelStatus = this.orchestrator.isStarting() ? 'scanning' : 'idle'
+        
+        if (tunnelConnected) {
+          tunnelStatus = 'ready'
+          if (simulationActive) {
+            tunnelLabel += ' - Simulation en cours'
+          } else {
+            tunnelLabel += ' - Prêt à envoyer une localisation'
           }
-        },
-        companion: {
-          status: this.companion.hasActiveClients() ? 'ready' : 'idle',
-          ip: this.companion.getLocalIp()
         }
-      })
+
+        let companionLabel = companionConnected ? 'iPhone Connecté (App Mobile)' : 'Attente App Mobile...'
+        let companionStatus = companionConnected ? 'ready' : 'idle'
+
+        // Ajustement selon le mode
+        if (mode === 'client-server' && !companionConnected) {
+          tunnelLabel = 'Attente de l\'application mobile (Localisation bloquée)'
+          tunnelStatus = 'blocked'
+          companionLabel = '⚠️ Application mobile requise'
+          companionStatus = 'warning'
+        } else if (mode === 'autonomous') {
+          companionLabel = 'Mode Autonome (Désactivé)'
+          companionStatus = 'disabled'
+        } else if (mode === 'hybrid' && !companionConnected) {
+          companionLabel = 'Mode Hybride (App mobile optionnelle)'
+        }
+
+        res.json({
+          tunnel: {
+            status: tunnelStatus,
+            label: tunnelLabel,
+            type: this.orchestrator.activeConnection?.type,
+            driver: this.orchestrator.activeDriverId,
+            device: {
+              type: this.orchestrator.activeConnection?.type === 'MANUAL' ? 'Manual Tunnel' : 'iPhone',
+              version: 'iOS 17+',
+              ip: this.orchestrator.activeConnection?.address
+            }
+          },
+          companion: {
+            status: companionStatus,
+            label: companionLabel,
+            ip: this.companion.getLocalIp()
+          }
+        })
+      } catch (e) {
+        res.status(500).json({ error: e.message })
+      }
     })
 
     // Commandes GPS
