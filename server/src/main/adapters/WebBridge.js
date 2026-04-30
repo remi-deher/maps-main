@@ -165,10 +165,30 @@ class WebBridge {
     this.app.use(express.static(distPath))
     this.app.use('/renderer-v2', express.static(path.join(distPath, 'renderer-v2')))
     
-    // Polyfill web-api.js pour éviter le 404 dans index.html
+    // Polyfill web-api.js pour injecter window.gps en mode Web sans avoir à recompiler le Dashboard
     this.app.get('/web-api.js', (req, res) => {
       res.setHeader('Content-Type', 'application/javascript')
-      res.send('// Web API Polyfill active')
+      res.send(`
+        console.log('[web-api] 🛠️ Injection du polyfill GPS pour le mode Web');
+        window.gps = {
+          isElectron: false,
+          getStatus: () => fetch('/api/status').then(r => r.json()),
+          getSettings: () => fetch('/api/settings').then(r => r.json()),
+          saveSettings: (s) => fetch('/api/settings', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(s) }).then(r => r.json()),
+          setLocation: (lat, lon, name) => fetch('/api/location/set', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({lat, lon, name}) }).then(r => r.json()),
+          clearLocation: () => fetch('/api/location/clear', { method: 'POST' }).then(r => r.json()),
+          listPmd3Devices: () => fetch('/api/diagnostic/pmd3-devices').then(r => r.json()).catch(() => []),
+          restartTunnel: () => fetch('/api/diagnostic/restart-tunnel', { method: 'POST' }).then(r => r.json()),
+          getNetworkInterfaces: () => fetch('/api/diagnostic/interfaces').then(r => r.json()).catch(() => []),
+          getCompanionQr: () => fetch('/api/diagnostic/qr').then(r => r.json()),
+          listPlists: () => fetch('/api/diagnostic/plists').then(r => r.json()).catch(() => ({ plists: [] })),
+          onStatus: (cb) => { console.log('[web-api] onStatus enregistré'); return () => {} },
+          onSettingsUpdated: (cb) => { return () => {} },
+          onEvent: (name, cb) => { return () => {} },
+          openGpxDialog: () => Promise.resolve({ success: false, error: 'Non supporté en mode Web' }),
+          playCustomGpx: () => Promise.resolve({ success: false })
+        };
+      `)
     })
     
     // Fallback pour le routage React (doit être la DERNIÈRE route)
