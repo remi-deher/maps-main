@@ -5,7 +5,7 @@ const { dbg } = require('../logger')
 const Encoder = require('./encoder')
 
 /**
- * ProcessRunner - Utilitaire unifié pour lancer des processus externes (Optimisé go-ios)
+ * ProcessRunner - Utilitaire unifié pour lancer des processus externes
  */
 class ProcessRunner extends EventEmitter {
   constructor(name, options = {}) {
@@ -14,14 +14,13 @@ class ProcessRunner extends EventEmitter {
     this.process = null
     this.options = {
       cwd: null,
-      priority: -10, // Haute priorité par défaut (-20 à 19)
+      priority: -10,
       ...options
     }
   }
 
   spawn(command, args, extraEnv = {}) {
     this.stop()
-
     const env = { ...process.env, ...extraEnv }
 
     dbg(`[${this.name}] spawn: ${command} ${args.join(' ')}`)
@@ -32,34 +31,22 @@ class ProcessRunner extends EventEmitter {
       shell: false
     })
 
-    // Application de la priorité CPU
     if (this.process.pid && this.options.priority !== 0) {
       try {
         os.setPriority(this.process.pid, this.options.priority)
-        dbg(`[${this.name}] Priorite fixee a ${this.options.priority}`)
-      } catch (e) {
-        dbg(`[${this.name}] Impossible de fixer la priorite: ${e.message}`)
-      }
+      } catch (e) {}
     }
 
     this.process.stdout.on('data', (data) => {
       const msg = Encoder.decode(data).trim()
-      if (msg) {
-        // Trop de verbeux dans stdout pour go-ios, on ne dbg que via tunneld-service
-        this.emit('stdout', msg)
-      }
+      if (msg) this.emit('stdout', msg)
     })
 
     this.process.stderr.on('data', (data) => {
       const msg = Encoder.decode(data).trim()
       if (msg) {
+        if (msg.toLowerCase().includes('error')) dbg(`[${this.name}] stderr: ${msg}`)
         this.emit('stderr', msg)
-        
-        if (msg.includes('Connection was terminated abruptly') || 
-            msg.includes('ERROR') || 
-            msg.includes('failed')) {
-           this.emit('critical-error', msg)
-        }
       }
     })
 
@@ -75,28 +62,14 @@ class ProcessRunner extends EventEmitter {
   stop() {
     return new Promise((resolve) => {
       if (!this.process && this.name !== 'tunneld') return resolve()
-
       const pid = this.process ? this.process.pid : null
-      dbg(`[${this.name}] Arret du processus${pid ? ` (PID: ${pid})` : ''}...`)
       
       if (process.platform === 'win32') {
         const tasks = []
-        
-        if (pid) {
-          tasks.push(new Promise(r => exec(`taskkill /F /T /PID ${pid}`, () => r())))
-        }
-
+        if (pid) tasks.push(new Promise(r => exec(`taskkill /F /T /PID ${pid}`, () => r())))
         if (this.name === 'tunneld') {
-          const cleanCmd = 'powershell "Get-CimInstance Win32_Process -Filter \\"Name = \'ios.exe\' AND CommandLine LIKE \'%tunnel start%\'\\" | Stop-Process -Force -ErrorAction SilentlyContinue"'
-          tasks.push(new Promise(r => exec(cleanCmd, () => r())))
-
-          const killPortCmd = 'powershell "Get-NetTCPConnection -LocalPort 28100 -ErrorAction SilentlyContinue | ForEach-Object { Stop-Process -Id $_.OwningProcess -Force -ErrorAction SilentlyContinue }"'
-          tasks.push(new Promise(r => exec(killPortCmd, () => {
-            dbg(`[${this.name}] Port 28100 libéré.`)
-            r()
-          })))
+          tasks.push(new Promise(r => exec('powershell "Get-Process ios -ErrorAction SilentlyContinue | Stop-Process -Force"', () => r())))
         }
-
         Promise.all(tasks).then(() => {
           this.process = null
           resolve()
@@ -109,13 +82,7 @@ class ProcessRunner extends EventEmitter {
     })
   }
 
-  get isRunning() {
-    return !!this.process
-  }
-
-  get pid() {
-    return this.process ? this.process.pid : null
-  }
+  get isRunning() { return !!this.process }
 }
 
 module.exports = ProcessRunner

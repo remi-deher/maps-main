@@ -29,7 +29,7 @@ function resolvePython() {
     // Si Electron n'est pas dispo (mode headless Windows ou autre)
   }
 
-  return 'python3'
+  return process.platform === 'win32' ? 'python' : 'python3'
 }
 
 /**

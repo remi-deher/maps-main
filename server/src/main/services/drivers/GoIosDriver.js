@@ -15,7 +15,6 @@ class GoIosDriver extends BaseDriver {
     if (this.process) return true
     this.isStarting = true
     const { GOIOS } = require('../../goios-resolver')
-    const settings = require('../settings-manager')
     const args = ['tunnel', 'start']
 
     dbg(`[${this.id}] 🚀 Lancement : ${GOIOS} ${args.join(' ')}`)
@@ -24,30 +23,29 @@ class GoIosDriver extends BaseDriver {
 
     this.process.stdout.on('data', (data) => {
       const text = data.toString()
-      if (text.includes('"event: 0"')) return // Filtrage spam heartbeat go-ios
-      
-      dbg(`[${this.id}] stdout: ${text.trim()}`)
-      this.emit('stdout', text)
-      
-      // go-ios affiche l'adresse RSD une fois prêt
+      // On cherche uniquement l'adresse RSD pour marquer le driver comme prêt
       const match = text.match(/RSD address: ([\w:.%]+):(\d+)/)
       if (match) {
         this.tunnelInfo = {
           address: match[1],
           port: match[2],
-          type: 'WIFI (go-ios forced IP)'
+          type: 'WIFI (go-ios)'
         }
+        dbg(`[${this.id}] ✅ Tunnel prêt sur ${this.tunnelInfo.address}:${this.tunnelInfo.port}`)
         this.isActive = true
         this.isStarting = false
         this.emit('connection', this.tunnelInfo)
       }
+      // On ne logge PAS text via dbg pour éviter le spam
+      this.emit('stdout', text)
     })
 
     this.process.stderr.on('data', (data) => {
       const text = data.toString()
-      if (text.includes('"event: 0"')) return // Filtrage spam heartbeat go-ios
-      
-      dbg(`[${this.id}] stderr: ${text.trim()}`)
+      // On ne logge les erreurs que si elles semblent critiques et non du spam proxy
+      if (text.toLowerCase().includes('error') && !text.includes('Client')) {
+        dbg(`[${this.id}] stderr: ${text.trim()}`)
+      }
       this.emit('stderr', text)
     })
 
@@ -67,39 +65,29 @@ class GoIosDriver extends BaseDriver {
       if (!this.process) return resolve(true)
       
       dbg(`[${this.id}] Demande de fermeture gracieuse du tunnel...`)
-      
-      // Sur Windows, on ne peut pas envoyer de SIGINT facilement à un processus fils
-      // mais on peut fermer son entrée standard ou envoyer un signal de base.
-      // La méthode Close() de go-ios est déclenchée par l'arrêt du processus.
       this.process.kill('SIGINT') 
       
       const timer = setTimeout(() => {
         if (this.process) {
-          dbg(`[${this.id}] Le processus ne répond pas, arrêt forcé (SIGKILL)`)
+          dbg(`[${this.id}] Arrêt forcé (SIGKILL)`)
           this.process.kill('SIGKILL')
         }
         resolve(true)
-      }, 3000) // On laisse 3s à go-ios pour nettoyer l'interface utun et QUIC
+      }, 3000)
       
-      this.process.on('close', (code) => {
+      this.process.on('close', () => {
         clearTimeout(timer)
-        dbg(`[${this.id}] Tunnel fermé proprement (Code ${code}).`)
         resolve(true)
       })
     })
   }
 
   async setLocation(lat, lon) {
-    if (!this.isActive || !this.tunnelInfo) return { success: false, error: 'Tunnel go-ios non prêt' }
-    
+    if (!this.isActive || !this.tunnelInfo) return { success: false, error: 'Tunnel non prêt' }
     const { GOIOS } = require('../../goios-resolver')
     const { address, port } = this.tunnelInfo
-    
-    // On utilise l'adresse RSD du tunnel déjà ouvert pour être plus rapide
     const args = ['setlocation', '--rsd', `${address}:${port}`, String(lat), String(lon)]
-    
     return new Promise((resolve) => {
-      dbg(`[${this.id}] Injection via go-ios : ${lat}, ${lon} (RSD: ${address}:${port})`)
       const proc = spawn(GOIOS, args)
       proc.on('close', (code) => resolve({ success: code === 0 }))
     })

@@ -83,6 +83,7 @@
     "tailwind-merge": "^3.5.0",
     "winston": "^3.19.0",
     "winston-daily-rotate-file": "^5.0.0",
-    "ws": "^8.20.0"
+    "ws": "^8.20.0",
+    "dbus-next": "^0.1.2"
   }
 }

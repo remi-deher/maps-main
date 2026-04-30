@@ -1,0 +1,24 @@
+[Unit]
+Description=GPS Mock Server
+After=network.target usbmuxd.service avahi-daemon.service
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/gps-mock/server
+ExecStart=/usr/bin/node src/main/index-headless.js
+Restart=always
+RestartSec=10
+
+# Environnement
+Environment=NODE_ENV=production
+Environment=PORT=8080
+Environment=DEBUG=true
+Environment=ENABLE_GO_IOS_AGENT=user
+Environment=PYTHON_PATH=/opt/gps-venv/bin/python3
+
+# Limites de ressources
+LimitNOFILE=65535
+
+[Install]
+WantedBy=multi-user.target

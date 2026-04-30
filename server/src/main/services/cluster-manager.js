@@ -14,11 +14,12 @@ class ClusterManager extends EventEmitter {
     super()
     this.peers = settings.get('clusterNodes') || []
     
-    // En mode standalone, on est forcément MAITRE
-    if (settings.get('clusterMode') === 'standalone') {
+    // En mode standalone ou désactivé, on est forcément MAITRE
+    const mode = settings.get('clusterMode')
+    if (mode === 'standalone' || mode === 'off' || !mode) {
       this.role = 'master'
       this.currentMaster = 'me'
-      dbg('[cluster] 👑 Mode Standalone détecté : Auto-promotion MAÎTRE.')
+      dbg(`[cluster] 👑 Mode ${mode || 'off'} détecté : Auto-promotion MAÎTRE.`)
     } else {
       this.role = 'slave'
       this.currentMaster = null
