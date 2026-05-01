@@ -14,12 +14,23 @@ class GpsSimulator extends EventEmitter {
     this.tunnel = tunnelManager
     this.companion = companionServer
     this.commander = new GpsCommander()
-    this.lastCoords = null
+    
+    // Chargement de la dernière position connue pour la reprise après reboot
+    const savedLoc = settings.get('lastActiveLocation')
+    this.lastCoords = savedLoc || null
     this.lastInjectionTime = 0
     this._isQuitting = false
     this._eveilInterval = null
 
     this._startEveilCycle()
+
+    // Auto-réinjection dès que le tunnel est prêt
+    this.tunnel.on('ready', () => {
+      if (this.lastCoords && !this._isQuitting) {
+        dbg(`[gps-simulator] ♻️ Reprise après reboot : Ré-injection de la position mémorisée`)
+        this.setLocation(this.lastCoords.lat, this.lastCoords.lon, this.lastCoords.name, true)
+      }
+    })
 
     if (this.companion) {
       this.companion.on('request-location', (data) => {
@@ -101,6 +112,7 @@ class GpsSimulator extends EventEmitter {
       const result = await this.commander.execute('set', rsdAddress, rsdPort, [String(lat), String(lon)])
       if (result.success) {
         this.lastCoords = { lat, lon, name }
+        settings.save({ lastActiveLocation: this.lastCoords })
         this.emit('location-changed', { lat, lon, name })
       }
       return result
@@ -113,6 +125,7 @@ class GpsSimulator extends EventEmitter {
     const rsdAddress = this.tunnel.getRsdAddress()
     const rsdPort = this.tunnel.getRsdPort()
     this.lastCoords = null
+    settings.save({ lastActiveLocation: null })
     if (!rsdAddress) return { success: true }
     return await this.commander.execute('clear', rsdAddress, rsdPort)
   }

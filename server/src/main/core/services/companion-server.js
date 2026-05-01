@@ -104,6 +104,7 @@ class CompanionServer extends EventEmitter {
       lastHeartbeat: this.status?.lastHeartbeat || null,
       lastInjectedLocation: this.status?.lastInjectedLocation || null,
       lastVerifiedLocation: this.status?.lastVerifiedLocation || null,
+      lastActiveLocation: settings.get('lastActiveLocation'),
       usbDriver: settings.get('usbDriver'),
       wifiDriver: settings.get('wifiDriver'),
       fallbackEnabled: settings.get('fallbackEnabled'),
