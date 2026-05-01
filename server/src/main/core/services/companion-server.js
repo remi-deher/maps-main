@@ -184,6 +184,12 @@ class CompanionServer extends EventEmitter {
       res.json({ success: true })
     })
 
+    this.app.post('/api/location/sequence/sync-preview', (req, res) => {
+      const { points } = req.body
+      this._broadcast('SEQUENCE_PREVIEW_UPDATED', points)
+      res.json({ success: true })
+    })
+
     // --- ROUTES CLUSTER ---
     this.app.get('/api/cluster/ping', (req, res) => {
       res.json(clusterManager.getStatus())

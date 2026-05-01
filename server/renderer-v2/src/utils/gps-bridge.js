@@ -36,7 +36,8 @@ if (!isElectron) {
     openGpxDialog: () => Promise.resolve({ success: false, error: 'Non supporté en mode Web' }),
     playCustomGpx: () => Promise.resolve({ success: false }),
     playSequence: (legs) => axios.post('/api/location/sequence', { legs }).then(r => r.data),
-    setSequencerLoop: (enabled) => axios.post('/api/location/sequence/loop', { enabled }).then(r => r.data)
+    setSequencerLoop: (enabled) => axios.post('/api/location/sequence/loop', { enabled }).then(r => r.data),
+    syncSequencePreview: (points) => axios.post('/api/location/sequence/sync-preview', { points }).then(r => r.data).catch(() => ({}))
   };
   window.gps = gps;
 }

@@ -19,6 +19,11 @@
             "date": 1777453239794,
             "name": "/app/server/logs/gps-combined-2026-04-29.log",
             "hash": "8313451c7bd96663d380d651585b70a0ae4c37e73c9698992a060852c1c4530d"
+        },
+        {
+            "date": 1777674134464,
+            "name": "/app/server/logs/gps-combined-2026-05-01.log",
+            "hash": "6e8c215b749cdd4bb889006c62b937a8809fbb675b4e79f126f3c78ddede8dba"
         }
     ],
     "hashType": "sha256"

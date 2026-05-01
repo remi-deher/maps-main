@@ -126,12 +126,28 @@ function App() {
       });
     }
 
+    const removeSequenceSyncListener = gps.onEvent('SEQUENCE_PREVIEW_UPDATED', (points) => {
+      // On met à jour si la longueur change ou si le contenu est différent
+      setSequencePoints(prev => {
+        if (JSON.stringify(prev) === JSON.stringify(points)) return prev;
+        return points;
+      });
+    });
+
     return () => {
       removeStatusListener();
       removeSettingsListener();
       removeDebugListener();
+      removeSequenceSyncListener();
     };
   }, []);
+
+  // Synchronisation sortante (PC vers Clients)
+  useEffect(() => {
+    if (sequencePoints.length > 0 && gps.syncSequencePreview) {
+      gps.syncSequencePreview(sequencePoints);
+    }
+  }, [sequencePoints]);
 
   useEffect(() => {
     if (sidebarOpen) {
@@ -441,6 +457,20 @@ function App() {
              status.operationMode === 'client-server' ? '📱 Mode Client (iPhone Req)' : '🌐 Mode Hybride'}
           </div>
 
+          {/* Badge d'Activité Réelle */}
+          <div className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest border shadow-lg flex items-center gap-2 ${
+            status.state === 'running' ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/20' :
+            sidebarMode === 'sequencer' ? 'bg-indigo-500/20 text-indigo-400 border-indigo-500/20' :
+            'bg-slate-500/20 text-slate-400 border-slate-500/20'
+          }`}>
+            <div className={`w-1.5 h-1.5 rounded-full ${
+              status.state === 'running' ? 'bg-emerald-500 animate-pulse' :
+              sidebarMode === 'sequencer' ? 'bg-indigo-400' : 'bg-slate-500'
+            }`} />
+            {status.state === 'running' ? 'Simulation en cours' : 
+             sidebarMode === 'sequencer' ? 'Édition Itinéraire' : 'En attente'}
+          </div>
+
           <div className={`flex items-center gap-4 px-6 py-3 rounded-2xl glass-dark border-l-4 ${status.verified ? 'border-l-emerald-500 bg-emerald-500/10' : (status.state === 'ready' ? 'border-l-blue-500' : 'border-l-slate-500')} shadow-xl`}>
             <div className={`w-3 h-3 rounded-full ${status.verified ? 'bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]' : (status.state === 'ready' ? 'bg-blue-500 animate-pulse' : 'bg-slate-500')}`} />
             <div className="flex flex-col">
@@ -502,6 +532,17 @@ function App() {
               }`}>
                 {status.operationMode === 'autonomous' ? 'PC Only' : 
                  status.operationMode === 'client-server' ? 'Client Req' : 'Hybride'}
+              </div>
+            )}
+            {status.state === 'running' && (
+              <div className="px-2 py-0.5 rounded-md text-[9px] font-black uppercase tracking-tighter bg-emerald-500/10 text-emerald-500 border border-emerald-500/20 flex items-center gap-1">
+                <div className="w-1 h-1 rounded-full bg-emerald-500 animate-pulse" />
+                Live
+              </div>
+            )}
+            {sidebarMode === 'sequencer' && (
+              <div className="px-2 py-0.5 rounded-md text-[9px] font-black uppercase tracking-tighter bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 flex items-center gap-1">
+                Route
               </div>
             )}
             <Terminal 

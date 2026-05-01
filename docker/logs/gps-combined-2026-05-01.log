@@ -1,0 +1,14 @@
+[22:22:15] [INFO] [mdns] 🚀 Lancement du scan Avahi (avahi-browse) pour réveil iPhone...
+[22:22:15] [INFO] [cluster] 👑 Mode off détecté : Auto-promotion MAÎTRE.
+[22:22:15] [INFO] [headless] 🚀 Démarrage du serveur en mode HEADLESS (V2)
+[22:22:15] [INFO] [target] 🌐 Démarrage de la cible HEADLESS
+[22:22:15] [INFO] [pymobiledevice] Montage automatique de l'image DDI...
+[22:22:18] [INFO] [binary] ⚠️ Aucune version de Python valide trouvée. Tentative avec l'alias par défaut.
+[22:22:18] [INFO] [pymobiledevice] Lancement du daemon tunneld (Mode Reconnect)...
+[22:22:18] [INFO] [pmd3-daemon] spawn: python3 -u -m pymobiledevice3 remote tunneld
+[22:22:18] [INFO] [STATUS][tunneld] scanning: Recherche iPhone (pymobiledevice)...
+[22:22:18] [INFO] [bridge] 🔗 Attachement des routes WebBridge à l'application existante
+[22:22:18] [INFO] [target] ✅ Cible Headless prête
+[22:22:18] [INFO] [headless] ✅ Serveur prêt et dashboard actif.
+[22:22:18] [INFO] [companion-server] Serveur (Socket.io) demarre sur 192.168.65.3:8080
+[22:22:18] [INFO] [STATUS][companion] info: Prêt sur 192.168.65.3:8080

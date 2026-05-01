@@ -121,6 +121,11 @@ function registerIpcHandlers(tunnel, gps, companion) {
     return { success: true }
   })
 
+  ipcMain.handle('sync-sequence-preview', (_event, points) => {
+    companion._broadcast('SEQUENCE_PREVIEW_UPDATED', points)
+    return { success: true }
+  })
+
   // ─── Settings ──────────────────────────────────────────────────────────────
   
   ipcMain.handle('get-settings', () => settings.get())

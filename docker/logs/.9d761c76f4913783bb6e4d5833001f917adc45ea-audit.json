@@ -19,6 +19,11 @@
             "date": 1777453239845,
             "name": "/app/server/logs/gps-error-2026-04-29.log",
             "hash": "089ada3d108d05b0c6cb14c95754fd48eff73b63a67cc913ff6f8f2d0403e4a2"
+        },
+        {
+            "date": 1777674134539,
+            "name": "/app/server/logs/gps-error-2026-05-01.log",
+            "hash": "699147127396143bb2c8af5fce543a21c2c8d9664adf4407fe07e3da65ffbb32"
         }
     ],
     "hashType": "sha256"
