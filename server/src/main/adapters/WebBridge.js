@@ -111,6 +111,74 @@ class WebBridge {
       res.json(result)
     })
 
+    // Trajets & Séquences (REST direct)
+    this.app.post('/api/location/route', async (req, res) => {
+      this.companion._handleRouteMessage(null, { type: 'PLAY_ROUTE', data: req.body })
+      res.json({ success: true })
+    })
+
+    this.app.post('/api/location/osrm', async (req, res) => {
+      this.companion._handleRouteMessage(null, { type: 'PLAY_OSRM_ROUTE', data: req.body })
+      res.json({ success: true })
+    })
+
+    this.app.post('/api/location/sequence', async (req, res) => {
+      this.companion._handleRouteMessage(null, { type: 'PLAY_SEQUENCE', data: { legs: req.body } })
+      res.json({ success: true })
+    })
+
+    // Pont IPC Générique (pour compatibilité avec window.gps.invoke du dashboard)
+    this.app.post('/api/ipc/:action', async (req, res) => {
+      const { action } = req.params
+      const data = req.body
+      
+      dbg(`[web-bridge] ⚡ Appel IPC: ${action}`)
+
+      try {
+        switch (action) {
+          case 'get-status':
+            // On peut réutiliser la logique existante ou déléguer
+            return res.redirect(307, '/api/status')
+          case 'set-location':
+            return res.json(await this.simulator.setLocation(data.lat, data.lon, data.name))
+          case 'clear-location':
+            return res.json(await this.simulator.clearLocation())
+          case 'play-route':
+            this.companion._handleRouteMessage(null, { type: 'PLAY_ROUTE', data })
+            return res.json({ success: true })
+          case 'play-osrm-route':
+            this.companion._handleRouteMessage(null, { type: 'PLAY_OSRM_ROUTE', data })
+            return res.json({ success: true })
+          case 'play-sequence':
+            this.companion._handleRouteMessage(null, { type: 'PLAY_SEQUENCE', data: { legs: data } })
+            return res.json({ success: true })
+          case 'get-settings':
+            return res.json(settings.get())
+          case 'save-settings':
+            settings.save(data)
+            this.orchestrator.applySettings()
+            return res.json({ success: true })
+          case 'get-companion-qr':
+            return res.json(await this.companion.getCompanionQr())
+          case 'get-network-interfaces':
+            const os = require('os')
+            const interfaces = os.networkInterfaces()
+            const results = []
+            for (const name of Object.keys(interfaces)) {
+              for (const iface of interfaces[name]) {
+                if (iface.family === 'IPv4' && !iface.internal) results.push({ name, address: iface.address })
+              }
+            }
+            return res.json(results)
+          default:
+            dbg(`[web-bridge] ⚠️ IPC non géré: ${action}`)
+            res.status(404).json({ success: false, error: `IPC ${action} non supporté` })
+        }
+      } catch (e) {
+        res.status(500).json({ success: false, error: e.message })
+      }
+    })
+
     // Settings
     this.app.get('/api/settings', (req, res) => res.json(settings.get()))
     this.app.post('/api/settings', (req, res) => {

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence, Reorder } from 'framer-motion';
-import { X, Plus, Trash2, Play, Clock, Navigation, Plane, MapPin, Search, Loader2, Edit3, Flag, GripVertical, ChevronLeft, Crosshair } from 'lucide-react';
+import { X, Plus, Trash2, Play, Clock, Navigation, Plane, MapPin, Search, Loader2, Edit3, Flag, GripVertical, ChevronLeft, Crosshair, RefreshCcw, Repeat, Save, Folder, Download, Trash } from 'lucide-react';
 import gps from '../utils/gps-bridge';
 import { useSearch } from '../hooks/useSearch';
 
@@ -9,24 +9,87 @@ export default function SequencePanel({ activeSim, points, setPoints, onClose, p
   const [activeSearchId, setActiveSearchId] = useState(null);
   const [query, setQuery] = useState('');
   const [expandedId, setExpandedId] = useState(null);
+  const [isLooping, setIsLooping] = useState(false);
+  const [showPresets, setShowPresets] = useState(false);
+  const [presetName, setPresetName] = useState('');
+  const [savedTrips, setSavedTrips] = useState([]);
 
   const startPicking = (id) => {
     setPickingPointId(id);
     setSidebarOpen(false);
   };
 
-  // Initialisation seulement si vide
+  // Initialisation et chargement des presets
   useEffect(() => {
-    if (points.length === 0) {
-      const startPos = activeSim || { lat: 48.8566, lon: 2.3522, name: 'Ma position' };
-      const destPos = { ...startPos, name: 'Destination' };
+    const loadData = async () => {
+      const s = await gps.getSettings();
+      if (s && s.savedTrips) setSavedTrips(s.savedTrips);
       
-      setPoints([
-        { id: 'start', lat: startPos.lat, lon: startPos.lon, address: startPos.name || 'Départ', type: 'start' },
-        { id: 'dest', lat: destPos.lat, lon: destPos.lon, address: '', type: 'drive', speed: 30, duration: 60 }
-      ]);
-    }
+      if (points.length === 0) {
+        const startPos = activeSim || { lat: 48.8566, lon: 2.3522, name: 'Ma position' };
+        const destPos = { ...startPos, name: 'Destination' };
+        
+        setPoints([
+          { id: 'start', lat: startPos.lat, lon: startPos.lon, address: startPos.name || 'Départ', type: 'start' },
+          { id: 'dest', lat: destPos.lat, lon: destPos.lon, address: '', type: 'drive', speed: 30, duration: 60 }
+        ]);
+      }
+    };
+    loadData();
   }, []);
+
+  const toggleLoop = () => {
+    const newVal = !isLooping;
+    setIsLooping(newVal);
+    gps.setSequencerLoop(newVal);
+  };
+
+  const reverseRoute = () => {
+    if (points.length < 2) return;
+    const reversed = [...points].reverse();
+    const newPoints = reversed.map((p, i) => {
+      const newP = { ...p };
+      if (i === 0) {
+        newP.id = 'start';
+        newP.type = 'start';
+      } else {
+        newP.id = i === reversed.length - 1 ? 'dest' : Math.random().toString(36).substr(2, 9);
+        const oldP = points[points.length - i];
+        newP.type = oldP.type || 'drive';
+        newP.speed = oldP.speed || 30;
+        newP.duration = oldP.duration || 60;
+      }
+      return newP;
+    });
+    setPoints(newPoints);
+  };
+
+  const formatDuration = (seconds) => {
+    if (!seconds) return '0s';
+    const h = Math.floor(seconds / 3600);
+    const m = Math.floor((seconds % 3600) / 60);
+    const s = Math.floor(seconds % 60);
+    if (h > 0) return `${h}h ${m}m ${s}s`;
+    if (m > 0) return `${m}m ${s}s`;
+    return `${s}s`;
+  };
+
+  const getCumulativeTime = (idx) => {
+    let total = 0;
+    for (let i = 1; i <= idx; i++) {
+      total += points[i].duration || 0;
+    }
+    return total;
+  };
+    const R = 6371;
+    const dLat = (p2.lat - p1.lat) * Math.PI / 180;
+    const dLon = (p2.lon - p1.lon) * Math.PI / 180;
+    const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+      Math.cos(p1.lat * Math.PI / 180) * Math.cos(p2.lat * Math.PI / 180) *
+      Math.sin(dLon / 2) * Math.sin(dLon / 2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    return R * c;
+  };
 
   const addStep = () => {
     const newId = Math.random().toString(36).substr(2, 9);
@@ -55,7 +118,23 @@ export default function SequencePanel({ activeSim, points, setPoints, onClose, p
   };
 
   const updatePoint = (id, data) => {
-    setPoints(points.map(p => p.id === id ? { ...p, ...data } : p));
+    const idx = points.findIndex(p => p.id === id);
+    if (idx <= 0 || (data.speed === undefined && data.duration === undefined)) {
+      setPoints(points.map(p => p.id === id ? { ...p, ...data } : p));
+      return;
+    }
+
+    const prev = points[idx - 1];
+    const curr = { ...points[idx], ...data };
+    const dist = calculateDistance(prev, curr);
+
+    if (data.speed !== undefined && data.speed > 0) {
+      curr.duration = Math.round((dist / data.speed) * 3600);
+    } else if (data.duration !== undefined && data.duration > 0) {
+      curr.speed = parseFloat((dist / (data.duration / 3600)).toFixed(1));
+    }
+
+    setPoints(points.map(p => p.id === id ? curr : p));
   };
 
   const handleSearch = (id, val) => {
@@ -98,6 +177,30 @@ export default function SequencePanel({ activeSim, points, setPoints, onClose, p
     if (!res.success) alert("Erreur : " + res.error);
   };
 
+  const saveTrip = async () => {
+    if (!presetName.trim()) return;
+    const newTrip = { name: presetName.trim(), points, id: Date.now() };
+    const updatedTrips = [newTrip, ...savedTrips];
+    setSavedTrips(updatedTrips);
+    
+    const s = await gps.getSettings();
+    await gps.saveSettings({ ...s, savedTrips: updatedTrips });
+    setPresetName('');
+  };
+
+  const loadTrip = (trip) => {
+    setPoints(trip.points);
+    setShowPresets(false);
+  };
+
+  const deleteTrip = async (id) => {
+    if (!confirm(`Supprimer le trajet "${savedTrips.find(t => t.id === id)?.name}" ?`)) return;
+    const updatedTrips = savedTrips.filter(t => t.id !== id);
+    setSavedTrips(updatedTrips);
+    const s = await gps.getSettings();
+    await gps.saveSettings({ ...s, savedTrips: updatedTrips });
+  };
+
   const handleReorder = (newIntermediatePoints) => {
     const start = points[0];
     const dest = points[points.length - 1];
@@ -108,10 +211,33 @@ export default function SequencePanel({ activeSim, points, setPoints, onClose, p
 
   return (
     <div className="flex flex-col h-full bg-slate-950/40">
-      <div className="p-4 border-b border-white/5 flex items-center justify-between">
-        <button onClick={onClose} className="p-2 hover:bg-white/10 rounded-xl text-slate-400 flex items-center gap-2 text-xs font-bold uppercase">
-          <ChevronLeft className="w-4 h-4" /> Retour
-        </button>
+      <div className="p-4 border-b border-white/5 flex items-center justify-between bg-slate-900/40">
+        <div className="flex items-center gap-2">
+          <button onClick={onClose} className="p-2 hover:bg-white/10 rounded-xl text-slate-400 transition-colors">
+            <ChevronLeft className="w-5 h-5" />
+          </button>
+          <div className="h-8 w-px bg-white/5 mx-1" />
+          <button 
+            onClick={reverseRoute} 
+            title="Inverser le trajet"
+            className="p-2.5 hover:bg-indigo-500/20 rounded-xl text-indigo-400 transition-all active:rotate-180"
+          >
+            <RefreshCcw className="w-4 h-4" />
+          </button>
+          <button 
+            onClick={toggleLoop} 
+            title={isLooping ? "Mode boucle actif" : "Activer la boucle"}
+            className={`p-2.5 rounded-xl transition-all ${isLooping ? 'bg-amber-500 text-white shadow-lg shadow-amber-900/20' : 'hover:bg-white/10 text-slate-400'}`}
+          >
+            <Repeat className="w-4 h-4" />
+          </button>
+        </div>
+          <div className="flex items-center gap-2">
+            <Clock className="w-3.5 h-3.5 text-indigo-400" />
+            <span className="text-xs font-bold text-white">{formatDuration(points.reduce((acc, p) => acc + (p.duration || 0), 0))}</span>
+            <span className="text-[10px] text-slate-500 uppercase font-black tracking-tighter">Total</span>
+          </div>
+        </div>
         <div className="text-right">
           <h2 className="text-sm font-black text-white uppercase tracking-tight">Itinéraire</h2>
           <p className="text-[9px] text-indigo-400 font-bold uppercase tracking-widest">Séquenceur Voyage</p>
@@ -119,6 +245,68 @@ export default function SequencePanel({ activeSim, points, setPoints, onClose, p
       </div>
 
       <div className="flex-1 overflow-y-auto p-4 space-y-0 custom-scrollbar">
+        {/* PRESETS SECTION */}
+        <div className="mb-6 bg-white/5 border border-white/5 rounded-2xl overflow-hidden">
+          <button 
+            onClick={() => setShowPresets(!showPresets)}
+            className="w-full p-3 flex items-center justify-between text-xs font-bold text-slate-400 hover:bg-white/5 transition-colors uppercase tracking-widest"
+          >
+            <div className="flex items-center gap-2">
+              <Folder className="w-4 h-4 text-indigo-400" />
+              Mes Trajets Enregistrés
+            </div>
+            <span className="px-2 py-0.5 rounded-full bg-white/5 text-[10px]">{savedTrips.length}</span>
+          </button>
+          
+          <AnimatePresence>
+            {showPresets && (
+              <motion.div initial={{ height: 0 }} animate={{ height: 'auto' }} exit={{ height: 0 }} className="overflow-hidden">
+                <div className="p-3 pt-0 space-y-2 border-t border-white/5">
+                  <div className="flex gap-2 mt-3">
+                    <input 
+                      type="text" 
+                      placeholder="Nom du trajet..."
+                      value={presetName}
+                      onChange={(e) => setPresetName(e.target.value)}
+                      className="flex-1 bg-black/40 border border-white/5 rounded-xl px-3 py-2 text-xs text-white outline-none focus:ring-1 focus:ring-indigo-500/50"
+                    />
+                    <button 
+                      onClick={saveTrip}
+                      disabled={!presetName.trim()}
+                      className="p-2 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-30 rounded-xl text-white transition-all active:scale-90"
+                    >
+                      <Save className="w-4 h-4" />
+                    </button>
+                  </div>
+                  
+                  <div className="space-y-1 max-h-48 overflow-y-auto custom-scrollbar pr-1">
+                    {savedTrips.map(trip => (
+                      <div key={trip.id} className="group flex items-center gap-1 p-1 bg-white/5 rounded-xl hover:bg-white/10 transition-all border border-transparent hover:border-white/5">
+                        <button 
+                          onClick={() => loadTrip(trip)}
+                          className="flex-1 text-left px-2 py-1.5"
+                        >
+                          <p className="text-[11px] font-bold text-slate-200 line-clamp-1">{trip.name}</p>
+                          <p className="text-[9px] text-slate-500">{trip.points.length} points</p>
+                        </button>
+                        <button 
+                          onClick={() => deleteTrip(trip.id)}
+                          className="p-2 text-slate-600 hover:text-rose-500 transition-colors opacity-0 group-hover:opacity-100"
+                        >
+                          <Trash className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    ))}
+                    {savedTrips.length === 0 && (
+                      <p className="text-center py-4 text-[10px] text-slate-600 italic">Aucun trajet sauvegardé</p>
+                    )}
+                  </div>
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
+
         {/* DÉPART */}
         <PointItem 
           point={points[0]} 
@@ -155,6 +343,8 @@ export default function SequencePanel({ activeSim, points, setPoints, onClose, p
                 isDraggable
                 isPicking={pickingPointId === p.id}
                 onStartPicking={() => startPicking(p.id)}
+                cumulativeTime={getCumulativeTime(idx + 1)}
+                formatDuration={formatDuration}
               />
             </Reorder.Item>
           ))}
@@ -178,6 +368,8 @@ export default function SequencePanel({ activeSim, points, setPoints, onClose, p
             isLast
             isPicking={pickingPointId === points[points.length - 1].id}
             onStartPicking={() => startPicking(points[points.length - 1].id)}
+            cumulativeTime={getCumulativeTime(points.length - 1)}
+            formatDuration={formatDuration}
           />
         )}
 
@@ -203,7 +395,7 @@ export default function SequencePanel({ activeSim, points, setPoints, onClose, p
   );
 }
 
-function PointItem({ point, label, color, isSearchActive, query, onSearch, results, onSelect, loading, onRemove, expanded, onToggleExpand, onUpdate, isLast, isDraggable, isPicking, onStartPicking }) {
+function PointItem({ point, label, color, isSearchActive, query, onSearch, results, onSelect, loading, onRemove, expanded, onToggleExpand, onUpdate, isLast, isDraggable, isPicking, onStartPicking, cumulativeTime, formatDuration }) {
   if (!point) return null;
   
   return (
@@ -218,9 +410,14 @@ function PointItem({ point, label, color, isSearchActive, query, onSearch, resul
           {isDraggable && <GripVertical className="w-3.5 h-3.5 text-slate-700 cursor-grab active:cursor-grabbing" />}
           
           <div className="flex-1 min-w-0">
-            <p className={`text-[8px] font-black uppercase tracking-tighter mb-0.5 ${
-              color === 'indigo' ? 'text-indigo-400' : (color === 'rose' ? 'text-rose-400' : 'text-emerald-400')
-            }`}>{label}</p>
+            <div className="flex justify-between items-center mb-0.5">
+              <p className={`text-[8px] font-black uppercase tracking-tighter ${
+                color === 'indigo' ? 'text-indigo-400' : (color === 'rose' ? 'text-rose-400' : 'text-emerald-400')
+              }`}>{label}</p>
+              {cumulativeTime !== undefined && (
+                <p className="text-[8px] text-slate-500 font-bold">⏱️ T+{formatDuration(cumulativeTime)}</p>
+              )}
+            </div>
             <input 
               type="text"
               value={isSearchActive ? query : point.address}
@@ -279,7 +476,7 @@ function PointItem({ point, label, color, isSearchActive, query, onSearch, resul
                     />
                   </div>
                   <div className="space-y-1">
-                    <label className="text-[8px] font-black text-slate-600 uppercase">Durée (sec)</label>
+                    <label className="text-[8px] font-black text-slate-600 uppercase">Durée ({formatDuration(point.duration)})</label>
                     <input 
                       type="number" value={point.duration}
                       onChange={(e) => onUpdate({ duration: parseFloat(e.target.value) })}

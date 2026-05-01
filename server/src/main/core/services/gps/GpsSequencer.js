@@ -16,6 +16,7 @@ class GpsSequencer extends EventEmitter {
     this.isPaused = false
     this.speedMultiplier = 1.0
     this.onInjectCallback = null
+    this.isLooping = false
   }
 
   /**
@@ -77,6 +78,12 @@ class GpsSequencer extends EventEmitter {
 
     this.currentIndex++
     if (this.currentIndex >= this.points.length) {
+      if (this.isLooping) {
+        dbg('[gps-sequencer] 🔄 Boucle active, redémarrage du trajet')
+        this.currentIndex = -1
+        this._step()
+        return
+      }
       dbg('[gps-sequencer] ✅ Séquence terminée')
       this.stop()
       this.emit('finished')
@@ -133,6 +140,11 @@ class GpsSequencer extends EventEmitter {
   setSpeed(multiplier) {
     this.speedMultiplier = Math.max(0.1, multiplier)
     dbg(`[gps-sequencer] ⚡ Vitesse ajustée : x${this.speedMultiplier}`)
+  }
+
+  setLooping(enabled) {
+    this.isLooping = !!enabled
+    dbg(`[gps-sequencer] 🔄 Mode boucle : ${this.isLooping ? 'ACTIVÉ' : 'DÉSACTIVÉ'}`)
   }
 }
 

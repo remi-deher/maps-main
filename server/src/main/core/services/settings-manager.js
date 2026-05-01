@@ -49,7 +49,8 @@ class SettingsManager {
       manualTunnelAddress: '',
       logLevel: 'info',
       eveilInterval: 15,
-      lastActiveLocation: null
+      lastActiveLocation: null,
+      savedTrips: []
     }
 
     try {

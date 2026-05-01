@@ -70,6 +70,10 @@ class GpsBridge {
   resumeRoute() {
     gpsSequencer.start()
   }
+
+  setLooping(enabled) {
+    gpsSequencer.setLooping(enabled)
+  }
 }
 
 module.exports = new GpsBridge()
