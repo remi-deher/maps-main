@@ -100,6 +100,14 @@ function App() {
         const { lat, lon, name } = data.data;
         setActiveSim({ lat, lon, name });
         setStatus(prev => ({ ...prev, verified: true, state: 'running', message: 'Simulation active' }));
+      } else if (data.currentSequencePreview) {
+        // Sync initiale depuis le serveur
+        setSequencePoints(prev => {
+          if (prev.length === 0 && data.currentSequencePreview.length > 0) {
+             return data.currentSequencePreview;
+          }
+          return prev;
+        });
       } else {
         // Fallback : tout autre service est considéré comme un log serveur
         const message = data.message || (typeof data.data === 'string' ? data.data : JSON.stringify(data.data));
@@ -144,6 +152,8 @@ function App() {
 
   // Synchronisation sortante (PC vers Clients)
   useEffect(() => {
+    // On ne synchronise que si on a des points (pour ne pas écraser le serveur au boot)
+    // OU si on a vidé volontairement la liste après qu'elle ait été pleine
     if (sequencePoints.length > 0 && gps.syncSequencePreview) {
       gps.syncSequencePreview(sequencePoints);
     }

@@ -12,3 +12,8 @@
 [22:22:18] [INFO] [headless] ✅ Serveur prêt et dashboard actif.
 [22:22:18] [INFO] [companion-server] Serveur (Socket.io) demarre sur 192.168.65.3:8080
 [22:22:18] [INFO] [STATUS][companion] info: Prêt sur 192.168.65.3:8080
+[22:22:21] [INFO] [pmd3] 🎯 Tunnel détecté : [fd75:981f:767c::1]:61356
+[22:22:21] [INFO] [orchestrator] 🎯 iPhone détecté via pymobiledevice (WiFi)
+[22:22:21] [INFO] [gps-bridge] 🔌 Driver actif mis à jour : pymobiledevice
+[22:22:21] [INFO] [STATUS][tunneld] ready: Connecté via WiFi (pymobiledevice)
+[22:26:33] [INFO] [headless] 🛑 Signal SIGTERM reçu. Fermeture...
