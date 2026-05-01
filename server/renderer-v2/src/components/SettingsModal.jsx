@@ -30,6 +30,7 @@ function SettingsModal({ isOpen, onClose }) {
   const [clusterDashboard, setClusterDashboard] = useState(null);
   const [interfaces, setInterfaces] = useState([]);
   const [plistData, setPlistData] = useState({ plists: [], hasSelfIdentity: false });
+  const [envInfo, setEnvInfo] = useState(null);
 
   const runDiagnostic = async (type) => {
     setIsDiagRunning(true);
@@ -117,6 +118,14 @@ function SettingsModal({ isOpen, onClose }) {
       if (payload.service === 'cluster-dashboard') {
         setClusterDashboard(payload.data);
       }
+      if (payload.envInfo) {
+        setEnvInfo(payload.envInfo);
+      }
+    });
+
+    // Récupération initiale du statut pour les infos d'environnement
+    gps.getStatus().then(data => {
+      if (data.envInfo) setEnvInfo(data.envInfo);
     });
 
     const unSubSettings = gps.onSettingsUpdated((newSettings) => {
@@ -583,6 +592,36 @@ function SettingsModal({ isOpen, onClose }) {
               </div>
             </div>
           </section>
+          
+          {/* Informations Système */}
+          {envInfo && (
+            <section className="space-y-4 pt-6 border-t border-white/5">
+              <label className="text-sm font-bold text-slate-500 uppercase tracking-wider flex items-center gap-2">
+                <Monitor className="w-4 h-4" />
+                Informations Système
+              </label>
+              <div className="grid grid-cols-2 gap-2">
+                <div className="p-3 bg-white/5 rounded-xl border border-white/5">
+                  <p className="text-[10px] text-slate-500 uppercase font-bold">OS Détecté</p>
+                  <p className="text-xs font-mono text-white mt-1 capitalize">{envInfo.os}</p>
+                </div>
+                <div className="p-3 bg-white/5 rounded-xl border border-white/5">
+                  <p className="text-[10px] text-slate-500 uppercase font-bold">Environnement</p>
+                  <p className={`text-xs font-bold mt-1 ${envInfo.isDocker ? 'text-blue-400' : 'text-emerald-400'}`}>
+                    {envInfo.isDocker ? 'Container Docker' : 'Installation Native'}
+                  </p>
+                </div>
+                <div className="p-3 bg-white/5 rounded-xl border border-white/5">
+                  <p className="text-[10px] text-slate-500 uppercase font-bold">Mode d'exécution</p>
+                  <p className="text-xs font-bold text-white mt-1">{envInfo.mode}</p>
+                </div>
+                <div className="p-3 bg-white/5 rounded-xl border border-white/5">
+                  <p className="text-[10px] text-slate-500 uppercase font-bold">Version</p>
+                  <p className="text-xs font-mono text-slate-400 mt-1">v{envInfo.version}</p>
+                </div>
+              </div>
+            </section>
+          )}
             </>
           )}
 
