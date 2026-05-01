@@ -308,7 +308,7 @@ class CompanionServer extends EventEmitter {
         const actions = [
           'SET_LOCATION', 'PLAY_ROUTE', 'PLAY_SEQUENCE', 'PLAY_OSRM_ROUTE', 
           'PLAY_CUSTOM_GPX', 'ADD_HISTORY', 'ADD_FAVORITE', 'REMOVE_FAVORITE', 
-          'RENAME_FAVORITE', 'SAVE_SETTINGS', 'GET_STATUS', 'HEARTBEAT'
+          'RENAME_FAVORITE', 'SAVE_SETTINGS', 'GET_STATUS', 'HEARTBEAT', 'DEBUG_LOG'
         ]
 
         actions.forEach(event => {
@@ -473,6 +473,12 @@ class CompanionServer extends EventEmitter {
       case 'GET_STATUS': {
         this._refreshStatus()
         socket.emit('STATUS', this.status)
+        break
+      }
+
+      case 'DEBUG_LOG': {
+        // Rediffusion du log iPhone vers le Dashboard
+        this._broadcast('status-update', { service: 'client-log', data: { message: payload.data, type: 'info' } })
         break
       }
     }

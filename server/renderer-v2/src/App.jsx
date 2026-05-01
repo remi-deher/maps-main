@@ -94,6 +94,16 @@ function App() {
         const { lat, lon, name } = data.data;
         setActiveSim({ lat, lon, name });
         setStatus(prev => ({ ...prev, verified: true, state: 'running', message: 'Simulation active' }));
+      } else {
+        // Fallback : tout autre service est considéré comme un log serveur
+        const message = data.message || (typeof data.data === 'string' ? data.data : JSON.stringify(data.data));
+        if (message) {
+          setServerLogs(prev => [{ 
+            timestamp, 
+            message: `[${data.service.toUpperCase()}] ${message}`, 
+            type: data.state || 'info' 
+          }, ...prev].slice(0, 500));
+        }
       }
     });
 
@@ -101,9 +111,19 @@ function App() {
       refreshStatus();
     });
 
+    // Capture des logs Electron directs (dbg() via IPC)
+    let removeDebugListener = () => {};
+    if (gps.onDebug) {
+      removeDebugListener = gps.onDebug((msg) => {
+        const timestamp = new Date().toLocaleTimeString();
+        setServerLogs(prev => [{ timestamp, message: msg, type: 'info' }, ...prev].slice(0, 500));
+      });
+    }
+
     return () => {
       removeStatusListener();
       removeSettingsListener();
+      removeDebugListener();
     };
   }, []);
 
