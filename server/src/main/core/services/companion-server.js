@@ -276,6 +276,25 @@ class CompanionServer extends EventEmitter {
         sendStatus('companion', 'info', `Prêt sur ${ip}:${port}`)
       })
 
+      // Middleware de filtrage pour le mode Autonome
+      this.io.use((socket, next) => {
+        const mode = settings.get('operationMode')
+        if (mode === 'autonomous') {
+          // On essaie de distinguer le Dashboard de l'iPhone
+          // Le Dashboard est sur le même hôte, l'iPhone est externe
+          const isLocal = socket.handshake.address === '127.0.0.1' || 
+                          socket.handshake.address === '::1' || 
+                          socket.handshake.address === '::ffff:127.0.0.1' ||
+                          (socket.handshake.headers.origin && socket.handshake.headers.origin.includes(this.port))
+
+          if (!isLocal) {
+            // Silence par défaut pour ne pas spammer
+            return next(new Error('AUTONOMOUS_MODE_ACTIVE'))
+          }
+        }
+        next()
+      })
+
       this.io.on('connection', (socket) => {
         let clientIp = socket.handshake.address
         if (clientIp.startsWith('::ffff:')) clientIp = clientIp.substring(7)
@@ -294,6 +313,11 @@ class CompanionServer extends EventEmitter {
 
         actions.forEach(event => {
           socket.on(event, (data) => {
+            const mode = settings.get('operationMode')
+            if (mode === 'autonomous' && event === 'SET_LOCATION') {
+              dbg(`[companion-server] ⚠️ Commande SET_LOCATION ignorée (Mode Autonome)`)
+              return
+            }
             this._handleMessage(socket, { type: event, data })
           })
         });
@@ -417,7 +441,17 @@ class CompanionServer extends EventEmitter {
       }
 
       case 'SAVE_SETTINGS': {
+        const oldMode = settings.get('operationMode')
+        const newMode = payload.data.operationMode
+        
         settings.save(payload.data)
+        
+        if (newMode === 'autonomous' && oldMode !== 'autonomous') {
+          dbg('[companion-server] 🔒 Mode Autonome activé : Les nouvelles connexions iPhone sont désormais refusées.')
+        } else if (newMode !== 'autonomous' && oldMode === 'autonomous') {
+          dbg('[companion-server] 🔓 Mode Autonome désactivé : Les connexions iPhone sont de nouveau autorisées.')
+        }
+
         if (payload.data.logLevel) {
           const { setLogLevel } = require('../../logger')
           setLogLevel(payload.data.logLevel)
