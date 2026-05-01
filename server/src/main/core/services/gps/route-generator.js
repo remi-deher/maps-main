@@ -287,6 +287,31 @@ class RouteGenerator {
     const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
     return R * c
   }
+
+  /**
+   * Analyse un contenu GPX pour en extraire les points.
+   * @param {string} gpxString 
+   * @returns {Array} List of {lat, lon, time}
+   */
+  parseGpx(gpxString) {
+    const points = []
+    const trkptRegex = /<trkpt\s+lat="([^"]+)"\s+lon="([^"]+)"[^>]*>([\s\S]*?)<\/trkpt>/g
+    const timeRegex = /<time>([^<]+)<\/time>/
+    
+    let match
+    while ((match = trkptRegex.exec(gpxString)) !== null) {
+      const lat = parseFloat(match[1])
+      const lon = parseFloat(match[2])
+      const content = match[3]
+      const timeMatch = content.match(timeRegex)
+      const time = timeMatch ? new Date(timeMatch[1]).getTime() : null
+      
+      points.push({ lat, lon, time })
+    }
+    
+    dbg(`[route-generator] GPX parsé : ${points.length} points extraits.`)
+    return points
+  }
 }
 
 module.exports = new RouteGenerator()

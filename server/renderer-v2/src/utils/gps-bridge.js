@@ -34,7 +34,8 @@ if (!isElectron) {
     onEvent: (name, cb) => { return () => {} },
     
     openGpxDialog: () => Promise.resolve({ success: false, error: 'Non supporté en mode Web' }),
-    playCustomGpx: () => Promise.resolve({ success: false })
+    playCustomGpx: () => Promise.resolve({ success: false }),
+    playSequence: (legs) => axios.post('/api/location/sequence', { legs }).then(r => r.data)
   };
   window.gps = gps;
 }

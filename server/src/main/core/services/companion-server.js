@@ -420,6 +420,24 @@ class CompanionServer extends EventEmitter {
         break
       }
       
+      case 'STOP_ROUTE': {
+        gpsBridge.stopRoute()
+        socket.emit('ACK', { timestamp: Date.now() })
+        break
+      }
+
+      case 'PAUSE_ROUTE': {
+        gpsBridge.pauseRoute()
+        socket.emit('ACK', { timestamp: Date.now() })
+        break
+      }
+
+      case 'RESUME_ROUTE': {
+        gpsBridge.resumeRoute()
+        socket.emit('ACK', { timestamp: Date.now() })
+        break
+      }
+      
       case 'ADD_HISTORY': {
         if (payload.data) favoritesManager.addToHistory(payload.data)
         break
