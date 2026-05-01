@@ -245,7 +245,8 @@ function App() {
       <div className="absolute inset-0 z-0" tabIndex="-1" style={{ pointerEvents: 'auto' }}>
         <MapView 
           onMapClick={handleMapClick} 
-          selectedPos={selectedPos || activeSim} 
+          selectedPos={selectedPos} 
+          activeSim={activeSim}
           onPlayRoute={playRoute} 
           onPlayOsrmRoute={playOsrmRoute}
           routePreview={sidebarMode === 'sequencer' ? sequencePoints : null}

@@ -95,11 +95,10 @@ class GpsSequencer extends EventEmitter {
     const name = `Point ${this.currentIndex + 1}/${this.points.length}`
 
     if (this.onInjectCallback) {
-      try {
-        await this.onInjectCallback(point.lat, point.lon, name)
-      } catch (e) {
+      // On lance l'injection sans attendre (non-blocking) pour ne pas ralentir l'horloge
+      this.onInjectCallback(point.lat, point.lon, name).catch(e => {
         dbg(`[gps-sequencer] ⚠️ Erreur injection au point ${this.currentIndex}: ${e.message}`)
-      }
+      })
     }
 
     this.emit('progress', { 

@@ -14,7 +14,7 @@ let DefaultIcon = L.icon({
 });
 L.Marker.prototype.options.icon = DefaultIcon;
 
-function MapView({ onMapClick, selectedPos, onPlayRoute, onPlayOsrmRoute, routePreview, onSequencePointMove }) {
+function MapView({ onMapClick, selectedPos, activeSim, onPlayRoute, onPlayOsrmRoute, routePreview, onSequencePointMove }) {
   const mapRef = useRef(null);
   const mapInstance = useRef(null);
   const markerInstance = useRef(null);
@@ -91,8 +91,56 @@ function MapView({ onMapClick, selectedPos, onPlayRoute, onPlayOsrmRoute, routeP
       }
       
       mapInstance.current.setView([lat, lon], mapInstance.current.getZoom());
+    } else if (mapInstance.current && !selectedPos && markerInstance.current) {
+      mapInstance.current.removeLayer(markerInstance.current);
+      markerInstance.current = null;
     }
   }, [selectedPos]);
+
+  const lastSimPos = useRef(null);
+  const simMarkerInstance = useRef(null);
+
+  useEffect(() => {
+    if (mapInstance.current && activeSim) {
+      const { lat, lon } = activeSim;
+      
+      let rotation = 0;
+      if (lastSimPos.current) {
+        const p1 = mapInstance.current.project([lastSimPos.current.lat, lastSimPos.current.lon], mapInstance.current.getZoom());
+        const p2 = mapInstance.current.project([lat, lon], mapInstance.current.getZoom());
+        if (p1.distanceTo(p2) > 1) {
+          rotation = Math.atan2(p2.y - p1.y, p2.x - p1.x) * 180 / Math.PI + 90;
+        } else {
+          rotation = lastSimPos.current.rotation || 0;
+        }
+      }
+      lastSimPos.current = { lat, lon, rotation };
+
+      if (!simMarkerInstance.current) {
+        simMarkerInstance.current = L.marker([lat, lon], {
+          icon: L.divIcon({
+            className: 'sim-car-marker',
+            html: `<div style="transform: rotate(${rotation}deg); font-size: 28px; filter: drop-shadow(0 2px 4px rgba(0,0,0,0.3));">🚗</div>`,
+            iconSize: [30, 30],
+            iconAnchor: [15, 15]
+          }),
+          zIndexOffset: 1000
+        }).addTo(mapInstance.current);
+      } else {
+        simMarkerInstance.current.setLatLng([lat, lon]);
+        simMarkerInstance.current.setIcon(L.divIcon({
+          className: 'sim-car-marker',
+          html: `<div style="transform: rotate(${rotation}deg); transition: transform 0.2s linear; font-size: 28px; filter: drop-shadow(0 2px 4px rgba(0,0,0,0.3));">🚗</div>`,
+          iconSize: [30, 30],
+          iconAnchor: [15, 15]
+        }));
+      }
+    } else if (mapInstance.current && !activeSim && simMarkerInstance.current) {
+      mapInstance.current.removeLayer(simMarkerInstance.current);
+      simMarkerInstance.current = null;
+      lastSimPos.current = null;
+    }
+  }, [activeSim]);
 
   useEffect(() => {
     if (!mapInstance.current) return;
