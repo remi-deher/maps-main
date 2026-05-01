@@ -3,6 +3,7 @@ import { motion, AnimatePresence, Reorder } from 'framer-motion';
 import { X, Plus, Trash2, Play, Clock, Navigation, Plane, MapPin, Search, Loader2, Edit3, Flag, GripVertical, ChevronLeft, Crosshair, RefreshCcw, Repeat, Save, Folder, Download, Trash } from 'lucide-react';
 import gps from '../utils/gps-bridge';
 import { useSearch } from '../hooks/useSearch';
+import { fetchRoute } from '../utils/routing';
 
 export default function SequencePanel({ activeSim, points, setPoints, onClose, pickingPointId, setPickingPointId, setSidebarOpen }) {
   const { search, results, loading, setResults } = useSearch();
@@ -62,6 +63,26 @@ export default function SequencePanel({ activeSim, points, setPoints, onClose, p
       return newP;
     });
     setPoints(newPoints);
+    // On rafraîchit tous les tracés après inversion
+    refreshAllPaths(newPoints);
+  };
+
+  const refreshAllPaths = async (currentPoints) => {
+    const updated = [...currentPoints];
+    for (let i = 1; i < updated.length; i++) {
+      const path = await fetchRoute(updated[i-1], updated[i], updated[i].type);
+      updated[i].path = path;
+    }
+    setPoints(updated);
+  };
+
+  const updateLegPath = async (idx, currentPoints) => {
+    if (idx <= 0 || idx >= currentPoints.length) return;
+    const pStart = currentPoints[idx-1];
+    const pEnd = currentPoints[idx];
+    const path = await fetchRoute(pStart, pEnd, pEnd.type);
+    
+    setPoints(prev => prev.map((p, i) => i === idx ? { ...p, path } : p));
   };
 
   const formatDuration = (seconds) => {
@@ -134,7 +155,14 @@ export default function SequencePanel({ activeSim, points, setPoints, onClose, p
       curr.speed = parseFloat((dist / (data.duration / 3600)).toFixed(1));
     }
 
-    setPoints(points.map(p => p.id === id ? curr : p));
+    const newPoints = points.map(p => p.id === id ? curr : p);
+    setPoints(newPoints);
+
+    // Mettre à jour les tracés OSRM pour les segments touchés
+    updateLegPath(idx, newPoints);
+    if (idx + 1 < newPoints.length) {
+      updateLegPath(idx + 1, newPoints);
+    }
   };
 
   const handleSearch = (id, val) => {
@@ -204,7 +232,9 @@ export default function SequencePanel({ activeSim, points, setPoints, onClose, p
   const handleReorder = (newIntermediatePoints) => {
     const start = points[0];
     const dest = points[points.length - 1];
-    setPoints([start, ...newIntermediatePoints, dest]);
+    const newPoints = [start, ...newIntermediatePoints, dest];
+    setPoints(newPoints);
+    refreshAllPaths(newPoints);
   };
 
   const intermediatePoints = points.slice(1, -1);

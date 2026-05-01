@@ -106,15 +106,26 @@ function MapView({ onMapClick, selectedPos, onPlayRoute, onPlayOsrmRoute, routeP
     previewMarkersInstance.current = [];
 
     if (routePreview && routePreview.length > 0) {
-      const latlngs = routePreview.map(p => [p.lat, p.lon]);
+      const fullPath = [];
+      routePreview.forEach((p, i) => {
+        if (i === 0) {
+          fullPath.push([p.lat, p.lon]);
+        } else {
+          if (p.path && p.path.length > 0) {
+            p.path.forEach(pt => fullPath.push([pt.lat, pt.lon]));
+          } else {
+            fullPath.push([p.lat, p.lon]);
+          }
+        }
+      });
       
       // Ligne de l'itinéraire
-      if (latlngs.length > 1) {
-        routeLayerInstance.current = L.polyline(latlngs, {
+      if (fullPath.length > 1) {
+        routeLayerInstance.current = L.polyline(fullPath, {
           color: '#6366f1',
           weight: 4,
-          opacity: 0.6,
-          dashArray: '10, 10'
+          opacity: 0.8,
+          dashArray: null // On met une ligne pleine pour le tracé OSRM
         }).addTo(mapInstance.current);
       }
 
