@@ -364,12 +364,35 @@ function App() {
 
       {/* Status Pill (Bottom) */}
       <div className="absolute bottom-8 right-8 z-50">
-        <motion.div initial={{ x: 20, opacity: 0 }} animate={{ x: 0, opacity: 1 }} className={`flex items-center gap-4 px-6 py-3 rounded-2xl glass-dark border-l-4 ${status.verified ? 'border-l-emerald-500 bg-emerald-500/10' : (status.state === 'ready' ? 'border-l-blue-500' : 'border-l-slate-500')} shadow-xl`}>
-          <div className={`w-3 h-3 rounded-full ${status.verified ? 'bg-emerald-500' : (status.state === 'ready' ? 'bg-blue-500 animate-pulse' : 'bg-slate-500')}`} />
-          <p className="font-bold text-sm leading-none flex items-center gap-2">
-            {status.message}
-            {status.verified && <span className="text-emerald-400">✅</span>}
-          </p>
+        <motion.div 
+          initial={{ x: 20, opacity: 0 }} 
+          animate={{ x: 0, opacity: 1 }} 
+          className={`flex flex-col items-end gap-2`}
+        >
+          {/* Badge de Mode */}
+          <div className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest border shadow-lg ${
+            status.operationMode === 'autonomous' ? 'bg-amber-500/20 text-amber-500 border-amber-500/20' :
+            status.operationMode === 'client-server' ? 'bg-purple-500/20 text-purple-500 border-purple-500/20' :
+            'bg-blue-500/20 text-blue-400 border-blue-500/20'
+          }`}>
+            {status.operationMode === 'autonomous' ? '🚀 Mode Autonome (PC)' : 
+             status.operationMode === 'client-server' ? '📱 Mode Client (iPhone Req)' : '🌐 Mode Hybride'}
+          </div>
+
+          <div className={`flex items-center gap-4 px-6 py-3 rounded-2xl glass-dark border-l-4 ${status.verified ? 'border-l-emerald-500 bg-emerald-500/10' : (status.state === 'ready' ? 'border-l-blue-500' : 'border-l-slate-500')} shadow-xl`}>
+            <div className={`w-3 h-3 rounded-full ${status.verified ? 'bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]' : (status.state === 'ready' ? 'bg-blue-500 animate-pulse' : 'bg-slate-500')}`} />
+            <div className="flex flex-col">
+              <p className="font-bold text-sm leading-tight flex items-center gap-2">
+                {status.message}
+                {status.verified && <span className="text-emerald-400">✅</span>}
+              </p>
+              {status.type && (
+                <p className="text-[10px] text-slate-500 font-medium">
+                  {status.type} {status.device ? `— ${status.device.DeviceName || 'iPhone'}` : ''}
+                </p>
+              )}
+            </div>
+          </div>
         </motion.div>
       </div>
 

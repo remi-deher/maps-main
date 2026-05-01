@@ -66,8 +66,12 @@ class WebBridge {
           companionLabel = '⚠️ Application mobile requise'
           companionStatus = 'warning'
         } else if (mode === 'autonomous') {
-          companionLabel = 'Mode Autonome (Désactivé)'
+          companionLabel = 'Mode Autonome (Bloqué)'
           companionStatus = 'disabled'
+          if (companionConnected) {
+             companionLabel = '⚠️ iPhone connecté mais ignoré (Autonome)'
+             companionStatus = 'warning'
+          }
         } else if (mode === 'hybrid' && !companionConnected) {
           companionLabel = 'Mode Hybride (App mobile optionnelle)'
         }
