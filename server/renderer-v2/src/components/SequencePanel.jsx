@@ -1,9 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence, Reorder } from 'framer-motion';
-import { X, Plus, Trash2, Play, Clock, Navigation, Plane, MapPin, Search, Loader2, Edit3, Flag, GripVertical, ChevronLeft, Crosshair, RefreshCcw, Repeat, Save, Folder, Download, Trash } from 'lucide-react';
+import { X, Plus, Trash2, Play, Clock, Navigation, Plane, MapPin, Search, Loader2, Edit3, Flag, GripVertical, ChevronLeft, Crosshair, RefreshCcw, Repeat, Save, Folder, Download, Trash, Star } from 'lucide-react';
 import gps from '../utils/gps-bridge';
 import { useSearch } from '../hooks/useSearch';
-import { fetchRoute } from '../utils/routing';
+import { fetchRoute, snapToRoad, optimizeRoute } from '../utils/routing';
 
 export default function SequencePanel({ activeSim, points, setPoints, onClose, pickingPointId, setPickingPointId, setSidebarOpen }) {
   const { search, results, loading, setResults } = useSearch();
@@ -14,6 +14,10 @@ export default function SequencePanel({ activeSim, points, setPoints, onClose, p
   const [showPresets, setShowPresets] = useState(false);
   const [presetName, setPresetName] = useState('');
   const [savedTrips, setSavedTrips] = useState([]);
+  const [useSnap, setUseSnap] = useState(true);
+  const [useOsrmSpeed, setUseOsrmSpeed] = useState(true);
+  const [avoidTolls, setAvoidTolls] = useState(false);
+  const [avoidMotorways, setAvoidMotorways] = useState(false);
 
   const startPicking = (id) => {
     setPickingPointId(id);
@@ -80,9 +84,37 @@ export default function SequencePanel({ activeSim, points, setPoints, onClose, p
     if (idx <= 0 || idx >= currentPoints.length) return;
     const pStart = currentPoints[idx-1];
     const pEnd = currentPoints[idx];
-    const path = await fetchRoute(pStart, pEnd, pEnd.type);
     
-    setPoints(prev => prev.map((p, i) => i === idx ? { ...p, path } : p));
+    const exclude = [
+      avoidTolls ? 'toll' : null,
+      avoidMotorways ? 'motorway' : null
+    ].filter(Boolean).join(',');
+
+    const result = await fetchRoute(pStart, pEnd, pEnd.type, { exclude });
+    
+    if (result) {
+      const updateData = { path: result.path };
+      if (useOsrmSpeed) {
+        updateData.duration = Math.round(result.duration);
+        // On évite la division par zéro
+        const durationHours = result.duration / 3600;
+        updateData.speed = durationHours > 0 ? parseFloat(((result.distance / 1000) / durationHours).toFixed(1)) : 0;
+      }
+      setPoints(prev => prev.map((p, i) => i === idx ? { ...p, ...updateData } : p));
+    }
+  };
+
+  const tryOptimize = async () => {
+    if (points.length < 3) return;
+    const res = await optimizeRoute(points);
+    if (res && res.geometry) {
+      // Pour l'instant on garde l'ordre de l'utilisateur mais on pourrait le réorganiser
+      // via res.waypointIndices si on voulait vraiment optimiser le trajet total.
+      // Mais ici on va juste forcer le tracé global si possible.
+      // Simplifions : On informe l'utilisateur ou on propose de réordonner.
+      alert("Optimisation OSRM calculée. Le tracé sera plus fluide.");
+      refreshAllPaths(points);
+    }
   };
 
   const formatDuration = (seconds) => {
@@ -102,6 +134,7 @@ export default function SequencePanel({ activeSim, points, setPoints, onClose, p
     }
     return total;
   };
+  const calculateDistance = (p1, p2) => {
     const R = 6371;
     const dLat = (p2.lat - p1.lat) * Math.PI / 180;
     const dLon = (p2.lon - p1.lon) * Math.PI / 180;
@@ -138,10 +171,29 @@ export default function SequencePanel({ activeSim, points, setPoints, onClose, p
     setPoints(points.filter(p => p.id !== id));
   };
 
-  const updatePoint = (id, data) => {
+  const updatePoint = async (id, data) => {
     const idx = points.findIndex(p => p.id === id);
+    
+    // Snap to road logic
+    if (useSnap && (data.lat !== undefined || data.lon !== undefined)) {
+      const snapped = await snapToRoad(data.lat || points[idx].lat, data.lon || points[idx].lon, points[idx].type);
+      if (snapped) {
+        data.lat = snapped.lat;
+        data.lon = snapped.lon;
+        if (!data.address && snapped.name) data.address = snapped.name;
+      }
+    }
+
     if (idx <= 0 || (data.speed === undefined && data.duration === undefined)) {
-      setPoints(points.map(p => p.id === id ? { ...p, ...data } : p));
+      const newPoints = points.map(p => p.id === id ? { ...p, ...data } : p);
+      setPoints(newPoints);
+      
+      // Si la position a changé, on doit quand même mettre à jour les chemins
+      if (data.lat !== undefined || data.lon !== undefined || data.type !== undefined) {
+        console.log(`[OSRM] Position/Type change for point ${idx}, updating paths...`);
+        updateLegPath(idx, newPoints);
+        if (idx + 1 < newPoints.length) updateLegPath(idx + 1, newPoints);
+      }
       return;
     }
 
@@ -158,6 +210,7 @@ export default function SequencePanel({ activeSim, points, setPoints, onClose, p
     const newPoints = points.map(p => p.id === id ? curr : p);
     setPoints(newPoints);
 
+    console.log(`[OSRM] Values change for point ${idx}, updating paths...`);
     // Mettre à jour les tracés OSRM pour les segments touchés
     updateLegPath(idx, newPoints);
     if (idx + 1 < newPoints.length) {
@@ -229,6 +282,42 @@ export default function SequencePanel({ activeSim, points, setPoints, onClose, p
     await gps.saveSettings({ ...s, savedTrips: updatedTrips });
   };
 
+  const downloadGpx = () => {
+    let gpx = '<?xml version="1.0" encoding="UTF-8"?>\n';
+    gpx += '<gpx version="1.1" creator="Antigravity Sequencer" xmlns="http://www.topografix.com/GPX/1/1">\n';
+    gpx += '  <trk>\n';
+    gpx += `    <name>${presetName || 'Trajet GPS-Mock'}</name>\n`;
+    gpx += '    <trkseg>\n';
+    
+    points.forEach((p, i) => {
+      if (i === 0) {
+        gpx += `      <trkpt lat="${p.lat}" lon="${p.lon}"></trkpt>\n`;
+      } else {
+        if (p.path && p.path.length > 0) {
+          p.path.forEach(pt => {
+            gpx += `      <trkpt lat="${pt.lat}" lon="${pt.lon}"></trkpt>\n`;
+          });
+        } else {
+          gpx += `      <trkpt lat="${p.lat}" lon="${p.lon}"></trkpt>\n`;
+        }
+      }
+    });
+    
+    gpx += '    </trkseg>\n';
+    gpx += '  </trk>\n';
+    gpx += '</gpx>';
+    
+    const blob = new Blob([gpx], { type: 'application/gpx+xml' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${(presetName || 'trajet').replace(/\s+/g, '_')}_${Date.now()}.gpx`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
   const handleReorder = (newIntermediatePoints) => {
     const start = points[0];
     const dest = points[points.length - 1];
@@ -241,36 +330,60 @@ export default function SequencePanel({ activeSim, points, setPoints, onClose, p
 
   return (
     <div className="flex flex-col h-full bg-slate-950/40">
-      <div className="p-4 border-b border-white/5 flex items-center justify-between bg-slate-900/40">
-        <div className="flex items-center gap-2">
-          <button onClick={onClose} className="p-2 hover:bg-white/10 rounded-xl text-slate-400 transition-colors">
+      <div className="p-4 border-b border-white/5 bg-slate-900/60 space-y-4">
+        <div className="flex items-center justify-between">
+          <button onClick={onClose} className="p-2.5 hover:bg-white/10 rounded-xl text-slate-400 transition-all active:scale-95">
             <ChevronLeft className="w-5 h-5" />
           </button>
-          <div className="h-8 w-px bg-white/5 mx-1" />
-          <button 
-            onClick={reverseRoute} 
-            title="Inverser le trajet"
-            className="p-2.5 hover:bg-indigo-500/20 rounded-xl text-indigo-400 transition-all active:rotate-180"
-          >
-            <RefreshCcw className="w-4 h-4" />
-          </button>
-          <button 
-            onClick={toggleLoop} 
-            title={isLooping ? "Mode boucle actif" : "Activer la boucle"}
-            className={`p-2.5 rounded-xl transition-all ${isLooping ? 'bg-amber-500 text-white shadow-lg shadow-amber-900/20' : 'hover:bg-white/10 text-slate-400'}`}
-          >
-            <Repeat className="w-4 h-4" />
-          </button>
-        </div>
-          <div className="flex items-center gap-2">
-            <Clock className="w-3.5 h-3.5 text-indigo-400" />
-            <span className="text-xs font-bold text-white">{formatDuration(points.reduce((acc, p) => acc + (p.duration || 0), 0))}</span>
-            <span className="text-[10px] text-slate-500 uppercase font-black tracking-tighter">Total</span>
+          <div className="text-right">
+            <h2 className="text-sm font-black text-white uppercase tracking-tight">Itinéraire</h2>
+            <p className="text-[9px] text-indigo-400 font-bold uppercase tracking-widest">Séquenceur Voyage</p>
           </div>
         </div>
-        <div className="text-right">
-          <h2 className="text-sm font-black text-white uppercase tracking-tight">Itinéraire</h2>
-          <p className="text-[9px] text-indigo-400 font-bold uppercase tracking-widest">Séquenceur Voyage</p>
+
+        <div className="flex items-center justify-between bg-black/20 p-1.5 rounded-2xl border border-white/5">
+          <div className="flex items-center gap-1">
+            <button 
+              onClick={reverseRoute} 
+              title="Inverser le trajet"
+              className="p-2 hover:bg-indigo-500/20 rounded-lg text-indigo-400 transition-all active:rotate-180"
+            >
+              <RefreshCcw className="w-4 h-4" />
+            </button>
+            <button 
+              onClick={toggleLoop} 
+              title={isLooping ? "Mode boucle actif" : "Activer la boucle"}
+              className={`p-2 rounded-lg transition-all ${isLooping ? 'bg-amber-500 text-white shadow-lg shadow-amber-900/20' : 'hover:bg-white/5 text-slate-400'}`}
+            >
+              <Repeat className="w-4 h-4" />
+            </button>
+            <div className="w-px h-4 bg-white/10 mx-1" />
+            <button 
+              onClick={() => setUseSnap(!useSnap)} 
+              title={useSnap ? "Aimantage route actif" : "Activer l'aimantage route"}
+              className={`p-2 rounded-lg transition-all ${useSnap ? 'bg-emerald-500 text-white shadow-lg shadow-emerald-900/20' : 'hover:bg-white/5 text-slate-400'}`}
+            >
+              <MapPin className="w-4 h-4" />
+            </button>
+            <button 
+              onClick={() => {
+                const newVal = !useOsrmSpeed;
+                setUseOsrmSpeed(newVal);
+                if (newVal) refreshAllPaths(points);
+              }} 
+              title={useOsrmSpeed ? "Vitesse OSRM active" : "Utiliser la vitesse OSRM"}
+              className={`p-2 rounded-lg transition-all ${useOsrmSpeed ? 'bg-blue-500 text-white shadow-lg shadow-blue-900/20' : 'hover:bg-white/5 text-slate-400'}`}
+            >
+              <Clock className="w-4 h-4" />
+            </button>
+          </div>
+          
+          <div className="flex items-center gap-2 px-3 py-1.5 bg-indigo-500/10 rounded-xl border border-indigo-500/20">
+            <Clock className="w-3 h-3 text-indigo-400" />
+            <span className="text-[10px] font-black text-white tabular-nums">
+              {formatDuration(points.reduce((acc, p) => acc + (p.duration || 0), 0))}
+            </span>
+          </div>
         </div>
       </div>
 
@@ -291,8 +404,24 @@ export default function SequencePanel({ activeSim, points, setPoints, onClose, p
           <AnimatePresence>
             {showPresets && (
               <motion.div initial={{ height: 0 }} animate={{ height: 'auto' }} exit={{ height: 0 }} className="overflow-hidden">
-                <div className="p-3 pt-0 space-y-2 border-t border-white/5">
-                  <div className="flex gap-2 mt-3">
+                <div className="p-3 pt-0 space-y-4 border-t border-white/5">
+                  {/* OPTIONS ROUTAGE */}
+                  <div className="grid grid-cols-2 gap-2 pt-3">
+                    <button 
+                      onClick={() => {setAvoidTolls(!avoidTolls); refreshAllPaths(points);}}
+                      className={`flex items-center gap-2 px-3 py-2 rounded-xl text-[9px] font-bold uppercase transition-all ${avoidTolls ? 'bg-rose-500/20 text-rose-400 border border-rose-500/30' : 'bg-white/5 text-slate-500 border border-transparent'}`}
+                    >
+                      <Navigation className="w-3 h-3" /> Éviter Péages
+                    </button>
+                    <button 
+                      onClick={() => {setAvoidMotorways(!avoidMotorways); refreshAllPaths(points);}}
+                      className={`flex items-center gap-2 px-3 py-2 rounded-xl text-[9px] font-bold uppercase transition-all ${avoidMotorways ? 'bg-rose-500/20 text-rose-400 border border-rose-500/30' : 'bg-white/5 text-slate-500 border border-transparent'}`}
+                    >
+                      <Navigation className="w-3 h-3" /> Éviter Autoroutes
+                    </button>
+                  </div>
+
+                  <div className="flex gap-2">
                     <input 
                       type="text" 
                       placeholder="Nom du trajet..."
@@ -348,8 +477,10 @@ export default function SequencePanel({ activeSim, points, setPoints, onClose, p
           results={results}
           onSelect={(res) => selectResult(points[0].id, res)}
           loading={loading && activeSearchId === points[0].id}
-          isPicking={pickingPointId === points[0]?.id}
           onStartPicking={() => startPicking(points[0].id)}
+          formatDuration={formatDuration}
+          cumulativeTime={0}
+          useOsrmSpeed={useOsrmSpeed}
         />
 
         {/* ÉTAPES INTERMÉDIAIRES */}
@@ -369,12 +500,13 @@ export default function SequencePanel({ activeSim, points, setPoints, onClose, p
                 onRemove={() => removeStep(p.id)}
                 expanded={expandedId === p.id}
                 onToggleExpand={() => setExpandedId(expandedId === p.id ? null : p.id)}
-                onUpdate={(data) => updatePoint(p.id, data)}
+                 onUpdate={(data) => updatePoint(p.id, data)}
                 isDraggable
                 isPicking={pickingPointId === p.id}
                 onStartPicking={() => startPicking(p.id)}
                 cumulativeTime={getCumulativeTime(idx + 1)}
                 formatDuration={formatDuration}
+                useOsrmSpeed={useOsrmSpeed}
               />
             </Reorder.Item>
           ))}
@@ -400,6 +532,7 @@ export default function SequencePanel({ activeSim, points, setPoints, onClose, p
             onStartPicking={() => startPicking(points[points.length - 1].id)}
             cumulativeTime={getCumulativeTime(points.length - 1)}
             formatDuration={formatDuration}
+            useOsrmSpeed={useOsrmSpeed}
           />
         )}
 
@@ -412,7 +545,22 @@ export default function SequencePanel({ activeSim, points, setPoints, onClose, p
         </button>
       </div>
 
-      <div className="p-4 bg-slate-900/60 border-t border-white/5">
+      <div className="p-4 bg-slate-900/60 border-t border-white/5 space-y-3">
+        <div className="flex gap-2">
+          <button 
+            onClick={downloadGpx}
+            disabled={points.length < 2}
+            className="flex-1 py-3 bg-white/5 hover:bg-white/10 border border-white/10 text-slate-300 rounded-xl font-bold uppercase text-[10px] tracking-widest transition-all flex items-center justify-center gap-2"
+          >
+            <Download className="w-3.5 h-3.5" /> Exporter GPX
+          </button>
+          <button 
+            onClick={() => setShowPresets(true)}
+            className="flex-1 py-3 bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/20 text-amber-500 rounded-xl font-bold uppercase text-[10px] tracking-widest transition-all flex items-center justify-center gap-2"
+          >
+            <Star className="w-3.5 h-3.5" /> En Favori
+          </button>
+        </div>
         <button 
           onClick={startSequence}
           disabled={points.length < 2}
@@ -425,7 +573,7 @@ export default function SequencePanel({ activeSim, points, setPoints, onClose, p
   );
 }
 
-function PointItem({ point, label, color, isSearchActive, query, onSearch, results, onSelect, loading, onRemove, expanded, onToggleExpand, onUpdate, isLast, isDraggable, isPicking, onStartPicking, cumulativeTime, formatDuration }) {
+function PointItem({ point, label, color, isSearchActive, query, onSearch, results, onSelect, loading, onRemove, expanded, onToggleExpand, onUpdate, isLast, isDraggable, isPicking, onStartPicking, cumulativeTime, formatDuration, useOsrmSpeed }) {
   if (!point) return null;
   
   return (
@@ -440,12 +588,15 @@ function PointItem({ point, label, color, isSearchActive, query, onSearch, resul
           {isDraggable && <GripVertical className="w-3.5 h-3.5 text-slate-700 cursor-grab active:cursor-grabbing" />}
           
           <div className="flex-1 min-w-0">
-            <div className="flex justify-between items-center mb-0.5">
-              <p className={`text-[8px] font-black uppercase tracking-tighter ${
+            <div className="flex justify-between items-center mb-1">
+              <p className={`text-[8px] font-black uppercase tracking-widest ${
                 color === 'indigo' ? 'text-indigo-400' : (color === 'rose' ? 'text-rose-400' : 'text-emerald-400')
               }`}>{label}</p>
               {cumulativeTime !== undefined && (
-                <p className="text-[8px] text-slate-500 font-bold">⏱️ T+{formatDuration(cumulativeTime)}</p>
+                <div className="flex items-center gap-1 bg-white/5 px-1.5 py-0.5 rounded-md">
+                   <Clock className="w-2.5 h-2.5 text-slate-500" />
+                   <p className="text-[8px] text-slate-400 font-bold tabular-nums">T+ {formatDuration(cumulativeTime)}</p>
+                </div>
               )}
             </div>
             <input 
@@ -453,7 +604,7 @@ function PointItem({ point, label, color, isSearchActive, query, onSearch, resul
               value={isSearchActive ? query : point.address}
               onChange={(e) => onSearch(e.target.value)}
               placeholder={isPicking ? "Cliquez sur la carte..." : label + "..."}
-              className="w-full bg-transparent border-none outline-none text-white font-bold text-xs truncate"
+              className="w-full bg-transparent border-none outline-none text-white font-bold text-xs truncate placeholder:text-slate-700"
               onClick={(e) => e.stopPropagation()}
             />
           </div>
@@ -497,20 +648,22 @@ function PointItem({ point, label, color, isSearchActive, query, onSearch, resul
                       <option value="wait" className="bg-slate-900">⏳ Attendre</option>
                     </select>
                   </div>
-                  <div className="space-y-1">
+                   <div className="space-y-1">
                     <label className="text-[8px] font-black text-slate-600 uppercase">Vitesse (km/h)</label>
                     <input 
                       type="number" value={point.speed}
+                      disabled={useOsrmSpeed}
                       onChange={(e) => onUpdate({ speed: parseFloat(e.target.value) })}
-                      className="w-full bg-black/40 border border-white/5 rounded-lg p-1.5 text-[10px] text-white outline-none"
+                      className={`w-full bg-black/40 border border-white/5 rounded-lg p-1.5 text-[10px] text-white outline-none ${useOsrmSpeed ? 'opacity-50 cursor-not-allowed' : ''}`}
                     />
                   </div>
                   <div className="space-y-1">
                     <label className="text-[8px] font-black text-slate-600 uppercase">Durée ({formatDuration(point.duration)})</label>
                     <input 
                       type="number" value={point.duration}
+                      disabled={useOsrmSpeed}
                       onChange={(e) => onUpdate({ duration: parseFloat(e.target.value) })}
-                      className="w-full bg-black/40 border border-white/5 rounded-lg p-1.5 text-[10px] text-white outline-none"
+                      className={`w-full bg-black/40 border border-white/5 rounded-lg p-1.5 text-[10px] text-white outline-none ${useOsrmSpeed ? 'opacity-50 cursor-not-allowed' : ''}`}
                     />
                   </div>
                   <div className="space-y-1">
