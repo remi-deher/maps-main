@@ -116,6 +116,7 @@ class WebBridge {
         setLogLevel(req.body.logLevel)
       }
       this.orchestrator.applySettings()
+      this.simulator.refreshSettings()
       res.json({ success: true })
     })
 
