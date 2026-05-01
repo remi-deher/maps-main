@@ -46,7 +46,11 @@ class SettingsManager {
       serverName: '',      
       manualTunnelMode: false, 
       networkOnlyMode: false,  
-      manualTunnelAddress: ''  
+      manualTunnelAddress: '',
+      logLevel: 'info',
+      eveilInterval: 15,
+      lastActiveLocation: null,
+      savedTrips: []
     }
 
     try {

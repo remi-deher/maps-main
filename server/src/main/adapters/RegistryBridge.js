@@ -118,6 +118,43 @@ class RegistryBridge {
       }
     })
 
+    // Trajets & Séquences
+    ipcMain.handle('play-route', async (e, data) => {
+      try {
+        this.companion._handleRouteMessage(null, { type: 'PLAY_ROUTE', data })
+        return { success: true }
+      } catch (e) {
+        return { success: false, error: e.message }
+      }
+    })
+
+    ipcMain.handle('play-osrm-route', async (e, data) => {
+      try {
+        this.companion._handleRouteMessage(null, { type: 'PLAY_OSRM_ROUTE', data })
+        return { success: true }
+      } catch (e) {
+        return { success: false, error: e.message }
+      }
+    })
+
+    ipcMain.handle('play-custom-gpx', async (e, data) => {
+      try {
+        this.companion._handleRouteMessage(null, { type: 'PLAY_CUSTOM_GPX', data })
+        return { success: true }
+      } catch (e) {
+        return { success: false, error: e.message }
+      }
+    })
+
+    ipcMain.handle('play-sequence', async (e, legs) => {
+      try {
+        this.companion._handleRouteMessage(null, { type: 'PLAY_SEQUENCE', data: { legs } })
+        return { success: true }
+      } catch (e) {
+        return { success: false, error: e.message }
+      }
+    })
+
     // Settings
     const settings = require('../core/services/settings-manager')
     ipcMain.handle('get-settings', () => {
@@ -197,6 +234,21 @@ class RegistryBridge {
       } catch (e) {
         return { output: `Erreur diag: ${e.message}` }
       }
+    })
+
+    ipcMain.handle('dialog:openGpx', async () => {
+      const { dialog } = require('electron')
+      const fs = require('fs').promises
+      const res = await dialog.showOpenDialog({
+        properties: ['openFile'],
+        filters: [{ name: 'GPX', extensions: ['gpx'] }]
+      })
+      
+      if (!res.canceled && res.filePaths.length > 0) {
+        const content = await fs.readFile(res.filePaths[0], 'utf8')
+        return { success: true, content, path: res.filePaths[0] }
+      }
+      return { success: false }
     })
 
     // Cluster

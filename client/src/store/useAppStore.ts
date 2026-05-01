@@ -12,6 +12,7 @@ interface AppStore {
   status: string;
   serverStatus: ServerStatus | null;
   simulatedCoords: Coords | null;
+  realCoords: Coords | null;
   isMaintaining: boolean;
   
   // Actions
@@ -33,6 +34,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
   status: 'Déconnecté',
   serverStatus: null,
   simulatedCoords: null,
+  realCoords: null,
   isMaintaining: false,
 
   loadSettings: async () => {
@@ -62,6 +64,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
   setIsMaintaining: (val) => set({ isMaintaining: val }),
 
   reportRealLocation: (coords: Coords) => {
+    set({ realCoords: coords });
     if (socket?.connected) {
       socket.emit('REAL_LOCATION', coords);
     }
@@ -127,13 +130,20 @@ export const useAppStore = create<AppStore>((set, get) => ({
         set({ peerServers: data.cluster.peers });
       }
 
-      if (data.lastInjectedLocation) {
-        set({ simulatedCoords: { 
-            latitude: data.lastInjectedLocation.lat, 
-            longitude: data.lastInjectedLocation.lon,
-            name: data.lastInjectedLocation.name 
-        } });
+      // Priorité 1: Position en cours (live)
+      // Priorité 2: Position mémorisée par le serveur (reboot)
+      const serverLoc = data.lastInjectedLocation || data.lastActiveLocation;
+
+      if (serverLoc) {
+        const coords = { 
+          latitude: serverLoc.lat, 
+          longitude: serverLoc.lon,
+          name: serverLoc.name 
+        };
+        set({ simulatedCoords: coords });
+        AsyncStorage.setItem('MOCK_LOCATION', JSON.stringify(coords));
       } else {
+        // Priorité 3: Position locale de l'iPhone (si le serveur est vierge)
         const { simulatedCoords } = get();
         if (simulatedCoords && socket?.connected) {
           socket.emit('SET_LOCATION', { 

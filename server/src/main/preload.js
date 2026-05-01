@@ -7,6 +7,8 @@ contextBridge.exposeInMainWorld('gps', {
   playOsrmRoute: (data) => ipcRenderer.invoke('play-osrm-route', data),
   openGpxDialog: () => ipcRenderer.invoke('dialog:openGpx'),
   playCustomGpx: (data) => ipcRenderer.invoke('play-custom-gpx', data),
+  playSequence:  (legs) => ipcRenderer.invoke('play-sequence', legs),
+  setSequencerLoop: (enabled) => ipcRenderer.invoke('set-sequencer-loop', enabled),
   getStatus:     () => ipcRenderer.invoke('get-status'),
   onStatus:      (cb) => {
     const listener = (_e, data) => cb(data);

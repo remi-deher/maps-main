@@ -4,6 +4,7 @@ const { EventEmitter } = require('events')
 const { dbg } = require('../../../logger')
 const settings = require('../settings-manager')
 const GpsCommander = require('./gps-commander')
+const gpsSequencer = require('./GpsSequencer')
 
 /**
  * GpsSimulator (V2) - Orchestre la simulation GPS.
@@ -14,23 +15,71 @@ class GpsSimulator extends EventEmitter {
     this.tunnel = tunnelManager
     this.companion = companionServer
     this.commander = new GpsCommander()
-    this.lastCoords = null
+    
+    // Chargement de la dernière position connue pour la reprise après reboot
+    const savedLoc = settings.get('lastActiveLocation')
+    this.lastCoords = savedLoc || null
     this.lastInjectionTime = 0
     this._isQuitting = false
     this._eveilInterval = null
 
     this._startEveilCycle()
+
+    // Auto-réinjection dès que le tunnel est prêt
+    this.tunnel.on('ready', () => {
+      if (this.lastCoords && !this._isQuitting) {
+        dbg(`[gps-simulator] ♻️ Reprise après reboot : Ré-injection de la position mémorisée`)
+        this.setLocation(this.lastCoords.lat, this.lastCoords.lon, this.lastCoords.name, true)
+      }
+    })
+
+    if (this.companion) {
+      this.companion.on('request-location', (data) => {
+        dbg(`[gps-simulator] 📲 Commande iPhone reçue : ${data.lat}, ${data.lon}`)
+        this.setLocation(data.lat, data.lon, data.name)
+      })
+      
+      this.companion.on('request-clear', () => {
+        dbg(`[gps-simulator] 📲 Commande iPhone reçue : Clear`)
+        this.clearLocation()
+      })
+
+      this.companion.on('settings-updated', () => {
+        this.refreshSettings()
+      })
+    }
+
+    // Gestion des événements du Séquenceur
+    gpsSequencer.on('progress', (data) => {
+      this.lastCoords = { lat: data.lat, lon: data.lon, name: `Route (${data.index+1}/${data.total})` }
+      this.lastInjectionTime = Date.now()
+      this.emit('location-changed', this.lastCoords)
+    })
+
+    gpsSequencer.on('status', (status) => {
+      if (this.companion) {
+        this.companion.status.route = status
+        this.companion._broadcast('STATUS_UPDATE', { route: status })
+      }
+    })
   }
 
   _startEveilCycle() {
     if (this._eveilInterval) clearInterval(this._eveilInterval)
+    
+    const intervalSeconds = settings.get('eveilInterval') || 15
+    const intervalMs = intervalSeconds * 1000
+    
     this._eveilInterval = setInterval(async () => {
       if (this._isQuitting || !this.lastCoords) return
-
       if (!settings.get('isEveilMode')) return
+      
+      // On suspend l'éveil si une route est en cours
+      if (gpsSequencer.isRunning && !gpsSequencer.isPaused) return
 
       const now = Date.now()
-      if (now - this.lastInjectionTime > 25000) {
+      // On déclenche la dérive si aucune injection n'a eu lieu depuis (intervalle - 1s)
+      if (now - this.lastInjectionTime > (intervalMs - 1000)) {
         const { lat, lon } = this.lastCoords
         const jitterLat = (Math.random() - 0.5) * 0.000015
         const jitterLon = (Math.random() - 0.5) * 0.000015
@@ -40,7 +89,7 @@ class GpsSimulator extends EventEmitter {
 
         if (rsdAddress && rsdPort) {
           try {
-            dbg(`[gps-simulator] 🛡️ Mode Éveil : Micro-dérive appliquée`)
+            dbg(`[gps-simulator] 🛡️ Mode Éveil : Micro-dérive appliquée (${intervalSeconds}s)`)
             await this.commander.execute('set', rsdAddress, rsdPort, [
               String(lat + jitterLat), 
               String(lon + jitterLon)
@@ -51,7 +100,7 @@ class GpsSimulator extends EventEmitter {
           }
         }
       }
-    }, 30000)
+    }, intervalMs)
   }
 
   async setLocation(lat, lon, name = null, force = false) {
@@ -81,6 +130,7 @@ class GpsSimulator extends EventEmitter {
       const result = await this.commander.execute('set', rsdAddress, rsdPort, [String(lat), String(lon)])
       if (result.success) {
         this.lastCoords = { lat, lon, name }
+        settings.save({ lastActiveLocation: this.lastCoords })
         this.emit('location-changed', { lat, lon, name })
       }
       return result
@@ -93,6 +143,7 @@ class GpsSimulator extends EventEmitter {
     const rsdAddress = this.tunnel.getRsdAddress()
     const rsdPort = this.tunnel.getRsdPort()
     this.lastCoords = null
+    settings.save({ lastActiveLocation: null })
     if (!rsdAddress) return { success: true }
     return await this.commander.execute('clear', rsdAddress, rsdPort)
   }
@@ -101,7 +152,17 @@ class GpsSimulator extends EventEmitter {
     return !!this.lastCoords
   }
 
-  stop() { this.commander.stop() }
+  /**
+   * Applique les nouveaux réglages (intervalle d'éveil, etc.)
+   */
+  refreshSettings() {
+    this._startEveilCycle()
+  }
+
+  stop() { 
+    if (this._eveilInterval) clearInterval(this._eveilInterval)
+    this.commander.stop() 
+  }
   destroy() { this._isQuitting = true; this.stop(); this.lastCoords = null; }
 }
 

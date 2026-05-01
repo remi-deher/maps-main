@@ -116,6 +116,11 @@ function registerIpcHandlers(tunnel, gps, companion) {
     }
   })
 
+  ipcMain.handle('set-sequencer-loop', (_event, enabled) => {
+    gps.setLooping(enabled)
+    return { success: true }
+  })
+
   // ─── Settings ──────────────────────────────────────────────────────────────
   
   ipcMain.handle('get-settings', () => settings.get())

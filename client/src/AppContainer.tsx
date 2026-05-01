@@ -152,6 +152,16 @@ export default function AppContainer() {
                 </View>
               </Marker>
             )}
+            
+            {/* 📍 Point de position RÉELLE (Discret) */}
+            {store.realCoords && (
+              <Marker coordinate={store.realCoords} anchor={{x: 0.5, y: 0.5}}>
+                <View style={styles.realDotOutline}>
+                  <View style={styles.realDotInner} />
+                </View>
+              </Marker>
+            )}
+
             {pendingCoords && <Marker coordinate={pendingCoords} pinColor={COLORS.error} />}
           </MapView>
 
@@ -242,8 +252,15 @@ export default function AppContainer() {
             connectionType={store.serverStatus?.connectionType}
             rsdAddress={store.serverStatus?.rsdAddress}
             onSave={(data: any) => { 
-                if (typeof data === 'string') store.setSettings(data, store.serverPort);
-                else store.sendAction('SAVE_SETTINGS', data);
+                if (typeof data === 'string') {
+                  store.setSettings(data, store.serverPort);
+                } else {
+                  // Sauvegarde locale de l'IP et du Port s'ils sont fournis dans l'objet
+                  if (data.wifiIp && data.companionPort) {
+                    store.setSettings(data.wifiIp, data.companionPort);
+                  }
+                  store.sendAction('SAVE_SETTINGS', data);
+                }
                 setShowSettings(false); 
             }}
             onImportGpx={(content: string) => store.sendAction('PLAY_CUSTOM_GPX', { gpxContent: content })}
@@ -272,4 +289,6 @@ const styles = StyleSheet.create({
   simPill: { position: 'absolute', bottom: 40, left: 20, right: 20, backgroundColor: 'rgba(15, 23, 42, 0.95)', borderRadius: 20, padding: 10, flexDirection: 'row', alignItems: 'center', gap: 12, borderWidth: 1, borderColor: 'rgba(99, 102, 241, 0.4)', zIndex: 90 },
   simPillIcon: { width: 28, height: 28, borderRadius: 14, backgroundColor: 'rgba(99, 102, 241, 0.2)', justifyContent: 'center', alignItems: 'center' },
   simPillText: { color: COLORS.text, fontSize: 14, fontWeight: '700', flex: 1 },
+  realDotOutline: { width: 14, height: 14, borderRadius: 7, backgroundColor: 'rgba(255, 255, 255, 0.8)', justifyContent: 'center', alignItems: 'center', shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.3, shadowRadius: 2, elevation: 3 },
+  realDotInner: { width: 8, height: 8, borderRadius: 4, backgroundColor: '#34D399' }, // Vert pour bien distinguer du bleu simulé
 });

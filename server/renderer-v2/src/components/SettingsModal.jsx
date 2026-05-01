@@ -18,7 +18,9 @@ function SettingsModal({ isOpen, onClose }) {
     clusterNodes: [],
     serverName: '',
     networkOnlyMode: false,
-    manualTunnelAddress: ''
+    manualTunnelAddress: '',
+    logLevel: 'info',
+    eveilInterval: 15
   });
   const [activeTab, setActiveTab] = useState('general');
   const [diagLogs, setDiagLogs] = useState('');
@@ -28,6 +30,7 @@ function SettingsModal({ isOpen, onClose }) {
   const [clusterDashboard, setClusterDashboard] = useState(null);
   const [interfaces, setInterfaces] = useState([]);
   const [plistData, setPlistData] = useState({ plists: [], hasSelfIdentity: false });
+  const [envInfo, setEnvInfo] = useState(null);
 
   const runDiagnostic = async (type) => {
     setIsDiagRunning(true);
@@ -115,6 +118,14 @@ function SettingsModal({ isOpen, onClose }) {
       if (payload.service === 'cluster-dashboard') {
         setClusterDashboard(payload.data);
       }
+      if (payload.envInfo) {
+        setEnvInfo(payload.envInfo);
+      }
+    });
+
+    // Récupération initiale du statut pour les infos d'environnement
+    gps.getStatus().then(data => {
+      if (data.envInfo) setEnvInfo(data.envInfo);
     });
 
     const unSubSettings = gps.onSettingsUpdated((newSettings) => {
@@ -413,6 +424,53 @@ function SettingsModal({ isOpen, onClose }) {
             </div>
           </section>
 
+          {/* Verbosity Level */}
+          <section className="space-y-4">
+            <label className="text-sm font-bold text-slate-400 uppercase tracking-wider flex items-center gap-2">
+              <Terminal className="w-4 h-4 text-blue-400" />
+              Verbocité des Logs
+            </label>
+            <div className="space-y-2">
+              <p className="text-xs text-slate-500 px-1">Définissez le niveau de détails affichés dans les logs.</p>
+              <select 
+                value={settings.logLevel}
+                onChange={(e) => setSettings({...settings, logLevel: e.target.value})}
+                className="w-full bg-white/5 border border-white/10 rounded-xl p-3 outline-none focus:border-blue-500 transition-colors text-white appearance-none cursor-pointer"
+              >
+                <option value="info" className="bg-slate-900">PROD (Messages importants uniquement)</option>
+                <option value="debug" className="bg-slate-900">DEV (Détails des injections & tunnel)</option>
+                <option value="silly" className="bg-slate-900">TRACE (Flux complet - Très verbeux)</option>
+              </select>
+            </div>
+          </section>
+
+          {/* Eveil Interval */}
+          <section className="space-y-4">
+            <label className="text-sm font-bold text-slate-400 uppercase tracking-wider flex items-center gap-2">
+              <Activity className="w-4 h-4 text-orange-400" />
+              Intervalle d'Éveil (Micro-dérive)
+            </label>
+            <div className="space-y-3">
+              <p className="text-xs text-slate-500 px-1">
+                Fréquence d'injection automatique pour garder le tunnel WiFi actif en arrière-plan.
+              </p>
+              <div className="flex items-center gap-4 bg-white/5 border border-white/10 rounded-xl p-3">
+                <input 
+                  type="range"
+                  min="5"
+                  max="60"
+                  step="1"
+                  value={settings.eveilInterval}
+                  onChange={(e) => setSettings({...settings, eveilInterval: parseInt(e.target.value)})}
+                  className="flex-1 h-2 bg-blue-500/20 rounded-lg appearance-none cursor-pointer accent-blue-500"
+                />
+                <span className="text-sm font-mono font-bold text-blue-400 w-12 text-right">
+                  {settings.eveilInterval}s
+                </span>
+              </div>
+            </div>
+          </section>
+
           {/* Enrôlement Manuel */}
           <section className="space-y-4">
             <label className="text-sm font-bold text-slate-400 uppercase tracking-wider flex items-center gap-2">
@@ -534,6 +592,36 @@ function SettingsModal({ isOpen, onClose }) {
               </div>
             </div>
           </section>
+          
+          {/* Informations Système */}
+          {envInfo && (
+            <section className="space-y-4 pt-6 border-t border-white/5">
+              <label className="text-sm font-bold text-slate-500 uppercase tracking-wider flex items-center gap-2">
+                <Monitor className="w-4 h-4" />
+                Informations Système
+              </label>
+              <div className="grid grid-cols-2 gap-2">
+                <div className="p-3 bg-white/5 rounded-xl border border-white/5">
+                  <p className="text-[10px] text-slate-500 uppercase font-bold">OS Détecté</p>
+                  <p className="text-xs font-mono text-white mt-1 capitalize">{envInfo.os}</p>
+                </div>
+                <div className="p-3 bg-white/5 rounded-xl border border-white/5">
+                  <p className="text-[10px] text-slate-500 uppercase font-bold">Environnement</p>
+                  <p className={`text-xs font-bold mt-1 ${envInfo.isDocker ? 'text-blue-400' : 'text-emerald-400'}`}>
+                    {envInfo.isDocker ? 'Container Docker' : 'Installation Native'}
+                  </p>
+                </div>
+                <div className="p-3 bg-white/5 rounded-xl border border-white/5">
+                  <p className="text-[10px] text-slate-500 uppercase font-bold">Mode d'exécution</p>
+                  <p className="text-xs font-bold text-white mt-1">{envInfo.mode}</p>
+                </div>
+                <div className="p-3 bg-white/5 rounded-xl border border-white/5">
+                  <p className="text-[10px] text-slate-500 uppercase font-bold">Version</p>
+                  <p className="text-xs font-mono text-slate-400 mt-1">v{envInfo.version}</p>
+                </div>
+              </div>
+            </section>
+          )}
             </>
           )}
 

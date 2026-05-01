@@ -188,6 +188,39 @@ class Pmd3Driver extends BaseDriver {
       })
     })
   }
+
+  /**
+   * Vérifie si le tunnel RSD est toujours accessible par une tentative de connexion socket
+   */
+  async checkHealth() {
+    if (!this.isActive || !this.tunnelInfo) return true
+
+    const net = require('net')
+    return new Promise((resolve) => {
+      const socket = new net.Socket()
+      socket.setTimeout(3000)
+
+      socket.on('connect', () => {
+        socket.destroy()
+        resolve(true)
+      })
+
+      socket.on('error', (e) => {
+        dbg(`[pmd3] 🚨 Échec Health Check (Connect Error): ${e.message}`)
+        socket.destroy()
+        resolve(false)
+      })
+
+      socket.on('timeout', () => {
+        dbg(`[pmd3] 🚨 Échec Health Check (Timeout)`)
+        socket.destroy()
+        resolve(false)
+      })
+
+      // Node.js connect gère l'IPv6 (sans crochets)
+      socket.connect(this.tunnelInfo.port, this.tunnelInfo.address)
+    })
+  }
 }
 
 module.exports = Pmd3Driver

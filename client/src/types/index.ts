@@ -24,6 +24,7 @@ export interface ServerStatus {
   lastHeartbeat: number | null;
   lastInjectedLocation: RawCoords | null;
   lastVerifiedLocation: RawCoords | null;
+  lastActiveLocation: RawCoords | null;
   usbDriver: string;
   wifiDriver: string;
   fallbackEnabled: boolean;

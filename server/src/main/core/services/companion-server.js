@@ -65,6 +65,15 @@ class CompanionServer extends EventEmitter {
         this._broadcast('STATUS', this.status)
       })
     }
+
+    // Enregistrement comme abonné aux logs pour redirection vers le Dashboard
+    const loggerModule = require('../../logger')
+    if (loggerModule._headlessEventSubscribers) {
+      loggerModule._headlessEventSubscribers.push({
+        onDebug: (msg) => this._broadcast('debug-log', msg),
+        onStatus: (payload) => this._broadcast('status-update', payload)
+      })
+    }
   }
 
   _refreshStatus() {
@@ -95,11 +104,18 @@ class CompanionServer extends EventEmitter {
       lastHeartbeat: this.status?.lastHeartbeat || null,
       lastInjectedLocation: this.status?.lastInjectedLocation || null,
       lastVerifiedLocation: this.status?.lastVerifiedLocation || null,
+      lastActiveLocation: settings.get('lastActiveLocation'),
       usbDriver: settings.get('usbDriver'),
       wifiDriver: settings.get('wifiDriver'),
       fallbackEnabled: settings.get('fallbackEnabled'),
       favorites: favoritesManager.getFavorites(),
       recentHistory: favoritesManager.getHistory(),
+      envInfo: {
+        os: process.platform,
+        isDocker: fs.existsSync('/.dockerenv'),
+        mode: process.versions.electron ? 'Electron' : 'Headless',
+        version: settings.get('version') || '2.1.0'
+      },
       cluster: {
         role: clusterManager.role,
         peers: settings.get('clusterNodes') || []
@@ -260,6 +276,25 @@ class CompanionServer extends EventEmitter {
         sendStatus('companion', 'info', `Prêt sur ${ip}:${port}`)
       })
 
+      // Middleware de filtrage pour le mode Autonome
+      this.io.use((socket, next) => {
+        const mode = settings.get('operationMode')
+        if (mode === 'autonomous') {
+          // On essaie de distinguer le Dashboard de l'iPhone
+          // Le Dashboard est sur le même hôte, l'iPhone est externe
+          const isLocal = socket.handshake.address === '127.0.0.1' || 
+                          socket.handshake.address === '::1' || 
+                          socket.handshake.address === '::ffff:127.0.0.1' ||
+                          (socket.handshake.headers.origin && socket.handshake.headers.origin.includes(this.port))
+
+          if (!isLocal) {
+            // Silence par défaut pour ne pas spammer
+            return next(new Error('AUTONOMOUS_MODE_ACTIVE'))
+          }
+        }
+        next()
+      })
+
       this.io.on('connection', (socket) => {
         let clientIp = socket.handshake.address
         if (clientIp.startsWith('::ffff:')) clientIp = clientIp.substring(7)
@@ -273,11 +308,16 @@ class CompanionServer extends EventEmitter {
         const actions = [
           'SET_LOCATION', 'PLAY_ROUTE', 'PLAY_SEQUENCE', 'PLAY_OSRM_ROUTE', 
           'PLAY_CUSTOM_GPX', 'ADD_HISTORY', 'ADD_FAVORITE', 'REMOVE_FAVORITE', 
-          'RENAME_FAVORITE', 'SAVE_SETTINGS', 'GET_STATUS', 'HEARTBEAT'
+          'RENAME_FAVORITE', 'SAVE_SETTINGS', 'GET_STATUS', 'HEARTBEAT', 'DEBUG_LOG'
         ]
 
         actions.forEach(event => {
           socket.on(event, (data) => {
+            const mode = settings.get('operationMode')
+            if (mode === 'autonomous' && event === 'SET_LOCATION') {
+              dbg(`[companion-server] ⚠️ Commande SET_LOCATION ignorée (Mode Autonome)`)
+              return
+            }
             this._handleMessage(socket, { type: event, data })
           })
         });
@@ -362,7 +402,12 @@ class CompanionServer extends EventEmitter {
         break
       }
 
-      case 'PLAY_ROUTE':
+      case 'CLEAR_LOCATION': {
+        dbg(`[CMD] iPhone demande suppression position`)
+        this.emit('request-clear')
+        socket.emit('ACK', { timestamp: Date.now() })
+        break
+      }
       case 'PLAY_SEQUENCE':
       case 'PLAY_OSRM_ROUTE':
       case 'PLAY_CUSTOM_GPX': {
@@ -372,6 +417,24 @@ class CompanionServer extends EventEmitter {
           break
         }
         this._handleRouteMessage(socket, payload)
+        break
+      }
+      
+      case 'STOP_ROUTE': {
+        gpsBridge.stopRoute()
+        socket.emit('ACK', { timestamp: Date.now() })
+        break
+      }
+
+      case 'PAUSE_ROUTE': {
+        gpsBridge.pauseRoute()
+        socket.emit('ACK', { timestamp: Date.now() })
+        break
+      }
+
+      case 'RESUME_ROUTE': {
+        gpsBridge.resumeRoute()
+        socket.emit('ACK', { timestamp: Date.now() })
         break
       }
       
@@ -396,8 +459,23 @@ class CompanionServer extends EventEmitter {
       }
 
       case 'SAVE_SETTINGS': {
+        const oldMode = settings.get('operationMode')
+        const newMode = payload.data.operationMode
+        
         settings.save(payload.data)
+        
+        if (newMode === 'autonomous' && oldMode !== 'autonomous') {
+          dbg('[companion-server] 🔒 Mode Autonome activé : Les nouvelles connexions iPhone sont désormais refusées.')
+        } else if (newMode !== 'autonomous' && oldMode === 'autonomous') {
+          dbg('[companion-server] 🔓 Mode Autonome désactivé : Les connexions iPhone sont de nouveau autorisées.')
+        }
+
+        if (payload.data.logLevel) {
+          const { setLogLevel } = require('../../logger')
+          setLogLevel(payload.data.logLevel)
+        }
         this._refreshStatus()
+        this.emit('settings-updated', settings.get())
         this._broadcast('STATUS', this.status)
         break
       }
@@ -413,6 +491,12 @@ class CompanionServer extends EventEmitter {
       case 'GET_STATUS': {
         this._refreshStatus()
         socket.emit('STATUS', this.status)
+        break
+      }
+
+      case 'DEBUG_LOG': {
+        // Rediffusion du log iPhone vers le Dashboard
+        this._broadcast('status-update', { service: 'client-log', data: { message: payload.data, type: 'info' } })
         break
       }
     }

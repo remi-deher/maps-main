@@ -70,7 +70,12 @@ class TunnelManager extends EventEmitter {
       }
     }
 
-    this._reconnectTimer = setInterval(checkAndStart, 10000)
+    this._reconnectTimer = setInterval(() => {
+      checkAndStart()
+      if (!this.activeDriverId && !this.isStarting()) {
+        mdns.poke()
+      }
+    }, 10000)
     
     // Premier lancement immédiat
     setTimeout(checkAndStart, 1000)
@@ -118,6 +123,7 @@ class TunnelManager extends EventEmitter {
     gpsBridge.setActiveDriver(null)
     this._stopAllHeartbeats()
     mdns.start()
+    mdns.poke()
     sendStatus('tunneld', 'scanning', 'Recherche iPhone...')
     this.emit('lost')
   }
@@ -167,7 +173,10 @@ class TunnelManager extends EventEmitter {
     if (!this.activeDriverId) return
     const hbInterval = setInterval(async () => {
       try {
-        await gpsBridge.setLocation(null, null, 'heartbeat')
+        const activeDriver = this.drivers[this.activeDriverId]
+        if (activeDriver && activeDriver.isActive) {
+          await activeDriver.checkHealth()
+        }
       } catch (e) {
         dbg(`[orchestrator] ⚠️ Heartbeat failed: ${e.message}`)
       }
