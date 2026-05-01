@@ -115,7 +115,7 @@ class GpsSimulator extends EventEmitter {
     }
     
     const now = Date.now()
-    if (!force && (now - this.lastInjectionTime < 500)) return { success: true, ignored: true }
+    if (!force && (now - this.lastInjectionTime < 100)) return { success: true, ignored: true }
     this.lastInjectionTime = now
     
     const rsdAddress = this.tunnel.getRsdAddress()

@@ -242,17 +242,23 @@ export default function SequencePanel({ activeSim, points, setPoints, onClose, p
   const startSequence = async () => {
     if (points.length < 2) return;
     const legs = [];
+    let currentTime = Date.now();
+    
     for (let i = 1; i < points.length; i++) {
       const pStart = points[i-1];
       const pEnd = points[i];
+      const duration = (pEnd.duration || 60) * 1000;
+      
       legs.push({
         type: pEnd.type || 'drive',
         start: { lat: pStart.lat, lon: pStart.lon },
         end: { lat: pEnd.lat, lon: pEnd.lon },
-        startTime: Date.now(),
-        endTime: Date.now() + (pEnd.duration || 60) * 1000,
+        startTime: currentTime,
+        endTime: currentTime + duration,
         speed: pEnd.speed || 30
       });
+      
+      currentTime += duration;
     }
     const res = await gps.playSequence(legs);
     if (!res.success) alert("Erreur : " + res.error);
