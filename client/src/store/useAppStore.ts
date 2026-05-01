@@ -12,6 +12,7 @@ interface AppStore {
   status: string;
   serverStatus: ServerStatus | null;
   simulatedCoords: Coords | null;
+  realCoords: Coords | null;
   isMaintaining: boolean;
   
   // Actions
@@ -33,6 +34,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
   status: 'Déconnecté',
   serverStatus: null,
   simulatedCoords: null,
+  realCoords: null,
   isMaintaining: false,
 
   loadSettings: async () => {
@@ -62,6 +64,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
   setIsMaintaining: (val) => set({ isMaintaining: val }),
 
   reportRealLocation: (coords: Coords) => {
+    set({ realCoords: coords });
     if (socket?.connected) {
       socket.emit('REAL_LOCATION', coords);
     }
