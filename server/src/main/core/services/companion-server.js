@@ -110,6 +110,12 @@ class CompanionServer extends EventEmitter {
       fallbackEnabled: settings.get('fallbackEnabled'),
       favorites: favoritesManager.getFavorites(),
       recentHistory: favoritesManager.getHistory(),
+      envInfo: {
+        os: process.platform,
+        isDocker: fs.existsSync('/.dockerenv'),
+        mode: process.versions.electron ? 'Electron' : 'Headless',
+        version: settings.get('version') || '2.1.0'
+      },
       cluster: {
         role: clusterManager.role,
         peers: settings.get('clusterNodes') || []

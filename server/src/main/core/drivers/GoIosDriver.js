@@ -14,11 +14,33 @@ class GoIosDriver extends BaseDriver {
     this.process = null
   }
 
+  /**
+   * Détecte et retourne l'argument du dossier de pairage système s'il existe
+   */
+  _getLockdownArgs() {
+    const fs = require('fs')
+    const path = require('path')
+    
+    let lockdownDir = 'C:\\ProgramData\\Apple\\Lockdown'
+    if (process.platform !== 'win32') {
+      lockdownDir = '/var/lib/lockdown'
+    }
+
+    const systemConfig = path.join(lockdownDir, 'SystemConfiguration.plist')
+    if (fs.existsSync(systemConfig)) {
+      dbg(`[${this.id}] 🛡️ Dossier Lockdown système détecté : ${lockdownDir}`)
+      return [`--pair-record-path=${lockdownDir}`]
+    }
+    
+    return []
+  }
+
   async startTunnel() {
     if (this.process) return true
     this.isStarting = true
     
-    const { exe, fullArgs } = bin.getSpawnArgs('go-ios', ['tunnel', 'start'])
+    const baseArgs = ['tunnel', 'start', ...this._getLockdownArgs()]
+    const { exe, fullArgs } = bin.getSpawnArgs('go-ios', baseArgs)
     dbg(`[${this.id}] 🚀 Lancement : ${exe} ${fullArgs.join(' ')}`)
     
     this.process = spawn(exe, fullArgs)
@@ -75,7 +97,8 @@ class GoIosDriver extends BaseDriver {
   async setLocation(lat, lon) {
     if (!this.isActive || !this.tunnelInfo) return { success: false, error: 'Tunnel non prêt' }
     const { address, port } = this.tunnelInfo
-    const { exe, fullArgs } = bin.getSpawnArgs('go-ios', ['setlocation', '--rsd', `${address}:${port}`, String(lat), String(lon)])
+    const baseArgs = ['setlocation', '--rsd', `${address}:${port}`, ...this._getLockdownArgs(), String(lat), String(lon)]
+    const { exe, fullArgs } = bin.getSpawnArgs('go-ios', baseArgs)
     return new Promise((resolve) => {
       const proc = spawn(exe, fullArgs)
       proc.on('error', (e) => resolve({ success: false, error: e.message }))
@@ -86,7 +109,8 @@ class GoIosDriver extends BaseDriver {
   async clearLocation() {
     if (!this.isActive || !this.tunnelInfo) return { success: false }
     const { address, port } = this.tunnelInfo
-    const { exe, fullArgs } = bin.getSpawnArgs('go-ios', ['setlocation', '--rsd', `${address}:${port}`, 'reset'])
+    const baseArgs = ['setlocation', '--rsd', `${address}:${port}`, ...this._getLockdownArgs(), 'reset']
+    const { exe, fullArgs } = bin.getSpawnArgs('go-ios', baseArgs)
     const proc = spawn(exe, fullArgs)
     proc.on('error', (e) => dbg(`[go-ios] Clear error: ${e.message}`))
     return new Promise(res => proc.on('close', code => res({ success: code === 0 })))
