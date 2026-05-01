@@ -47,7 +47,8 @@ class SettingsManager {
       manualTunnelMode: false, 
       networkOnlyMode: false,  
       manualTunnelAddress: '',
-      logLevel: 'info'
+      logLevel: 'info',
+      eveilInterval: 15
     }
 
     try {

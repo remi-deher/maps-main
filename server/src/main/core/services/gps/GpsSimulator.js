@@ -31,18 +31,26 @@ class GpsSimulator extends EventEmitter {
         dbg(`[gps-simulator] 📲 Commande iPhone reçue : Clear`)
         this.clearLocation()
       })
+
+      this.companion.on('settings-updated', () => {
+        this.refreshSettings()
+      })
     }
   }
 
   _startEveilCycle() {
     if (this._eveilInterval) clearInterval(this._eveilInterval)
+    
+    const intervalSeconds = settings.get('eveilInterval') || 15
+    const intervalMs = intervalSeconds * 1000
+    
     this._eveilInterval = setInterval(async () => {
       if (this._isQuitting || !this.lastCoords) return
-
       if (!settings.get('isEveilMode')) return
 
       const now = Date.now()
-      if (now - this.lastInjectionTime > 25000) {
+      // On déclenche la dérive si aucune injection n'a eu lieu depuis (intervalle - 1s)
+      if (now - this.lastInjectionTime > (intervalMs - 1000)) {
         const { lat, lon } = this.lastCoords
         const jitterLat = (Math.random() - 0.5) * 0.000015
         const jitterLon = (Math.random() - 0.5) * 0.000015
@@ -52,7 +60,7 @@ class GpsSimulator extends EventEmitter {
 
         if (rsdAddress && rsdPort) {
           try {
-            dbg(`[gps-simulator] 🛡️ Mode Éveil : Micro-dérive appliquée`)
+            dbg(`[gps-simulator] 🛡️ Mode Éveil : Micro-dérive appliquée (${intervalSeconds}s)`)
             await this.commander.execute('set', rsdAddress, rsdPort, [
               String(lat + jitterLat), 
               String(lon + jitterLon)
@@ -63,7 +71,7 @@ class GpsSimulator extends EventEmitter {
           }
         }
       }
-    }, 30000)
+    }, intervalMs)
   }
 
   async setLocation(lat, lon, name = null, force = false) {
@@ -113,7 +121,17 @@ class GpsSimulator extends EventEmitter {
     return !!this.lastCoords
   }
 
-  stop() { this.commander.stop() }
+  /**
+   * Applique les nouveaux réglages (intervalle d'éveil, etc.)
+   */
+  refreshSettings() {
+    this._startEveilCycle()
+  }
+
+  stop() { 
+    if (this._eveilInterval) clearInterval(this._eveilInterval)
+    this.commander.stop() 
+  }
   destroy() { this._isQuitting = true; this.stop(); this.lastCoords = null; }
 }
 

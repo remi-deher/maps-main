@@ -416,6 +416,7 @@ class CompanionServer extends EventEmitter {
           setLogLevel(payload.data.logLevel)
         }
         this._refreshStatus()
+        this.emit('settings-updated', settings.get())
         this._broadcast('STATUS', this.status)
         break
       }

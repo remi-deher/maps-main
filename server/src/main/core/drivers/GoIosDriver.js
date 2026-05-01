@@ -91,6 +91,36 @@ class GoIosDriver extends BaseDriver {
     proc.on('error', (e) => dbg(`[go-ios] Clear error: ${e.message}`))
     return new Promise(res => proc.on('close', code => res({ success: code === 0 })))
   }
+
+  /**
+   * Vérifie si le tunnel RSD est toujours accessible
+   */
+  async checkHealth() {
+    if (!this.isActive || !this.tunnelInfo) return true
+
+    const net = require('net')
+    return new Promise((resolve) => {
+      const socket = new net.Socket()
+      socket.setTimeout(3000)
+
+      socket.on('connect', () => {
+        socket.destroy()
+        resolve(true)
+      })
+
+      socket.on('error', () => {
+        socket.destroy()
+        resolve(false)
+      })
+
+      socket.on('timeout', () => {
+        socket.destroy()
+        resolve(false)
+      })
+
+      socket.connect(this.tunnelInfo.port, this.tunnelInfo.address)
+    })
+  }
 }
 
 module.exports = GoIosDriver

@@ -19,7 +19,8 @@ function SettingsModal({ isOpen, onClose }) {
     serverName: '',
     networkOnlyMode: false,
     manualTunnelAddress: '',
-    logLevel: 'info'
+    logLevel: 'info',
+    eveilInterval: 15
   });
   const [activeTab, setActiveTab] = useState('general');
   const [diagLogs, setDiagLogs] = useState('');
@@ -431,6 +432,33 @@ function SettingsModal({ isOpen, onClose }) {
                 <option value="debug" className="bg-slate-900">DEV (Détails des injections & tunnel)</option>
                 <option value="silly" className="bg-slate-900">TRACE (Flux complet - Très verbeux)</option>
               </select>
+            </div>
+          </section>
+
+          {/* Eveil Interval */}
+          <section className="space-y-4">
+            <label className="text-sm font-bold text-slate-400 uppercase tracking-wider flex items-center gap-2">
+              <Activity className="w-4 h-4 text-orange-400" />
+              Intervalle d'Éveil (Micro-dérive)
+            </label>
+            <div className="space-y-3">
+              <p className="text-xs text-slate-500 px-1">
+                Fréquence d'injection automatique pour garder le tunnel WiFi actif en arrière-plan.
+              </p>
+              <div className="flex items-center gap-4 bg-white/5 border border-white/10 rounded-xl p-3">
+                <input 
+                  type="range"
+                  min="5"
+                  max="60"
+                  step="1"
+                  value={settings.eveilInterval}
+                  onChange={(e) => setSettings({...settings, eveilInterval: parseInt(e.target.value)})}
+                  className="flex-1 h-2 bg-blue-500/20 rounded-lg appearance-none cursor-pointer accent-blue-500"
+                />
+                <span className="text-sm font-mono font-bold text-blue-400 w-12 text-right">
+                  {settings.eveilInterval}s
+                </span>
+              </div>
             </div>
           </section>
 
