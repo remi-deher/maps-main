@@ -58,6 +58,23 @@ class MdnsManager {
       dbg('[mdns] 🛑 Scan mDNS arrêté.')
     }
   }
+
+  /**
+   * Effectue un "poke" (requête ponctuelle) pour forcer les iPhones à se manifester.
+   */
+  poke() {
+    if (this.platform === 'win32') {
+      // On lance un browse court (2s) pour forcer l'annonce sur le réseau sans polluer indéfiniment
+      const p = spawn('dns-sd', ['-B', '_apple-mobdev2._tcp'])
+      p.on('error', () => {}) // Ignorer si non installé
+      setTimeout(() => {
+        try { p.kill() } catch (e) {}
+      }, 2000)
+    } else {
+      // Sur Linux, avahi-browse -rt fait déjà un scan complet et s'arrête
+      spawn('avahi-browse', ['-rt', '_apple-mobdev2._tcp']).unref()
+    }
+  }
 }
 
 module.exports = new MdnsManager()
