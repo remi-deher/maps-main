@@ -156,3 +156,22 @@
 [23:05:32] [INFO] [orchestrator] 🎯 iPhone détecté via pymobiledevice (WiFi)
 [23:05:32] [INFO] [gps-bridge] 🔌 Driver actif mis à jour : pymobiledevice
 [23:05:32] [INFO] [STATUS][tunneld] ready: Connecté via WiFi (pymobiledevice)
+[23:28:25] [INFO] [headless] 🛑 Signal SIGTERM reçu. Fermeture...
+[23:28:29] [INFO] [mdns] 🚀 Lancement du scan Avahi (avahi-browse) pour réveil iPhone...
+[23:28:29] [INFO] [cluster] 👑 Mode off détecté : Auto-promotion MAÎTRE.
+[23:28:29] [INFO] [headless] 🚀 Démarrage du serveur en mode HEADLESS (V2)
+[23:28:29] [INFO] [target] 🌐 Démarrage de la cible HEADLESS
+[23:28:29] [INFO] [pymobiledevice] Montage automatique de l'image DDI...
+[23:28:31] [INFO] [binary] ⚠️ Aucune version de Python valide trouvée. Tentative avec l'alias par défaut.
+[23:28:31] [INFO] [pymobiledevice] Lancement du daemon tunneld (Mode Reconnect)...
+[23:28:31] [INFO] [pmd3-daemon] spawn: python3 -u -m pymobiledevice3 remote tunneld
+[23:28:31] [INFO] [STATUS][tunneld] scanning: Recherche iPhone (pymobiledevice)...
+[23:28:31] [INFO] [bridge] 🔗 Attachement des routes WebBridge à l'application existante
+[23:28:31] [INFO] [target] ✅ Cible Headless prête
+[23:28:31] [INFO] [headless] ✅ Serveur prêt et dashboard actif.
+[23:28:31] [INFO] [companion-server] Serveur (Socket.io) demarre sur 192.168.65.3:8080
+[23:28:31] [INFO] [STATUS][companion] info: Prêt sur 192.168.65.3:8080
+[23:28:33] [INFO] [pmd3] 🎯 Tunnel détecté : [fdd4:84f6:5f47::1]:61369
+[23:28:33] [INFO] [orchestrator] 🎯 iPhone détecté via pymobiledevice (WiFi)
+[23:28:33] [INFO] [gps-bridge] 🔌 Driver actif mis à jour : pymobiledevice
+[23:28:33] [INFO] [STATUS][tunneld] ready: Connecté via WiFi (pymobiledevice)

@@ -17,6 +17,8 @@ class GpsSequencer extends EventEmitter {
     this.speedMultiplier = 1.0
     this.onInjectCallback = null
     this.isLooping = false
+    this.isInjecting = false
+    this.lastStepTime = 0
   }
 
   /**
@@ -44,7 +46,9 @@ class GpsSequencer extends EventEmitter {
     this.lastStepTime = Date.now()
     dbg('[gps-sequencer] ▶️ Démarrage de la séquence')
     this.emit('status', { state: 'running', index: this.currentIndex, total: this.points.length })
-    this._scheduleNext()
+
+    // On lance le premier step immédiatement (injection du point 0)
+    this._step()
   }
 
   /**
@@ -95,17 +99,21 @@ class GpsSequencer extends EventEmitter {
     const name = `Point ${this.currentIndex + 1}/${this.points.length}`
 
     if (this.onInjectCallback) {
-      // On lance l'injection sans attendre (non-blocking) pour ne pas ralentir l'horloge
-      this.onInjectCallback(point.lat, point.lon, name).catch(e => {
-        dbg(`[gps-sequencer] ⚠️ Erreur injection au point ${this.currentIndex}: ${e.message}`)
-      })
+      if (this.isInjecting) {
+        // dbg(`[gps-sequencer] ⏩ Saut de point (injection précédente en cours)`)
+      } else {
+        this.isInjecting = true
+        this.onInjectCallback(point.lat, point.lon, name)
+          .catch(e => dbg(`[gps-sequencer] ⚠️ Erreur injection : ${e.message}`))
+          .finally(() => { this.isInjecting = false })
+      }
     }
 
-    this.emit('progress', { 
-      index: this.currentIndex, 
-      total: this.points.length, 
-      lat: point.lat, 
-      lon: point.lon 
+    this.emit('progress', {
+      index: this.currentIndex,
+      total: this.points.length,
+      lat: point.lat,
+      lon: point.lon
     })
 
     this._scheduleNext()
@@ -133,7 +141,7 @@ class GpsSequencer extends EventEmitter {
 
     // Application du multiplicateur de vitesse
     const adjustedDelay = Math.max(50, delay / this.speedMultiplier)
-    
+
     // Calcul de l'heure cible pour le prochain point
     const targetTime = (this.lastStepTime || Date.now()) + adjustedDelay
     const now = Date.now()

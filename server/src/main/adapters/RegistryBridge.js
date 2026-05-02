@@ -155,6 +155,17 @@ class RegistryBridge {
       }
     })
 
+    ipcMain.handle('sync-sequence-preview', (_event, points) => {
+      this.companion._broadcast('SEQUENCE_PREVIEW_UPDATED', points)
+      return { success: true }
+    })
+
+    ipcMain.handle('set-sequencer-loop', (_event, enabled) => {
+      const gpsSequencer = require('../core/services/gps/GpsSequencer')
+      gpsSequencer.setLooping(enabled)
+      return { success: true }
+    })
+
     // Settings
     const settings = require('../core/services/settings-manager')
     ipcMain.handle('get-settings', () => {
