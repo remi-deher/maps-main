@@ -6,15 +6,15 @@ import { COLORS } from '../constants/theme';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
-export default function SequenceModal({ visible, onClose, onStart, currentCoords }) {
-  const [legs, setLegs] = useState([]);
+export default function SequenceModal({ visible, onClose, onStart, currentCoords, points, onSync }) {
+  const legs = points || [];
 
   const addLeg = (type) => {
     const lastLeg = legs[legs.length - 1];
     const start = lastLeg ? lastLeg.end : (currentCoords ? { lat: currentCoords.latitude, lon: currentCoords.longitude } : { lat: 48.8566, lon: 2.3522 });
     
-    // Décalage bidon pour l'exemple
-    const end = { lat: start.lat + 0.01, lon: start.lon + 0.01 };
+    // Décalage bidon pour l'exemple (en attendant un vrai picker)
+    const end = { lat: start.lat + 0.005, lon: start.lon + 0.005 };
     
     const newLeg = {
       id: Date.now(),
@@ -22,14 +22,14 @@ export default function SequenceModal({ visible, onClose, onStart, currentCoords
       start,
       end,
       startTime: lastLeg ? lastLeg.endTime : Date.now(),
-      endTime: (lastLeg ? lastLeg.endTime : Date.now()) + (type === 'wait' ? 300000 : 600000) // 5 or 10 min
+      endTime: (lastLeg ? lastLeg.endTime : Date.now()) + (type === 'wait' ? 300000 : 600000)
     };
     
-    setLegs([...legs, newLeg]);
+    onSync([...legs, newLeg]);
   };
 
   const removeLeg = (id) => {
-    setLegs(legs.filter(l => l.id !== id));
+    onSync(legs.filter(l => l.id !== id));
   };
 
   return (
