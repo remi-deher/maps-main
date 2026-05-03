@@ -12,6 +12,7 @@ try {
     playCustomGpx: (data) => ipcRenderer.invoke('play-custom-gpx', data),
     playSequence:  (legs) => ipcRenderer.invoke('play-sequence', legs),
     getStatus:     () => ipcRenderer.invoke('get-status'),
+    listPmd3Devices: () => ipcRenderer.invoke('list-pmd3-devices'),
     onStatus:      (cb) => {
       const listener = (_e, data) => cb(data)
       ipcRenderer.on('status-update', listener)
@@ -42,6 +43,19 @@ try {
 
     // Cluster
     takeoverCluster: () => ipcRenderer.invoke('takeover-cluster'),
+
+    // Séquenceur
+    syncSequencePreview: (points) => ipcRenderer.invoke('sync-sequence-preview', points),
+    setSequencerLoop: (enabled) => ipcRenderer.invoke('set-sequencer-loop', enabled),
+    onEvent: (name, cb) => {
+      const listener = (_e, data) => {
+        if (name === 'SEQUENCE_PREVIEW_UPDATED' && data.service === 'sequence') {
+          cb(data.data)
+        }
+      }
+      ipcRenderer.on('status-update', listener)
+      return () => ipcRenderer.removeListener('status-update', listener)
+    }
   })
   console.log('[Preload] Pont IPC exposé avec succès.');
 } catch (err) {

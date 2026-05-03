@@ -35,4 +35,5 @@ export interface ServerStatus {
     mode: 'auto' | 'manual';
     peers: { address: string; port: number; status: string; lastSeen: number }[];
   };
+  currentSequencePreview?: any[];
 }
