@@ -170,6 +170,15 @@ class WebBridge {
               }
             }
             return res.json(results)
+          case 'add-favorite':
+            const favManager = require('../core/services/favorites-manager')
+            return res.json({ success: favManager.addFavorite(data) })
+          case 'remove-favorite':
+            const favManager2 = require('../core/services/favorites-manager')
+            return res.json({ success: favManager2.removeFavorite(data.lat, data.lon) })
+          case 'rename-favorite':
+            const favManager3 = require('../core/services/favorites-manager')
+            return res.json({ success: favManager3.renameFavorite(data.lat, data.lon, data.newName) })
           default:
             dbg(`[web-bridge] ⚠️ IPC non géré: ${action}`)
             res.status(404).json({ success: false, error: `IPC ${action} non supporté` })
@@ -190,6 +199,20 @@ class WebBridge {
       this.orchestrator.applySettings()
       this.simulator.refreshSettings()
       res.json({ success: true })
+    })
+
+    // Favoris
+    this.app.post('/api/favorites/add', (req, res) => {
+      const favoritesManager = require('../core/services/favorites-manager')
+      res.json({ success: favoritesManager.addFavorite(req.body) })
+    })
+    this.app.post('/api/favorites/remove', (req, res) => {
+      const favoritesManager = require('../core/services/favorites-manager')
+      res.json({ success: favoritesManager.removeFavorite(req.body.lat, req.body.lon) })
+    })
+    this.app.post('/api/favorites/rename', (req, res) => {
+      const favoritesManager = require('../core/services/favorites-manager')
+      res.json({ success: favoritesManager.renameFavorite(req.body.lat, req.body.lon, req.body.newName) })
     })
 
     // Cluster API (nécessaire pour la communication inter-serveurs)
@@ -280,6 +303,9 @@ class WebBridge {
           saveSettings: (s) => fetch('/api/settings', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(s) }).then(r => r.json()),
           setLocation: (lat, lon, name) => fetch('/api/location/set', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({lat, lon, name}) }).then(r => r.json()),
           clearLocation: () => fetch('/api/location/clear', { method: 'POST' }).then(r => r.json()),
+          addFavorite: (fav) => fetch('/api/favorites/add', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(fav) }).then(r => r.json()),
+          removeFavorite: (lat, lon) => fetch('/api/favorites/remove', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({lat, lon}) }).then(r => r.json()),
+          renameFavorite: (lat, lon, newName) => fetch('/api/favorites/rename', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({lat, lon, newName}) }).then(r => r.json()),
           listPmd3Devices: () => fetch('/api/diagnostic/pmd3-devices').then(r => r.json()).catch(() => []),
           restartTunnel: () => fetch('/api/diagnostic/restart-tunnel', { method: 'POST' }).then(r => r.json()),
           getNetworkInterfaces: () => fetch('/api/diagnostic/interfaces').then(r => r.json()).catch(() => []),

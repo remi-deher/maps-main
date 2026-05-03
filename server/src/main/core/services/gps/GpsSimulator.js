@@ -67,7 +67,7 @@ class GpsSimulator extends EventEmitter {
   _startEveilCycle() {
     if (this._eveilInterval) clearInterval(this._eveilInterval)
     
-    const intervalSeconds = settings.get('eveilInterval') || 15
+    const intervalSeconds = settings.get('eveilInterval') || 5
     const intervalMs = intervalSeconds * 1000
     
     this._eveilInterval = setInterval(async () => {

@@ -188,6 +188,12 @@ class RegistryBridge {
       }
     })
 
+    // Favoris
+    const favoritesManager = require('../core/services/favorites-manager')
+    ipcMain.handle('add-favorite', (e, fav) => favoritesManager.addFavorite(fav))
+    ipcMain.handle('remove-favorite', (e, { lat, lon }) => favoritesManager.removeFavorite(lat, lon))
+    ipcMain.handle('rename-favorite', (e, { lat, lon, newName }) => favoritesManager.renameFavorite(lat, lon, newName))
+
     // Diagnostics & Network
     ipcMain.handle('get-network-interfaces', () => {
       try {
