@@ -48,7 +48,7 @@ class SettingsManager {
       networkOnlyMode: false,  
       manualTunnelAddress: '',
       logLevel: 'info',
-      eveilInterval: 15,
+      eveilInterval: 5,
       lastActiveLocation: null,
       savedTrips: []
     }
