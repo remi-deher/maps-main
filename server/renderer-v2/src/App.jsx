@@ -5,6 +5,7 @@ import MapView from './components/MapView';
 import SettingsModal from './components/SettingsModal';
 import QrModal from './components/QrModal';
 import LogsModal from './components/LogsModal';
+import SequencePanel from './components/SequencePanel';
 import { useStorage } from './hooks/useStorage';
 import { useSearch } from './hooks/useSearch';
 import gps from './utils/gps-bridge';
@@ -15,7 +16,11 @@ function App() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [qrOpen, setQrOpen] = useState(false);
   const [logsOpen, setLogsOpen] = useState(false);
+  const [sequenceOpen, setSequenceOpen] = useState(false);
+  const [sidebarMode, setSidebarMode] = useState('main'); // 'main' or 'sequencer'
   const [selectedPos, setSelectedPos] = useState(null);
+  const [sequencePoints, setSequencePoints] = useState([]);
+  const [pickingPointId, setPickingPointId] = useState(null);
   const [activeSim, setActiveSim] = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
   
@@ -23,6 +28,7 @@ function App() {
   const [serverLogs, setServerLogs] = useState([]);
   
   const [deviceList, setDeviceList] = useState([]);
+  const [routePreview, setRoutePreview] = useState(null);
   const searchInputRef = useRef(null);
   const { history, favorites, addToHistory, addFavorite, removeFavorite } = useStorage();
 
@@ -94,6 +100,14 @@ function App() {
         const { lat, lon, name } = data.data;
         setActiveSim({ lat, lon, name });
         setStatus(prev => ({ ...prev, verified: true, state: 'running', message: 'Simulation active' }));
+      } else if (data.currentSequencePreview) {
+        // Sync initiale depuis le serveur
+        setSequencePoints(prev => {
+          if (prev.length === 0 && data.currentSequencePreview.length > 0) {
+             return data.currentSequencePreview;
+          }
+          return prev;
+        });
       } else {
         // Fallback : tout autre service est considéré comme un log serveur
         const message = data.message || (typeof data.data === 'string' ? data.data : JSON.stringify(data.data));
@@ -120,12 +134,30 @@ function App() {
       });
     }
 
+    const removeSequenceSyncListener = gps.onEvent('SEQUENCE_PREVIEW_UPDATED', (points) => {
+      // On met à jour si la longueur change ou si le contenu est différent
+      setSequencePoints(prev => {
+        if (JSON.stringify(prev) === JSON.stringify(points)) return prev;
+        return points;
+      });
+    });
+
     return () => {
       removeStatusListener();
       removeSettingsListener();
       removeDebugListener();
+      removeSequenceSyncListener();
     };
   }, []);
+
+  // Synchronisation sortante (PC vers Clients)
+  useEffect(() => {
+    // On ne synchronise que si on a des points (pour ne pas écraser le serveur au boot)
+    // OU si on a vidé volontairement la liste après qu'elle ait été pleine
+    if (sequencePoints.length > 0 && gps.syncSequencePreview) {
+      gps.syncSequencePreview(sequencePoints);
+    }
+  }, [sequencePoints]);
 
   useEffect(() => {
     if (sidebarOpen) {
@@ -134,8 +166,20 @@ function App() {
   }, [sidebarOpen]);
 
   const handleMapClick = async (lat, lon) => {
+    if (pickingPointId) {
+      const name = await reverseGeocode(lat, lon);
+      setSequencePoints(prev => prev.map(p => p.id === pickingPointId ? { ...p, lat, lon, address: name || `${lat.toFixed(4)}, ${lon.toFixed(4)}` } : p));
+      setPickingPointId(null);
+      setSidebarOpen(true);
+      setSidebarMode('sequencer');
+      return;
+    }
     const name = await reverseGeocode(lat, lon);
     setSelectedPos({ lat, lon, name });
+  };
+
+  const handleSequencePointMove = (id, lat, lon) => {
+    setSequencePoints(prev => prev.map(p => p.id === id ? { ...p, lat, lon } : p));
   };
 
   const selectLocation = (loc) => {
@@ -199,25 +243,35 @@ function App() {
       
       {/* Background Map */}
       <div className="absolute inset-0 z-0" tabIndex="-1" style={{ pointerEvents: 'auto' }}>
-        <MapView onMapClick={handleMapClick} selectedPos={selectedPos || activeSim} onPlayRoute={playRoute} onPlayOsrmRoute={playOsrmRoute} />
+        <MapView 
+          onMapClick={handleMapClick} 
+          selectedPos={selectedPos} 
+          activeSim={activeSim}
+          onPlayRoute={playRoute} 
+          onPlayOsrmRoute={playOsrmRoute}
+          routePreview={sidebarMode === 'sequencer' ? sequencePoints : null}
+          onSequencePointMove={handleSequencePointMove}
+        />
       </div>
 
       {/* Sidebar, Settings, etc. */}
       <AnimatePresence>
         {sidebarOpen && (
           <>
-            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setSidebarOpen(false)} className="absolute inset-0 bg-black/40 backdrop-blur-sm z-[60]" />
-            <motion.div initial={{ x: -400 }} animate={{ x: 0 }} exit={{ x: -400 }} className="absolute top-0 left-0 bottom-0 w-96 glass-dark z-[70] shadow-2xl p-6 flex flex-col">
-              <div className="flex items-center justify-between mb-8">
-                <h2 className="text-2xl font-black bg-gradient-to-r from-blue-400 via-indigo-400 to-emerald-400 bg-clip-text text-transparent tracking-tight">GPS Mock</h2>
-                <button 
-                  onClick={() => setSidebarOpen(false)} 
-                  className="p-2 hover:bg-white/10 rounded-xl transition-all hover:rotate-90 active:scale-90"
-                >
-                  <X className="w-6 h-6 text-slate-400" />
-                </button>
-              </div>
-              <div className="flex-1 overflow-y-auto space-y-8 pr-2 custom-scrollbar">
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setSidebarOpen(false)} className="absolute inset-0 bg-black/40 z-[60]" />
+            <motion.div initial={{ x: -400 }} animate={{ x: 0 }} exit={{ x: -400 }} className="absolute top-0 left-0 bottom-0 w-96 bg-slate-900/95 z-[70] shadow-2xl overflow-hidden flex flex-col border-r border-white/5">
+              {sidebarMode === 'main' ? (
+                <div className="p-6 flex flex-col h-full">
+                  <div className="flex items-center justify-between mb-8">
+                    <h2 className="text-2xl font-black bg-gradient-to-r from-blue-400 via-indigo-400 to-emerald-400 bg-clip-text text-transparent tracking-tight">GPS Mock</h2>
+                    <button 
+                      onClick={() => setSidebarOpen(false)} 
+                      className="p-2 hover:bg-white/10 rounded-xl transition-all hover:rotate-90 active:scale-90"
+                    >
+                      <X className="w-6 h-6 text-slate-400" />
+                    </button>
+                  </div>
+                  <div className="flex-1 overflow-y-auto space-y-8 pr-2 custom-scrollbar">
 
                 {/* LISTE DES APPAREILS DÉTECTÉS */}
                 <section>
@@ -337,14 +391,29 @@ function App() {
               >
                 📁 Lancer GPX local
               </button>
-              <button 
-                onClick={() => {
-                  alert("Le séquenceur multimodal sur PC sera disponible dans une prochaine mise à jour. Utilisez l'iPhone pour planifier vos étapes complexes.");
-                }} 
-                className="w-full mt-2 h-12 bg-indigo-600/20 hover:bg-indigo-600/40 text-indigo-400 rounded-xl font-bold transition-all flex items-center justify-center gap-2 border border-indigo-500/20"
-              >
-                ✈️ Séquenceur Voyage
-              </button>
+                <button 
+                  onClick={() => {
+                    setSidebarMode('sequencer');
+                  }} 
+                  className="w-full mt-2 h-12 bg-indigo-600/20 hover:bg-indigo-600/40 text-indigo-400 rounded-xl font-bold transition-all flex items-center justify-center gap-2 border border-indigo-500/20"
+                >
+                  ✈️ Séquenceur Voyage
+                </button>
+                </div>
+              ) : (
+                <SequencePanel 
+                  activeSim={activeSim} 
+                  points={sequencePoints}
+                  setPoints={setSequencePoints}
+                  pickingPointId={pickingPointId}
+                  setPickingPointId={setPickingPointId}
+                  setSidebarOpen={setSidebarOpen}
+                  onClose={() => {
+                    setSidebarMode('main');
+                    setPickingPointId(null);
+                  }} 
+                />
+              )}
             </motion.div>
           </>
         )}
@@ -397,6 +466,20 @@ function App() {
           }`}>
             {status.operationMode === 'autonomous' ? '🚀 Mode Autonome (PC)' : 
              status.operationMode === 'client-server' ? '📱 Mode Client (iPhone Req)' : '🌐 Mode Hybride'}
+          </div>
+
+          {/* Badge d'Activité Réelle */}
+          <div className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest border shadow-lg flex items-center gap-2 ${
+            status.state === 'running' ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/20' :
+            sidebarMode === 'sequencer' ? 'bg-indigo-500/20 text-indigo-400 border-indigo-500/20' :
+            'bg-slate-500/20 text-slate-400 border-slate-500/20'
+          }`}>
+            <div className={`w-1.5 h-1.5 rounded-full ${
+              status.state === 'running' ? 'bg-emerald-500 animate-pulse' :
+              sidebarMode === 'sequencer' ? 'bg-indigo-400' : 'bg-slate-500'
+            }`} />
+            {status.state === 'running' ? 'Simulation en cours' : 
+             sidebarMode === 'sequencer' ? 'Édition Itinéraire' : 'En attente'}
           </div>
 
           <div className={`flex items-center gap-4 px-6 py-3 rounded-2xl glass-dark border-l-4 ${status.verified ? 'border-l-emerald-500 bg-emerald-500/10' : (status.state === 'ready' ? 'border-l-blue-500' : 'border-l-slate-500')} shadow-xl`}>
@@ -460,6 +543,17 @@ function App() {
               }`}>
                 {status.operationMode === 'autonomous' ? 'PC Only' : 
                  status.operationMode === 'client-server' ? 'Client Req' : 'Hybride'}
+              </div>
+            )}
+            {status.state === 'running' && (
+              <div className="px-2 py-0.5 rounded-md text-[9px] font-black uppercase tracking-tighter bg-emerald-500/10 text-emerald-500 border border-emerald-500/20 flex items-center gap-1">
+                <div className="w-1 h-1 rounded-full bg-emerald-500 animate-pulse" />
+                Live
+              </div>
+            )}
+            {sidebarMode === 'sequencer' && (
+              <div className="px-2 py-0.5 rounded-md text-[9px] font-black uppercase tracking-tighter bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 flex items-center gap-1">
+                Route
               </div>
             )}
             <Terminal 

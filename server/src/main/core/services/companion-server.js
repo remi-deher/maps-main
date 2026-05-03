@@ -35,6 +35,7 @@ class CompanionServer extends EventEmitter {
     this.app = express()
     this.port = null
     this.status = {}
+    this.currentSequencePreview = []
     this.lastDriftRelance = 0
     this._consecutiveValidationFailures = 0
     this._lastAutoReinjectionTime = 0
@@ -119,7 +120,8 @@ class CompanionServer extends EventEmitter {
       cluster: {
         role: clusterManager.role,
         peers: settings.get('clusterNodes') || []
-      }
+      },
+      currentSequencePreview: this.currentSequencePreview
     }
   }
 
@@ -181,6 +183,13 @@ class CompanionServer extends EventEmitter {
       if (now - this.lastDriftRelance < 45000) return res.json({ ignored: 'cooldown' })
       this.lastDriftRelance = now
       this.emit('request-location', { lat, lon, name, force: true })
+      res.json({ success: true })
+    })
+
+    this.app.post('/api/location/sequence/sync-preview', (req, res) => {
+      const { points } = req.body
+      this.currentSequencePreview = points || []
+      this._broadcast('SEQUENCE_PREVIEW_UPDATED', this.currentSequencePreview)
       res.json({ success: true })
     })
 
@@ -322,6 +331,11 @@ class CompanionServer extends EventEmitter {
           })
         });
 
+        socket.on('SEQUENCE_SYNC', (points) => {
+          this.currentSequencePreview = points || []
+          this._broadcast('SEQUENCE_PREVIEW_UPDATED', this.currentSequencePreview)
+        })
+
         socket.on('disconnect', () => {
           dbg(`[companion-server] Client deconnecte : ${socket.id}`)
           this._checkActivity()
@@ -417,6 +431,24 @@ class CompanionServer extends EventEmitter {
           break
         }
         this._handleRouteMessage(socket, payload)
+        break
+      }
+      
+      case 'STOP_ROUTE': {
+        gpsBridge.stopRoute()
+        socket.emit('ACK', { timestamp: Date.now() })
+        break
+      }
+
+      case 'PAUSE_ROUTE': {
+        gpsBridge.pauseRoute()
+        socket.emit('ACK', { timestamp: Date.now() })
+        break
+      }
+
+      case 'RESUME_ROUTE': {
+        gpsBridge.resumeRoute()
+        socket.emit('ACK', { timestamp: Date.now() })
         break
       }
       

@@ -249,10 +249,35 @@ class RouteGenerator {
           
           if (data.routes && data.routes.length > 0) {
             const coordinates = data.routes[0].geometry.coordinates
+            
+            // Calcul des distances cumulées pour une interpolation précise du temps
+            let totalDist = 0
+            const distances = [0]
+            for (let i = 1; i < coordinates.length; i++) {
+              const d = this._getDistance(coordinates[i-1][1], coordinates[i-1][0], coordinates[i][1], coordinates[i][0])
+              totalDist += d
+              distances.push(totalDist)
+            }
+
+            let lastLat = null
+            let lastLon = null
+            const MIN_DIST = 1 // 1 mètre minimum entre deux points pour éviter la saturation
+
             for (let i = 0; i < coordinates.length; i++) {
-              const progress = i / (coordinates.length - 1)
+              const curLat = coordinates[i][1]
+              const curLon = coordinates[i][0]
+              
+              if (lastLat !== null && i < coordinates.length - 1) {
+                const d = this._getDistance(lastLat, lastLon, curLat, curLon)
+                if (d < MIN_DIST) continue // Trop proche, on saute ce point
+              }
+
+              lastLat = curLat
+              lastLon = curLon
+
+              const progress = totalDist > 0 ? (distances[i] / totalDist) : (i / (coordinates.length - 1))
               const timeStr = new Date(startMs + progress * durationMs).toISOString()
-              gpx += `    <trkpt lat="${coordinates[i][1].toFixed(6)}" lon="${coordinates[i][0].toFixed(6)}">\n`
+              gpx += `    <trkpt lat="${curLat.toFixed(6)}" lon="${curLon.toFixed(6)}">\n`
               gpx += `      <time>${timeStr}</time>\n`
               gpx += `    </trkpt>\n`
             }
@@ -286,6 +311,31 @@ class RouteGenerator {
               Math.sin(Δλ / 2) * Math.sin(Δλ / 2)
     const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
     return R * c
+  }
+
+  /**
+   * Analyse un contenu GPX pour en extraire les points.
+   * @param {string} gpxString 
+   * @returns {Array} List of {lat, lon, time}
+   */
+  parseGpx(gpxString) {
+    const points = []
+    const trkptRegex = /<trkpt\s+lat="([^"]+)"\s+lon="([^"]+)"[^>]*>([\s\S]*?)<\/trkpt>/g
+    const timeRegex = /<time>([^<]+)<\/time>/
+    
+    let match
+    while ((match = trkptRegex.exec(gpxString)) !== null) {
+      const lat = parseFloat(match[1])
+      const lon = parseFloat(match[2])
+      const content = match[3]
+      const timeMatch = content.match(timeRegex)
+      const time = timeMatch ? new Date(timeMatch[1]).getTime() : null
+      
+      points.push({ lat, lon, time })
+    }
+    
+    dbg(`[route-generator] GPX parsé : ${points.length} points extraits.`)
+    return points
   }
 }
 

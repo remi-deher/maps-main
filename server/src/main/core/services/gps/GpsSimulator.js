@@ -4,6 +4,7 @@ const { EventEmitter } = require('events')
 const { dbg } = require('../../../logger')
 const settings = require('../settings-manager')
 const GpsCommander = require('./gps-commander')
+const gpsSequencer = require('./GpsSequencer')
 
 /**
  * GpsSimulator (V2) - Orchestre la simulation GPS.
@@ -47,6 +48,20 @@ class GpsSimulator extends EventEmitter {
         this.refreshSettings()
       })
     }
+
+    // Gestion des événements du Séquenceur
+    gpsSequencer.on('progress', (data) => {
+      this.lastCoords = { lat: data.lat, lon: data.lon, name: `Route (${data.index+1}/${data.total})` }
+      this.lastInjectionTime = Date.now()
+      this.emit('location-changed', this.lastCoords)
+    })
+
+    gpsSequencer.on('status', (status) => {
+      if (this.companion) {
+        this.companion.status.route = status
+        this.companion._broadcast('STATUS_UPDATE', { route: status })
+      }
+    })
   }
 
   _startEveilCycle() {
@@ -58,6 +73,9 @@ class GpsSimulator extends EventEmitter {
     this._eveilInterval = setInterval(async () => {
       if (this._isQuitting || !this.lastCoords) return
       if (!settings.get('isEveilMode')) return
+      
+      // On suspend l'éveil si une route est en cours
+      if (gpsSequencer.isRunning && !gpsSequencer.isPaused) return
 
       const now = Date.now()
       // On déclenche la dérive si aucune injection n'a eu lieu depuis (intervalle - 1s)
@@ -97,7 +115,7 @@ class GpsSimulator extends EventEmitter {
     }
     
     const now = Date.now()
-    if (!force && (now - this.lastInjectionTime < 500)) return { success: true, ignored: true }
+    if (!force && (now - this.lastInjectionTime < 100)) return { success: true, ignored: true }
     this.lastInjectionTime = now
     
     const rsdAddress = this.tunnel.getRsdAddress()

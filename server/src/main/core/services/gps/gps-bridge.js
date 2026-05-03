@@ -1,6 +1,7 @@
 'use strict'
 
 const { dbg } = require('../../../logger')
+const gpsSequencer = require('./GpsSequencer')
 
 /**
  * GpsBridge - Proxy délégué
@@ -42,15 +43,36 @@ class GpsBridge {
     return await this.activeDriver.clearLocation()
   }
 
-  // Compatibilité avec les anciennes méthodes de trajet si nécessaire
+  // Gestion des trajets via le Séquenceur
   async playGpx(gpxPath) {
     const routeGenerator = require('./route-generator')
     const gpxContent = require('fs').readFileSync(gpxPath, 'utf8')
     const points = routeGenerator.parseGpx(gpxContent)
     
-    dbg(`[gps-bridge] Lecture GPX : ${points.length} points`)
-    // La boucle de trajet est gérée par le simulateur, le bridge ne fait qu'exécuter un point
-    return { success: true, points }
+    dbg(`[gps-bridge] Lancement trajet : ${points.length} points`)
+    
+    gpsSequencer.load(points, async (lat, lon, name) => {
+      return await this.setLocation(lat, lon, name)
+    })
+    
+    gpsSequencer.start()
+    return { success: true, pointsCount: points.length }
+  }
+
+  stopRoute() {
+    gpsSequencer.stop()
+  }
+
+  pauseRoute() {
+    gpsSequencer.pause()
+  }
+
+  resumeRoute() {
+    gpsSequencer.start()
+  }
+
+  setLooping(enabled) {
+    gpsSequencer.setLooping(enabled)
   }
 }
 
