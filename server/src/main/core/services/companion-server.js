@@ -177,12 +177,19 @@ class CompanionServer extends EventEmitter {
     })
 
     this.app.post('/api/relance', (req, res) => {
-      const { lat, lon, name } = req.body
-      if (lat === undefined || lon === undefined) return res.status(400).end()
+      // On ignore les coordonnées envoyées par le client (qui peuvent être réelles suite à un décrochage)
+      // On utilise systématiquement la cible configurée sur le serveur
+      const target = this.status.lastInjectedLocation || this.status.lastVerifiedLocation || settings.get('lastActiveLocation')
+      
+      if (!target) return res.status(400).json({ error: 'Pas de position cible active' })
+      
       const now = Date.now()
-      if (now - this.lastDriftRelance < 45000) return res.json({ ignored: 'cooldown' })
+      // Cooldown réduit à 15s pour permettre une correction rapide si iOS décroche
+      if (now - this.lastDriftRelance < 15000) return res.json({ ignored: 'cooldown' })
+      
       this.lastDriftRelance = now
-      this.emit('request-location', { lat, lon, name, force: true })
+      dbg(`[companion-server] ⚡ Relance demandée par l'iPhone (Ré-injection de sécurité : ${target.lat}, ${target.lon})`)
+      this.emit('request-location', { ...target, force: true })
       res.json({ success: true })
     })
 
