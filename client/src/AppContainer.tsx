@@ -100,6 +100,16 @@ export default function AppContainer() {
     setIsFavsOpen(false);
   };
 
+  const isFavorite = (lat: number, lon: number) => (store.serverStatus?.favorites || []).some((f: any) => Math.abs(f.lat - lat) < 0.0001 && Math.abs(f.lon - lon) < 0.0001);
+
+  const toggleFavorite = (coords: Coords) => {
+    if (isFavorite(coords.latitude, coords.longitude)) {
+      store.sendAction('REMOVE_FAVORITE', { lat: coords.latitude, lon: coords.longitude });
+    } else {
+      store.sendAction('ADD_FAVORITE', { name: coords.name || "Lieu favori", lat: coords.latitude, lon: coords.longitude });
+    }
+  };
+
   const handleSearch = async () => {
     const coords = await searchAddress(searchQuery);
     if (coords) {
@@ -222,11 +232,19 @@ export default function AppContainer() {
           <ActionPanel 
             visible={!!pendingCoords} 
             coords={pendingCoords} 
-            isFavorite={false}
+            isFavorite={pendingCoords ? isFavorite(pendingCoords.latitude, pendingCoords.longitude) : false}
             onTeleport={handleTeleport}
-            onToggleFavorite={() => {}}
-            onStartRoute={() => {}}
-            onStartOsrmRoute={() => {}}
+            onToggleFavorite={() => pendingCoords && toggleFavorite(pendingCoords)}
+            onStartRoute={() => {
+              if (!pendingCoords) return;
+              store.sendAction('PLAY_ROUTE', { endLat: pendingCoords.latitude, endLon: pendingCoords.longitude, speed: 5 });
+              setPendingCoords(null);
+            }}
+            onStartOsrmRoute={(profile: string) => {
+              if (!pendingCoords) return;
+              store.sendAction('PLAY_OSRM_ROUTE', { endLat: pendingCoords.latitude, endLon: pendingCoords.longitude, profile });
+              setPendingCoords(null);
+            }}
             onClose={() => setPendingCoords(null)}
           />
 
