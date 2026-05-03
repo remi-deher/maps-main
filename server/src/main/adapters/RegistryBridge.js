@@ -155,6 +155,17 @@ class RegistryBridge {
       }
     })
 
+    ipcMain.handle('sync-sequence-preview', (_event, points) => {
+      this.companion._broadcast('SEQUENCE_PREVIEW_UPDATED', points)
+      return { success: true }
+    })
+
+    ipcMain.handle('set-sequencer-loop', (_event, enabled) => {
+      const gpsSequencer = require('../core/services/gps/GpsSequencer')
+      gpsSequencer.setLooping(enabled)
+      return { success: true }
+    })
+
     // Settings
     const settings = require('../core/services/settings-manager')
     ipcMain.handle('get-settings', () => {
@@ -176,6 +187,12 @@ class RegistryBridge {
         return false
       }
     })
+
+    // Favoris
+    const favoritesManager = require('../core/services/favorites-manager')
+    ipcMain.handle('add-favorite', (e, fav) => favoritesManager.addFavorite(fav))
+    ipcMain.handle('remove-favorite', (e, { lat, lon }) => favoritesManager.removeFavorite(lat, lon))
+    ipcMain.handle('rename-favorite', (e, { lat, lon, newName }) => favoritesManager.renameFavorite(lat, lon, newName))
 
     // Diagnostics & Network
     ipcMain.handle('get-network-interfaces', () => {

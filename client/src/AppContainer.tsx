@@ -100,6 +100,16 @@ export default function AppContainer() {
     setIsFavsOpen(false);
   };
 
+  const isFavorite = (lat: number, lon: number) => (store.serverStatus?.favorites || []).some((f: any) => Math.abs(f.lat - lat) < 0.0001 && Math.abs(f.lon - lon) < 0.0001);
+
+  const toggleFavorite = (coords: Coords) => {
+    if (isFavorite(coords.latitude, coords.longitude)) {
+      store.sendAction('REMOVE_FAVORITE', { lat: coords.latitude, lon: coords.longitude });
+    } else {
+      store.sendAction('ADD_FAVORITE', { name: coords.name || "Lieu favori", lat: coords.latitude, lon: coords.longitude });
+    }
+  };
+
   const handleSearch = async () => {
     const coords = await searchAddress(searchQuery);
     if (coords) {
@@ -208,6 +218,9 @@ export default function AppContainer() {
             <TouchableOpacity style={[styles.floatBtn, SHADOWS.light]} onPress={() => setMapType(m => m === 'hybrid' ? 'standard' : 'hybrid')}>
               <Text style={{fontSize: 22}}>{mapType === 'hybrid' ? '🗺️' : '🛰️'}</Text>
             </TouchableOpacity>
+            <TouchableOpacity style={[styles.floatBtn, SHADOWS.light]} onPress={() => setShowSequence(true)}>
+              <Text style={{fontSize: 22}}>✈️</Text>
+            </TouchableOpacity>
           </View>
 
           <QuickFavorites favorites={store.serverStatus?.favorites || []} onTeleport={handleTeleport} visible={!pendingCoords && !isFavsOpen} />
@@ -222,11 +235,19 @@ export default function AppContainer() {
           <ActionPanel 
             visible={!!pendingCoords} 
             coords={pendingCoords} 
-            isFavorite={false}
+            isFavorite={pendingCoords ? isFavorite(pendingCoords.latitude, pendingCoords.longitude) : false}
             onTeleport={handleTeleport}
-            onToggleFavorite={() => {}}
-            onStartRoute={() => {}}
-            onStartOsrmRoute={() => {}}
+            onToggleFavorite={() => pendingCoords && toggleFavorite(pendingCoords)}
+            onStartRoute={() => {
+              if (!pendingCoords) return;
+              store.sendAction('PLAY_ROUTE', { endLat: pendingCoords.latitude, endLon: pendingCoords.longitude, speed: 5 });
+              setPendingCoords(null);
+            }}
+            onStartOsrmRoute={(profile: string) => {
+              if (!pendingCoords) return;
+              store.sendAction('PLAY_OSRM_ROUTE', { endLat: pendingCoords.latitude, endLon: pendingCoords.longitude, profile });
+              setPendingCoords(null);
+            }}
             onClose={() => setPendingCoords(null)}
           />
 
@@ -266,7 +287,14 @@ export default function AppContainer() {
             onImportGpx={(content: string) => store.sendAction('PLAY_CUSTOM_GPX', { gpxContent: content })}
           />
 
-          <SequenceModal visible={showSequence} onClose={() => setShowSequence(false)} currentCoords={store.simulatedCoords} onStart={(legs: any) => store.sendAction('PLAY_SEQUENCE', { legs })} />
+          <SequenceModal 
+            visible={showSequence} 
+            onClose={() => setShowSequence(false)} 
+            currentCoords={store.simulatedCoords} 
+            points={store.sequencePoints}
+            onSync={store.syncSequence}
+            onStart={(legs: any) => store.sendAction('PLAY_SEQUENCE', { legs })} 
+          />
           <DebugModal visible={showDebug} onClose={() => setShowDebug(false)} />
         </View>
       </TouchableWithoutFeedback>

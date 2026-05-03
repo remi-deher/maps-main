@@ -145,6 +145,10 @@ app.whenReady().then(async () => {
   companion.on('history-updated', (history) => {
     if (mainWindow) mainWindow.webContents.send('status-update', { service: 'history', state: 'updated', data: history })
   })
+
+  companion.on('SEQUENCE_PREVIEW_UPDATED', (points) => {
+    if (mainWindow) mainWindow.webContents.send('status-update', { service: 'sequence', state: 'updated', data: points })
+  })
 })
 
 app.on('before-quit', () => {

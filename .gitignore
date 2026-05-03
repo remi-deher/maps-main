@@ -1,0 +1,35 @@
+# --- Global ---
+node_modules/
+**/node_modules/
+.DS_Store
+Thumbs.db
+desktop.ini
+*.log
+logs/
+
+# --- IDEs ---
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# --- Environment & Identity ---
+.env
+.env.*
+.env.local
+*.plist
+
+# --- Archives ---
+*.zip
+*.tar.gz
+*.rar
+*.7z
+
+# --- Builds & Cache ---
+dist/
+build/
+out/
+.cache/
+coverage/
+__pycache__/
+*.pyc

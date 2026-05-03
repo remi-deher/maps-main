@@ -14,6 +14,7 @@ interface AppStore {
   simulatedCoords: Coords | null;
   realCoords: Coords | null;
   isMaintaining: boolean;
+  sequencePoints: any[];
   
   // Actions
   setSettings: (ip: string, port: string) => Promise<void>;
@@ -22,6 +23,7 @@ interface AppStore {
   disconnect: () => void;
   sendAction: (type: string, data?: any) => void;
   reportRealLocation: (coords: Coords) => void;
+  syncSequence: (points: any[]) => void;
   loadSettings: () => Promise<void>;
 }
 
@@ -36,6 +38,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
   simulatedCoords: null,
   realCoords: null,
   isMaintaining: false,
+  sequencePoints: [],
 
   loadSettings: async () => {
     try {
@@ -115,6 +118,10 @@ export const useAppStore = create<AppStore>((set, get) => ({
         set({ status: 'Déconnecté' });
         logEvent.add('❌ Déconnecté', 'info');
       });
+
+      socket?.on('SEQUENCE_PREVIEW_UPDATED', (points: any[]) => {
+        set({ sequencePoints: points || [] });
+      });
     });
 
     socket.on('connect_error', () => {
@@ -128,6 +135,10 @@ export const useAppStore = create<AppStore>((set, get) => ({
       // Mise à jour de la liste des pairs du cluster
       if (data.cluster && data.cluster.peers) {
         set({ peerServers: data.cluster.peers });
+      }
+
+      if (data.currentSequencePreview) {
+        set({ sequencePoints: data.currentSequencePreview });
       }
 
       // Priorité 1: Position en cours (live)
@@ -188,6 +199,13 @@ export const useAppStore = create<AppStore>((set, get) => ({
   sendAction: (type, data) => {
     if (socket?.connected) {
       socket.emit(type, data);
+    }
+  },
+
+  syncSequence: (points) => {
+    set({ sequencePoints: points });
+    if (socket?.connected) {
+      socket.emit('SEQUENCE_SYNC', points);
     }
   }
 }));

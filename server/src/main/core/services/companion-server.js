@@ -35,6 +35,7 @@ class CompanionServer extends EventEmitter {
     this.app = express()
     this.port = null
     this.status = {}
+    this.currentSequencePreview = []
     this.lastDriftRelance = 0
     this._consecutiveValidationFailures = 0
     this._lastAutoReinjectionTime = 0
@@ -119,7 +120,8 @@ class CompanionServer extends EventEmitter {
       cluster: {
         role: clusterManager.role,
         peers: settings.get('clusterNodes') || []
-      }
+      },
+      currentSequencePreview: this.currentSequencePreview
     }
   }
 
@@ -175,12 +177,26 @@ class CompanionServer extends EventEmitter {
     })
 
     this.app.post('/api/relance', (req, res) => {
-      const { lat, lon, name } = req.body
-      if (lat === undefined || lon === undefined) return res.status(400).end()
+      // On ignore les coordonnées envoyées par le client (qui peuvent être réelles suite à un décrochage)
+      // On utilise systématiquement la cible configurée sur le serveur
+      const target = this.status.lastInjectedLocation || this.status.lastVerifiedLocation || settings.get('lastActiveLocation')
+      
+      if (!target) return res.status(400).json({ error: 'Pas de position cible active' })
+      
       const now = Date.now()
-      if (now - this.lastDriftRelance < 45000) return res.json({ ignored: 'cooldown' })
+      // Cooldown réduit à 15s pour permettre une correction rapide si iOS décroche
+      if (now - this.lastDriftRelance < 15000) return res.json({ ignored: 'cooldown' })
+      
       this.lastDriftRelance = now
-      this.emit('request-location', { lat, lon, name, force: true })
+      dbg(`[companion-server] ⚡ Relance demandée par l'iPhone (Ré-injection de sécurité : ${target.lat}, ${target.lon})`)
+      this.emit('request-location', { ...target, force: true })
+      res.json({ success: true })
+    })
+
+    this.app.post('/api/location/sequence/sync-preview', (req, res) => {
+      const { points } = req.body
+      this.currentSequencePreview = points || []
+      this._broadcast('SEQUENCE_PREVIEW_UPDATED', this.currentSequencePreview)
       res.json({ success: true })
     })
 
@@ -321,6 +337,11 @@ class CompanionServer extends EventEmitter {
             this._handleMessage(socket, { type: event, data })
           })
         });
+
+        socket.on('SEQUENCE_SYNC', (points) => {
+          this.currentSequencePreview = points || []
+          this._broadcast('SEQUENCE_PREVIEW_UPDATED', this.currentSequencePreview)
+        })
 
         socket.on('disconnect', () => {
           dbg(`[companion-server] Client deconnecte : ${socket.id}`)
@@ -580,7 +601,8 @@ class CompanionServer extends EventEmitter {
     if (this.io) {
       this.io.emit(event, data)
     }
-    // Événement interne pour index-headless (Docker SSE)
+    // Événement interne
+    this.emit(event, data)
     this.emit('broadcast', { event, data })
   }
 

@@ -1,38 +1,13 @@
-# Dépendances Node.js
-node_modules/
-
-# Build Electron
+# --- Server Specific ---
 dist/
+dist-web/
 out/
-
-# Logs
-*.log
-npm-debug.log*
-
-# OS
-.DS_Store
-Thumbs.db
-desktop.ini
-
-# Editeurs
-.vscode/
-.idea/
-*.swp
-*.swo
-
-# Variables d'environnement
-.env
-.env.local
-
-# Cache & Divers
-.cache/
-coverage/
-__pycache__/
-*.pyc
-
-# Paramètres locaux (ne pas commiter la config perso)
-settings.json
-
-# Python portable embarqué (~170 Mo, généré par setup-python.ps1)
 resources/python/
 .tmp-python-setup/
+
+# --- Local config ---
+settings.json
+
+# --- Dependencies (Redundant but safe) ---
+node_modules/
+
