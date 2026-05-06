@@ -75,6 +75,19 @@ class CompanionServer extends EventEmitter {
         onStatus: (payload) => this._broadcast('status-update', payload)
       })
     }
+
+    // Intervalle de télémétrie (toutes les 5 secondes)
+    this._telemetryInterval = setInterval(() => {
+      if (this.hasActiveClients()) {
+        const telemetry = {
+          latency: Math.floor(Math.random() * 10) + 5, // Simulé pour l'instant
+          packetLoss: 0,
+          uptime: process.uptime(),
+          throughput: Math.floor(Math.random() * 100)
+        };
+        this._broadcast('TELEMETRY', telemetry);
+      }
+    }, 5000);
   }
 
   _refreshStatus() {
