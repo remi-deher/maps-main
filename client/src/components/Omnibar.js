@@ -12,7 +12,8 @@ export default function Omnibar({
   onSuggestionSelect,
   status,
   isMaintaining,
-  isLowPowerMode
+  isLowPowerMode,
+  telemetry
 }) {
   const pillAnim = useRef(new Animated.Value(0)).current;
   const [suggestions, setSuggestions] = useState([]);
@@ -112,7 +113,7 @@ export default function Omnibar({
         ]}>
           <View style={styles.statusDot} />
           <Text style={styles.pillText}>
-            {status} {isMaintaining && '• 🛡️'} {isLowPowerMode && '• 🔋'}
+            {status} {isMaintaining && '• 🛡️'} {isLowPowerMode && '• 🔋'} {telemetry?.latency && `• 📶 ${telemetry.latency}ms`}
           </Text>
         </Animated.View>
       </TouchableOpacity>

@@ -62,6 +62,16 @@ class GpsSimulator extends EventEmitter {
         this.companion._broadcast('STATUS_UPDATE', { route: status })
       }
     })
+
+    gpsSequencer.on('finished', () => {
+      if (this.companion) {
+        dbg('[gps-simulator] 🏁 Séquence terminée, envoi de ROUTE_FINISHED')
+        this.companion._broadcast('ROUTE_FINISHED', { 
+           timestamp: Date.now(),
+           location: this.lastCoords
+        })
+      }
+    })
   }
 
   _startEveilCycle() {
