@@ -10,12 +10,14 @@ const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
 export default function SettingsModal({ 
   visible, onClose, initialIp, initialPort, initialUsbDriver, initialWifiDriver, onSave, onImportGpx,
-  status, deviceInfo, connectionType, rsdAddress 
+  status, deviceInfo, connectionType, rsdAddress, initialNotifications, initialDynamicIsland
 }) {
   const [ip, setIp] = useState(initialIp);
   const [port, setPort] = useState(initialPort);
   const [usbDriver, setUsbDriver] = useState(initialUsbDriver || 'go-ios');
   const [wifiDriver, setWifiDriver] = useState(initialWifiDriver || 'pymobiledevice');
+  const [notifications, setNotifications] = useState(initialNotifications ?? true);
+  const [dynamicIsland, setDynamicIsland] = useState(initialDynamicIsland ?? true);
 
   const handlePickGpx = async () => {
     try {
@@ -111,6 +113,24 @@ export default function SettingsModal({
           </View>
 
           <View style={styles.inputGroup}>
+            <Text style={styles.label}>PRÉFÉRENCES IOS</Text>
+            <View style={styles.row}>
+               <TouchableOpacity 
+                 style={[styles.miniBtn, notifications && styles.miniBtnActive]}
+                 onPress={() => setNotifications(!notifications)}
+               >
+                 <Text style={[styles.miniBtnText, notifications && styles.miniBtnTextActive]}>NOTIFS: {notifications ? 'ON' : 'OFF'}</Text>
+               </TouchableOpacity>
+               <TouchableOpacity 
+                 style={[styles.miniBtn, dynamicIsland && styles.miniBtnActive]}
+                 onPress={() => setDynamicIsland(!dynamicIsland)}
+               >
+                 <Text style={[styles.miniBtnText, dynamicIsland && styles.miniBtnTextActive]}>DYN. ISLAND: {dynamicIsland ? 'ON' : 'OFF'}</Text>
+               </TouchableOpacity>
+            </View>
+          </View>
+
+          <View style={styles.inputGroup}>
             <Text style={styles.label}>DRIVER USB</Text>
             <View style={styles.row}>
                <TouchableOpacity 
@@ -138,7 +158,9 @@ export default function SettingsModal({
                 wifiIp: ip,
                 companionPort: port,
                 usbDriver,
-                wifiDriver
+                wifiDriver,
+                notificationsEnabled: notifications,
+                dynamicIslandEnabled: dynamicIsland
               })}
             >
               <Text style={styles.saveText}>APPLIQUER</Text>

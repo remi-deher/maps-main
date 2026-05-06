@@ -36,4 +36,19 @@ export interface ServerStatus {
     peers: { address: string; port: number; status: string; lastSeen: number }[];
   };
   currentSequencePreview?: any[];
+  telemetry?: TelemetryData;
+}
+
+export interface TelemetryData {
+  latency: number;
+  packetLoss: number;
+  uptime: number;
+  throughput?: number;
+}
+
+export interface AppSettings {
+  serverIp: string;
+  serverPort: string;
+  notificationsEnabled: boolean;
+  dynamicIslandEnabled: boolean;
 }

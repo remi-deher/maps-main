@@ -3,6 +3,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { io, Socket } from 'socket.io-client';
 import { Coords, ServerStatus } from '../types';
 import { logEvent } from '../services/logger';
+import { sendArrivalNotification, sendDisconnectNotification } from '../services/notifications';
 
 interface AppStore {
   // States
@@ -15,10 +16,13 @@ interface AppStore {
   realCoords: Coords | null;
   isMaintaining: boolean;
   sequencePoints: any[];
+  notificationsEnabled: boolean;
+  dynamicIslandEnabled: boolean;
   
   // Actions
-  setSettings: (ip: string, port: string) => Promise<void>;
+  setSettings: (ip: string, port: string, notifications?: boolean, dynamicIsland?: boolean) => Promise<void>;
   setIsMaintaining: (val: boolean) => void;
+  setIosPreferences: (notifications: boolean, dynamicIsland: boolean) => Promise<void>;
   connect: (retryIndex?: number) => void;
   disconnect: () => void;
   sendAction: (type: string, data?: any) => void;
@@ -39,15 +43,22 @@ export const useAppStore = create<AppStore>((set, get) => ({
   realCoords: null,
   isMaintaining: false,
   sequencePoints: [],
+  notificationsEnabled: true,
+  dynamicIslandEnabled: true,
 
   loadSettings: async () => {
     try {
       const ip = await AsyncStorage.getItem('serverIp');
       const port = await AsyncStorage.getItem('serverPort');
       const mock = await AsyncStorage.getItem('MOCK_LOCATION');
+      const notifs = await AsyncStorage.getItem('notificationsEnabled');
+      const di = await AsyncStorage.getItem('dynamicIslandEnabled');
 
       if (ip) set({ serverIp: ip });
       if (port) set({ serverPort: port });
+      if (notifs !== null) set({ notificationsEnabled: notifs === 'true' });
+      if (di !== null) set({ dynamicIslandEnabled: di === 'true' });
+      
       if (mock) {
         try {
           const coords = JSON.parse(mock);
@@ -57,11 +68,25 @@ export const useAppStore = create<AppStore>((set, get) => ({
     } catch (e) {}
   },
 
-  setSettings: async (ip, port) => {
+  setSettings: async (ip, port, notifications, dynamicIsland) => {
     await AsyncStorage.setItem('serverIp', ip);
     await AsyncStorage.setItem('serverPort', port);
-    set({ serverIp: ip, serverPort: port });
+    if (notifications !== undefined) await AsyncStorage.setItem('notificationsEnabled', String(notifications));
+    if (dynamicIsland !== undefined) await AsyncStorage.setItem('dynamicIslandEnabled', String(dynamicIsland));
+    
+    set({ 
+      serverIp: ip, 
+      serverPort: port, 
+      notificationsEnabled: notifications ?? get().notificationsEnabled,
+      dynamicIslandEnabled: dynamicIsland ?? get().dynamicIslandEnabled
+    });
     get().connect();
+  },
+
+  setIosPreferences: async (notifications, dynamicIsland) => {
+    await AsyncStorage.setItem('notificationsEnabled', String(notifications));
+    await AsyncStorage.setItem('dynamicIslandEnabled', String(dynamicIsland));
+    set({ notificationsEnabled: notifications, dynamicIslandEnabled: dynamicIsland });
   },
 
   setIsMaintaining: (val) => set({ isMaintaining: val }),
@@ -117,10 +142,26 @@ export const useAppStore = create<AppStore>((set, get) => ({
         clearInterval(heartbeatInterval);
         set({ status: 'Déconnecté' });
         logEvent.add('❌ Déconnecté', 'info');
+        if (get().notificationsEnabled) {
+          sendDisconnectNotification();
+        }
       });
 
       socket?.on('SEQUENCE_PREVIEW_UPDATED', (points: any[]) => {
         set({ sequencePoints: points || [] });
+      });
+
+      socket?.on('ROUTE_FINISHED', (data: any) => {
+        logEvent.add('🏁 Destination atteinte !', 'success');
+        if (get().notificationsEnabled) {
+          sendArrivalNotification(data?.location?.name || 'Destination');
+        }
+      });
+
+      socket?.on('TELEMETRY', (data: any) => {
+        if (get().serverStatus) {
+           set({ serverStatus: { ...get().serverStatus!, telemetry: data } });
+        }
       });
     });
 

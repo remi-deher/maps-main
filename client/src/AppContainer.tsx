@@ -191,6 +191,7 @@ export default function AppContainer() {
                 status={store.status}
                 isMaintaining={isMaintaining}
                 isLowPowerMode={isLowPowerMode}
+                telemetry={store.serverStatus?.telemetry}
             />
           </View>
 
@@ -268,6 +269,8 @@ export default function AppContainer() {
             initialPort={store.serverPort}
             initialUsbDriver={store.serverStatus?.usbDriver || 'pymobiledevice'}
             initialWifiDriver={store.serverStatus?.wifiDriver || 'pymobiledevice'}
+            initialNotifications={store.notificationsEnabled}
+            initialDynamicIsland={store.dynamicIslandEnabled}
             status={store.status}
             deviceInfo={store.serverStatus?.deviceInfo}
             connectionType={store.serverStatus?.connectionType}

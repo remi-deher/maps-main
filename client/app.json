@@ -49,6 +49,7 @@
       ],
       "expo-camera",
       "expo-task-manager",
+      "expo-notifications",
       [
         "expo-build-properties",
         {
