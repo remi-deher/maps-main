@@ -99,14 +99,14 @@ export default function SequenceModal({ visible, onClose, onStart, currentCoords
   };
 
   const moveUp = (index) => {
-    if (index <= 1) return; // Ne pas déplacer le départ
+    if (index <= 1) return; // Le départ (0) et le premier point (1) restent fixés par rapport au départ
     const updated = [...activePoints];
     [updated[index], updated[index-1]] = [updated[index-1], updated[index]];
     setActivePoints(updated);
   };
 
   const moveDown = (index) => {
-    if (index >= activePoints.length - 2) return; // Ne pas déplacer la destination au delà du dernier
+    if (index === 0 || index >= activePoints.length - 2) return; // Ne pas déplacer le départ ou le point avant la destination
     const updated = [...activePoints];
     [updated[index], updated[index+1]] = [updated[index+1], updated[index]];
     setActivePoints(updated);
@@ -295,7 +295,7 @@ const styles = StyleSheet.create({
   legTimeBadge: { position: 'absolute', backgroundColor: 'rgba(15, 23, 42, 0.8)', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6, borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)' },
   legTimeText: { color: COLORS.textSecondary, fontSize: 8, fontWeight: 'bold' },
 
-  pointContent: { flex: 1, backgroundColor: 'rgba(255,255,255,0.03)', borderRadius: 15, padding: 12, borderSize: 1, borderColor: 'rgba(255,255,255,0.05)' },
+  pointContent: { flex: 1, backgroundColor: 'rgba(255,255,255,0.03)', borderRadius: 15, padding: 12, borderWidth: 1, borderColor: 'rgba(255,255,255,0.05)' },
   pointHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   addressInput: { color: COLORS.text, fontSize: 14, fontWeight: 'bold', flex: 1, padding: 0 },
   pointActions: { flexDirection: 'row', alignItems: 'center', gap: 10 },
