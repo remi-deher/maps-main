@@ -33,6 +33,8 @@ export default function AppContainer() {
   const [showSequence, setShowSequence] = useState(false);
   const [isFavsOpen, setIsFavsOpen] = useState(false);
   const [isLowPowerMode, setIsLowPowerMode] = useState(false);
+  const [isRouteMode, setIsRouteMode] = useState(false);
+  const [routePoints, setRoutePoints] = useState<any[]>([]);
   const [mapType, setMapType] = useState<'hybrid' | 'standard'>('hybrid');
   
   const pulseScale = useRef(new Animated.Value(1)).current;
@@ -117,6 +119,77 @@ export default function AppContainer() {
     store.sendAction('SET_LOCATION', { lat: coords.latitude, lon: coords.longitude, name: coords.name || "" });
     setPendingCoords(null);
     setIsFavsOpen(false);
+  };
+
+  // --- Handlers Séquenceur (Mode Itinéraire) ---
+  const handleToggleRouteMode = () => {
+    if (!isRouteMode && routePoints.length === 0) {
+      // Initialisation par défaut
+      const start = store.simulatedCoords || { latitude: 48.8566, longitude: 2.3522 };
+      setRoutePoints([
+        { id: 'start', lat: start.latitude, lon: start.longitude, address: simulatedAddress || 'Ma position', type: 'start' },
+        { id: 'dest', lat: start.latitude + 0.005, lon: start.longitude + 0.005, address: 'Destination', type: 'drive', speed: 30, duration: 300 }
+      ]);
+    }
+    setIsRouteMode(!isRouteMode);
+  };
+
+  const handleUpdateRoutePoint = (index: number, data: any) => {
+    const updated = [...routePoints];
+    updated[index] = { ...updated[index], ...data };
+    setRoutePoints(updated);
+  };
+
+  const handleAddStep = () => {
+    const lastIdx = routePoints.length - 1;
+    const newStep = {
+      id: Math.random().toString(36).substr(2, 9),
+      lat: routePoints[lastIdx].lat + 0.002,
+      lon: routePoints[lastIdx].lon + 0.002,
+      address: 'Nouvel arrêt',
+      type: 'drive',
+      speed: 30,
+      duration: 300
+    };
+    const updated = [...routePoints];
+    updated.splice(lastIdx, 0, newStep);
+    setRoutePoints(updated);
+  };
+
+  const handleRemoveStep = (id: string) => {
+    setRoutePoints(routePoints.filter(p => p.id !== id));
+  };
+
+  const handleMoveStep = (index: number, direction: number) => {
+    const newIdx = index + direction;
+    if (newIdx <= 0 || newIdx >= routePoints.length - 1) return;
+    const updated = [...routePoints];
+    [updated[index], updated[newIdx]] = [updated[newIdx], updated[index]];
+    setRoutePoints(updated);
+  };
+
+  const handleStartRoute = () => {
+    // Transformer les points en legs pour le serveur
+    const legs = [];
+    let currentTime = Date.now();
+    
+    for (let i = 1; i < routePoints.length; i++) {
+      const pStart = routePoints[i-1];
+      const pEnd = routePoints[i];
+      const duration = (pEnd.duration || 60) * 1000;
+      
+      legs.push({
+        type: pEnd.type || 'drive',
+        start: { lat: pStart.lat, lon: pStart.lon },
+        end: { lat: pEnd.lat, lon: pEnd.lon },
+        startTime: currentTime,
+        endTime: currentTime + duration,
+        speed: pEnd.speed || 30
+      });
+      currentTime += duration;
+    }
+    store.sendAction('START_ROUTE', { legs, looping: false });
+    setIsRouteMode(false);
   };
 
   const isFavorite = (lat: number, lon: number) => (store.serverStatus?.favorites || []).some((f: any) => Math.abs(f.lat - lat) < 0.0001 && Math.abs(f.lon - lon) < 0.0001);
@@ -326,6 +399,14 @@ export default function AppContainer() {
                 isMaintaining={isMaintaining}
                 isLowPowerMode={isLowPowerMode}
                 telemetry={store.serverStatus?.telemetry}
+                isRouteMode={isRouteMode}
+                onToggleRouteMode={handleToggleRouteMode}
+                routePoints={routePoints}
+                onUpdateRoutePoint={handleUpdateRoutePoint}
+                onAddStep={handleAddStep}
+                onRemoveStep={handleRemoveStep}
+                onMoveStep={handleMoveStep}
+                onStartRoute={handleStartRoute}
             />
           </View>
 
