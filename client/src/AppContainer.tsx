@@ -103,9 +103,9 @@ export default function AppContainer() {
 
     if (isRunning && canUseDynamicIsland && store.simulatedCoords) {
       startLiveActivity({
-        destinationName: store.serverStatus?.navigation?.destination?.name || "Destination",
-        progress: (store.serverStatus?.navigation?.progress?.index || 0) / (store.serverStatus?.navigation?.progress?.total || 1),
-        speed: store.serverStatus?.navigation?.progress?.speed || 0,
+        destinationName: store.serverStatus?.navigation?.status?.destination?.name || "Destination",
+        progress: (store.serverStatus?.navigation?.progress?.index ?? 0) / (store.serverStatus?.navigation?.progress?.total ?? 1),
+        speed: store.serverStatus?.navigation?.progress?.speed ?? 0,
         status: "En mouvement"
       });
     } else {
@@ -434,11 +434,11 @@ export default function AppContainer() {
                 <View style={styles.navHudHeader}>
                   <Text style={styles.navHudState}>EN MOUVEMENT</Text>
                   <Text style={styles.navHudLeg}>
-                    Étape {store.serverStatus?.navigation?.progress?.index + 1}/{store.serverStatus?.navigation?.progress?.total}
+                    Étape {(store.serverStatus?.navigation?.progress?.index ?? 0) + 1}/{(store.serverStatus?.navigation?.progress?.total ?? 1)}
                   </Text>
                 </View>
                 <View style={styles.navProgressBg}>
-                  <View style={[styles.navProgressFill, { width: `${((store.serverStatus?.navigation?.progress?.index || 0) / (store.serverStatus?.navigation?.progress?.total || 1)) * 100}%` }]} />
+                  <View style={[styles.navProgressFill, { width: `${((store.serverStatus?.navigation?.progress?.index ?? 0) / (store.serverStatus?.navigation?.progress?.total ?? 1)) * 100}%` }]} />
                 </View>
               </View>
 
