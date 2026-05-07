@@ -140,7 +140,11 @@ class CompanionServer extends EventEmitter {
         peers: settings.get('clusterNodes') || []
       },
       currentSequencePreview: this.currentSequencePreview,
-      patrolZone: patrolManager.zone
+      patrolZone: patrolManager.zone,
+      navigation: {
+        progress: gpsBridge.currentProgress || null,
+        status: gpsBridge.currentStatus || null
+      }
     }
   }
 

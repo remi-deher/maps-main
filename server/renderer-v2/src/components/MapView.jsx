@@ -16,7 +16,7 @@ L.Marker.prototype.options.icon = DefaultIcon;
 
 function MapView({ 
   onMapClick, selectedPos, activeSim, onPlayRoute, onPlayOsrmRoute, 
-  routePreview, onSequencePointMove, patrolZone, onPatrolChange 
+  routePreview, onSequencePointMove, patrolZone, onPatrolChange, favorites 
 }) {
   const mapRef = useRef(null);
   const mapInstance = useRef(null);
@@ -25,6 +25,7 @@ function MapView({
   const previewMarkersInstance = useRef([]);
   const patrolLayerInstance = useRef(null);
   const patrolHandlesInstance = useRef([]);
+  const favoritesLayerInstance = useRef(L.layerGroup());
   
   const onMapClickRef = useRef(onMapClick);
   useEffect(() => {
@@ -38,7 +39,12 @@ function MapView({
         attributionControl: false
       }).setView([46.8, 8.2], 6);
 
-      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(mapInstance.current);
+      L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
+        subdomains: 'abcd',
+        maxZoom: 20
+      }).addTo(mapInstance.current);
+
+      favoritesLayerInstance.current.addTo(mapInstance.current);
 
       mapInstance.current.on('click', (e) => {
         if (onMapClickRef.current) {
@@ -332,6 +338,26 @@ function MapView({
       }
     }
   }, [patrolZone, onPatrolChange]);
+ 
+  // Rendu des favoris
+  useEffect(() => {
+    if (!mapInstance.current || !favorites) return;
+    favoritesLayerInstance.current.clearLayers();
+    favorites.forEach(fav => {
+      const icon = L.divIcon({
+        className: 'fav-marker',
+        html: `<div style="background-color: #fbbf24; width: 10px; height: 10px; border: 2px solid white; border-radius: 50%; box-shadow: 0 2px 4px rgba(0,0,0,0.3);"></div>`,
+        iconSize: [10, 10],
+        iconAnchor: [5, 5]
+      });
+      L.marker([fav.lat, fav.lon], { icon, title: fav.name })
+        .on('click', (e) => {
+          L.DomEvent.stopPropagation(e);
+          onMapClickRef.current(fav.lat, fav.lon, fav.name);
+        })
+        .addTo(favoritesLayerInstance.current);
+    });
+  }, [favorites]);
 
   return <div ref={mapRef} className="w-full h-full" />;
 }

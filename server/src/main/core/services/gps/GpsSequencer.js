@@ -113,7 +113,8 @@ class GpsSequencer extends EventEmitter {
       index: this.currentIndex,
       total: this.points.length,
       lat: point.lat,
-      lon: point.lon
+      lon: point.lon,
+      speed: this._calculateCurrentSpeed()
     })
 
     this._scheduleNext()
@@ -151,6 +152,31 @@ class GpsSequencer extends EventEmitter {
       this.lastStepTime = targetTime
       this._step()
     }, nextTimeout)
+  }
+
+  _calculateCurrentSpeed() {
+    if (this.currentIndex <= 0) return 0;
+    const p1 = this.points[this.currentIndex - 1];
+    const p2 = this.points[this.currentIndex];
+    if (!p1.time || !p2.time) return 0;
+    
+    const dist = this._calculateDistance(p1.lat, p1.lon, p2.lat, p2.lon); // mètres
+    const time = (p2.time - p1.time) / 1000; // secondes
+    if (time <= 0) return 0;
+    
+    return parseFloat(((dist / time) * 3.6).toFixed(1)); // km/h
+  }
+
+  _calculateDistance(lat1, lon1, lat2, lon2) {
+    const R = 6371e3;
+    const φ1 = lat1 * Math.PI / 180;
+    const φ2 = lat2 * Math.PI / 180;
+    const Δφ = (lat2 - lat1) * Math.PI / 180;
+    const Δλ = (lon2 - lon1) * Math.PI / 180;
+    const a = Math.sin(Δφ / 2) * Math.sin(Δφ / 2) +
+              Math.cos(φ1) * Math.cos(φ2) *
+              Math.sin(Δλ / 2) * Math.sin(Δλ / 2);
+    return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
   }
 
   setSpeed(multiplier) {

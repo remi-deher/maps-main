@@ -178,8 +178,6 @@ function App() {
       const name = await reverseGeocode(lat, lon);
       setSequencePoints(prev => prev.map(p => p.id === pickingPointId ? { ...p, lat, lon, address: name || `${lat.toFixed(4)}, ${lon.toFixed(4)}` } : p));
       setPickingPointId(null);
-      setSidebarOpen(true);
-      setSidebarMode('sequencer');
       return;
     }
     const name = await reverseGeocode(lat, lon);
@@ -264,6 +262,7 @@ function App() {
             setPatrolZone(zone);
             gps.sendAction('PATROL_UPDATE', zone);
           }}
+          favorites={favorites}
         />
       </div>
 
@@ -435,18 +434,20 @@ function App() {
                 </button>
                 </div>
               ) : (
-                <SequencePanel 
-                  activeSim={activeSim} 
-                  points={sequencePoints}
-                  setPoints={setSequencePoints}
-                  pickingPointId={pickingPointId}
-                  setPickingPointId={setPickingPointId}
-                  setSidebarOpen={setSidebarOpen}
-                  onClose={() => {
-                    setSidebarMode('main');
-                    setPickingPointId(null);
-                  }} 
-                />
+                <div className="absolute top-24 left-6 z-[80] w-[400px] max-h-[85vh] bg-slate-900/95 rounded-3xl shadow-2xl overflow-hidden border border-white/10">
+                  <SequencePanel 
+                    activeSim={activeSim} 
+                    points={sequencePoints}
+                    setPoints={setSequencePoints}
+                    pickingPointId={pickingPointId}
+                    setPickingPointId={setPickingPointId}
+                    setSidebarOpen={setSidebarOpen}
+                    onClose={() => {
+                      setSidebarMode('main');
+                      setPickingPointId(null);
+                    }} 
+                  />
+                </div>
               )}
             </motion.div>
           </>
@@ -481,6 +482,58 @@ function App() {
               <button onClick={() => playRoute()} className="bg-emerald-600 hover:bg-emerald-500 text-white px-5 py-3 rounded-2xl font-bold flex items-center gap-2 transition-all active:scale-95 shadow-lg shadow-emerald-900/20"><Navigation className="w-5 h-5" /> Marcher</button>
               <button onClick={teleport} className="bg-blue-600 hover:bg-blue-500 text-white px-6 py-3 rounded-2xl font-bold flex items-center gap-2 transition-all active:scale-95 shadow-lg shadow-blue-900/20"><MapPin className="w-5 h-5" /> Allez ici</button>
             </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Navigation HUD (Floating Bottom Center) */}
+      <AnimatePresence>
+        {status.state === 'running' && activeSim && (
+          <motion.div 
+            initial={{ y: 100, opacity: 0, x: '-50%' }} 
+            animate={{ y: 0, opacity: 1, x: '-50%' }} 
+            exit={{ y: 100, opacity: 0, x: '-50%' }} 
+            className="absolute bottom-8 left-1/2 z-[60] bg-slate-900/90 border border-indigo-500/30 px-8 py-4 rounded-[32px] shadow-[0_20px_50px_rgba(0,0,0,0.5)] flex items-center gap-8 backdrop-blur-xl"
+          >
+             <div className="flex flex-col items-center">
+                <span className="text-[10px] font-black text-indigo-400 uppercase tracking-widest mb-1">Vitesse</span>
+                <div className="flex items-baseline gap-1">
+                  <span className="text-3xl font-black text-white tabular-nums">
+                    {status.navigation?.progress?.speed || 0}
+                  </span>
+                  <span className="text-xs font-bold text-slate-500">km/h</span>
+                </div>
+             </div>
+             
+             <div className="w-px h-10 bg-white/10" />
+             
+             <div className="flex-1 min-w-[240px]">
+                <div className="flex justify-between items-center mb-2">
+                   <span className="text-[10px] font-black text-emerald-400 uppercase tracking-widest">
+                     {status.navigation?.status?.state === 'paused' ? 'En pause' : 'En mouvement'}
+                   </span>
+                   <span className="text-[10px] font-bold text-slate-500">
+                     Étape {status.navigation?.progress?.index + 1} / {status.navigation?.progress?.total}
+                   </span>
+                </div>
+                <div className="w-full h-2 bg-black/40 rounded-full overflow-hidden border border-white/5">
+                   <motion.div 
+                    initial={{ width: 0 }}
+                    animate={{ width: `${(status.navigation?.progress?.index / status.navigation?.progress?.total) * 100}%` }}
+                    className="h-full bg-gradient-to-r from-indigo-500 to-emerald-500" 
+                   />
+                </div>
+             </div>
+
+             <div className="w-px h-10 bg-white/10" />
+
+             <button 
+              onClick={resetLocation}
+              className="p-4 bg-rose-500/10 hover:bg-rose-500/20 text-rose-500 rounded-2xl border border-rose-500/20 transition-all active:scale-95"
+              title="Arrêter la simulation"
+             >
+               <X className="w-6 h-6" />
+             </button>
           </motion.div>
         )}
       </AnimatePresence>

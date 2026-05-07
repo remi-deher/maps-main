@@ -11,6 +11,14 @@ class GpsBridge {
   constructor() {
     this.activeDriver = null
     this.isReady = false
+    
+    gpsSequencer.on('progress', (data) => {
+      this.currentProgress = data;
+    });
+    
+    gpsSequencer.on('status', (data) => {
+      this.currentStatus = data;
+    });
   }
 
   /**

@@ -214,6 +214,17 @@ export default function AppContainer() {
 
             {pendingCoords && <Marker coordinate={pendingCoords} pinColor={COLORS.error} />}
 
+            {/* ⭐ FAVORIS SUR LA CARTE ⭐ */}
+            {(store.serverStatus?.favorites || []).map((fav: any, i: number) => (
+              <Marker 
+                key={`fav-marker-${i}`}
+                coordinate={{ latitude: fav.lat, longitude: fav.lon }}
+                onPress={() => setPendingCoords({ latitude: fav.lat, longitude: fav.lon, name: fav.name })}
+              >
+                <View style={styles.favMarker} />
+              </Marker>
+            ))}
+
             {/* 🛡️ ZONE DE PATROUILLE 🛡️ */}
             {store.serverStatus?.patrolZone && (
               <>
@@ -355,6 +366,37 @@ export default function AppContainer() {
             </TouchableOpacity>
           )}
 
+          {/* Navigation HUD (Floating) */}
+          {store.serverStatus?.navigation?.status?.state === 'running' && store.simulatedCoords && (
+            <Animated.View style={[styles.navHud, SHADOWS.premium]}>
+              <View style={styles.navHudLeft}>
+                <Text style={styles.navHudLabel}>Vitesse</Text>
+                <View style={{flexDirection: 'row', alignItems: 'baseline'}}>
+                  <Text style={styles.navHudSpeed}>{store.serverStatus?.navigation?.progress?.speed || 0}</Text>
+                  <Text style={styles.navHudUnit}>km/h</Text>
+                </View>
+              </View>
+              
+              <View style={styles.navHudDivider} />
+              
+              <View style={styles.navHudCenter}>
+                <View style={styles.navHudHeader}>
+                  <Text style={styles.navHudState}>EN MOUVEMENT</Text>
+                  <Text style={styles.navHudLeg}>
+                    Étape {store.serverStatus?.navigation?.progress?.index + 1}/{store.serverStatus?.navigation?.progress?.total}
+                  </Text>
+                </View>
+                <View style={styles.navProgressBg}>
+                  <View style={[styles.navProgressFill, { width: `${((store.serverStatus?.navigation?.progress?.index || 0) / (store.serverStatus?.navigation?.progress?.total || 1)) * 100}%` }]} />
+                </View>
+              </View>
+
+              <TouchableOpacity style={styles.navHudClose} onPress={() => store.sendAction('STOP_ROUTE')}>
+                <Text style={{fontSize: 20}}>✕</Text>
+              </TouchableOpacity>
+            </Animated.View>
+          )}
+
           <ActionPanel 
             visible={!!pendingCoords} 
             coords={pendingCoords} 
@@ -445,4 +487,19 @@ const styles = StyleSheet.create({
   realDotOutline: { width: 14, height: 14, borderRadius: 7, backgroundColor: 'rgba(255, 255, 255, 0.8)', justifyContent: 'center', alignItems: 'center', shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.3, shadowRadius: 2, elevation: 3 },
   realDotInner: { width: 8, height: 8, borderRadius: 4, backgroundColor: '#34D399' }, // Vert pour bien distinguer du bleu simulé
   stepMarker: { width: 14, height: 14, borderRadius: 7, borderSize: 2, borderColor: '#fff', shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.3, shadowRadius: 2, elevation: 3 },
+  favMarker: { width: 10, height: 10, borderRadius: 5, backgroundColor: '#FBBF24', borderWidth: 2, borderColor: '#fff', shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.3, shadowRadius: 1.5, elevation: 2 },
+  
+  navHud: { position: 'absolute', bottom: 120, left: 15, right: 15, backgroundColor: 'rgba(15, 23, 42, 0.95)', borderRadius: 24, padding: 16, flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderColor: 'rgba(99, 102, 241, 0.3)', zIndex: 100 },
+  navHudLeft: { alignItems: 'center', paddingRight: 15 },
+  navHudLabel: { color: COLORS.primary, fontSize: 8, fontWeight: '900', textTransform: 'uppercase' },
+  navHudSpeed: { color: COLORS.text, fontSize: 24, fontWeight: '900' },
+  navHudUnit: { color: COLORS.textSecondary, fontSize: 10, marginLeft: 2 },
+  navHudDivider: { width: 1, height: '80%', backgroundColor: 'rgba(255,255,255,0.1)' },
+  navHudCenter: { flex: 1, paddingHorizontal: 15 },
+  navHudHeader: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 8 },
+  navHudState: { color: COLORS.success, fontSize: 8, fontWeight: '900' },
+  navHudLeg: { color: COLORS.textSecondary, fontSize: 8, fontWeight: '700' },
+  navProgressBg: { height: 6, backgroundColor: 'rgba(255,255,255,0.05)', borderRadius: 3, overflow: 'hidden' },
+  navProgressFill: { height: '100%', backgroundColor: COLORS.primary, borderRadius: 3 },
+  navHudClose: { width: 40, height: 40, borderRadius: 20, backgroundColor: 'rgba(244, 63, 94, 0.1)', justifyContent: 'center', alignItems: 'center' },
 });
