@@ -45,6 +45,13 @@ export default function SequencePanel({ activeSim, points, setPoints, onClose, p
     loadData();
   }, []);
 
+  // Synchronisation en temps réel avec le serveur (pour aperçu sur mobile)
+  useEffect(() => {
+    if (points.length > 0) {
+      gps.syncSequencePreview(points);
+    }
+  }, [points]);
+
   const toggleLoop = () => {
     const newVal = !isLooping;
     setIsLooping(newVal);

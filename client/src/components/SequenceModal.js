@@ -11,6 +11,8 @@ export default function SequenceModal({ visible, onClose, onStart, currentCoords
   const [activePoints, setActivePoints] = useState(points || []);
   const [loading, setLoading] = useState(false);
   const [pickingId, setPickingId] = useState(null);
+  const [isLooping, setIsLooping] = useState(false);
+  const [useSnap, setUseSnap] = useState(true);
 
   // Initialisation si vide
   useEffect(() => {
@@ -76,7 +78,7 @@ export default function SequenceModal({ visible, onClose, onStart, currentCoords
     const oldPoint = activePoints[idx];
     
     // Snap to road logic if position changed
-    if ((data.lat !== undefined || data.lon !== undefined) && data.type !== 'flight') {
+    if (useSnap && (data.lat !== undefined || data.lon !== undefined) && data.type !== 'flight') {
       const snapped = await snapToRoad(data.lat || oldPoint.lat, data.lon || oldPoint.lon, data.type || oldPoint.type);
       if (snapped) {
         data.lat = snapped.lat;
@@ -107,6 +109,17 @@ export default function SequenceModal({ visible, onClose, onStart, currentCoords
     if (index >= activePoints.length - 2) return; // Ne pas déplacer la destination au delà du dernier
     const updated = [...activePoints];
     [updated[index], updated[index+1]] = [updated[index+1], updated[index]];
+    setActivePoints(updated);
+  };
+
+  const reverseRoute = () => {
+    if (activePoints.length < 2) return;
+    const reversed = [...activePoints].reverse();
+    const updated = reversed.map((p, i) => {
+       if (i === 0) return { ...p, id: 'start', type: 'start' };
+       if (i === reversed.length - 1) return { ...p, id: 'dest' };
+       return { ...p, id: Math.random().toString(36).substr(2, 9) };
+    });
     setActivePoints(updated);
   };
 
@@ -167,10 +180,15 @@ export default function SequenceModal({ visible, onClose, onStart, currentCoords
             </TouchableOpacity>
             <View style={{alignItems: 'center'}}>
               <Text style={styles.title}>Itinéraire</Text>
-              <TouchableOpacity onPress={handleOptimize}>
-                <Text style={styles.optimizeBtnText}>✨ Optimiser l'ordre</Text>
-              </TouchableOpacity>
-              <Text style={styles.totalTime}>Temps total : {formatDuration(totalDuration)}</Text>
+              <View style={styles.headerToolbar}>
+                <TouchableOpacity onPress={reverseRoute} style={styles.miniBtn}><Text>🔄</Text></TouchableOpacity>
+                <TouchableOpacity onPress={() => setIsLooping(!isLooping)} style={[styles.miniBtn, isLooping && styles.miniBtnActive]}><Text>🔁</Text></TouchableOpacity>
+                <TouchableOpacity onPress={() => setUseSnap(!useSnap)} style={[styles.miniBtn, useSnap && styles.miniBtnActive]}><Text>🧲</Text></TouchableOpacity>
+                <TouchableOpacity onPress={handleOptimize} style={styles.optimizeBtn}>
+                  <Text style={styles.optimizeBtnText}>✨ Optimiser</Text>
+                </TouchableOpacity>
+              </View>
+              <Text style={styles.totalTime}>Total : {formatDuration(totalDuration)}</Text>
             </View>
             <TouchableOpacity onPress={handleStart} style={styles.playBtn}>
               <Text style={styles.playText}>LANCER</Text>
@@ -259,11 +277,14 @@ const styles = StyleSheet.create({
   header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: 15, borderBottomWidth: 1, borderBottomColor: 'rgba(255,255,255,0.05)' },
   title: { color: COLORS.text, fontSize: 14, fontWeight: '900', textTransform: 'uppercase' },
   totalTime: { color: COLORS.primary, fontSize: 10, fontWeight: 'bold', marginTop: 2 },
-  optimizeBtnText: { color: COLORS.success, fontSize: 10, fontWeight: 'bold', marginTop: 2, textDecorationLine: 'underline' },
-  closeBtn: { padding: 10 },
-  closeText: { color: COLORS.textSecondary, fontSize: 18 },
   playBtn: { backgroundColor: COLORS.primary, paddingHorizontal: 15, paddingVertical: 8, borderRadius: 12 },
   playText: { color: '#fff', fontWeight: '900', fontSize: 12 },
+
+  headerToolbar: { flexDirection: 'row', gap: 8, alignItems: 'center', marginTop: 4 },
+  miniBtn: { width: 28, height: 28, borderRadius: 8, backgroundColor: 'rgba(255,255,255,0.05)', justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)' },
+  miniBtnActive: { backgroundColor: COLORS.primary, borderColor: COLORS.primary },
+  optimizeBtn: { backgroundColor: 'rgba(16, 185, 129, 0.1)', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8, borderWidth: 1, borderColor: 'rgba(16, 185, 129, 0.2)' },
+  optimizeBtnText: { color: COLORS.success, fontSize: 10, fontWeight: 'bold' },
 
   list: { flex: 1, padding: 20 },
   pointRow: { flexDirection: 'row', marginBottom: 5 },

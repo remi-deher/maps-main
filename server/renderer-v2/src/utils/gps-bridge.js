@@ -4,13 +4,16 @@
  */
 
 import axios from 'axios';
+import { io } from 'socket.io-client';
 
 const isElectron = !!(window.gps && window.gps.isElectron);
 
 let gps = window.gps;
 
 if (!isElectron) {
-  console.log('[gps-bridge] 🌐 Mode Web détecté, activation du polyfill REST');
+  console.log('[gps-bridge] 🌐 Mode Web détecté, activation du polyfill REST + WebSocket');
+  
+  const socket = io(); // Se connecte au même host/port que l'UI
   
   gps = {
     isElectron: false,
@@ -31,10 +34,28 @@ if (!isElectron) {
     getCompanionQr: () => axios.get('/api/diagnostic/qr').then(r => r.data),
     listPlists: () => axios.get('/api/diagnostic/plists').then(r => r.data).catch(() => ({ plists: [] })),
     
-    // Listeners (Nop en mode Web pur, à moins d'utiliser du polling ou WS)
-    onStatus: (cb) => { return () => {} },
-    onSettingsUpdated: (cb) => { return () => {} },
-    onEvent: (name, cb) => { return () => {} },
+    onStatus: (cb) => {
+      socket.on('STATUS', cb);
+      socket.on('STATUS_UPDATE', (data) => cb({ service: 'tunneld', ...data }));
+      socket.on('status-update', cb);
+      socket.on('debug-log', (msg) => cb({ service: 'server-log', data: msg }));
+      socket.on('LOCATION', (data) => cb({ service: 'location', data }));
+      return () => {
+        socket.off('STATUS');
+        socket.off('STATUS_UPDATE');
+        socket.off('status-update');
+        socket.off('debug-log');
+        socket.off('LOCATION');
+      };
+    },
+    onSettingsUpdated: (cb) => {
+      socket.on('settings-updated', cb);
+      return () => socket.off('settings-updated');
+    },
+    onEvent: (name, cb) => {
+      socket.on(name, cb);
+      return () => socket.off(name);
+    },
     
     openGpxDialog: () => Promise.resolve({ success: false, error: 'Non supporté en mode Web' }),
     playCustomGpx: () => Promise.resolve({ success: false }),
