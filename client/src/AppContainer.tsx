@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { StyleSheet, View, TouchableWithoutFeedback, Keyboard, KeyboardAvoidingView, Platform, TouchableOpacity, Text, Animated, Easing } from 'react-native';
-import MapView, { Marker } from 'react-native-maps';
+import MapView, { Marker, Circle, Polygon, Polyline } from 'react-native-maps';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import * as Battery from 'expo-battery';
 import * as Location from 'expo-location';
@@ -171,8 +171,112 @@ export default function AppContainer() {
                 </View>
               </Marker>
             )}
+ 
+            {/* 🛣️ APERÇU DE L'ITINÉRAIRE (SÉQUENCEUR) 🛣️ */}
+            {store.sequencePoints.length > 0 && (
+              <>
+                {/* Segments (Polyline) */}
+                {store.sequencePoints.map((p, i) => {
+                  if (i === 0 || !p.path || p.path.length < 2) return null;
+                  return (
+                    <Polyline 
+                      key={`path-${p.id}`}
+                      coordinates={p.path.map((pt: any) => ({ latitude: pt.lat, longitude: pt.lon }))}
+                      strokeColor={COLORS.primary}
+                      strokeWidth={3}
+                    />
+                  );
+                })}
+                
+                {/* Étapes (Markers draggables) */}
+                {store.sequencePoints.map((p, i) => {
+                  const isStart = i === 0;
+                  const isEnd = i === store.sequencePoints.length - 1;
+                  const color = isStart ? COLORS.primary : (isEnd ? COLORS.error : COLORS.success);
+                  
+                  return (
+                    <Marker 
+                      key={`step-${p.id}`}
+                      coordinate={{ latitude: p.lat, longitude: p.lon }}
+                      draggable
+                      onDragEnd={(e) => {
+                        const newPoints = [...store.sequencePoints];
+                        newPoints[i] = { ...newPoints[i], latitude: e.nativeEvent.coordinate.latitude, longitude: e.nativeEvent.coordinate.longitude, lat: e.nativeEvent.coordinate.latitude, lon: e.nativeEvent.coordinate.longitude };
+                        store.syncSequence(newPoints);
+                      }}
+                    >
+                      <View style={[styles.stepMarker, { backgroundColor: color }]} />
+                    </Marker>
+                  );
+                })}
+              </>
+            )}
 
             {pendingCoords && <Marker coordinate={pendingCoords} pinColor={COLORS.error} />}
+
+            {/* 🛡️ ZONE DE PATROUILLE 🛡️ */}
+            {store.serverStatus?.patrolZone && (
+              <>
+                {store.serverStatus.patrolZone.type === 'circle' ? (
+                  <>
+                    <Circle 
+                      center={store.serverStatus.patrolZone.center}
+                      radius={store.serverStatus.patrolZone.radius || 200}
+                      fillColor={store.serverStatus.patrolZone.active ? 'rgba(16, 185, 129, 0.1)' : 'rgba(100, 116, 139, 0.1)'}
+                      strokeColor={store.serverStatus.patrolZone.active ? '#10b981' : '#64748b'}
+                      strokeWidth={2}
+                      lineDashPattern={[5, 10]}
+                    />
+                    {/* Handles Circle */}
+                    <Marker 
+                      coordinate={store.serverStatus.patrolZone.center}
+                      draggable
+                      onDrag={(e) => store.updatePatrolZone({ ...store.serverStatus!.patrolZone, center: e.nativeEvent.coordinate })}
+                    >
+                      <View style={{ width: 12, height: 12, backgroundColor: 'white', borderRadius: 6, borderSize: 2, borderColor: '#10b981' }} />
+                    </Marker>
+                  </>
+                ) : (
+                  store.serverStatus.patrolZone.bounds && (
+                    <>
+                      <Polygon 
+                        coordinates={[
+                          { latitude: store.serverStatus.patrolZone.bounds.ne.lat, longitude: store.serverStatus.patrolZone.bounds.sw.lon },
+                          { latitude: store.serverStatus.patrolZone.bounds.ne.lat, longitude: store.serverStatus.patrolZone.bounds.ne.lon },
+                          { latitude: store.serverStatus.patrolZone.bounds.sw.lat, longitude: store.serverStatus.patrolZone.bounds.ne.lon },
+                          { latitude: store.serverStatus.patrolZone.bounds.sw.lat, longitude: store.serverStatus.patrolZone.bounds.sw.lon }
+                        ]}
+                        fillColor={store.serverStatus.patrolZone.active ? 'rgba(16, 185, 129, 0.1)' : 'rgba(100, 116, 139, 0.1)'}
+                        strokeColor={store.serverStatus.patrolZone.active ? '#10b981' : '#64748b'}
+                        strokeWidth={2}
+                        lineDashPattern={[5, 10]}
+                      />
+                      {/* Handles Rectangle (SW and NE corners) */}
+                      <Marker 
+                        coordinate={{ latitude: store.serverStatus.patrolZone.bounds.sw.lat, longitude: store.serverStatus.patrolZone.bounds.sw.lon }}
+                        draggable
+                        onDrag={(e) => store.updatePatrolZone({ 
+                          ...store.serverStatus!.patrolZone, 
+                          bounds: { ...store.serverStatus!.patrolZone!.bounds!, sw: { lat: e.nativeEvent.coordinate.latitude, lon: e.nativeEvent.coordinate.longitude } } 
+                        })}
+                      >
+                        <View style={{ width: 12, height: 12, backgroundColor: 'white', borderSize: 2, borderColor: '#10b981' }} />
+                      </Marker>
+                      <Marker 
+                        coordinate={{ latitude: store.serverStatus.patrolZone.bounds.ne.lat, longitude: store.serverStatus.patrolZone.bounds.ne.lon }}
+                        draggable
+                        onDrag={(e) => store.updatePatrolZone({ 
+                          ...store.serverStatus!.patrolZone, 
+                          bounds: { ...store.serverStatus!.patrolZone!.bounds!, ne: { lat: e.nativeEvent.coordinate.latitude, lon: e.nativeEvent.coordinate.longitude } } 
+                        })}
+                      >
+                        <View style={{ width: 12, height: 12, backgroundColor: 'white', borderSize: 2, borderColor: '#10b981' }} />
+                      </Marker>
+                    </>
+                  )
+                )}
+              </>
+            )}
           </MapView>
 
           <View style={styles.omnibarContainer}>
@@ -221,6 +325,24 @@ export default function AppContainer() {
             </TouchableOpacity>
             <TouchableOpacity style={[styles.floatBtn, SHADOWS.light]} onPress={() => setShowSequence(true)}>
               <Text style={{fontSize: 22}}>✈️</Text>
+            </TouchableOpacity>
+            <TouchableOpacity 
+              style={[styles.floatBtn, store.serverStatus?.patrolZone?.active && styles.activeFloat, SHADOWS.light]} 
+              onPress={() => {
+                const zone = store.serverStatus?.patrolZone;
+                if (!zone) {
+                  store.updatePatrolZone({
+                    type: 'circle',
+                    center: store.simulatedCoords || { latitude: 48.8566, longitude: 2.3522 },
+                    radius: 200,
+                    active: false
+                  });
+                } else {
+                  store.updatePatrolZone({ ...zone, active: !zone.active });
+                }
+              }}
+            >
+              <Text style={{fontSize: 22}}>{store.serverStatus?.patrolZone?.active ? '🛡️' : '🔘'}</Text>
             </TouchableOpacity>
           </View>
 
@@ -322,4 +444,5 @@ const styles = StyleSheet.create({
   simPillText: { color: COLORS.text, fontSize: 14, fontWeight: '700', flex: 1 },
   realDotOutline: { width: 14, height: 14, borderRadius: 7, backgroundColor: 'rgba(255, 255, 255, 0.8)', justifyContent: 'center', alignItems: 'center', shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.3, shadowRadius: 2, elevation: 3 },
   realDotInner: { width: 8, height: 8, borderRadius: 4, backgroundColor: '#34D399' }, // Vert pour bien distinguer du bleu simulé
+  stepMarker: { width: 14, height: 14, borderRadius: 7, borderSize: 2, borderColor: '#fff', shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.3, shadowRadius: 2, elevation: 3 },
 });

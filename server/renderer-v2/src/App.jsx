@@ -29,6 +29,7 @@ function App() {
   
   const [deviceList, setDeviceList] = useState([]);
   const [routePreview, setRoutePreview] = useState(null);
+  const [patrolZone, setPatrolZone] = useState(null);
   const searchInputRef = useRef(null);
   const { history, favorites, addToHistory, addFavorite, removeFavorite } = useStorage();
 
@@ -108,6 +109,8 @@ function App() {
           }
           return prev;
         });
+      } else if (data.patrolZone) {
+        setPatrolZone(data.patrolZone);
       } else {
         // Fallback : tout autre service est considéré comme un log serveur
         const message = data.message || (typeof data.data === 'string' ? data.data : JSON.stringify(data.data));
@@ -142,11 +145,16 @@ function App() {
       });
     });
 
+    const removePatrolSyncListener = gps.onEvent('STATUS_UPDATE', (data) => {
+      if (data.patrolZone) setPatrolZone(data.patrolZone);
+    });
+
     return () => {
       removeStatusListener();
       removeSettingsListener();
       removeDebugListener();
       removeSequenceSyncListener();
+      removePatrolSyncListener();
     };
   }, []);
 
@@ -251,6 +259,11 @@ function App() {
           onPlayOsrmRoute={playOsrmRoute}
           routePreview={sidebarMode === 'sequencer' ? sequencePoints : null}
           onSequencePointMove={handleSequencePointMove}
+          patrolZone={patrolZone}
+          onPatrolChange={(zone) => {
+            setPatrolZone(zone);
+            gps.sendAction('PATROL_UPDATE', zone);
+          }}
         />
       </div>
 
@@ -398,6 +411,27 @@ function App() {
                   className="w-full mt-2 h-12 bg-indigo-600/20 hover:bg-indigo-600/40 text-indigo-400 rounded-xl font-bold transition-all flex items-center justify-center gap-2 border border-indigo-500/20"
                 >
                   ✈️ Séquenceur Voyage
+                </button>
+                <button 
+                  onClick={() => {
+                    if (!patrolZone) {
+                      const center = activeSim || selectedPos || { lat: 48.8566, lon: 2.3522 };
+                      const newZone = { type: 'circle', center, radius: 200, active: false };
+                      setPatrolZone(newZone);
+                      gps.sendAction('PATROL_UPDATE', newZone);
+                    } else {
+                      const updated = { ...patrolZone, active: !patrolZone.active };
+                      setPatrolZone(updated);
+                      gps.sendAction('PATROL_UPDATE', updated);
+                    }
+                  }} 
+                  className={`w-full mt-2 h-12 rounded-xl font-bold transition-all flex items-center justify-center gap-2 border ${
+                    patrolZone?.active 
+                      ? 'bg-emerald-600/20 text-emerald-400 border-emerald-500/20' 
+                      : 'bg-slate-600/20 text-slate-400 border-slate-500/20'
+                  }`}
+                >
+                  🛡️ {patrolZone?.active ? 'Arrêter Patrouille' : (patrolZone ? 'Démarrer Patrouille' : 'Configurer Patrouille')}
                 </button>
                 </div>
               ) : (

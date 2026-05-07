@@ -106,14 +106,11 @@ export default function SequencePanel({ activeSim, points, setPoints, onClose, p
 
   const tryOptimize = async () => {
     if (points.length < 3) return;
-    const res = await optimizeRoute(points);
-    if (res && res.geometry) {
-      // Pour l'instant on garde l'ordre de l'utilisateur mais on pourrait le réorganiser
-      // via res.waypointIndices si on voulait vraiment optimiser le trajet total.
-      // Mais ici on va juste forcer le tracé global si possible.
-      // Simplifions : On informe l'utilisateur ou on propose de réordonner.
-      alert("Optimisation OSRM calculée. Le tracé sera plus fluide.");
-      refreshAllPaths(points);
+    const profile = points[1]?.type || 'drive';
+    const optimized = await optimizeRoute(points, profile);
+    if (optimized) {
+      setPoints(optimized);
+      refreshAllPaths(optimized);
     }
   };
 
@@ -381,6 +378,14 @@ export default function SequencePanel({ activeSim, points, setPoints, onClose, p
               className={`p-2 rounded-lg transition-all ${useOsrmSpeed ? 'bg-blue-500 text-white shadow-lg shadow-blue-900/20' : 'hover:bg-white/5 text-slate-400'}`}
             >
               <Clock className="w-4 h-4" />
+            </button>
+            <div className="w-px h-4 bg-white/10 mx-1" />
+            <button 
+              onClick={tryOptimize} 
+              title="Optimiser l'ordre des étapes (TSP)"
+              className="px-3 py-1.5 hover:bg-emerald-500/20 rounded-lg text-emerald-400 text-[10px] font-black uppercase transition-all flex items-center gap-2 border border-emerald-500/20"
+            >
+              ✨ Optimiser
             </button>
           </div>
           

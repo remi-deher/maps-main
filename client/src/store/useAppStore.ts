@@ -28,6 +28,7 @@ interface AppStore {
   sendAction: (type: string, data?: any) => void;
   reportRealLocation: (coords: Coords) => void;
   syncSequence: (points: any[]) => void;
+  updatePatrolZone: (zone: any) => void;
   loadSettings: () => Promise<void>;
 }
 
@@ -247,6 +248,12 @@ export const useAppStore = create<AppStore>((set, get) => ({
     set({ sequencePoints: points });
     if (socket?.connected) {
       socket.emit('SEQUENCE_SYNC', points);
+    }
+  },
+
+  updatePatrolZone: (zone) => {
+    if (socket?.connected) {
+      socket.emit('PATROL_UPDATE', zone);
     }
   }
 }));

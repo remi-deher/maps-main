@@ -13,6 +13,7 @@ const { dbg, sendStatus } = require('../../logger')
 const favoritesManager = require('./favorites-manager')
 const settings = require('./settings-manager')
 const routeGenerator = require('./gps/route-generator')
+const patrolManager = require('./gps/PatrolManager')
 const gpsBridge = require('./gps/gps-bridge')
 const clusterManager = require('./cluster-manager')
 const { getAppRoot } = require('../../platform/PathResolver')
@@ -76,6 +77,10 @@ class CompanionServer extends EventEmitter {
       })
     }
 
+    patrolManager.on('inject', (data) => {
+      this.emit('request-location', data)
+    })
+
     // Intervalle de télémétrie (toutes les 5 secondes)
     this._telemetryInterval = setInterval(() => {
       if (this.hasActiveClients()) {
@@ -134,7 +139,8 @@ class CompanionServer extends EventEmitter {
         role: clusterManager.role,
         peers: settings.get('clusterNodes') || []
       },
-      currentSequencePreview: this.currentSequencePreview
+      currentSequencePreview: this.currentSequencePreview,
+      patrolZone: patrolManager.zone
     }
   }
 
@@ -203,6 +209,21 @@ class CompanionServer extends EventEmitter {
       this.lastDriftRelance = now
       dbg(`[companion-server] ⚡ Relance demandée par l'iPhone (Ré-injection de sécurité : ${target.lat}, ${target.lon})`)
       this.emit('request-location', { ...target, force: true })
+      res.json({ success: true })
+    })
+
+    this.app.post('/api/location/route', (req, res) => {
+      this._handleRouteMessage(null, { type: 'PLAY_ROUTE', data: req.body })
+      res.json({ success: true })
+    })
+
+    this.app.post('/api/location/route/osrm', (req, res) => {
+      this._handleRouteMessage(null, { type: 'PLAY_OSRM_ROUTE', data: req.body })
+      res.json({ success: true })
+    })
+
+    this.app.post('/api/location/sequence', (req, res) => {
+      this._handleRouteMessage(null, { type: 'PLAY_SEQUENCE', data: req.body })
       res.json({ success: true })
     })
 
@@ -354,6 +375,12 @@ class CompanionServer extends EventEmitter {
         socket.on('SEQUENCE_SYNC', (points) => {
           this.currentSequencePreview = points || []
           this._broadcast('SEQUENCE_PREVIEW_UPDATED', this.currentSequencePreview)
+        })
+
+        socket.on('PATROL_UPDATE', (zone) => {
+          patrolManager.update(zone)
+          this.status.patrolZone = zone
+          this._broadcast('STATUS_UPDATE', { patrolZone: zone })
         })
 
         socket.on('disconnect', () => {
@@ -539,18 +566,21 @@ class CompanionServer extends EventEmitter {
   _handleRouteMessage(socket, payload) {
     switch (payload.type) {
       case 'PLAY_ROUTE': {
-        const { endLat, endLon, speed } = payload.data || {}
+        const { endLat, endLon, speed, profile } = payload.data || {}
         if (endLat !== undefined && endLon !== undefined) {
           const start = this.status.lastVerifiedLocation || this.status.lastInjectedLocation
           if (!start) break
-          const gpxPath = routeGenerator.generateOrthodromicGpx(
+          // Utilise OSRM par défaut (profile 'driving' si non spécifié)
+          routeGenerator.generateOsrmRoute(
             { lat: start.lat, lon: start.lon },
             { lat: endLat, lon: endLon },
+            profile || 'driving',
             speed || 5
-          )
-          gpsBridge.playGpx(gpxPath)
-          this.status.state = 'moving'
-          this._broadcast('STATUS', this.status)
+          ).then(gpxPath => {
+            gpsBridge.playGpx(gpxPath)
+            this.status.state = 'moving'
+            this._broadcast('STATUS', this.status)
+          })
         }
         break
       }

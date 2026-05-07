@@ -37,6 +37,7 @@ export interface ServerStatus {
   };
   currentSequencePreview?: any[];
   telemetry?: TelemetryData;
+  patrolZone?: PatrolZone;
 }
 
 export interface TelemetryData {
@@ -51,4 +52,15 @@ export interface AppSettings {
   serverPort: string;
   notificationsEnabled: boolean;
   dynamicIslandEnabled: boolean;
+}
+
+export interface PatrolZone {
+  type: 'circle' | 'rectangle';
+  center: { lat: number, lon: number };
+  radius?: number; // en mètres
+  bounds?: { 
+    ne: { lat: number, lon: number }, 
+    sw: { lat: number, lon: number } 
+  };
+  active: boolean;
 }
