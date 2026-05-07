@@ -14,12 +14,17 @@ let DefaultIcon = L.icon({
 });
 L.Marker.prototype.options.icon = DefaultIcon;
 
-function MapView({ onMapClick, selectedPos, activeSim, onPlayRoute, onPlayOsrmRoute, routePreview, onSequencePointMove }) {
+function MapView({ 
+  onMapClick, selectedPos, activeSim, onPlayRoute, onPlayOsrmRoute, 
+  routePreview, onSequencePointMove, patrolZone, onPatrolChange 
+}) {
   const mapRef = useRef(null);
   const mapInstance = useRef(null);
   const markerInstance = useRef(null);
   const routeLayerInstance = useRef(null);
   const previewMarkersInstance = useRef([]);
+  const patrolLayerInstance = useRef(null);
+  const patrolHandlesInstance = useRef([]);
   
   const onMapClickRef = useRef(onMapClick);
   useEffect(() => {
@@ -247,6 +252,86 @@ function MapView({ onMapClick, selectedPos, activeSim, onPlayRoute, onPlayOsrmRo
       // (Optionnel : on peut éviter de zoomer à chaque drag pour ne pas perdre le focus)
     }
   }, [routePreview]);
+  
+  // Rendu de la zone de patrouille
+  useEffect(() => {
+    if (!mapInstance.current) return;
+
+    if (patrolLayerInstance.current) {
+      mapInstance.current.removeLayer(patrolLayerInstance.current);
+      patrolLayerInstance.current = null;
+    }
+    patrolHandlesInstance.current.forEach(h => mapInstance.current.removeLayer(h));
+    patrolHandlesInstance.current = [];
+
+    if (patrolZone) {
+      const { type, center, radius, bounds, active } = patrolZone;
+      const color = active ? '#10b981' : '#64748b';
+      
+      if (type === 'circle') {
+        patrolLayerInstance.current = L.circle([center.lat, center.lon], {
+          radius: radius || 100,
+          color: color,
+          dashArray: '5, 10',
+          fillOpacity: 0.1,
+          weight: 2
+        }).addTo(mapInstance.current);
+
+        // Handle pour le centre
+        const centerMarker = L.marker([center.lat, center.lon], {
+          draggable: true,
+          icon: L.divIcon({ className: 'handle', html: '<div style="width:10px;height:10px;background:white;border:2px solid #10b981;border-radius:50%"></div>', iconSize: [10, 10] })
+        }).addTo(mapInstance.current);
+
+        centerMarker.on('drag', (e) => {
+          const p = e.target.getLatLng();
+          onPatrolChange({ ...patrolZone, center: { lat: p.lat, lon: p.lng } });
+        });
+        patrolHandlesInstance.current.push(centerMarker);
+
+        // Handle pour le rayon (à l'est du cercle)
+        const radiusPoint = L.latLng(center.lat, center.lon).toBounds(radius || 100).getNorthEast();
+        const radiusMarker = L.marker([center.lat, radiusPoint.lng], {
+          draggable: true,
+          icon: L.divIcon({ className: 'handle', html: '<div style="width:10px;height:10px;background:white;border:2px solid #10b981;"></div>', iconSize: [10, 10] })
+        }).addTo(mapInstance.current);
+
+        radiusMarker.on('drag', (e) => {
+          const p = e.target.getLatLng();
+          const newRadius = L.latLng(center.lat, center.lon).distanceTo(p);
+          onPatrolChange({ ...patrolZone, radius: newRadius });
+        });
+        patrolHandlesInstance.current.push(radiusMarker);
+
+      } else if (type === 'rectangle' && bounds) {
+        patrolLayerInstance.current = L.rectangle([[bounds.sw.lat, bounds.sw.lon], [bounds.ne.lat, bounds.ne.lon]], {
+          color: color,
+          dashArray: '5, 10',
+          fillOpacity: 0.1,
+          weight: 2
+        }).addTo(mapInstance.current);
+
+        // Handles pour les coins SW et NE
+        const createCornerHandle = (key) => {
+          const pos = bounds[key];
+          const m = L.marker([pos.lat, pos.lon], {
+            draggable: true,
+            icon: L.divIcon({ className: 'handle', html: '<div style="width:10px;height:10px;background:white;border:2px solid #10b981;"></div>', iconSize: [10, 10] })
+          }).addTo(mapInstance.current);
+
+          m.on('drag', (e) => {
+            const p = e.target.getLatLng();
+            const newBounds = { ...bounds, [key]: { lat: p.lat, lon: p.lng } };
+            onPatrolChange({ ...patrolZone, bounds: newBounds });
+          });
+          patrolHandlesInstance.current.push(m);
+        };
+
+        createCornerHandle('sw');
+        createCornerHandle('ne');
+      }
+    }
+  }, [patrolZone, onPatrolChange]);
 
   return <div ref={mapRef} className="w-full h-full" />;
 }

@@ -119,19 +119,25 @@ export function QuickFavorites({ favorites, onTeleport, visible }) {
 }
 
 export function ActionPanel({ visible, coords, isFavorite, onTeleport, onToggleFavorite, onStartRoute, onStartOsrmRoute, onClose }) {
+  const [profile, setProfile] = React.useState('driving');
+
   const handleNavigate = () => {
-    Alert.alert(
-      "Mode de déplacement",
-      "Comment souhaitez-vous vous y rendre ?",
-      [
-        { text: "🚶 Marche (Ligne droite)", onPress: () => onStartRoute(coords.latitude, coords.longitude, 5) },
-        { text: "🚶 Marche (Routes)", onPress: () => onStartOsrmRoute(coords.latitude, coords.longitude, 'walking', 5) },
-        { text: "🚲 Vélo (Routes)", onPress: () => onStartOsrmRoute(coords.latitude, coords.longitude, 'cycling', 20) },
-        { text: "🚗 Voiture (Routes)", onPress: () => onStartOsrmRoute(coords.latitude, coords.longitude, 'driving', null) },
-        { text: "Annuler", style: "cancel" }
-      ]
-    );
+    if (profile === 'flight') {
+      onStartRoute(coords.latitude, coords.longitude, 500); // Vitesse vol par défaut
+    } else if (profile === 'walk_direct') {
+      onStartRoute(coords.latitude, coords.longitude, 5);
+    } else {
+      onStartOsrmRoute(coords.latitude, coords.longitude, profile === 'walking' ? 'walking' : (profile === 'cycling' ? 'cycling' : 'driving'), null);
+    }
+    onClose();
   };
+
+  const profiles = [
+    { id: 'driving', icon: '🚗', label: 'Route' },
+    { id: 'walking', icon: '🚶', label: 'Marche' },
+    { id: 'cycling', icon: '🚲', label: 'Vélo' },
+    { id: 'flight', icon: '✈️', label: 'Vol' },
+  ];
 
   return (
     <BottomSheet visible={visible} onClose={onClose}>
@@ -146,12 +152,25 @@ export function ActionPanel({ visible, coords, isFavorite, onTeleport, onToggleF
           </ScaleButton>
         </View>
 
+        <View style={styles.profileSelector}>
+          {profiles.map((p) => (
+            <TouchableOpacity 
+              key={p.id} 
+              onPress={() => setProfile(p.id)}
+              style={[styles.profileItem, profile === p.id && styles.profileItemActive]}
+            >
+              <Text style={{fontSize: 20}}>{p.icon}</Text>
+              <Text style={[styles.profileLabel, profile === p.id && styles.profileLabelActive]}>{p.label}</Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+
         <View style={styles.sheetActions}>
           <ScaleButton style={styles.mainActionBtn} onPress={() => onTeleport(coords)}>
             <Text style={styles.mainActionText}>TÉLÉPORTER ICI</Text>
           </ScaleButton>
           <TouchableOpacity style={styles.secondaryActionBtn} onPress={handleNavigate}>
-            <Text style={styles.secondaryActionText}>NAVIGUER JUSQU'ICI...</Text>
+            <Text style={styles.secondaryActionText}>NAVIGUER ({profiles.find(p => p.id === profile)?.label.toUpperCase()})</Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -290,6 +309,15 @@ const styles = StyleSheet.create({
     borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)'
   },
   secondaryActionText: { color: COLORS.text, fontWeight: '700', fontSize: 14, opacity: 0.8 },
+
+  profileSelector: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 20, gap: 10 },
+  profileItem: { 
+    flex: 1, alignItems: 'center', paddingVertical: 12, borderRadius: 18, 
+    backgroundColor: 'rgba(255,255,255,0.03)', borderWidth: 1, borderColor: 'transparent' 
+  },
+  profileItemActive: { backgroundColor: 'rgba(99, 102, 241, 0.1)', borderColor: '#6366F1' },
+  profileLabel: { color: COLORS.textMuted, fontSize: 10, fontWeight: 'bold', marginTop: 4, textTransform: 'uppercase' },
+  profileLabelActive: { color: '#818CF8' },
 
   panelSafe: { flex: 1 },
   panelHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 24, paddingBottom: 10 },
