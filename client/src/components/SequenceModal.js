@@ -16,10 +16,12 @@ export default function SequenceModal({ visible, onClose, onStart, currentCoords
   useEffect(() => {
     if (visible && activePoints.length === 0) {
       const start = currentCoords ? { lat: currentCoords.latitude, lon: currentCoords.longitude } : { lat: 48.8566, lon: 2.3522 };
-      setActivePoints([
+      const initialPoints = [
         { id: 'start', lat: start.lat, lon: start.lon, address: 'Ma position', type: 'start' },
         { id: 'dest', lat: start.lat + 0.01, lon: start.lon + 0.01, address: 'Destination', type: 'drive', speed: 30, duration: 300 }
-      ]);
+      ];
+      setActivePoints(initialPoints);
+      updateLegPath(1, initialPoints);
     }
   }, [visible]);
 

@@ -34,10 +34,12 @@ export default function SequencePanel({ activeSim, points, setPoints, onClose, p
         const startPos = activeSim || { lat: 48.8566, lon: 2.3522, name: 'Ma position' };
         const destPos = { ...startPos, name: 'Destination' };
         
-        setPoints([
+        const initialPoints = [
           { id: 'start', lat: startPos.lat, lon: startPos.lon, address: startPos.name || 'Départ', type: 'start' },
           { id: 'dest', lat: destPos.lat, lon: destPos.lon, address: '', type: 'drive', speed: 30, duration: 60 }
-        ]);
+        ];
+        setPoints(initialPoints);
+        refreshAllPaths(initialPoints);
       }
     };
     loadData();
