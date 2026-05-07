@@ -36,6 +36,8 @@ export default function AppContainer() {
   const [isRouteMode, setIsRouteMode] = useState(false);
   const [routePoints, setRoutePoints] = useState<any[]>([]);
   const [mapType, setMapType] = useState<'hybrid' | 'standard'>('hybrid');
+  const [is3D, setIs3D] = useState(false);
+  const [autoFollow, setAutoFollow] = useState(true);
   
   const pulseScale = useRef(new Animated.Value(1)).current;
   const pulseOpacity = useRef(new Animated.Value(0.4)).current;
@@ -92,11 +94,21 @@ export default function AppContainer() {
   useEffect(() => {
     if (store.simulatedCoords) {
       reverseGeocode(store.simulatedCoords.latitude, store.simulatedCoords.longitude).then(setSimulatedAddress);
-      mapRef.current?.animateToRegion({ ...store.simulatedCoords, latitudeDelta: 0.005, longitudeDelta: 0.005 }, 500);
+      
+      // Auto-Follow : Centrer si actif ou si on vient de changer de position
+      if (autoFollow || !simulatedAddress) {
+        mapRef.current?.animateCamera({
+          center: { latitude: store.simulatedCoords.latitude, longitude: store.simulatedCoords.longitude },
+          pitch: is3D ? 45 : 0,
+          heading: store.serverStatus?.navigation?.status?.state === 'running' ? undefined : 0, // Optionnel: pourrait suivre le bearing
+          altitude: 1000,
+          zoom: 17
+        }, { duration: 1000 });
+      }
     } else {
       setSimulatedAddress(null);
     }
-  }, [store.simulatedCoords]);
+  }, [store.simulatedCoords, autoFollow, is3D]);
 
   // --- Gestion Dynamic Island (Live Activities) ---
   useEffect(() => {
@@ -483,6 +495,17 @@ export default function AppContainer() {
               <Ionicons name={mapType === 'hybrid' ? "map-outline" : "earth-outline"} size={24} color={COLORS.text} />
             </TouchableOpacity>
 
+            <TouchableOpacity style={[styles.floatBtn, is3D && styles.activeFloat, SHADOWS.light]} onPress={() => setIs3D(!is3D)}>
+              <Text style={[styles.btnText, is3D && { color: COLORS.primary }]}>3D</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity 
+              style={[styles.floatBtn, autoFollow && styles.activeFloat, SHADOWS.light]} 
+              onPress={() => setAutoFollow(!autoFollow)}
+            >
+              <Ionicons name={autoFollow ? "navigate" : "navigate-outline"} size={24} color={autoFollow ? COLORS.primary : COLORS.text} />
+            </TouchableOpacity>
+
             <TouchableOpacity style={[styles.floatBtn, SHADOWS.light]} onPress={() => setShowSequence(true)}>
               <Ionicons name="airplane-outline" size={24} color={COLORS.text} />
             </TouchableOpacity>
@@ -648,6 +671,8 @@ export default function AppContainer() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.background },
+  activeFloat: { backgroundColor: 'rgba(99, 102, 241, 0.15)', borderColor: 'rgba(99, 102, 241, 0.3)' },
+  btnText: { color: COLORS.text, fontWeight: '900', fontSize: 12 },
   omnibarContainer: { position: 'absolute', top: 0, left: 0, right: 0, zIndex: 100 },
   scanner: { flex: 1, backgroundColor: '#000' },
   closeScanner: { position: 'absolute', bottom: 50, alignSelf: 'center', backgroundColor: COLORS.primary, padding: 20, borderRadius: 30 },
