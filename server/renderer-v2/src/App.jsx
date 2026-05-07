@@ -34,7 +34,7 @@ function App() {
   const { history, favorites, addToHistory, addFavorite, removeFavorite } = useStorage();
 
   const fetchDevices = () => {
-    gps.listPmd3Devices().then(setDeviceList);
+    gps.listDevices().then(setDeviceList);
   };
 
   const isFavorite = (lat, lon) => favorites.some(f => Math.abs(f.lat - lat) < 0.0001 && Math.abs(f.lon - lon) < 0.0001);
@@ -67,10 +67,10 @@ function App() {
         setStatus(prev => ({ 
           ...prev,
           operationMode: data.operationMode,
-          state: data.tunnelActive ? data.state : prev.state,
-          message: data.tunnelActive ? (data.state === 'running' ? 'Simulation active' : 'iPhone prêt') : prev.message,
-          type: data.connectionType || prev.type,
-          device: data.deviceInfo || prev.device,
+          state: data.state || 'scanning',
+          message: data.state === 'running' ? 'Simulation active' : (data.state === 'ready' ? 'iPhone prêt' : (data.state === 'starting' ? 'Initialisation...' : 'Recherche iPhone...')),
+          type: data.connectionType || null,
+          device: data.deviceInfo || null,
           verified: data.state === 'running'
         }));
       });

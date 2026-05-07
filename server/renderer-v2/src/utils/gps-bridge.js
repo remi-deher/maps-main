@@ -28,7 +28,7 @@ if (!isElectron) {
     removeFavorite: (lat, lon) => axios.post('/api/favorites/remove', { lat, lon }).then(r => r.data),
     renameFavorite: (lat, lon, newName) => axios.post('/api/favorites/rename', { lat, lon, newName }).then(r => r.data),
     
-    listPmd3Devices: () => axios.get('/api/diagnostic/pmd3-devices').then(r => r.data).catch(() => []),
+    listDevices: () => axios.get('/api/diagnostic/devices').then(r => r.data).catch(() => []),
     restartTunnel: () => axios.post('/api/diagnostic/restart-tunnel').then(r => r.data),
     getNetworkInterfaces: () => axios.get('/api/diagnostic/interfaces').then(r => r.data).catch(() => []),
     getCompanionQr: () => axios.get('/api/diagnostic/qr').then(r => r.data),

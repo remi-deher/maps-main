@@ -61,10 +61,23 @@ class CompanionServer extends EventEmitter {
       this.tunnel.on('ready', () => {
         this._refreshStatus()
         this._broadcast('STATUS', this.status)
+        // Propagation explicite du statut "tunneld" pour le Dashboard
+        this._broadcast('status-update', { 
+          service: 'tunneld', 
+          state: 'ready', 
+          message: 'iPhone prêt', 
+          type: this.status.connectionType, 
+          device: this.status.deviceInfo 
+        })
       })
       this.tunnel.on('lost', () => {
         this._refreshStatus()
         this._broadcast('STATUS', this.status)
+        this._broadcast('status-update', { 
+          service: 'tunneld', 
+          state: 'scanning', 
+          message: 'Recherche iPhone...' 
+        })
       })
     }
 
@@ -235,6 +248,47 @@ class CompanionServer extends EventEmitter {
       const { points } = req.body
       this.currentSequencePreview = points || []
       this._broadcast('SEQUENCE_PREVIEW_UPDATED', this.currentSequencePreview)
+      res.json({ success: true })
+    })
+
+    // --- ROUTES DIAGNOSTIC ---
+    this.app.get('/api/diagnostic/devices', async (req, res) => {
+      try {
+        const tm = require('./TunnelManager')
+        const allDevices = []
+        for (const driver of Object.values(tm.drivers)) {
+          if (driver.listDevices) {
+            const list = await driver.listDevices()
+            allDevices.push(...list.map(d => ({ ...d, source: driver.id })))
+          }
+        }
+        res.json(allDevices)
+      } catch (e) {
+        res.json([])
+      }
+    })
+
+    this.app.get('/api/diagnostic/interfaces', (req, res) => {
+      const interfaces = os.networkInterfaces()
+      const list = []
+      for (const name of Object.keys(interfaces)) {
+        for (const iface of interfaces[name]) {
+          if (iface.family === 'IPv4') {
+            list.push({ name, address: iface.address, internal: iface.internal })
+          }
+        }
+      }
+      res.json(list)
+    })
+
+    this.app.get('/api/diagnostic/qr', async (req, res) => {
+      const qr = await this.getCompanionQr()
+      res.json(qr)
+    })
+
+    this.app.post('/api/diagnostic/restart-tunnel', async (req, res) => {
+      const tm = require('./TunnelManager')
+      await tm.forceRefresh()
       res.json({ success: true })
     })
 
