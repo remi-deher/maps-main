@@ -527,13 +527,41 @@ export default function AppContainer() {
               </Animated.View>
             )}
 
-            <View style={styles.floatingActions}>
-            <TouchableOpacity style={[styles.floatBtn, isMaintaining && styles.activeFloat, SHADOWS.light]} onPress={toggleBackground}>
+          {/* 🕹️ CONTRÔLES DE CARTE (Glassmorphism) 🕹️ */}
+          <View style={styles.rightControls}>
+            <TouchableOpacity style={[styles.glassBtn, SHADOWS.premium]} onPress={() => setMapType(m => m === 'hybrid' ? 'standard' : 'hybrid')}>
+              <Ionicons name={mapType === 'hybrid' ? "map-outline" : "earth-outline"} size={22} color={COLORS.text} />
+            </TouchableOpacity>
+            
+            <TouchableOpacity style={[styles.glassBtn, is3D && styles.activeGlass, SHADOWS.premium]} onPress={() => setIs3D(!is3D)}>
+              <Text style={[styles.btnText, is3D && { color: COLORS.primary }]}>3D</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity 
+              style={[styles.glassBtn, autoFollow && styles.activeGlass, SHADOWS.premium]} 
+              onPress={() => setAutoFollow(!autoFollow)}
+            >
+              <Ionicons name={autoFollow ? "navigate" : "navigate-outline"} size={22} color={autoFollow ? COLORS.primary : COLORS.text} />
+            </TouchableOpacity>
+
+            <TouchableOpacity 
+              style={[styles.glassBtn, SHADOWS.premium]} 
+              onPress={() => {
+                mapRef.current?.animateCamera({ heading: 0, pitch: 0 }, { duration: 500 });
+                setIs3D(false);
+              }}
+            >
+              <Ionicons name="compass-outline" size={22} color={COLORS.text} />
+            </TouchableOpacity>
+          </View>
+
+          <View style={styles.bottomControls}>
+            <TouchableOpacity style={[styles.glassBtn, isMaintaining && styles.activeGlass, SHADOWS.premium]} onPress={toggleBackground}>
               <Ionicons name={isMaintaining ? "shield-checkmark" : "shield-outline"} size={24} color={isMaintaining ? COLORS.primary : COLORS.text} />
             </TouchableOpacity>
             
             <TouchableOpacity 
-              style={[styles.floatBtn, SHADOWS.light]} 
+              style={[styles.glassBtn, SHADOWS.premium]} 
               onPress={async () => {
                 const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
                 mapRef.current?.animateToRegion({
@@ -547,34 +575,17 @@ export default function AppContainer() {
               <Ionicons name="locate" size={24} color={COLORS.text} />
             </TouchableOpacity>
 
-            <TouchableOpacity style={[styles.floatBtn, SHADOWS.light]} onPress={() => setIsFavsOpen(true)}>
+            <TouchableOpacity style={[styles.glassBtn, SHADOWS.premium]} onPress={() => setIsFavsOpen(true)}>
               <Ionicons name="star-outline" size={24} color={COLORS.text} />
             </TouchableOpacity>
 
-            <TouchableOpacity style={[styles.floatBtn, SHADOWS.light]} onPress={() => setMapType(m => m === 'hybrid' ? 'standard' : 'hybrid')}>
-              <Ionicons name={mapType === 'hybrid' ? "map-outline" : "earth-outline"} size={24} color={COLORS.text} />
-            </TouchableOpacity>
-
-            <TouchableOpacity style={[styles.floatBtn, is3D && styles.activeFloat, SHADOWS.light]} onPress={() => setIs3D(!is3D)}>
-              <Text style={[styles.btnText, is3D && { color: COLORS.primary }]}>3D</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity 
-              style={[styles.floatBtn, autoFollow && styles.activeFloat, SHADOWS.light]} 
-              onPress={() => setAutoFollow(!autoFollow)}
-            >
-              <Ionicons name={autoFollow ? "navigate" : "navigate-outline"} size={24} color={autoFollow ? COLORS.primary : COLORS.text} />
-            </TouchableOpacity>
-
-            <TouchableOpacity style={[styles.floatBtn, SHADOWS.light]} onPress={() => setShowSequence(true)}>
-              <Ionicons name="airplane-outline" size={24} color={COLORS.text} />
-            </TouchableOpacity>
+            <View style={styles.controlDivider} />
 
             <TouchableOpacity 
               style={[
-                styles.floatBtn, 
-                store.simulatedCoords ? { backgroundColor: 'rgba(244, 63, 94, 0.2)', borderColor: '#f43f5e' } : { backgroundColor: 'rgba(245, 158, 11, 0.2)', borderColor: '#f59e0b' },
-                SHADOWS.light
+                styles.glassBtn, 
+                store.simulatedCoords ? { backgroundColor: 'rgba(244, 63, 94, 0.2)' } : { backgroundColor: 'rgba(245, 158, 11, 0.2)' },
+                SHADOWS.premium
               ]} 
               onPress={() => {
                 if (store.simulatedCoords) {
@@ -592,15 +603,15 @@ export default function AppContainer() {
             </TouchableOpacity>
 
             <TouchableOpacity 
-              style={[styles.floatBtn, store.serverStatus?.patrolZone?.active && styles.activeFloat, SHADOWS.light]} 
+              style={[styles.glassBtn, store.serverStatus?.patrolZone?.active && styles.activeGlass, SHADOWS.premium]} 
               onPress={() => {
                 const zone = store.serverStatus?.patrolZone;
                 if (!zone) {
                   store.updatePatrolZone({
                     type: 'circle',
-                    center: store.simulatedCoords || { latitude: 48.8566, longitude: 2.3522 },
+                    center: store.simulatedCoords ? { lat: store.simulatedCoords.latitude, lon: store.simulatedCoords.longitude } : { lat: 48.8566, lon: 2.3522 },
                     radius: 200,
-                    active: false
+                    active: true
                   });
                 } else {
                   store.updatePatrolZone({ ...zone, active: !zone.active });
@@ -731,8 +742,14 @@ export default function AppContainer() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.background },
-  activeFloat: { backgroundColor: 'rgba(99, 102, 241, 0.15)', borderColor: 'rgba(99, 102, 241, 0.3)' },
+  activeGlass: { backgroundColor: 'rgba(99, 102, 241, 0.2)', borderColor: 'rgba(99, 102, 241, 0.4)' },
   btnText: { color: COLORS.text, fontWeight: '900', fontSize: 12 },
+  
+  rightControls: { position: 'absolute', right: 15, top: 120, gap: 10 },
+  bottomControls: { position: 'absolute', bottom: 15, left: 15, right: 15, backgroundColor: 'rgba(30, 41, 59, 0.85)', borderRadius: 24, padding: 8, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)', zIndex: 90 },
+  glassBtn: { width: 44, height: 44, borderRadius: 14, backgroundColor: 'rgba(255,255,255,0.05)', justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)' },
+  controlDivider: { width: 1, height: 24, backgroundColor: 'rgba(255,255,255,0.1)', marginHorizontal: 5 },
+  
   omnibarContainer: { position: 'absolute', top: 0, left: 0, right: 0, zIndex: 100 },
   scanner: { flex: 1, backgroundColor: '#000' },
   closeScanner: { position: 'absolute', bottom: 50, alignSelf: 'center', backgroundColor: COLORS.primary, padding: 20, borderRadius: 30 },
