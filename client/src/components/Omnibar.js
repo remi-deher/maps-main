@@ -32,6 +32,8 @@ export default function Omnibar({
   const [suggestions, setSuggestions] = useState([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [activeInputIdx, setActiveInputIdx] = useState(null);
+  const [isFocused, setIsFocused] = useState(false);
+  const [recentSearches, setRecentSearches] = useState(['Paris', 'Lyon', 'Marseille']); // TODO: Persister
 
   useEffect(() => {
     Animated.spring(pillAnim, {
@@ -110,6 +112,8 @@ export default function Omnibar({
               placeholder="Où allez-vous ?"
               placeholderTextColor={COLORS.textMuted}
               value={searchQuery}
+              onFocus={() => setIsFocused(true)}
+              onBlur={() => setTimeout(() => setIsFocused(false), 200)}
               onChangeText={(val) => {
                 onSearchChange(val);
                 triggerSearch(val, null);
@@ -200,10 +204,36 @@ export default function Omnibar({
         )}
       </Animated.View>
 
-      {/* Suggestions style Plans */}
-      {showSuggestions && (
+      {/* Suggestions et Récents style Plans */}
+      {(showSuggestions || (isFocused && !searchQuery)) && (
         <View style={[styles.suggestions, SHADOWS.premium, isRouteMode && styles.suggestionsRoute]}>
-          <ScrollView keyboardShouldPersistTaps="handled" style={{maxHeight: 250}}>
+          <ScrollView keyboardShouldPersistTaps="handled" style={{maxHeight: 350}}>
+            {/* --- FAVORIS ET RÉCENTS (Si vide) --- */}
+            {!searchQuery && (
+              <>
+                <Text style={styles.sectionTitle}>Favoris</Text>
+                {(status === 'Connecté' ? (telemetry?.favorites || []) : []).slice(0, 3).map((fav, i) => (
+                  <TouchableOpacity key={`fav-${i}`} style={styles.suggestionItem} onPress={() => onSuggestionSelect({ latitude: fav.lat, longitude: fav.lon, name: fav.name })}>
+                    <View style={[styles.suggestionIcon, { backgroundColor: 'rgba(52, 211, 153, 0.2)' }]}>
+                      <Ionicons name="star" size={16} color="#34d399" />
+                    </View>
+                    <Text style={styles.suggestionTitle}>{fav.name}</Text>
+                  </TouchableOpacity>
+                ))}
+
+                <Text style={styles.sectionTitle}>Recherches récentes</Text>
+                {recentSearches.map((term, i) => (
+                  <TouchableOpacity key={`recent-${i}`} style={styles.suggestionItem} onPress={() => { onSearchChange(term); triggerSearch(term, null); }}>
+                    <View style={styles.suggestionIcon}>
+                      <Ionicons name="time-outline" size={16} color={COLORS.textMuted} />
+                    </View>
+                    <Text style={styles.suggestionTitle}>{term}</Text>
+                  </TouchableOpacity>
+                ))}
+              </>
+            )}
+
+            {/* --- RÉSULTATS DE RECHERCHE --- */}
             {suggestions.map((item, index) => (
               <TouchableOpacity 
                 key={index} 
@@ -298,6 +328,7 @@ const styles = StyleSheet.create({
   },
   suggestionTitle: { color: COLORS.text, fontSize: 16, fontWeight: '600' },
   suggestionSub: { color: COLORS.textMuted, fontSize: 12 },
+  sectionTitle: { color: COLORS.textMuted, fontSize: 11, fontWeight: '900', textTransform: 'uppercase', paddingHorizontal: 15, paddingTop: 15, paddingBottom: 5, letterSpacing: 1 },
   pill: { 
     alignSelf: 'center', marginTop: 12, paddingHorizontal: 16, paddingVertical: 6, 
     borderRadius: 20, flexDirection: 'row', alignItems: 'center', gap: 8
