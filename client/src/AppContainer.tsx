@@ -192,6 +192,16 @@ export default function AppContainer() {
     setIsRouteMode(false);
   };
 
+  const handleRouteTo = (coords: Coords) => {
+    const start = store.simulatedCoords || { latitude: 48.8566, longitude: 2.3522 };
+    setRoutePoints([
+      { id: 'start', lat: start.latitude, lon: start.longitude, address: simulatedAddress || 'Ma position', type: 'start' },
+      { id: 'dest', lat: coords.latitude, lon: coords.longitude, address: coords.name || 'Destination sélectionnée', type: 'drive', speed: 30, duration: 300 }
+    ]);
+    setPendingCoords(null);
+    setIsRouteMode(true);
+  };
+
   const isFavorite = (lat: number, lon: number) => (store.serverStatus?.favorites || []).some((f: any) => Math.abs(f.lat - lat) < 0.0001 && Math.abs(f.lon - lon) < 0.0001);
 
   const toggleFavorite = (coords: Coords) => {
@@ -240,10 +250,21 @@ export default function AppContainer() {
             style={StyleSheet.absoluteFill}
             mapType={mapType}
             initialRegion={{ latitude: 48.8566, longitude: 2.3522, latitudeDelta: 0.01, longitudeDelta: 0.01 }}
-            onLongPress={async (e) => {
-              const coords = e.nativeEvent.coordinate;
-              const address = await reverseGeocode(coords.latitude, coords.longitude);
-              setPendingCoords({ ...coords, name: address });
+            onPress={(e) => {
+              if (isRouteMode) return;
+              setPendingCoords({
+                latitude: e.nativeEvent.coordinate.latitude,
+                longitude: e.nativeEvent.coordinate.longitude,
+                name: "Point sélectionné"
+              });
+            }}
+            onPoiClick={(e) => {
+              if (isRouteMode) return;
+              setPendingCoords({
+                latitude: e.nativeEvent.coordinate.latitude,
+                longitude: e.nativeEvent.coordinate.longitude,
+                name: e.nativeEvent.name
+              });
             }}
           >
             {store.simulatedCoords && (
@@ -410,7 +431,31 @@ export default function AppContainer() {
             />
           </View>
 
-          <View style={styles.floatingActions}>
+            <QuickFavorites favorites={store.serverStatus?.favorites || []} onTeleport={handleTeleport} visible={!pendingCoords && !isFavsOpen} />
+
+            {pendingCoords && (
+              <Animated.View style={[styles.poiActionBox, SHADOWS.premium]}>
+                <View style={styles.poiInfo}>
+                  <Text style={styles.poiTitle} numberOfLines={1}>{pendingCoords.name || 'Point sélectionné'}</Text>
+                  <Text style={styles.poiCoords}>{pendingCoords.latitude.toFixed(5)}, {pendingCoords.longitude.toFixed(5)}</Text>
+                </View>
+                <View style={styles.poiBtns}>
+                  <TouchableOpacity style={styles.poiBtn} onPress={() => handleTeleport(pendingCoords!)}>
+                    <Ionicons name="flash" size={18} color="#fff" />
+                    <Text style={styles.poiBtnText}>TÉLÉPORT</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity style={[styles.poiBtn, { backgroundColor: COLORS.primary }]} onPress={() => handleRouteTo(pendingCoords!)}>
+                    <Ionicons name="navigate" size={18} color="#fff" />
+                    <Text style={styles.poiBtnText}>ITINÉRAIRE</Text>
+                  </TouchableOpacity>
+                </View>
+                <TouchableOpacity style={styles.poiClose} onPress={() => setPendingCoords(null)}>
+                  <Ionicons name="close" size={20} color={COLORS.textMuted} />
+                </TouchableOpacity>
+              </Animated.View>
+            )}
+
+            <View style={styles.floatingActions}>
             <TouchableOpacity style={[styles.floatBtn, isMaintaining && styles.activeFloat, SHADOWS.light]} onPress={toggleBackground}>
               <Ionicons name={isMaintaining ? "shield-checkmark" : "shield-outline"} size={24} color={isMaintaining ? COLORS.primary : COLORS.text} />
             </TouchableOpacity>
@@ -634,4 +679,13 @@ const styles = StyleSheet.create({
   navProgressBg: { height: 6, backgroundColor: 'rgba(255,255,255,0.05)', borderRadius: 3, overflow: 'hidden' },
   navProgressFill: { height: '100%', backgroundColor: COLORS.primary, borderRadius: 3 },
   navHudClose: { width: 40, height: 40, borderRadius: 20, backgroundColor: 'rgba(244, 63, 94, 0.1)', justifyContent: 'center', alignItems: 'center' },
+  
+  poiActionBox: { position: 'absolute', bottom: 120, left: 15, right: 15, backgroundColor: 'rgba(30, 41, 59, 0.98)', borderRadius: 24, padding: 16, flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)', zIndex: 100 },
+  poiInfo: { flex: 1 },
+  poiTitle: { color: COLORS.text, fontSize: 16, fontWeight: '800' },
+  poiCoords: { color: COLORS.textMuted, fontSize: 11, marginTop: 2 },
+  poiBtns: { flexDirection: 'row', gap: 8 },
+  poiBtn: { flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.05)', paddingHorizontal: 12, paddingVertical: 10, borderRadius: 14, gap: 6 },
+  poiBtnText: { color: '#fff', fontSize: 11, fontWeight: '900' },
+  poiClose: { marginLeft: 10, padding: 4 }
 });
