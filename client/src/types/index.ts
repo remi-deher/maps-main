@@ -40,6 +40,18 @@ export interface ServerStatus {
   currentSequencePreview?: any[];
   telemetry?: TelemetryData;
   patrolZone?: PatrolZone;
+  navigation?: {
+    progress: {
+      index: number;
+      total: number;
+      speed: number;
+      distance: number;
+    } | null;
+    status: {
+      state: 'idle' | 'running' | 'paused' | 'stopped';
+      destination?: { lat: number, lon: number, name: string };
+    } | null;
+  };
 }
 
 export interface TelemetryData {

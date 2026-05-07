@@ -250,7 +250,7 @@ export default function AppContainer() {
                 {store.serverStatus.patrolZone.type === 'circle' ? (
                   <>
                     <Circle 
-                      center={store.serverStatus.patrolZone.center}
+                      center={{ latitude: store.serverStatus.patrolZone.center.lat, longitude: store.serverStatus.patrolZone.center.lon }}
                       radius={store.serverStatus.patrolZone.radius || 200}
                       fillColor={store.serverStatus.patrolZone.active ? 'rgba(16, 185, 129, 0.1)' : 'rgba(100, 116, 139, 0.1)'}
                       strokeColor={store.serverStatus.patrolZone.active ? '#10b981' : '#64748b'}
@@ -259,11 +259,11 @@ export default function AppContainer() {
                     />
                     {/* Handles Circle */}
                     <Marker 
-                      coordinate={store.serverStatus.patrolZone.center}
+                      coordinate={{ latitude: store.serverStatus.patrolZone.center.lat, longitude: store.serverStatus.patrolZone.center.lon }}
                       draggable
-                      onDrag={(e) => store.updatePatrolZone({ ...store.serverStatus!.patrolZone, center: e.nativeEvent.coordinate })}
+                      onDrag={(e) => store.updatePatrolZone({ ...store.serverStatus!.patrolZone, center: { lat: e.nativeEvent.coordinate.latitude, lon: e.nativeEvent.coordinate.longitude } })}
                     >
-                      <View style={{ width: 12, height: 12, backgroundColor: 'white', borderRadius: 6, borderSize: 2, borderColor: '#10b981' }} />
+                      <View style={{ width: 12, height: 12, backgroundColor: 'white', borderRadius: 6, borderWidth: 2, borderColor: '#10b981' }} />
                     </Marker>
                   </>
                 ) : (
@@ -290,7 +290,7 @@ export default function AppContainer() {
                           bounds: { ...store.serverStatus!.patrolZone!.bounds!, sw: { lat: e.nativeEvent.coordinate.latitude, lon: e.nativeEvent.coordinate.longitude } } 
                         })}
                       >
-                        <View style={{ width: 12, height: 12, backgroundColor: 'white', borderSize: 2, borderColor: '#10b981' }} />
+                        <View style={{ width: 12, height: 12, backgroundColor: 'white', borderWidth: 2, borderColor: '#10b981' }} />
                       </Marker>
                       <Marker 
                         coordinate={{ latitude: store.serverStatus.patrolZone.bounds.ne.lat, longitude: store.serverStatus.patrolZone.bounds.ne.lon }}
@@ -300,7 +300,7 @@ export default function AppContainer() {
                           bounds: { ...store.serverStatus!.patrolZone!.bounds!, ne: { lat: e.nativeEvent.coordinate.latitude, lon: e.nativeEvent.coordinate.longitude } } 
                         })}
                       >
-                        <View style={{ width: 12, height: 12, backgroundColor: 'white', borderSize: 2, borderColor: '#10b981' }} />
+                        <View style={{ width: 12, height: 12, backgroundColor: 'white', borderWidth: 2, borderColor: '#10b981' }} />
                       </Marker>
                     </>
                   )
@@ -537,7 +537,7 @@ const styles = StyleSheet.create({
   simPillText: { color: COLORS.text, fontSize: 14, fontWeight: '700', flex: 1 },
   realDotOutline: { width: 14, height: 14, borderRadius: 7, backgroundColor: 'rgba(255, 255, 255, 0.8)', justifyContent: 'center', alignItems: 'center', shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.3, shadowRadius: 2, elevation: 3 },
   realDotInner: { width: 8, height: 8, borderRadius: 4, backgroundColor: '#34D399' }, // Vert pour bien distinguer du bleu simulé
-  stepMarker: { width: 14, height: 14, borderRadius: 7, borderSize: 2, borderColor: '#fff', shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.3, shadowRadius: 2, elevation: 3 },
+  stepMarker: { width: 14, height: 14, borderRadius: 7, borderWidth: 2, borderColor: '#fff', shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.3, shadowRadius: 2, elevation: 3 },
   favMarker: { width: 10, height: 10, borderRadius: 5, backgroundColor: '#FBBF24', borderWidth: 2, borderColor: '#fff', shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.3, shadowRadius: 1.5, elevation: 2 },
   
   navHud: { position: 'absolute', bottom: 120, left: 15, right: 15, backgroundColor: 'rgba(15, 23, 42, 0.95)', borderRadius: 24, padding: 16, flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderColor: 'rgba(99, 102, 241, 0.3)', zIndex: 100 },
