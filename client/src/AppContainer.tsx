@@ -15,7 +15,7 @@ import Omnibar from './components/Omnibar';
 import SettingsModal from './components/SettingsModal';
 import DebugModal from './components/DebugModal';
 import SequenceModal from './components/SequenceModal';
-import { ActionPanel, FavoritesPanel, QuickFavorites } from './components/Panels';
+import { FavoritesPanel, QuickFavorites } from './components/Panels';
 import POIBottomSheet from './components/POIBottomSheet';
 import { Coords } from './types';
 import { startLiveActivity, updateLiveActivity, stopLiveActivity } from './services/liveActivities';
@@ -683,24 +683,6 @@ export default function AppContainer() {
             </Animated.View>
           )}
 
-          <ActionPanel 
-            visible={!!pendingCoords} 
-            coords={pendingCoords} 
-            isFavorite={pendingCoords ? isFavorite(pendingCoords.latitude, pendingCoords.longitude) : false}
-            onTeleport={handleTeleport}
-            onToggleFavorite={() => pendingCoords && toggleFavorite(pendingCoords)}
-            onStartRoute={() => {
-              if (!pendingCoords) return;
-              store.sendAction('PLAY_ROUTE', { endLat: pendingCoords.latitude, endLon: pendingCoords.longitude, speed: 5 });
-              setPendingCoords(null);
-            }}
-            onStartOsrmRoute={(profile: string) => {
-              if (!pendingCoords) return;
-              store.sendAction('PLAY_OSRM_ROUTE', { endLat: pendingCoords.latitude, endLon: pendingCoords.longitude, profile });
-              setPendingCoords(null);
-            }}
-            onClose={() => setPendingCoords(null)}
-          />
 
           <FavoritesPanel 
             visible={isFavsOpen}
