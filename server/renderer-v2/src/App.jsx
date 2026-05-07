@@ -434,20 +434,18 @@ function App() {
                 </button>
                 </div>
               ) : (
-                <div className="absolute top-24 left-6 z-[80] w-[400px] max-h-[85vh] bg-slate-900/95 rounded-3xl shadow-2xl overflow-hidden border border-white/10">
-                  <SequencePanel 
-                    activeSim={activeSim} 
-                    points={sequencePoints}
-                    setPoints={setSequencePoints}
-                    pickingPointId={pickingPointId}
-                    setPickingPointId={setPickingPointId}
-                    setSidebarOpen={setSidebarOpen}
-                    onClose={() => {
-                      setSidebarMode('main');
-                      setPickingPointId(null);
-                    }} 
-                  />
-                </div>
+                <SequencePanel 
+                  activeSim={activeSim} 
+                  points={sequencePoints}
+                  setPoints={setSequencePoints}
+                  pickingPointId={pickingPointId}
+                  setPickingPointId={setPickingPointId}
+                  setSidebarOpen={setSidebarOpen}
+                  onClose={() => {
+                    setSidebarMode('main');
+                    setPickingPointId(null);
+                  }} 
+                />
               )}
             </motion.div>
           </>
