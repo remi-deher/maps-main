@@ -418,6 +418,7 @@ class CompanionServer extends EventEmitter {
         this._refreshStatus()
         socket.emit('STATUS', this.status)
 
+        const actions = [
           'SET_LOCATION', 'CLEAR_LOCATION', 'RELANCE', 'PLAY_ROUTE', 'PLAY_SEQUENCE', 
           'PLAY_OSRM_ROUTE', 'PLAY_CUSTOM_GPX', 'ADD_HISTORY', 'ADD_FAVORITE', 
           'REMOVE_FAVORITE', 'RENAME_FAVORITE', 'SAVE_SETTINGS', 'GET_STATUS', 
