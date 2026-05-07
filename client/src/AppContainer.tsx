@@ -18,6 +18,7 @@ import SequenceModal from './components/SequenceModal';
 import { ActionPanel, FavoritesPanel, QuickFavorites } from './components/Panels';
 import { Coords } from './types';
 import { startLiveActivity, updateLiveActivity, stopLiveActivity } from './services/liveActivities';
+import { fetchRoute } from './utils/routing';
 
 export default function AppContainer() {
   const store = useAppStore();
@@ -35,6 +36,7 @@ export default function AppContainer() {
   const [isLowPowerMode, setIsLowPowerMode] = useState(false);
   const [isRouteMode, setIsRouteMode] = useState(false);
   const [routePoints, setRoutePoints] = useState<any[]>([]);
+  const [previewPaths, setPreviewPaths] = useState<any[]>([]);
   const [mapType, setMapType] = useState<'hybrid' | 'standard'>('hybrid');
   const [is3D, setIs3D] = useState(false);
   const [autoFollow, setAutoFollow] = useState(true);
@@ -126,6 +128,35 @@ export default function AppContainer() {
       stopLiveActivity();
     }
   }, [store.serverStatus?.navigation, store.dynamicIslandEnabled, store.simulatedCoords]);
+
+  // --- Calcul de la prévisualisation ---
+  useEffect(() => {
+    if (!isRouteMode || routePoints.length < 2) {
+      setPreviewPaths([]);
+      return;
+    }
+
+    const fetchAllPaths = async () => {
+      const paths = [];
+      for (let i = 1; i < routePoints.length; i++) {
+        const pStart = routePoints[i-1];
+        const pEnd = routePoints[i];
+        if (pEnd.type !== 'flight' && pEnd.type !== 'wait') {
+          const result = await fetchRoute(pStart, pEnd, pEnd.type || 'drive');
+          if (result) {
+            paths.push({
+              id: `path-${i}`,
+              coordinates: result.path.map(p => ({ latitude: p.lat, longitude: p.lon })),
+              type: pEnd.type
+            });
+          }
+        }
+      }
+      setPreviewPaths(paths);
+    };
+
+    fetchAllPaths();
+  }, [routePoints, isRouteMode]);
 
   const handleTeleport = (coords: Coords) => {
     store.sendAction('SET_LOCATION', { lat: coords.latitude, lon: coords.longitude, name: coords.name || "" });
@@ -288,6 +319,35 @@ export default function AppContainer() {
               </Marker>
             )}
             
+            {/* 🤖 NAVIGATION EN COURS 🤖 */}
+            {isRouteMode && (
+              <>
+                {previewPaths.map(path => (
+                  <Polyline 
+                    key={path.id}
+                    coordinates={path.coordinates}
+                    strokeColor={COLORS.primary}
+                    strokeWidth={4}
+                    lineDashPattern={path.type === 'walk' ? [1, 5] : undefined}
+                  />
+                ))}
+                {routePoints.map((p, i) => (
+                  <Marker 
+                    key={`preview-step-${p.id || i}`}
+                    coordinate={{ latitude: p.lat, longitude: p.lon }}
+                  >
+                    <View style={[
+                      styles.stepMarker, 
+                      { 
+                        backgroundColor: i === 0 ? COLORS.primary : (i === routePoints.length - 1 ? COLORS.error : COLORS.success),
+                        width: 12, height: 12, borderRadius: 6
+                      }
+                    ]} />
+                  </Marker>
+                ))}
+              </>
+            )}
+
             {/* 📍 Point de position RÉELLE (Discret) */}
             {store.realCoords && (
               <Marker coordinate={store.realCoords} anchor={{x: 0.5, y: 0.5}}>
