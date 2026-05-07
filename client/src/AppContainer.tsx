@@ -16,6 +16,7 @@ import SettingsModal from './components/SettingsModal';
 import DebugModal from './components/DebugModal';
 import SequenceModal from './components/SequenceModal';
 import { ActionPanel, FavoritesPanel, QuickFavorites } from './components/Panels';
+import POIBottomSheet from './components/POIBottomSheet';
 import { Coords } from './types';
 import { startLiveActivity, updateLiveActivity, stopLiveActivity } from './services/liveActivities';
 import { fetchRoute } from './utils/routing';
@@ -505,27 +506,13 @@ export default function AppContainer() {
 
             <QuickFavorites favorites={store.serverStatus?.favorites || []} onTeleport={handleTeleport} visible={!pendingCoords && !isFavsOpen} />
 
-            {pendingCoords && (
-              <Animated.View style={[styles.poiActionBox, SHADOWS.premium]}>
-                <View style={styles.poiInfo}>
-                  <Text style={styles.poiTitle} numberOfLines={1}>{pendingCoords.name || 'Point sélectionné'}</Text>
-                  <Text style={styles.poiCoords}>{pendingCoords.latitude.toFixed(5)}, {pendingCoords.longitude.toFixed(5)}</Text>
-                </View>
-                <View style={styles.poiBtns}>
-                  <TouchableOpacity style={styles.poiBtn} onPress={() => handleTeleport(pendingCoords!)}>
-                    <Ionicons name="flash" size={18} color="#fff" />
-                    <Text style={styles.poiBtnText}>TÉLÉPORT</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity style={[styles.poiBtn, { backgroundColor: COLORS.primary }]} onPress={() => handleRouteTo(pendingCoords!)}>
-                    <Ionicons name="navigate" size={18} color="#fff" />
-                    <Text style={styles.poiBtnText}>ITINÉRAIRE</Text>
-                  </TouchableOpacity>
-                </View>
-                <TouchableOpacity style={styles.poiClose} onPress={() => setPendingCoords(null)}>
-                  <Ionicons name="close" size={20} color={COLORS.textMuted} />
-                </TouchableOpacity>
-              </Animated.View>
-            )}
+            <POIBottomSheet 
+              visible={!!pendingCoords}
+              point={pendingCoords}
+              onTeleport={handleTeleport}
+              onRoute={handleRouteTo}
+              onClose={() => setPendingCoords(null)}
+            />
 
           {/* 🕹️ CONTRÔLES DE CARTE (Glassmorphism) 🕹️ */}
           <View style={styles.rightControls}>
@@ -782,12 +769,5 @@ const styles = StyleSheet.create({
   navProgressFill: { height: '100%', backgroundColor: COLORS.primary, borderRadius: 3 },
   navHudClose: { width: 40, height: 40, borderRadius: 20, backgroundColor: 'rgba(244, 63, 94, 0.1)', justifyContent: 'center', alignItems: 'center' },
   
-  poiActionBox: { position: 'absolute', bottom: 120, left: 15, right: 15, backgroundColor: 'rgba(30, 41, 59, 0.98)', borderRadius: 24, padding: 16, flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)', zIndex: 100 },
-  poiInfo: { flex: 1 },
-  poiTitle: { color: COLORS.text, fontSize: 16, fontWeight: '800' },
-  poiCoords: { color: COLORS.textMuted, fontSize: 11, marginTop: 2 },
-  poiBtns: { flexDirection: 'row', gap: 8 },
-  poiBtn: { flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.05)', paddingHorizontal: 12, paddingVertical: 10, borderRadius: 14, gap: 6 },
-  poiBtnText: { color: '#fff', fontSize: 11, fontWeight: '900' },
-  poiClose: { marginLeft: 10, padding: 4 }
+  poiActionBox: { display: 'none' }, // Obsolète
 });
