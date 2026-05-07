@@ -67,13 +67,16 @@ export async function optimizeRoute(points, type = 'drive') {
   try {
     const res = await fetch(url);
     const data = await res.json();
-    if (data.trips && data.trips.length > 0) {
-      const sortedPoints = [...points];
+    if (data.code === 'Ok' && data.waypoints && data.waypoints.length === points.length) {
+      const sortedPoints = new Array(points.length);
       data.waypoints.forEach(wp => {
         sortedPoints[wp.trips_index] = points[wp.waypoint_index];
       });
-      return sortedPoints;
+      if (sortedPoints.every(p => p !== undefined)) {
+        return sortedPoints;
+      }
     }
+    console.warn('[routing] TSP Optimization failed or returned incomplete points:', data.code);
   } catch (e) {
     console.error('[routing] Trip optimization error:', e);
   }

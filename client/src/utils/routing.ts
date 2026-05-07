@@ -79,15 +79,17 @@ export async function optimizeRoute(points: (RoutePoint & { id: string })[], typ
   try {
     const res = await fetch(url);
     const data = await res.json();
-    if (data.trips && data.trips.length > 0) {
-      // Les waypoints dans la réponse indiquent le nouvel ordre (waypoint_index est l'ordre original, trips_index est la position dans le voyage optimisé)
-      // On veut réordonner nos objets originaux
-      const sortedPoints = [...points];
+    if (data.code === 'Ok' && data.waypoints && data.waypoints.length === points.length) {
+      const sortedPoints = new Array(points.length);
       data.waypoints.forEach((wp: any) => {
         sortedPoints[wp.trips_index] = points[wp.waypoint_index];
       });
-      return sortedPoints;
+      
+      if (sortedPoints.every(p => p !== undefined)) {
+        return sortedPoints;
+      }
     }
+    console.warn('[routing] TSP Optimization failed or returned incomplete points:', data.code);
   } catch (e) {
     console.error('[routing] Trip optimization error:', e);
   }
