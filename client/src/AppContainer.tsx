@@ -542,76 +542,104 @@ export default function AppContainer() {
             </TouchableOpacity>
           </View>
 
-          <View style={styles.bottomControls}>
-            <TouchableOpacity style={[styles.glassBtn, isMaintaining && styles.activeGlass, SHADOWS.premium]} onPress={toggleBackground}>
-              <Ionicons name={isMaintaining ? "shield-checkmark" : "shield-outline"} size={24} color={isMaintaining ? COLORS.primary : COLORS.text} />
-            </TouchableOpacity>
-            
-            <TouchableOpacity 
-              style={[styles.glassBtn, SHADOWS.premium]} 
-              onPress={async () => {
-                const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
-                mapRef.current?.animateToRegion({
-                  latitude: loc.coords.latitude,
-                  longitude: loc.coords.longitude,
-                  latitudeDelta: 0.01,
-                  longitudeDelta: 0.01
-                }, 800);
-              }}
-            >
-              <Ionicons name="locate" size={24} color={COLORS.text} />
-            </TouchableOpacity>
+          {!pendingCoords && (
+            <View style={styles.bottomControls}>
+              <TouchableOpacity style={[styles.glassBtn, isMaintaining && styles.activeGlass, SHADOWS.premium]} onPress={toggleBackground}>
+                <Ionicons name={isMaintaining ? "shield-checkmark" : "shield-outline"} size={24} color={isMaintaining ? COLORS.primary : COLORS.text} />
+              </TouchableOpacity>
+              
+              <TouchableOpacity 
+                style={[styles.glassBtn, SHADOWS.premium]} 
+                onPress={async () => {
+                  const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+                  mapRef.current?.animateToRegion({
+                    latitude: loc.coords.latitude,
+                    longitude: loc.coords.longitude,
+                    latitudeDelta: 0.01,
+                    longitudeDelta: 0.01
+                  }, 800);
+                }}
+              >
+                <Ionicons name="locate" size={24} color={COLORS.text} />
+              </TouchableOpacity>
 
-            <TouchableOpacity style={[styles.glassBtn, SHADOWS.premium]} onPress={() => setIsFavsOpen(true)}>
-              <Ionicons name="star-outline" size={24} color={COLORS.text} />
-            </TouchableOpacity>
+              <TouchableOpacity style={[styles.glassBtn, SHADOWS.premium]} onPress={() => setIsFavsOpen(true)}>
+                <Ionicons name="star-outline" size={24} color={COLORS.text} />
+              </TouchableOpacity>
 
-            <View style={styles.controlDivider} />
+              <View style={styles.controlDivider} />
 
-            <TouchableOpacity 
-              style={[
-                styles.glassBtn, 
-                store.simulatedCoords ? { backgroundColor: 'rgba(244, 63, 94, 0.2)' } : { backgroundColor: 'rgba(245, 158, 11, 0.2)' },
-                SHADOWS.premium
-              ]} 
-              onPress={() => {
-                if (store.simulatedCoords) {
-                  store.sendAction('CLEAR_LOCATION');
-                } else {
-                  store.sendAction('RELANCE');
-                }
-              }}
-            >
-              <Ionicons 
-                name={store.simulatedCoords ? "refresh-circle" : "flash"} 
-                size={26} 
-                color={store.simulatedCoords ? '#f43f5e' : '#f59e0b'} 
+              <TouchableOpacity 
+                style={[
+                  styles.glassBtn, 
+                  store.simulatedCoords ? { backgroundColor: 'rgba(244, 63, 94, 0.2)' } : { backgroundColor: 'rgba(245, 158, 11, 0.2)' },
+                  SHADOWS.premium
+                ]} 
+                onPress={() => {
+                  if (store.simulatedCoords) {
+                    store.sendAction('CLEAR_LOCATION');
+                  } else {
+                    store.sendAction('RELANCE');
+                  }
+                }}
+              >
+                <Ionicons 
+                  name={store.simulatedCoords ? "refresh-circle" : "flash"} 
+                  size={26} 
+                  color={store.simulatedCoords ? '#f43f5e' : '#f59e0b'} 
+                />
+              </TouchableOpacity>
+
+              <TouchableOpacity 
+                style={[styles.glassBtn, store.serverStatus?.patrolZone?.active && styles.activeGlass, SHADOWS.premium]} 
+                onPress={() => {
+                  const zone = store.serverStatus?.patrolZone;
+                  if (!zone) {
+                    store.updatePatrolZone({
+                      type: 'circle',
+                      center: store.simulatedCoords ? { lat: store.simulatedCoords.latitude, lon: store.simulatedCoords.longitude } : { lat: 48.8566, lon: 2.3522 },
+                      radius: 200,
+                      active: true
+                    });
+                  } else {
+                    store.updatePatrolZone({ ...zone, active: !zone.active });
+                  }
+                }}
+              >
+                <Ionicons 
+                  name={store.serverStatus?.patrolZone?.active ? "radio-outline" : "ellipse-outline"} 
+                  size={24} 
+                  color={store.serverStatus?.patrolZone?.active ? COLORS.primary : COLORS.text} 
+                />
+              </TouchableOpacity>
+            </View>
+          )}
+
+          {/* 🏁 RÉCAPITULATIF ITINÉRAIRE (Bouton Démarrer en bas) 🏁 */}
+          {isRouteMode && (
+            <View style={[styles.routeRecapBar, SHADOWS.premium]}>
+              <View style={styles.recapInfo}>
+                <Text style={styles.recapTitle}>Prêt à partir</Text>
+                <Text style={styles.recapSub}>{routePoints.length - 1} étapes • {previewPaths.length} segments</Text>
+              </View>
+              <TouchableOpacity style={styles.startBtn} onPress={handleStartRoute}>
+                <Ionicons name="play" size={20} color="#fff" />
+                <Text style={styles.startText}>DÉMARRER</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+
+          {/* 🕹️ HUD DE NAVIGATION (ActionPanel) 🕹️ */}
+          {!isRouteMode && !pendingCoords && store.simulatedCoords && (
+            <View style={styles.actionPanelWrapper}>
+              <ActionPanel 
+                location={store.simulatedCoords} 
+                address={simulatedAddress}
+                navigation={store.serverStatus?.navigation}
+                onStop={() => store.sendAction('CLEAR_LOCATION')}
               />
-            </TouchableOpacity>
-
-            <TouchableOpacity 
-              style={[styles.glassBtn, store.serverStatus?.patrolZone?.active && styles.activeGlass, SHADOWS.premium]} 
-              onPress={() => {
-                const zone = store.serverStatus?.patrolZone;
-                if (!zone) {
-                  store.updatePatrolZone({
-                    type: 'circle',
-                    center: store.simulatedCoords ? { lat: store.simulatedCoords.latitude, lon: store.simulatedCoords.longitude } : { lat: 48.8566, lon: 2.3522 },
-                    radius: 200,
-                    active: true
-                  });
-                } else {
-                  store.updatePatrolZone({ ...zone, active: !zone.active });
-                }
-              }}
-            >
-              <Ionicons 
-                name={store.serverStatus?.patrolZone?.active ? "radio-outline" : "ellipse-outline"} 
-                size={24} 
-                color={store.serverStatus?.patrolZone?.active ? COLORS.primary : COLORS.text} 
-              />
-            </TouchableOpacity>
-          </View>
+            </View>
+          )}
 
           <QuickFavorites favorites={store.serverStatus?.favorites || []} onTeleport={handleTeleport} visible={!pendingCoords && !isFavsOpen} />
 
@@ -736,6 +764,15 @@ const styles = StyleSheet.create({
   bottomControls: { position: 'absolute', bottom: 15, left: 15, right: 15, backgroundColor: 'rgba(30, 41, 59, 0.85)', borderRadius: 24, padding: 8, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)', zIndex: 90 },
   glassBtn: { width: 44, height: 44, borderRadius: 14, backgroundColor: 'rgba(255,255,255,0.05)', justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)' },
   controlDivider: { width: 1, height: 24, backgroundColor: 'rgba(255,255,255,0.1)', marginHorizontal: 5 },
+  
+  routeRecapBar: { position: 'absolute', bottom: 30, left: 20, right: 20, backgroundColor: 'rgba(30, 41, 59, 0.98)', borderRadius: 24, padding: 16, flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)', zIndex: 110 },
+  recapInfo: { flex: 1 },
+  recapTitle: { color: COLORS.text, fontSize: 16, fontWeight: '900' },
+  recapSub: { color: COLORS.textMuted, fontSize: 12, marginTop: 2 },
+  startBtn: { backgroundColor: COLORS.primary, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20, paddingVertical: 12, borderRadius: 16, gap: 10 },
+  startText: { color: '#fff', fontWeight: '900', letterSpacing: 1 },
+
+  actionPanelWrapper: { position: 'absolute', bottom: 90, left: 0, right: 0, zIndex: 50 },
   
   omnibarContainer: { position: 'absolute', top: 0, left: 0, right: 0, zIndex: 100 },
   scanner: { flex: 1, backgroundColor: '#000' },
