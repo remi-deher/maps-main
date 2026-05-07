@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { StyleSheet, View, TouchableWithoutFeedback, Keyboard, KeyboardAvoidingView, Platform, TouchableOpacity, Text, Animated, Easing } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import MapView, { Marker, Circle, Polygon, Polyline } from 'react-native-maps';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import * as Battery from 'expo-battery';
@@ -312,8 +313,9 @@ export default function AppContainer() {
 
           <View style={styles.floatingActions}>
             <TouchableOpacity style={[styles.floatBtn, isMaintaining && styles.activeFloat, SHADOWS.light]} onPress={toggleBackground}>
-              <Text style={{fontSize: 22}}>{isMaintaining ? '🛡️' : '💤'}</Text>
+              <Ionicons name={isMaintaining ? "shield-checkmark" : "shield-outline"} size={24} color={isMaintaining ? COLORS.primary : COLORS.text} />
             </TouchableOpacity>
+            
             <TouchableOpacity 
               style={[styles.floatBtn, SHADOWS.light]} 
               onPress={async () => {
@@ -326,17 +328,42 @@ export default function AppContainer() {
                 }, 800);
               }}
             >
-              <Text style={{fontSize: 22}}>📍</Text>
+              <Ionicons name="locate" size={24} color={COLORS.text} />
             </TouchableOpacity>
+
             <TouchableOpacity style={[styles.floatBtn, SHADOWS.light]} onPress={() => setIsFavsOpen(true)}>
-              <Text style={{fontSize: 22}}>⭐</Text>
+              <Ionicons name="star-outline" size={24} color={COLORS.text} />
             </TouchableOpacity>
+
             <TouchableOpacity style={[styles.floatBtn, SHADOWS.light]} onPress={() => setMapType(m => m === 'hybrid' ? 'standard' : 'hybrid')}>
-              <Text style={{fontSize: 22}}>{mapType === 'hybrid' ? '🗺️' : '🛰️'}</Text>
+              <Ionicons name={mapType === 'hybrid' ? "map-outline" : "earth-outline"} size={24} color={COLORS.text} />
             </TouchableOpacity>
+
             <TouchableOpacity style={[styles.floatBtn, SHADOWS.light]} onPress={() => setShowSequence(true)}>
-              <Text style={{fontSize: 22}}>✈️</Text>
+              <Ionicons name="airplane-outline" size={24} color={COLORS.text} />
             </TouchableOpacity>
+
+            <TouchableOpacity 
+              style={[
+                styles.floatBtn, 
+                store.simulatedCoords ? { backgroundColor: 'rgba(244, 63, 94, 0.2)', borderColor: '#f43f5e' } : { backgroundColor: 'rgba(245, 158, 11, 0.2)', borderColor: '#f59e0b' },
+                SHADOWS.light
+              ]} 
+              onPress={() => {
+                if (store.simulatedCoords) {
+                  store.sendAction('CLEAR_LOCATION');
+                } else {
+                  store.sendAction('RELANCE');
+                }
+              }}
+            >
+              <Ionicons 
+                name={store.simulatedCoords ? "refresh-circle" : "flash"} 
+                size={26} 
+                color={store.simulatedCoords ? '#f43f5e' : '#f59e0b'} 
+              />
+            </TouchableOpacity>
+
             <TouchableOpacity 
               style={[styles.floatBtn, store.serverStatus?.patrolZone?.active && styles.activeFloat, SHADOWS.light]} 
               onPress={() => {
@@ -353,7 +380,11 @@ export default function AppContainer() {
                 }
               }}
             >
-              <Text style={{fontSize: 22}}>{store.serverStatus?.patrolZone?.active ? '🛡️' : '🔘'}</Text>
+              <Ionicons 
+                name={store.serverStatus?.patrolZone?.active ? "radio-outline" : "ellipse-outline"} 
+                size={24} 
+                color={store.serverStatus?.patrolZone?.active ? COLORS.primary : COLORS.text} 
+              />
             </TouchableOpacity>
           </View>
 
@@ -361,7 +392,9 @@ export default function AppContainer() {
 
           {store.simulatedCoords && (
             <TouchableOpacity style={[styles.simPill, SHADOWS.premium]} activeOpacity={0.8}>
-              <View style={styles.simPillIcon}><Text style={{fontSize: 12}}>🚀</Text></View>
+              <View style={styles.simPillIcon}>
+                <Ionicons name="navigate" size={14} color={COLORS.primary} />
+              </View>
               <Text style={styles.simPillText} numberOfLines={1}>{simulatedAddress || 'Simulation active'}</Text>
             </TouchableOpacity>
           )}
@@ -392,7 +425,7 @@ export default function AppContainer() {
               </View>
 
               <TouchableOpacity style={styles.navHudClose} onPress={() => store.sendAction('STOP_ROUTE')}>
-                <Text style={{fontSize: 20}}>✕</Text>
+                <Ionicons name="close" size={20} color="#f43f5e" />
               </TouchableOpacity>
             </Animated.View>
           )}

@@ -212,6 +212,11 @@ class CompanionServer extends EventEmitter {
       res.json(this.status)
     })
 
+    this.app.post('/api/location/clear', (req, res) => {
+      this._handleMessage(null, { type: 'CLEAR_LOCATION' })
+      res.json({ success: true })
+    })
+
     this.app.post('/api/relance', (req, res) => {
       // On ignore les coordonnées envoyées par le client (qui peuvent être réelles suite à un décrochage)
       // On utilise systématiquement la cible configurée sur le serveur
@@ -413,10 +418,10 @@ class CompanionServer extends EventEmitter {
         this._refreshStatus()
         socket.emit('STATUS', this.status)
 
-        const actions = [
-          'SET_LOCATION', 'PLAY_ROUTE', 'PLAY_SEQUENCE', 'PLAY_OSRM_ROUTE', 
-          'PLAY_CUSTOM_GPX', 'ADD_HISTORY', 'ADD_FAVORITE', 'REMOVE_FAVORITE', 
-          'RENAME_FAVORITE', 'SAVE_SETTINGS', 'GET_STATUS', 'HEARTBEAT', 'DEBUG_LOG'
+          'SET_LOCATION', 'CLEAR_LOCATION', 'RELANCE', 'PLAY_ROUTE', 'PLAY_SEQUENCE', 
+          'PLAY_OSRM_ROUTE', 'PLAY_CUSTOM_GPX', 'ADD_HISTORY', 'ADD_FAVORITE', 
+          'REMOVE_FAVORITE', 'RENAME_FAVORITE', 'SAVE_SETTINGS', 'GET_STATUS', 
+          'HEARTBEAT', 'DEBUG_LOG'
         ]
 
         actions.forEach(event => {
@@ -424,6 +429,14 @@ class CompanionServer extends EventEmitter {
             const mode = settings.get('operationMode')
             if (mode === 'autonomous' && event === 'SET_LOCATION') {
               dbg(`[companion-server] ⚠️ Commande SET_LOCATION ignorée (Mode Autonome)`)
+              return
+            }
+            if (event === 'RELANCE') {
+              const target = this.status.lastInjectedLocation || this.status.lastVerifiedLocation || settings.get('lastActiveLocation')
+              if (target) {
+                dbg(`[companion-server] ⚡ Relance demandée par Socket (${target.lat}, ${target.lon})`)
+                this.emit('request-location', { ...target, force: true })
+              }
               return
             }
             this._handleMessage(socket, { type: event, data })

@@ -63,7 +63,9 @@ if (!isElectron) {
     playOsrmRoute: (data) => axios.post('/api/location/route/osrm', data).then(r => r.data),
     playSequence: (legs) => axios.post('/api/location/sequence', { legs }).then(r => r.data),
     setSequencerLoop: (enabled) => axios.post('/api/location/sequence/loop', { enabled }).then(r => r.data),
-    syncSequencePreview: (points) => axios.post('/api/location/sequence/sync-preview', { points }).then(r => r.data).catch(() => ({}))
+    syncSequencePreview: (points) => axios.post('/api/location/sequence/sync-preview', { points }).then(r => r.data).catch(() => ({})),
+    relance: () => axios.post('/api/relance').then(r => r.data),
+    clearSim: () => axios.post('/api/location/clear').then(r => r.data)
   };
   window.gps = gps;
 }

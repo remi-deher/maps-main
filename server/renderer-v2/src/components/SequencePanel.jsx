@@ -638,9 +638,11 @@ function PointItem({ point, label, color, isSearchActive, query, onSearch, resul
               <Crosshair className="w-3.5 h-3.5" />
             </button>
             {point.type !== 'start' && (
-               <div className="px-1.5 py-0.5 rounded-md bg-white/5 text-[10px]">
-                  {point.type === 'walk' ? '🚶' : (point.type === 'drive' ? '🚗' : (point.type === 'flight' ? '✈️' : '⏳'))}
-               </div>
+            <div className="px-1.5 py-0.5 rounded-md bg-white/5 text-[10px]">
+               {point.type === 'walk' ? <MapPin className="w-3 h-3 text-emerald-400" /> : 
+                (point.type === 'drive' ? <Navigation className="w-3 h-3 text-indigo-400" /> : 
+                (point.type === 'flight' ? <Plane className="w-3 h-3 text-blue-400" /> : <Clock className="w-3 h-3 text-slate-400" />))}
+            </div>
             )}
             {onRemove && (
                <button onClick={(e) => { e.stopPropagation(); onRemove(); }} className="p-1.5 hover:bg-rose-500/20 rounded-lg text-rose-500 opacity-0 group-hover:opacity-100 transition-all">
@@ -662,10 +664,10 @@ function PointItem({ point, label, color, isSearchActive, query, onSearch, resul
                       onChange={(e) => onUpdate({ type: e.target.value })}
                       className="w-full bg-black/40 border border-white/5 rounded-lg p-1.5 text-[10px] text-white outline-none font-bold"
                     >
-                      <option value="walk" className="bg-slate-900">🚶 Marcher</option>
-                      <option value="drive" className="bg-slate-900">🚗 Conduire</option>
-                      <option value="flight" className="bg-slate-900">✈️ Voler</option>
-                      <option value="wait" className="bg-slate-900">⏳ Attendre</option>
+                      <option value="walk" className="bg-slate-900">Marcher</option>
+                      <option value="drive" className="bg-slate-900">Conduire</option>
+                      <option value="flight" className="bg-slate-900">Voler</option>
+                      <option value="wait" className="bg-slate-900">Attendre</option>
                     </select>
                   </div>
                    <div className="space-y-1">

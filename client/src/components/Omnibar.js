@@ -2,6 +2,8 @@ import React, { useEffect, useRef, useState } from 'react';
 import { StyleSheet, View, TextInput, TouchableOpacity, Text, SafeAreaView, Animated, ScrollView } from 'react-native';
 import { COLORS, SHADOWS } from '../constants/theme';
 
+import { Ionicons } from '@expo/vector-icons';
+
 export default function Omnibar({ 
   searchQuery, 
   onSearchChange, 
@@ -62,10 +64,10 @@ export default function Omnibar({
     <SafeAreaView style={styles.container}>
       <View style={[styles.bar, SHADOWS.premium]}>
         <TouchableOpacity style={styles.btn} onPress={onSettingsPress} activeOpacity={0.7}>
-          <Text style={{fontSize: 20}}>⚙️</Text>
+          <Ionicons name="settings-outline" size={20} color={COLORS.text} />
         </TouchableOpacity>
         <TouchableOpacity style={styles.btn} onPress={onDebugPress} activeOpacity={0.7}>
-          <Text style={{fontSize: 20}}>📜</Text>
+          <Ionicons name="list-outline" size={20} color={COLORS.text} />
         </TouchableOpacity>
         <TextInput
           style={styles.input}
@@ -76,7 +78,7 @@ export default function Omnibar({
           onSubmitEditing={onSearchSubmit}
         />
         <TouchableOpacity style={styles.btn} onPress={onScannerPress} activeOpacity={0.7}>
-          <Text style={{fontSize: 20}}>📷</Text>
+          <Ionicons name="qr-code-outline" size={20} color={COLORS.text} />
         </TouchableOpacity>
       </View>
 
@@ -90,7 +92,9 @@ export default function Omnibar({
                 style={styles.suggestionItem} 
                 onPress={() => handleSelect(item)}
               >
-                <View style={styles.suggestionIcon}><Text style={{fontSize: 12}}>📍</Text></View>
+                <View style={styles.suggestionIcon}>
+                  <Ionicons name="location-outline" size={16} color={COLORS.primary} />
+                </View>
                 <View style={{flex: 1}}>
                   <Text style={styles.suggestionTitle} numberOfLines={1}>{item.display_name.split(',')[0]}</Text>
                   <Text style={styles.suggestionSub} numberOfLines={1}>{item.display_name.split(',').slice(1).join(',').trim()}</Text>
@@ -111,9 +115,9 @@ export default function Omnibar({
             opacity: pillAnim
           }
         ]}>
-          <View style={styles.statusDot} />
+          <Ionicons name={status === 'Connecté' ? "checkmark-circle" : "alert-circle"} size={14} color="#fff" />
           <Text style={styles.pillText}>
-            {status} {isMaintaining && '• 🛡️'} {isLowPowerMode && '• 🔋'} {telemetry?.latency && `• 📶 ${telemetry.latency}ms`}
+            {status} {isMaintaining && '• SHIELD'} {isLowPowerMode && '• BATT'} {telemetry?.latency && `• ${telemetry.latency}ms`}
           </Text>
         </Animated.View>
       </TouchableOpacity>

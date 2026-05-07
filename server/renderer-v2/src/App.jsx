@@ -387,9 +387,9 @@ function App() {
                   onClick={() => {setQrOpen(true); setSidebarOpen(false);}} 
                   className="flex-1 h-12 glass-deeper hover:bg-white/10 rounded-xl font-bold transition-all flex items-center justify-center gap-2 hover:scale-[1.02] active:scale-95 text-slate-300 hover:text-white"
                 >
-                  <QrCode className="w-5 h-5" /> <span className="text-xs uppercase tracking-widest">QR Code</span>
                 </button>
               </div>
+
               <button 
                 onClick={async () => {
                   const res = await gps.openGpxDialog();
@@ -399,18 +399,19 @@ function App() {
                     setSidebarOpen(false);
                   }
                 }} 
-                className="w-full mt-4 h-12 bg-emerald-600/20 hover:bg-emerald-600/40 text-emerald-400 rounded-xl font-bold transition-all flex items-center justify-center gap-2 border border-emerald-500/20"
+                className="w-full mt-4 h-12 bg-emerald-600/20 hover:bg-emerald-600/40 text-emerald-400 rounded-xl font-bold transition-all flex items-center justify-center gap-2 border border-emerald-500/20 group"
               >
-                📁 Lancer GPX local
+                <FileUp className="w-4 h-4 group-hover:-translate-y-1 transition-transform" /> <span className="text-xs uppercase tracking-widest">Lancer GPX local</span>
               </button>
-                <button 
-                  onClick={() => {
-                    setSidebarMode('sequencer');
-                  }} 
-                  className="w-full mt-2 h-12 bg-indigo-600/20 hover:bg-indigo-600/40 text-indigo-400 rounded-xl font-bold transition-all flex items-center justify-center gap-2 border border-indigo-500/20"
-                >
-                  ✈️ Séquenceur Voyage
-                </button>
+
+              <button 
+                onClick={() => {
+                  setSidebarMode('sequencer');
+                }} 
+                className="w-full mt-2 h-12 bg-indigo-600/20 hover:bg-indigo-600/40 text-indigo-400 rounded-xl font-bold transition-all flex items-center justify-center gap-2 border border-indigo-500/20 group"
+              >
+                <Plane className="w-4 h-4 group-hover:translate-x-1 transition-transform" /> <span className="text-xs uppercase tracking-widest">Séquenceur Voyage</span>
+              </button>
                 <button 
                   onClick={() => {
                     if (!patrolZone) {
@@ -424,13 +425,16 @@ function App() {
                       gps.sendAction('PATROL_UPDATE', updated);
                     }
                   }} 
-                  className={`w-full mt-2 h-12 rounded-xl font-bold transition-all flex items-center justify-center gap-2 border ${
+                  className={`w-full mt-2 h-12 rounded-xl font-bold transition-all flex items-center justify-center gap-2 border group ${
                     patrolZone?.active 
                       ? 'bg-emerald-600/20 text-emerald-400 border-emerald-500/20' 
                       : 'bg-slate-600/20 text-slate-400 border-slate-500/20'
                   }`}
                 >
-                  🛡️ {patrolZone?.active ? 'Arrêter Patrouille' : (patrolZone ? 'Démarrer Patrouille' : 'Configurer Patrouille')}
+                  <ShieldCheck className={`w-4 h-4 ${patrolZone?.active ? 'animate-pulse' : ''}`} /> 
+                  <span className="text-xs uppercase tracking-widest">
+                    {patrolZone?.active ? 'Arrêter Patrouille' : (patrolZone ? 'Démarrer Patrouille' : 'Configurer Patrouille')}
+                  </span>
                 </button>
                 </div>
               ) : (
@@ -523,10 +527,8 @@ function App() {
                 </div>
              </div>
 
-             <div className="w-px h-10 bg-white/10" />
-
              <button 
-              onClick={resetLocation}
+              onClick={() => gps.clearSim()}
               className="p-4 bg-rose-500/10 hover:bg-rose-500/20 text-rose-500 rounded-2xl border border-rose-500/20 transition-all active:scale-95"
               title="Arrêter la simulation"
              >
@@ -536,21 +538,67 @@ function App() {
         )}
       </AnimatePresence>
 
-      {/* Status Pill (Bottom) */}
-      <div className="absolute bottom-8 right-8 z-50">
+      {/* Status Pill (Top Right) */}
+      <div className="absolute top-8 right-8 z-50 flex flex-col items-end gap-3">
+        <div className={`px-4 py-2 rounded-2xl flex items-center gap-3 backdrop-blur-xl border transition-all duration-500 shadow-lg ${
+          status.state === 'running' || status.state === 'moving' 
+          ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400' 
+          : 'bg-white/5 border-white/10 text-white/70'
+        }`}>
+          <div className="flex flex-col">
+            <div className="flex items-center gap-2">
+              <div className={`w-2 h-2 rounded-full animate-pulse ${
+                status.state === 'running' || status.state === 'moving' ? 'bg-emerald-400' : 'bg-amber-400'
+              }`} />
+              <span className="text-sm font-bold tracking-tight">{status.message}</span>
+            </div>
+            {status.device && (
+              <span className="text-[10px] opacity-50 font-medium uppercase tracking-widest">{status.device.name || status.device.DeviceName} • {status.type}</span>
+            )}
+          </div>
+
+          <div className="flex items-center gap-1 border-l border-white/10 ml-2 pl-3">
+            {status.state === 'running' || status.state === 'moving' ? (
+              <button 
+                onClick={() => gps.clearSim()}
+                title="Réinitialiser (Retour position réelle)"
+                className="p-1.5 hover:bg-red-500/20 hover:text-red-400 rounded-lg transition-colors group"
+              >
+                <MapPinOff size={16} className="group-hover:scale-110 transition-transform" />
+              </button>
+            ) : (
+              <button 
+                onClick={() => gps.relance()}
+                title="Relancer (Ré-injecter la position)"
+                className="p-1.5 hover:bg-emerald-500/20 hover:text-emerald-400 rounded-lg transition-colors group"
+              >
+                <Zap size={16} className="group-hover:scale-110 transition-transform text-amber-400" />
+              </button>
+            )}
+            
+            <button 
+              onClick={() => setQrOpen(true)}
+              className="p-1.5 hover:bg-white/10 rounded-lg transition-colors"
+            >
+              <QrCode size={16} />
+            </button>
+          </div>
+        </div>
+
         <motion.div 
           initial={{ x: 20, opacity: 0 }} 
           animate={{ x: 0, opacity: 1 }} 
           className={`flex flex-col items-end gap-2`}
         >
           {/* Badge de Mode */}
-          <div className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest border shadow-lg ${
+          <div className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest border shadow-lg flex items-center gap-2 ${
             status.operationMode === 'autonomous' ? 'bg-amber-500/20 text-amber-500 border-amber-500/20' :
             status.operationMode === 'client-server' ? 'bg-purple-500/20 text-purple-500 border-purple-500/20' :
             'bg-blue-500/20 text-blue-400 border-blue-500/20'
           }`}>
-            {status.operationMode === 'autonomous' ? '🚀 Mode Autonome (PC)' : 
-             status.operationMode === 'client-server' ? '📱 Mode Client (iPhone Req)' : '🌐 Mode Hybride'}
+            <Activity size={10} />
+            {status.operationMode === 'autonomous' ? 'Mode Autonome' : 
+             status.operationMode === 'client-server' ? 'Mode Client' : 'Mode Hybride'}
           </div>
 
           {/* Badge d'Activité Réelle */}
