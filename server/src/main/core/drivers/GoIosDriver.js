@@ -145,6 +145,31 @@ class GoIosDriver extends BaseDriver {
       socket.connect(this.tunnelInfo.port, this.tunnelInfo.address)
     })
   }
+
+  async listDevices() {
+    return new Promise((resolve) => {
+      const { exe, fullArgs } = bin.getSpawnArgs('go-ios', ['list'])
+      const proc = spawn(exe, fullArgs)
+      let stdout = ''
+      proc.stdout.on('data', (d) => stdout += d.toString())
+      proc.on('close', (code) => {
+        if (code !== 0) return resolve([])
+        try {
+          // go-ios list retourne une liste d'objets JSON si --json est utilisé, 
+          // mais ici on va parser le texte simple pour rester compatible
+          const devices = []
+          const lines = stdout.split('\n')
+          lines.forEach(line => {
+            const match = line.match(/([\w-]+)\s+([\w\s]+)\s+\(([\w\s,]+)\)/)
+            if (match) {
+              devices.push({ udid: match[1], name: match[2].trim() })
+            }
+          })
+          resolve(devices)
+        } catch (e) { resolve([]) }
+      })
+    })
+  }
 }
 
 module.exports = GoIosDriver

@@ -28,6 +28,8 @@ export interface ServerStatus {
   usbDriver: string;
   wifiDriver: string;
   fallbackEnabled: boolean;
+  notificationsEnabled?: boolean;
+  dynamicIslandEnabled?: boolean;
   favorites: RawCoords[];
   recentHistory: RawCoords[];
   cluster?: {
@@ -37,6 +39,19 @@ export interface ServerStatus {
   };
   currentSequencePreview?: any[];
   telemetry?: TelemetryData;
+  patrolZone?: PatrolZone;
+  navigation?: {
+    progress: {
+      index: number;
+      total: number;
+      speed: number;
+      distance: number;
+    } | null;
+    status: {
+      state: 'idle' | 'running' | 'paused' | 'stopped';
+      destination?: { lat: number, lon: number, name: string };
+    } | null;
+  };
 }
 
 export interface TelemetryData {
@@ -51,4 +66,15 @@ export interface AppSettings {
   serverPort: string;
   notificationsEnabled: boolean;
   dynamicIslandEnabled: boolean;
+}
+
+export interface PatrolZone {
+  type: 'circle' | 'rectangle';
+  center: { lat: number, lon: number };
+  radius?: number; // en mètres
+  bounds?: { 
+    ne: { lat: number, lon: number }, 
+    sw: { lat: number, lon: number } 
+  };
+  active: boolean;
 }

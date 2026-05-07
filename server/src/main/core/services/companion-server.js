@@ -13,6 +13,7 @@ const { dbg, sendStatus } = require('../../logger')
 const favoritesManager = require('./favorites-manager')
 const settings = require('./settings-manager')
 const routeGenerator = require('./gps/route-generator')
+const patrolManager = require('./gps/PatrolManager')
 const gpsBridge = require('./gps/gps-bridge')
 const clusterManager = require('./cluster-manager')
 const { getAppRoot } = require('../../platform/PathResolver')
@@ -60,10 +61,23 @@ class CompanionServer extends EventEmitter {
       this.tunnel.on('ready', () => {
         this._refreshStatus()
         this._broadcast('STATUS', this.status)
+        // Propagation explicite du statut "tunneld" pour le Dashboard
+        this._broadcast('status-update', { 
+          service: 'tunneld', 
+          state: 'ready', 
+          message: 'iPhone prêt', 
+          type: this.status.connectionType, 
+          device: this.status.deviceInfo 
+        })
       })
       this.tunnel.on('lost', () => {
         this._refreshStatus()
         this._broadcast('STATUS', this.status)
+        this._broadcast('status-update', { 
+          service: 'tunneld', 
+          state: 'scanning', 
+          message: 'Recherche iPhone...' 
+        })
       })
     }
 
@@ -75,6 +89,10 @@ class CompanionServer extends EventEmitter {
         onStatus: (payload) => this._broadcast('status-update', payload)
       })
     }
+
+    patrolManager.on('inject', (data) => {
+      this.emit('request-location', data)
+    })
 
     // Intervalle de télémétrie (toutes les 5 secondes)
     this._telemetryInterval = setInterval(() => {
@@ -122,6 +140,8 @@ class CompanionServer extends EventEmitter {
       usbDriver: settings.get('usbDriver'),
       wifiDriver: settings.get('wifiDriver'),
       fallbackEnabled: settings.get('fallbackEnabled'),
+      notificationsEnabled: settings.get('notificationsEnabled'),
+      dynamicIslandEnabled: settings.get('dynamicIslandEnabled'),
       favorites: favoritesManager.getFavorites(),
       recentHistory: favoritesManager.getHistory(),
       envInfo: {
@@ -134,7 +154,12 @@ class CompanionServer extends EventEmitter {
         role: clusterManager.role,
         peers: settings.get('clusterNodes') || []
       },
-      currentSequencePreview: this.currentSequencePreview
+      currentSequencePreview: this.currentSequencePreview,
+      patrolZone: patrolManager.zone,
+      navigation: {
+        progress: gpsBridge.currentProgress || null,
+        status: gpsBridge.currentStatus || null
+      }
     }
   }
 
@@ -189,6 +214,11 @@ class CompanionServer extends EventEmitter {
       res.json(this.status)
     })
 
+    this.app.post('/api/location/clear', (req, res) => {
+      this._handleMessage(null, { type: 'CLEAR_LOCATION' })
+      res.json({ success: true })
+    })
+
     this.app.post('/api/relance', (req, res) => {
       // On ignore les coordonnées envoyées par le client (qui peuvent être réelles suite à un décrochage)
       // On utilise systématiquement la cible configurée sur le serveur
@@ -206,10 +236,66 @@ class CompanionServer extends EventEmitter {
       res.json({ success: true })
     })
 
+    this.app.post('/api/location/route', (req, res) => {
+      this._handleRouteMessage(null, { type: 'PLAY_ROUTE', data: req.body })
+      res.json({ success: true })
+    })
+
+    this.app.post('/api/location/route/osrm', (req, res) => {
+      this._handleRouteMessage(null, { type: 'PLAY_OSRM_ROUTE', data: req.body })
+      res.json({ success: true })
+    })
+
+    this.app.post('/api/location/sequence', (req, res) => {
+      this._handleRouteMessage(null, { type: 'PLAY_SEQUENCE', data: req.body })
+      res.json({ success: true })
+    })
+
     this.app.post('/api/location/sequence/sync-preview', (req, res) => {
       const { points } = req.body
       this.currentSequencePreview = points || []
       this._broadcast('SEQUENCE_PREVIEW_UPDATED', this.currentSequencePreview)
+      res.json({ success: true })
+    })
+
+    // --- ROUTES DIAGNOSTIC ---
+    this.app.get('/api/diagnostic/devices', async (req, res) => {
+      try {
+        const tm = require('./TunnelManager')
+        const allDevices = []
+        for (const driver of Object.values(tm.drivers)) {
+          if (driver.listDevices) {
+            const list = await driver.listDevices()
+            allDevices.push(...list.map(d => ({ ...d, source: driver.id })))
+          }
+        }
+        res.json(allDevices)
+      } catch (e) {
+        res.json([])
+      }
+    })
+
+    this.app.get('/api/diagnostic/interfaces', (req, res) => {
+      const interfaces = os.networkInterfaces()
+      const list = []
+      for (const name of Object.keys(interfaces)) {
+        for (const iface of interfaces[name]) {
+          if (iface.family === 'IPv4') {
+            list.push({ name, address: iface.address, internal: iface.internal })
+          }
+        }
+      }
+      res.json(list)
+    })
+
+    this.app.get('/api/diagnostic/qr', async (req, res) => {
+      const qr = await this.getCompanionQr()
+      res.json(qr)
+    })
+
+    this.app.post('/api/diagnostic/restart-tunnel', async (req, res) => {
+      const tm = require('./TunnelManager')
+      await tm.forceRefresh()
       res.json({ success: true })
     })
 
@@ -335,9 +421,10 @@ class CompanionServer extends EventEmitter {
         socket.emit('STATUS', this.status)
 
         const actions = [
-          'SET_LOCATION', 'PLAY_ROUTE', 'PLAY_SEQUENCE', 'PLAY_OSRM_ROUTE', 
-          'PLAY_CUSTOM_GPX', 'ADD_HISTORY', 'ADD_FAVORITE', 'REMOVE_FAVORITE', 
-          'RENAME_FAVORITE', 'SAVE_SETTINGS', 'GET_STATUS', 'HEARTBEAT', 'DEBUG_LOG'
+          'SET_LOCATION', 'CLEAR_LOCATION', 'RELANCE', 'PLAY_ROUTE', 'PLAY_SEQUENCE', 
+          'PLAY_OSRM_ROUTE', 'PLAY_CUSTOM_GPX', 'ADD_HISTORY', 'ADD_FAVORITE', 
+          'REMOVE_FAVORITE', 'RENAME_FAVORITE', 'SAVE_SETTINGS', 'GET_STATUS', 
+          'HEARTBEAT', 'DEBUG_LOG'
         ]
 
         actions.forEach(event => {
@@ -347,6 +434,14 @@ class CompanionServer extends EventEmitter {
               dbg(`[companion-server] ⚠️ Commande SET_LOCATION ignorée (Mode Autonome)`)
               return
             }
+            if (event === 'RELANCE') {
+              const target = this.status.lastInjectedLocation || this.status.lastVerifiedLocation || settings.get('lastActiveLocation')
+              if (target) {
+                dbg(`[companion-server] ⚡ Relance demandée par Socket (${target.lat}, ${target.lon})`)
+                this.emit('request-location', { ...target, force: true })
+              }
+              return
+            }
             this._handleMessage(socket, { type: event, data })
           })
         });
@@ -354,6 +449,12 @@ class CompanionServer extends EventEmitter {
         socket.on('SEQUENCE_SYNC', (points) => {
           this.currentSequencePreview = points || []
           this._broadcast('SEQUENCE_PREVIEW_UPDATED', this.currentSequencePreview)
+        })
+
+        socket.on('PATROL_UPDATE', (zone) => {
+          patrolManager.update(zone)
+          this.status.patrolZone = zone
+          this._broadcast('STATUS_UPDATE', { patrolZone: zone })
         })
 
         socket.on('disconnect', () => {
@@ -539,18 +640,21 @@ class CompanionServer extends EventEmitter {
   _handleRouteMessage(socket, payload) {
     switch (payload.type) {
       case 'PLAY_ROUTE': {
-        const { endLat, endLon, speed } = payload.data || {}
+        const { endLat, endLon, speed, profile } = payload.data || {}
         if (endLat !== undefined && endLon !== undefined) {
           const start = this.status.lastVerifiedLocation || this.status.lastInjectedLocation
           if (!start) break
-          const gpxPath = routeGenerator.generateOrthodromicGpx(
+          // Utilise OSRM par défaut (profile 'driving' si non spécifié)
+          routeGenerator.generateOsrmRoute(
             { lat: start.lat, lon: start.lon },
             { lat: endLat, lon: endLon },
+            profile || 'driving',
             speed || 5
-          )
-          gpsBridge.playGpx(gpxPath)
-          this.status.state = 'moving'
-          this._broadcast('STATUS', this.status)
+          ).then(gpxPath => {
+            gpsBridge.playGpx(gpxPath)
+            this.status.state = 'moving'
+            this._broadcast('STATUS', this.status)
+          })
         }
         break
       }

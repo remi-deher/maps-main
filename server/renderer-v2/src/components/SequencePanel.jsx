@@ -34,14 +34,23 @@ export default function SequencePanel({ activeSim, points, setPoints, onClose, p
         const startPos = activeSim || { lat: 48.8566, lon: 2.3522, name: 'Ma position' };
         const destPos = { ...startPos, name: 'Destination' };
         
-        setPoints([
+        const initialPoints = [
           { id: 'start', lat: startPos.lat, lon: startPos.lon, address: startPos.name || 'Départ', type: 'start' },
           { id: 'dest', lat: destPos.lat, lon: destPos.lon, address: '', type: 'drive', speed: 30, duration: 60 }
-        ]);
+        ];
+        setPoints(initialPoints);
+        refreshAllPaths(initialPoints);
       }
     };
     loadData();
   }, []);
+
+  // Synchronisation en temps réel avec le serveur (pour aperçu sur mobile)
+  useEffect(() => {
+    if (points.length > 0) {
+      gps.syncSequencePreview(points);
+    }
+  }, [points]);
 
   const toggleLoop = () => {
     const newVal = !isLooping;
@@ -106,14 +115,11 @@ export default function SequencePanel({ activeSim, points, setPoints, onClose, p
 
   const tryOptimize = async () => {
     if (points.length < 3) return;
-    const res = await optimizeRoute(points);
-    if (res && res.geometry) {
-      // Pour l'instant on garde l'ordre de l'utilisateur mais on pourrait le réorganiser
-      // via res.waypointIndices si on voulait vraiment optimiser le trajet total.
-      // Mais ici on va juste forcer le tracé global si possible.
-      // Simplifions : On informe l'utilisateur ou on propose de réordonner.
-      alert("Optimisation OSRM calculée. Le tracé sera plus fluide.");
-      refreshAllPaths(points);
+    const profile = points[1]?.type || 'drive';
+    const optimized = await optimizeRoute(points, profile);
+    if (optimized) {
+      setPoints(optimized);
+      refreshAllPaths(optimized);
     }
   };
 
@@ -382,6 +388,14 @@ export default function SequencePanel({ activeSim, points, setPoints, onClose, p
             >
               <Clock className="w-4 h-4" />
             </button>
+            <div className="w-px h-4 bg-white/10 mx-1" />
+            <button 
+              onClick={tryOptimize} 
+              title="Optimiser l'ordre des étapes (TSP)"
+              className="px-3 py-1.5 hover:bg-emerald-500/20 rounded-lg text-emerald-400 text-[10px] font-black uppercase transition-all flex items-center gap-2 border border-emerald-500/20"
+            >
+              ✨ Optimiser
+            </button>
           </div>
           
           <div className="flex items-center gap-2 px-3 py-1.5 bg-indigo-500/10 rounded-xl border border-indigo-500/20">
@@ -624,9 +638,11 @@ function PointItem({ point, label, color, isSearchActive, query, onSearch, resul
               <Crosshair className="w-3.5 h-3.5" />
             </button>
             {point.type !== 'start' && (
-               <div className="px-1.5 py-0.5 rounded-md bg-white/5 text-[10px]">
-                  {point.type === 'walk' ? '🚶' : (point.type === 'drive' ? '🚗' : (point.type === 'flight' ? '✈️' : '⏳'))}
-               </div>
+            <div className="px-1.5 py-0.5 rounded-md bg-white/5 text-[10px]">
+               {point.type === 'walk' ? <MapPin className="w-3 h-3 text-emerald-400" /> : 
+                (point.type === 'drive' ? <Navigation className="w-3 h-3 text-indigo-400" /> : 
+                (point.type === 'flight' ? <Plane className="w-3 h-3 text-blue-400" /> : <Clock className="w-3 h-3 text-slate-400" />))}
+            </div>
             )}
             {onRemove && (
                <button onClick={(e) => { e.stopPropagation(); onRemove(); }} className="p-1.5 hover:bg-rose-500/20 rounded-lg text-rose-500 opacity-0 group-hover:opacity-100 transition-all">
@@ -648,10 +664,10 @@ function PointItem({ point, label, color, isSearchActive, query, onSearch, resul
                       onChange={(e) => onUpdate({ type: e.target.value })}
                       className="w-full bg-black/40 border border-white/5 rounded-lg p-1.5 text-[10px] text-white outline-none font-bold"
                     >
-                      <option value="walk" className="bg-slate-900">🚶 Marcher</option>
-                      <option value="drive" className="bg-slate-900">🚗 Conduire</option>
-                      <option value="flight" className="bg-slate-900">✈️ Voler</option>
-                      <option value="wait" className="bg-slate-900">⏳ Attendre</option>
+                      <option value="walk" className="bg-slate-900">Marcher</option>
+                      <option value="drive" className="bg-slate-900">Conduire</option>
+                      <option value="flight" className="bg-slate-900">Voler</option>
+                      <option value="wait" className="bg-slate-900">Attendre</option>
                     </select>
                   </div>
                    <div className="space-y-1">

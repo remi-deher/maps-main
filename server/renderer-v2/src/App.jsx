@@ -29,11 +29,12 @@ function App() {
   
   const [deviceList, setDeviceList] = useState([]);
   const [routePreview, setRoutePreview] = useState(null);
+  const [patrolZone, setPatrolZone] = useState(null);
   const searchInputRef = useRef(null);
   const { history, favorites, addToHistory, addFavorite, removeFavorite } = useStorage();
 
   const fetchDevices = () => {
-    gps.listPmd3Devices().then(setDeviceList);
+    gps.listDevices().then(setDeviceList);
   };
 
   const isFavorite = (lat, lon) => favorites.some(f => Math.abs(f.lat - lat) < 0.0001 && Math.abs(f.lon - lon) < 0.0001);
@@ -66,10 +67,10 @@ function App() {
         setStatus(prev => ({ 
           ...prev,
           operationMode: data.operationMode,
-          state: data.tunnelActive ? data.state : prev.state,
-          message: data.tunnelActive ? (data.state === 'running' ? 'Simulation active' : 'iPhone prêt') : prev.message,
-          type: data.connectionType || prev.type,
-          device: data.deviceInfo || prev.device,
+          state: data.state || 'scanning',
+          message: data.state === 'running' ? 'Simulation active' : (data.state === 'ready' ? 'iPhone prêt' : (data.state === 'starting' ? 'Initialisation...' : 'Recherche iPhone...')),
+          type: data.connectionType || null,
+          device: data.deviceInfo || null,
           verified: data.state === 'running'
         }));
       });
@@ -108,6 +109,8 @@ function App() {
           }
           return prev;
         });
+      } else if (data.patrolZone) {
+        setPatrolZone(data.patrolZone);
       } else {
         // Fallback : tout autre service est considéré comme un log serveur
         const message = data.message || (typeof data.data === 'string' ? data.data : JSON.stringify(data.data));
@@ -142,11 +145,16 @@ function App() {
       });
     });
 
+    const removePatrolSyncListener = gps.onEvent('STATUS_UPDATE', (data) => {
+      if (data.patrolZone) setPatrolZone(data.patrolZone);
+    });
+
     return () => {
       removeStatusListener();
       removeSettingsListener();
       removeDebugListener();
       removeSequenceSyncListener();
+      removePatrolSyncListener();
     };
   }, []);
 
@@ -170,8 +178,6 @@ function App() {
       const name = await reverseGeocode(lat, lon);
       setSequencePoints(prev => prev.map(p => p.id === pickingPointId ? { ...p, lat, lon, address: name || `${lat.toFixed(4)}, ${lon.toFixed(4)}` } : p));
       setPickingPointId(null);
-      setSidebarOpen(true);
-      setSidebarMode('sequencer');
       return;
     }
     const name = await reverseGeocode(lat, lon);
@@ -251,6 +257,12 @@ function App() {
           onPlayOsrmRoute={playOsrmRoute}
           routePreview={sidebarMode === 'sequencer' ? sequencePoints : null}
           onSequencePointMove={handleSequencePointMove}
+          patrolZone={patrolZone}
+          onPatrolChange={(zone) => {
+            setPatrolZone(zone);
+            gps.sendAction('PATROL_UPDATE', zone);
+          }}
+          favorites={favorites}
         />
       </div>
 
@@ -375,9 +387,9 @@ function App() {
                   onClick={() => {setQrOpen(true); setSidebarOpen(false);}} 
                   className="flex-1 h-12 glass-deeper hover:bg-white/10 rounded-xl font-bold transition-all flex items-center justify-center gap-2 hover:scale-[1.02] active:scale-95 text-slate-300 hover:text-white"
                 >
-                  <QrCode className="w-5 h-5" /> <span className="text-xs uppercase tracking-widest">QR Code</span>
                 </button>
               </div>
+
               <button 
                 onClick={async () => {
                   const res = await gps.openGpxDialog();
@@ -387,17 +399,42 @@ function App() {
                     setSidebarOpen(false);
                   }
                 }} 
-                className="w-full mt-4 h-12 bg-emerald-600/20 hover:bg-emerald-600/40 text-emerald-400 rounded-xl font-bold transition-all flex items-center justify-center gap-2 border border-emerald-500/20"
+                className="w-full mt-4 h-12 bg-emerald-600/20 hover:bg-emerald-600/40 text-emerald-400 rounded-xl font-bold transition-all flex items-center justify-center gap-2 border border-emerald-500/20 group"
               >
-                📁 Lancer GPX local
+                <FileUp className="w-4 h-4 group-hover:-translate-y-1 transition-transform" /> <span className="text-xs uppercase tracking-widest">Lancer GPX local</span>
+              </button>
+
+              <button 
+                onClick={() => {
+                  setSidebarMode('sequencer');
+                }} 
+                className="w-full mt-2 h-12 bg-indigo-600/20 hover:bg-indigo-600/40 text-indigo-400 rounded-xl font-bold transition-all flex items-center justify-center gap-2 border border-indigo-500/20 group"
+              >
+                <Plane className="w-4 h-4 group-hover:translate-x-1 transition-transform" /> <span className="text-xs uppercase tracking-widest">Séquenceur Voyage</span>
               </button>
                 <button 
                   onClick={() => {
-                    setSidebarMode('sequencer');
+                    if (!patrolZone) {
+                      const center = activeSim || selectedPos || { lat: 48.8566, lon: 2.3522 };
+                      const newZone = { type: 'circle', center, radius: 200, active: false };
+                      setPatrolZone(newZone);
+                      gps.sendAction('PATROL_UPDATE', newZone);
+                    } else {
+                      const updated = { ...patrolZone, active: !patrolZone.active };
+                      setPatrolZone(updated);
+                      gps.sendAction('PATROL_UPDATE', updated);
+                    }
                   }} 
-                  className="w-full mt-2 h-12 bg-indigo-600/20 hover:bg-indigo-600/40 text-indigo-400 rounded-xl font-bold transition-all flex items-center justify-center gap-2 border border-indigo-500/20"
+                  className={`w-full mt-2 h-12 rounded-xl font-bold transition-all flex items-center justify-center gap-2 border group ${
+                    patrolZone?.active 
+                      ? 'bg-emerald-600/20 text-emerald-400 border-emerald-500/20' 
+                      : 'bg-slate-600/20 text-slate-400 border-slate-500/20'
+                  }`}
                 >
-                  ✈️ Séquenceur Voyage
+                  <ShieldCheck className={`w-4 h-4 ${patrolZone?.active ? 'animate-pulse' : ''}`} /> 
+                  <span className="text-xs uppercase tracking-widest">
+                    {patrolZone?.active ? 'Arrêter Patrouille' : (patrolZone ? 'Démarrer Patrouille' : 'Configurer Patrouille')}
+                  </span>
                 </button>
                 </div>
               ) : (
@@ -451,21 +488,117 @@ function App() {
         )}
       </AnimatePresence>
 
-      {/* Status Pill (Bottom) */}
-      <div className="absolute bottom-8 right-8 z-50">
+      {/* Navigation HUD (Floating Bottom Center) */}
+      <AnimatePresence>
+        {status.state === 'running' && activeSim && (
+          <motion.div 
+            initial={{ y: 100, opacity: 0, x: '-50%' }} 
+            animate={{ y: 0, opacity: 1, x: '-50%' }} 
+            exit={{ y: 100, opacity: 0, x: '-50%' }} 
+            className="absolute bottom-8 left-1/2 z-[60] bg-slate-900/90 border border-indigo-500/30 px-8 py-4 rounded-[32px] shadow-[0_20px_50px_rgba(0,0,0,0.5)] flex items-center gap-8 backdrop-blur-xl"
+          >
+             <div className="flex flex-col items-center">
+                <span className="text-[10px] font-black text-indigo-400 uppercase tracking-widest mb-1">Vitesse</span>
+                <div className="flex items-baseline gap-1">
+                  <span className="text-3xl font-black text-white tabular-nums">
+                    {status.navigation?.progress?.speed || 0}
+                  </span>
+                  <span className="text-xs font-bold text-slate-500">km/h</span>
+                </div>
+             </div>
+             
+             <div className="w-px h-10 bg-white/10" />
+             
+             <div className="flex-1 min-w-[240px]">
+                <div className="flex justify-between items-center mb-2">
+                   <span className="text-[10px] font-black text-emerald-400 uppercase tracking-widest">
+                     {status.navigation?.status?.state === 'paused' ? 'En pause' : 'En mouvement'}
+                   </span>
+                   <span className="text-[10px] font-bold text-slate-500">
+                     Étape {status.navigation?.progress?.index + 1} / {status.navigation?.progress?.total}
+                   </span>
+                </div>
+                <div className="w-full h-2 bg-black/40 rounded-full overflow-hidden border border-white/5">
+                   <motion.div 
+                    initial={{ width: 0 }}
+                    animate={{ width: `${(status.navigation?.progress?.index / status.navigation?.progress?.total) * 100}%` }}
+                    className="h-full bg-gradient-to-r from-indigo-500 to-emerald-500" 
+                   />
+                </div>
+             </div>
+
+             <button 
+              onClick={() => gps.clearSim()}
+              className="p-4 bg-rose-500/10 hover:bg-rose-500/20 text-rose-500 rounded-2xl border border-rose-500/20 transition-all active:scale-95"
+              title="Arrêter la simulation"
+             >
+               <X className="w-6 h-6" />
+             </button>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Status Pill (Top Right) */}
+      <div className="absolute top-8 right-8 z-50 flex flex-col items-end gap-3">
+        <div className={`px-4 py-2 rounded-2xl flex items-center gap-3 backdrop-blur-xl border transition-all duration-500 shadow-lg ${
+          status.state === 'running' || status.state === 'moving' 
+          ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400' 
+          : 'bg-white/5 border-white/10 text-white/70'
+        }`}>
+          <div className="flex flex-col">
+            <div className="flex items-center gap-2">
+              <div className={`w-2 h-2 rounded-full animate-pulse ${
+                status.state === 'running' || status.state === 'moving' ? 'bg-emerald-400' : 'bg-amber-400'
+              }`} />
+              <span className="text-sm font-bold tracking-tight">{status.message}</span>
+            </div>
+            {status.device && (
+              <span className="text-[10px] opacity-50 font-medium uppercase tracking-widest">{status.device.name || status.device.DeviceName} • {status.type}</span>
+            )}
+          </div>
+
+          <div className="flex items-center gap-1 border-l border-white/10 ml-2 pl-3">
+            {status.state === 'running' || status.state === 'moving' ? (
+              <button 
+                onClick={() => gps.clearSim()}
+                title="Réinitialiser (Retour position réelle)"
+                className="p-1.5 hover:bg-red-500/20 hover:text-red-400 rounded-lg transition-colors group"
+              >
+                <MapPinOff size={16} className="group-hover:scale-110 transition-transform" />
+              </button>
+            ) : (
+              <button 
+                onClick={() => gps.relance()}
+                title="Relancer (Ré-injecter la position)"
+                className="p-1.5 hover:bg-emerald-500/20 hover:text-emerald-400 rounded-lg transition-colors group"
+              >
+                <Zap size={16} className="group-hover:scale-110 transition-transform text-amber-400" />
+              </button>
+            )}
+            
+            <button 
+              onClick={() => setQrOpen(true)}
+              className="p-1.5 hover:bg-white/10 rounded-lg transition-colors"
+            >
+              <QrCode size={16} />
+            </button>
+          </div>
+        </div>
+
         <motion.div 
           initial={{ x: 20, opacity: 0 }} 
           animate={{ x: 0, opacity: 1 }} 
           className={`flex flex-col items-end gap-2`}
         >
           {/* Badge de Mode */}
-          <div className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest border shadow-lg ${
+          <div className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest border shadow-lg flex items-center gap-2 ${
             status.operationMode === 'autonomous' ? 'bg-amber-500/20 text-amber-500 border-amber-500/20' :
             status.operationMode === 'client-server' ? 'bg-purple-500/20 text-purple-500 border-purple-500/20' :
             'bg-blue-500/20 text-blue-400 border-blue-500/20'
           }`}>
-            {status.operationMode === 'autonomous' ? '🚀 Mode Autonome (PC)' : 
-             status.operationMode === 'client-server' ? '📱 Mode Client (iPhone Req)' : '🌐 Mode Hybride'}
+            <Activity size={10} />
+            {status.operationMode === 'autonomous' ? 'Mode Autonome' : 
+             status.operationMode === 'client-server' ? 'Mode Client' : 'Mode Hybride'}
           </div>
 
           {/* Badge d'Activité Réelle */}

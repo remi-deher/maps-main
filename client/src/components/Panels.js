@@ -1,8 +1,9 @@
 import React, { useEffect, useRef } from 'react';
 import { 
   StyleSheet, View, Text, TouchableOpacity, Animated, Dimensions, 
-  ScrollView, SafeAreaView, Pressable, Alert, Modal, PanResponder 
+  ScrollView, SafeAreaView, Pressable, Alert, Modal, PanResponder, Linking 
 } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { COLORS, SHADOWS } from '../constants/theme';
 
 const { height: SCREEN_HEIGHT } = Dimensions.get('window');
@@ -109,7 +110,7 @@ export function QuickFavorites({ favorites, onTeleport, visible }) {
       <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.quickScroll}>
         {favorites.slice(0, 5).map((fav, i) => (
           <ScaleButton key={i} onPress={() => onTeleport({ latitude: fav.lat, longitude: fav.lon, name: fav.name })} style={styles.quickItem}>
-            <Text style={styles.quickEmoji}>⭐</Text>
+            <Ionicons name="star" size={12} color="#F59E0B" />
             <Text style={styles.quickText} numberOfLines={1}>{fav.name}</Text>
           </ScaleButton>
         ))}
@@ -119,19 +120,25 @@ export function QuickFavorites({ favorites, onTeleport, visible }) {
 }
 
 export function ActionPanel({ visible, coords, isFavorite, onTeleport, onToggleFavorite, onStartRoute, onStartOsrmRoute, onClose }) {
+  const [profile, setProfile] = React.useState('driving');
+
   const handleNavigate = () => {
-    Alert.alert(
-      "Mode de déplacement",
-      "Comment souhaitez-vous vous y rendre ?",
-      [
-        { text: "🚶 Marche (Ligne droite)", onPress: () => onStartRoute(coords.latitude, coords.longitude, 5) },
-        { text: "🚶 Marche (Routes)", onPress: () => onStartOsrmRoute(coords.latitude, coords.longitude, 'walking', 5) },
-        { text: "🚲 Vélo (Routes)", onPress: () => onStartOsrmRoute(coords.latitude, coords.longitude, 'cycling', 20) },
-        { text: "🚗 Voiture (Routes)", onPress: () => onStartOsrmRoute(coords.latitude, coords.longitude, 'driving', null) },
-        { text: "Annuler", style: "cancel" }
-      ]
-    );
+    if (profile === 'flight') {
+      onStartRoute(coords.latitude, coords.longitude, 500); // Vitesse vol par défaut
+    } else if (profile === 'walk_direct') {
+      onStartRoute(coords.latitude, coords.longitude, 5);
+    } else {
+      onStartOsrmRoute(coords.latitude, coords.longitude, profile === 'walking' ? 'walking' : (profile === 'cycling' ? 'cycling' : 'driving'), null);
+    }
+    onClose();
   };
+
+  const profiles = [
+    { id: 'driving', icon: 'car-outline', label: 'Route' },
+    { id: 'walking', icon: 'walk-outline', label: 'Marche' },
+    { id: 'cycling', icon: 'bicycle-outline', label: 'Vélo' },
+    { id: 'flight', icon: 'airplane-outline', label: 'Vol' },
+  ];
 
   return (
     <BottomSheet visible={visible} onClose={onClose}>
@@ -142,8 +149,21 @@ export function ActionPanel({ visible, coords, isFavorite, onTeleport, onToggleF
             <Text style={styles.sheetCoords}>{coords?.latitude.toFixed(6)}, {coords?.longitude.toFixed(6)}</Text>
           </View>
           <ScaleButton onPress={() => onToggleFavorite(coords)} style={[styles.sheetFavBtn, isFavorite && styles.sheetFavBtnActive]}>
-            <Text style={{fontSize: 24, color: isFavorite ? '#fff' : COLORS.textSecondary}}>{isFavorite ? '★' : '☆'}</Text>
+            <Ionicons name={isFavorite ? "star" : "star-outline"} size={24} color={isFavorite ? '#fff' : COLORS.textSecondary} />
           </ScaleButton>
+        </View>
+
+        <View style={styles.profileSelector}>
+          {profiles.map((p) => (
+            <TouchableOpacity 
+              key={p.id} 
+              onPress={() => setProfile(p.id)}
+              style={[styles.profileItem, profile === p.id && styles.profileItemActive]}
+            >
+              <Ionicons name={p.icon} size={20} color={profile === p.id ? COLORS.primary : COLORS.textMuted} />
+              <Text style={[styles.profileLabel, profile === p.id && styles.profileLabelActive]}>{p.label}</Text>
+            </TouchableOpacity>
+          ))}
         </View>
 
         <View style={styles.sheetActions}>
@@ -151,7 +171,7 @@ export function ActionPanel({ visible, coords, isFavorite, onTeleport, onToggleF
             <Text style={styles.mainActionText}>TÉLÉPORTER ICI</Text>
           </ScaleButton>
           <TouchableOpacity style={styles.secondaryActionBtn} onPress={handleNavigate}>
-            <Text style={styles.secondaryActionText}>NAVIGUER JUSQU'ICI...</Text>
+            <Text style={styles.secondaryActionText}>NAVIGUER ({profiles.find(p => p.id === profile)?.label.toUpperCase()})</Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -186,7 +206,7 @@ export function FavoritesPanel({ visible, favorites, history, onClose, onTelepor
         <View style={styles.panelHeader}>
           <Text style={styles.panelTitle}>Mes Lieux</Text>
           <TouchableOpacity onPress={onClose} style={styles.closeBtn}>
-            <Text style={styles.closeText}>✕</Text>
+            <Ionicons name="close" size={20} color={COLORS.text} />
           </TouchableOpacity>
         </View>
         
@@ -200,10 +220,10 @@ export function FavoritesPanel({ visible, favorites, history, onClose, onTelepor
               </TouchableOpacity>
               <View style={styles.itemActions}>
                 <TouchableOpacity onPress={() => handleRename(fav)} style={styles.editBtn}>
-                  <Text style={{fontSize: 16}}>✏️</Text>
+                  <Ionicons name="pencil-outline" size={16} color={COLORS.text} />
                 </TouchableOpacity>
                 <TouchableOpacity onPress={() => onRemove(fav)} style={styles.deleteBtn}>
-                  <Text style={{fontSize: 16}}>🗑️</Text>
+                  <Ionicons name="trash-outline" size={16} color={COLORS.error} />
                 </TouchableOpacity>
               </View>
             </View>
@@ -220,7 +240,7 @@ export function FavoritesPanel({ visible, favorites, history, onClose, onTelepor
                 <Text style={styles.itemName}>{item.name}</Text>
                 <Text style={styles.itemCoords}>{item.lat.toFixed(4)}, {item.lon.toFixed(4)}</Text>
               </View>
-              <Text style={{fontSize: 16}}>📍</Text>
+              <Ionicons name="location-sharp" size={20} color={COLORS.primary} />
             </TouchableOpacity>
           )) : <Text style={styles.empty}>Aucun historique récent.</Text>}
           <View style={{height: 100}} />
@@ -290,6 +310,15 @@ const styles = StyleSheet.create({
     borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)'
   },
   secondaryActionText: { color: COLORS.text, fontWeight: '700', fontSize: 14, opacity: 0.8 },
+
+  profileSelector: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 20, gap: 10 },
+  profileItem: { 
+    flex: 1, alignItems: 'center', paddingVertical: 12, borderRadius: 18, 
+    backgroundColor: 'rgba(255,255,255,0.03)', borderWidth: 1, borderColor: 'transparent' 
+  },
+  profileItemActive: { backgroundColor: 'rgba(99, 102, 241, 0.1)', borderColor: '#6366F1' },
+  profileLabel: { color: COLORS.textMuted, fontSize: 10, fontWeight: 'bold', marginTop: 4, textTransform: 'uppercase' },
+  profileLabelActive: { color: '#818CF8' },
 
   panelSafe: { flex: 1 },
   panelHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 24, paddingBottom: 10 },
