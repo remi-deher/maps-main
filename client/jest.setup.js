@@ -1,5 +1,3 @@
-import 'react-native-gesture-handler/jestSetup';
-
 // Mock pour @expo/vector-icons
 jest.mock('@expo/vector-icons', () => {
   const React = require('react');
