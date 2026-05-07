@@ -183,9 +183,19 @@ export const useAppStore = create<AppStore>((set, get) => ({
         set({ sequencePoints: data.currentSequencePreview });
       }
 
-      // Priorité 1: Position en cours (live)
-      // Priorité 2: Position mémorisée par le serveur (reboot)
-      const serverLoc = data.lastInjectedLocation || data.lastActiveLocation;
+      if (data.notificationsEnabled !== undefined) {
+        set({ notificationsEnabled: data.notificationsEnabled });
+        AsyncStorage.setItem('notificationsEnabled', String(data.notificationsEnabled));
+      }
+      if (data.dynamicIslandEnabled !== undefined) {
+        set({ dynamicIslandEnabled: data.dynamicIslandEnabled });
+        AsyncStorage.setItem('dynamicIslandEnabled', String(data.dynamicIslandEnabled));
+      }
+
+      // Priorité 1: Position en cours (live injection)
+      // Priorité 2: Position vérifiée (déjà appliquée par le driver)
+      // Priorité 3: Position mémorisée par le serveur (reboot/historique)
+      const serverLoc = data.lastInjectedLocation || data.lastVerifiedLocation || data.lastActiveLocation;
 
       if (serverLoc) {
         const coords = { 
@@ -195,17 +205,8 @@ export const useAppStore = create<AppStore>((set, get) => ({
         };
         set({ simulatedCoords: coords });
         AsyncStorage.setItem('MOCK_LOCATION', JSON.stringify(coords));
-      } else {
-        // Priorité 3: Position locale de l'iPhone (si le serveur est vierge)
-        const { simulatedCoords } = get();
-        if (simulatedCoords && socket?.connected) {
-          socket.emit('SET_LOCATION', { 
-            lat: simulatedCoords.latitude, 
-            lon: simulatedCoords.longitude, 
-            name: simulatedCoords.name || "" 
-          });
-        }
       }
+      // Note: On ne fait plus de 'else' ici. Si le serveur est vide, l'iPhone reste vide et attend.
     });
 
     socket.on('LOCATION', (data: any) => {

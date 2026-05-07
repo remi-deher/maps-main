@@ -28,6 +28,8 @@ export interface ServerStatus {
   usbDriver: string;
   wifiDriver: string;
   fallbackEnabled: boolean;
+  notificationsEnabled?: boolean;
+  dynamicIslandEnabled?: boolean;
   favorites: RawCoords[];
   recentHistory: RawCoords[];
   cluster?: {

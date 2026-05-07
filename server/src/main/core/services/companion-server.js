@@ -140,6 +140,8 @@ class CompanionServer extends EventEmitter {
       usbDriver: settings.get('usbDriver'),
       wifiDriver: settings.get('wifiDriver'),
       fallbackEnabled: settings.get('fallbackEnabled'),
+      notificationsEnabled: settings.get('notificationsEnabled'),
+      dynamicIslandEnabled: settings.get('dynamicIslandEnabled'),
       favorites: favoritesManager.getFavorites(),
       recentHistory: favoritesManager.getHistory(),
       envInfo: {

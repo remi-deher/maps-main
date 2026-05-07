@@ -17,6 +17,7 @@ import DebugModal from './components/DebugModal';
 import SequenceModal from './components/SequenceModal';
 import { ActionPanel, FavoritesPanel, QuickFavorites } from './components/Panels';
 import { Coords } from './types';
+import { startLiveActivity, updateLiveActivity, stopLiveActivity } from './services/liveActivities';
 
 export default function AppContainer() {
   const store = useAppStore();
@@ -94,6 +95,23 @@ export default function AppContainer() {
       setSimulatedAddress(null);
     }
   }, [store.simulatedCoords]);
+
+  // --- Gestion Dynamic Island (Live Activities) ---
+  useEffect(() => {
+    const isRunning = store.serverStatus?.navigation?.status?.state === 'running';
+    const canUseDynamicIsland = store.dynamicIslandEnabled;
+
+    if (isRunning && canUseDynamicIsland && store.simulatedCoords) {
+      startLiveActivity({
+        destinationName: store.serverStatus?.navigation?.destination?.name || "Destination",
+        progress: (store.serverStatus?.navigation?.progress?.index || 0) / (store.serverStatus?.navigation?.progress?.total || 1),
+        speed: store.serverStatus?.navigation?.progress?.speed || 0,
+        status: "En mouvement"
+      });
+    } else {
+      stopLiveActivity();
+    }
+  }, [store.serverStatus?.navigation, store.dynamicIslandEnabled, store.simulatedCoords]);
 
   const handleTeleport = (coords: Coords) => {
     store.sendAction('SET_LOCATION', { lat: coords.latitude, lon: coords.longitude, name: coords.name || "" });
