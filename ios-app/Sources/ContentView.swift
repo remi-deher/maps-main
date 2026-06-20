@@ -250,15 +250,16 @@ struct ContentView: View {
         }
     }
 
-    /// Searching builds the itinerary directly (à la Plans: type a
-    /// destination, it becomes a stop; "Ajouter un arrêt" reopens search to
-    /// append another one) instead of going through the one-off PlaceCard.
+    /// Picking a search result opens the same action menu as a long-press on
+    /// the map (Téléporter / Itinéraire / Étape / Favori) instead of silently
+    /// committing to an itinerary stop — the user decides what to do with
+    /// the place once it's found.
     private func selectSearchResult(_ item: MKMapItem) {
         guard let coordinate = item.placemark.location?.coordinate else { return }
-        itineraryStops.append(RouteStop(coordinate: coordinate, name: item.name ?? "Lieu"))
         searchResults = []
         searchQuery = ""
         searchFocused = false
+        selectedPlace = SelectedPlace(coordinate: coordinate, title: item.name ?? "Lieu", subtitle: item.placemark.title)
     }
 
     /// Mirrors tauri-app's handlePlaySequence: each leg's start is the

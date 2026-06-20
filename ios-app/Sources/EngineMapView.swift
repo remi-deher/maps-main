@@ -4,14 +4,18 @@ import MapKit
 /// Full-screen map (à la Plans) using SwiftUI's native Map API: the device's
 /// real position (blue dot, via UserAnnotation), the engine's currently
 /// spoofed position as a marker, and the active route preview as a polyline.
-/// Tapping anywhere reports the coordinate so the caller can offer to
-/// teleport, start a route, or save a favorite there.
+/// Long-pressing anywhere reports the coordinate so the caller can offer the
+/// same action menu as a search result (teleport, itinerary, favorite...) —
+/// like Plans' map-drop-pin gesture, not a plain tap (which is reserved for
+/// dismissing the keyboard/panning without side effects).
 struct EngineMapView: View {
     var spoofedLocation: CLLocationCoordinate2D?
     var routePreview: [CLLocationCoordinate2D]
     var itineraryStops: [RouteStop]
     @Binding var cameraPosition: MapCameraPosition
-    var onTap: (CLLocationCoordinate2D) -> Void
+    var onLongPress: (CLLocationCoordinate2D) -> Void
+
+    @State private var longPressFeedback = 0
 
     var body: some View {
         MapReader { proxy in
@@ -36,14 +40,21 @@ struct EngineMapView: View {
                 }
             }
             // .onTapGesture on Map is broken in iOS 26 (confirmed regression in
-            // Apple's release notes) — SpatialTapGesture is the documented
-            // workaround to still get a tap location to convert.
+            // Apple's release notes), and we want a long-press anyway, not a
+            // tap — sequencing LongPressGesture before a zero-distance
+            // DragGesture is the standard way to recover a tap-equivalent
+            // location once the press succeeds (see swiftui-gestures skill).
             .simultaneousGesture(
-                SpatialTapGesture().onEnded { value in
-                    guard let coordinate = proxy.convert(value.location, from: .local) else { return }
-                    onTap(coordinate)
-                }
+                LongPressGesture(minimumDuration: 0.5)
+                    .sequenced(before: DragGesture(minimumDistance: 0))
+                    .onEnded { value in
+                        guard case .second(true, let drag?) = value,
+                              let coordinate = proxy.convert(drag.location, from: .local) else { return }
+                        longPressFeedback += 1
+                        onLongPress(coordinate)
+                    }
             )
+            .sensoryFeedback(.success, trigger: longPressFeedback)
         }
     }
 }

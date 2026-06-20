@@ -50,7 +50,7 @@ struct PlaceCard: View {
 
             HStack(spacing: 10) {
                 actionButton("Téléporter", icon: "location.fill", action: onTeleport)
-                actionButton("Trajet", icon: "arrow.triangle.turn.up.right.diamond.fill", action: onRoute)
+                actionButton("Itinéraire", icon: "arrow.triangle.turn.up.right.diamond.fill", action: onRoute)
                 actionButton("Étape", icon: "plus.circle.fill", action: onAddStop)
                 actionButton("Favori", icon: "star.fill", action: onFavorite)
             }
