@@ -6,6 +6,14 @@ tourne sur l'iPhone à côté de l'app GPS-Mock desktop :
 - Affiche la position réelle (point bleu) et la position simulée (pin) sur la
   carte. Toucher la carte propose de téléporter, lancer un trajet jusqu'ici,
   ou ajouter un favori.
+- Barre de recherche d'adresse (`MKLocalSearch`, natif, pas de clé API) —
+  sélectionner un résultat recentre la carte et ouvre le même menu d'actions
+  qu'un tap sur la carte.
+- Découverte automatique du moteur sur le réseau local via Bonjour/mDNS
+  (`_gpsmock._tcp`, voir `EngineDiscovery.swift`) : plus besoin de taper
+  l'IP:port à la main si le moteur est sur le même réseau. Le moteur Go
+  s'annonce lui-même au démarrage (`engine/cmd/headless/run.go`,
+  `advertiseMdns`) — desktop comme headless, puisque c'est le même binaire.
 - Liste les favoris du moteur (ajout/suppression/téléportation en un tap).
 - Remonte la position réelle de l'appareil (`REAL_LOCATION`) toutes les 10s
   pour le bouclier anti-dérive du moteur (re-injecte la position simulée si
@@ -45,7 +53,7 @@ réinstaller/rafraîchir depuis AltStore quand le certificat expire).
 
 1. Récupérer le `.ipa` depuis l'artifact du workflow (Actions → run → Artifacts).
 2. L'installer via AltStore/AltServer sur l'iPhone.
-3. Dans l'app, saisir l'IP:port du PC qui fait tourner le moteur GPS-Mock
-   (ex. `192.168.1.42:8080` — le moteur écoute déjà sur toutes les
-   interfaces, pas seulement `localhost`).
-4. Autoriser l'accès à la localisation, puis "Connecter".
+3. Autoriser l'accès à la localisation et au réseau local (popup iOS) :
+   l'app cherche automatiquement le moteur en Bonjour et se connecte seule
+   si elle le trouve. Sinon, saisir l'IP:port du PC manuellement
+   (ex. `192.168.1.42:8080`) puis "Connecter".

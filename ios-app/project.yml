@@ -36,6 +36,11 @@ targets:
           GPS-Mock Companion lit votre position réelle pour la transmettre au
           moteur GPS-Mock (vérification anti-dérive), sans jamais la partager
           ailleurs.
+        NSLocalNetworkUsageDescription: >-
+          GPS-Mock Companion recherche le moteur GPS-Mock sur votre réseau
+          local (Bonjour) pour s'y connecter automatiquement.
+        NSBonjourServices:
+          - _gpsmock._tcp
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.remi2.gpsmock.companion
