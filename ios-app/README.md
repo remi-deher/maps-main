@@ -1,10 +1,21 @@
 # GPS-Mock Companion (iOS)
 
-App SwiftUI minimale qui tourne sur l'iPhone à côté de l'app GPS-Mock
-desktop. Son seul rôle : remonter la position réelle de l'appareil
-(`REAL_LOCATION`) au moteur Go, qui s'en sert pour le bouclier anti-dérive
-(re-injecter la position simulée si elle a trop dérivé — voir
-`engine/internal/engine/engine.go`, `ReportRealLocation`).
+App SwiftUI, façon Plans (carte plein écran MapKit + feuille flottante), qui
+tourne sur l'iPhone à côté de l'app GPS-Mock desktop :
+
+- Affiche la position réelle (point bleu) et la position simulée (pin) sur la
+  carte. Toucher la carte propose de téléporter, lancer un trajet jusqu'ici,
+  ou ajouter un favori.
+- Liste les favoris du moteur (ajout/suppression/téléportation en un tap).
+- Remonte la position réelle de l'appareil (`REAL_LOCATION`) toutes les 10s
+  pour le bouclier anti-dérive du moteur (re-injecte la position simulée si
+  elle a trop dérivé — voir `engine/internal/engine/engine.go`,
+  `ReportRealLocation`).
+
+Le moteur Go est l'unique source de vérité et diffuse son état à **tous**
+les clients connectés (desktop, iOS, headless via le hub WebSocket) — donc
+piloter depuis le téléphone, le bureau ou un client headless reste
+automatiquement cohérent, sans logique de sync supplémentaire à écrire ici.
 
 Elle parle le même protocole WebSocket `{type, data}` que `tauri-app`
 (`engine/internal/api/messages.go`), donc tout changement de contrat côté

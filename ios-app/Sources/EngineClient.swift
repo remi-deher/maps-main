@@ -7,15 +7,47 @@ enum EngineConnectionState: String {
     case reconnecting = "Reconnexion..."
 }
 
+struct Favorite: Codable, Identifiable, Equatable {
+    let lat: Double
+    let lon: Double
+    var name: String?
+    var timestamp: Int64?
+    var id: String { "\(lat),\(lon)" }
+}
+
+struct LocationStamp: Codable, Equatable {
+    let lat: Double
+    let lon: Double
+    let name: String?
+    let timestamp: Int64?
+}
+
+struct RealLocationStamp: Codable, Equatable {
+    let lat: Double
+    let lon: Double
+    let drift: Double?
+    let timestamp: Int64?
+}
+
+struct EngineStatus: Codable, Equatable {
+    let state: String?
+    let favorites: [Favorite]?
+    let lastInjectedLocation: LocationStamp?
+    let lastRealLocation: RealLocationStamp?
+}
+
 /// Talks the same {type, data} WebSocket envelope as the desktop app
 /// (engine/internal/api/messages.go). Reports the device's real GPS position
 /// as REAL_LOCATION so the engine's anti-drift shield can detect when the
-/// spoofed position didn't "take" and re-inject it.
+/// spoofed position didn't "take" and re-inject it, and sends the same pilot
+/// actions (SET_LOCATION, PLAY_ROUTE, ADD_FAVORITE...) the desktop app uses —
+/// the engine is the single source of truth, so every connected client
+/// (desktop, iOS, headless) sees the same STATUS broadcasts and stays in sync
+/// for free.
 final class EngineClient: NSObject, ObservableObject, URLSessionWebSocketDelegate {
     @Published var state: EngineConnectionState = .disconnected
     @Published var lastError: String?
-    @Published var lastDrift: Double?
-    @Published var engineState: String?
+    @Published var status: EngineStatus?
 
     private var session: URLSession!
     private var task: URLSessionWebSocketTask?
@@ -43,12 +75,12 @@ final class EngineClient: NSObject, ObservableObject, URLSessionWebSocketDelegat
         generation += 1 // invalidates any in-flight callbacks
         task?.cancel(with: .normalClosure, reason: nil)
         task = nil
-        state = .disconnected
+        DispatchQueue.main.async { self.state = .disconnected }
     }
 
     private func startSocket(generation: Int) {
         guard let url = URL(string: urlString) else {
-            lastError = "Adresse invalide: \(urlString)"
+            DispatchQueue.main.async { self.lastError = "Adresse invalide: \(self.urlString)" }
             return
         }
         DispatchQueue.main.async { self.state = .connecting }
@@ -87,6 +119,7 @@ final class EngineClient: NSObject, ObservableObject, URLSessionWebSocketDelegat
 
     func urlSession(_ session: URLSession, webSocketTask: URLSessionWebSocketTask, didOpenWithProtocol protocol: String?) {
         DispatchQueue.main.async { self.state = .connected }
+        sendEnvelope(type: "GET_STATUS", data: [:])
     }
 
     func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
@@ -95,98 +128,57 @@ final class EngineClient: NSObject, ObservableObject, URLSessionWebSocketDelegat
     }
 
     private func handleMessage(_ text: String) {
-        guard let data = text.data(using: .utf8),
-              let envelope = try? JSONDecoder().decode(Envelope.self, from: data) else { return }
+        guard let raw = text.data(using: .utf8),
+              let obj = try? JSONSerialization.jsonObject(with: raw) as? [String: Any],
+              let type = obj["type"] as? String else { return }
 
-        switch envelope.type {
+        let payloadData: Data
+        if let dict = obj["data"] as? [String: Any], let encoded = try? JSONSerialization.data(withJSONObject: dict) {
+            payloadData = encoded
+        } else {
+            payloadData = Data("{}".utf8)
+        }
+
+        switch type {
         case "STATUS", "STATUS_UPDATE":
-            if let status = try? JSONDecoder().decode(StatusPayload.self, from: envelope.data) {
-                DispatchQueue.main.async {
-                    self.engineState = status.state
-                    self.lastDrift = status.lastRealLocation?.drift
-                }
+            if let decoded = try? JSONDecoder().decode(EngineStatus.self, from: payloadData) {
+                DispatchQueue.main.async { self.status = decoded }
             }
         default:
             break
         }
     }
 
-    /// Sends the device's real position to the engine (REAL_LOCATION).
+    // ─── Outbound actions (same vocabulary as tauri-app's websocket.tsx) ────
+
     func sendRealLocation(lat: Double, lon: Double) {
-        let payload = RealLocationPayload(latitude: lat, longitude: lon)
-        guard let data = try? JSONEncoder().encode(payload),
-              let dataJSON = String(data: data, encoding: .utf8) else { return }
-        let envelopeJSON = "{\"type\":\"REAL_LOCATION\",\"data\":\(dataJSON)}"
-        task?.send(.string(envelopeJSON)) { [weak self] error in
+        sendEnvelope(type: "REAL_LOCATION", data: ["latitude": lat, "longitude": lon])
+    }
+
+    func setLocation(lat: Double, lon: Double, name: String = "Point iPhone") {
+        sendEnvelope(type: "SET_LOCATION", data: ["lat": lat, "lon": lon, "name": name])
+    }
+
+    func playRoute(endLat: Double, endLon: Double, speed: Double, profile: String) {
+        sendEnvelope(type: "PLAY_ROUTE", data: ["endLat": endLat, "endLon": endLon, "speed": speed, "profile": profile])
+    }
+
+    func addFavorite(lat: Double, lon: Double, name: String) {
+        sendEnvelope(type: "ADD_FAVORITE", data: ["lat": lat, "lon": lon, "name": name])
+    }
+
+    func removeFavorite(lat: Double, lon: Double) {
+        sendEnvelope(type: "REMOVE_FAVORITE", data: ["lat": lat, "lon": lon])
+    }
+
+    private func sendEnvelope(type: String, data: [String: Any]) {
+        guard let task else { return }
+        guard let payload = try? JSONSerialization.data(withJSONObject: ["type": type, "data": data]),
+              let json = String(data: payload, encoding: .utf8) else { return }
+        task.send(.string(json)) { [weak self] error in
             if let error {
                 DispatchQueue.main.async { self?.lastError = error.localizedDescription }
             }
-        }
-    }
-}
-
-// ─── Wire types (mirrors engine/internal/api) ───────────────────────────────
-
-private struct Envelope: Decodable {
-    let type: String
-    let data: Data
-
-    private enum CodingKeys: String, CodingKey { case type, data }
-
-    init(from decoder: Decoder) throws {
-        let container = try decoder.container(keyedBy: CodingKeys.self)
-        type = try container.decode(String.self, forKey: .type)
-        if let raw = try container.decodeIfPresent(JSONValue.self, forKey: .data) {
-            data = try JSONEncoder().encode(raw)
-        } else {
-            data = Data()
-        }
-    }
-}
-
-private struct RealLocationPayload: Encodable {
-    let latitude: Double
-    let longitude: Double
-}
-
-private struct StatusPayload: Decodable {
-    let state: String?
-    let lastRealLocation: RealLocationStamp?
-}
-
-private struct RealLocationStamp: Decodable {
-    let drift: Double?
-}
-
-/// Minimal dynamic JSON box, just enough to re-encode an arbitrary `data`
-/// field without modeling the full Status shape here.
-private enum JSONValue: Codable {
-    case object([String: JSONValue])
-    case array([JSONValue])
-    case string(String)
-    case number(Double)
-    case bool(Bool)
-    case null
-
-    init(from decoder: Decoder) throws {
-        let container = try decoder.singleValueContainer()
-        if let v = try? container.decode([String: JSONValue].self) { self = .object(v); return }
-        if let v = try? container.decode([JSONValue].self) { self = .array(v); return }
-        if let v = try? container.decode(String.self) { self = .string(v); return }
-        if let v = try? container.decode(Double.self) { self = .number(v); return }
-        if let v = try? container.decode(Bool.self) { self = .bool(v); return }
-        self = .null
-    }
-
-    func encode(to encoder: Encoder) throws {
-        var container = encoder.singleValueContainer()
-        switch self {
-        case .object(let v): try container.encode(v)
-        case .array(let v): try container.encode(v)
-        case .string(let v): try container.encode(v)
-        case .number(let v): try container.encode(v)
-        case .bool(let v): try container.encode(v)
-        case .null: try container.encodeNil()
         }
     }
 }

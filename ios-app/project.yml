@@ -3,7 +3,7 @@ name: GpsMockCompanion
 options:
   bundleIdPrefix: com.remi2.gpsmock
   deploymentTarget:
-    iOS: "16.0"
+    iOS: "16.4"
   createIntermediateGroups: true
 
 settings:
@@ -19,7 +19,7 @@ targets:
   GpsMockCompanion:
     type: application
     platform: iOS
-    deploymentTarget: "16.0"
+    deploymentTarget: "16.4"
     sources:
       - path: Sources
     info:

@@ -1,17 +1,75 @@
 import SwiftUI
 import CoreLocation
+import MapKit
 
 struct ContentView: View {
     @AppStorage("engineAddress") private var engineAddress: String = "192.168.1.1:8080"
     @StateObject private var location = LocationManager()
     @StateObject private var engine = EngineClient()
+
     @State private var reportTimer: Timer?
+    @State private var pendingTap: CLLocationCoordinate2D?
+    @State private var showAddFavorite = false
+    @State private var newFavoriteName = ""
+
+    private var spoofedCoordinate: CLLocationCoordinate2D? {
+        guard let loc = engine.status?.lastInjectedLocation else { return nil }
+        return CLLocationCoordinate2D(latitude: loc.lat, longitude: loc.lon)
+    }
 
     var body: some View {
+        EngineMapView(spoofedLocation: spoofedCoordinate) { coordinate in
+            pendingTap = coordinate
+        }
+        .ignoresSafeArea()
+        .sheet(isPresented: .constant(true)) {
+            controlSheet
+                .presentationDetents([.height(140), .medium, .large])
+                .presentationBackgroundInteraction(.enabled)
+                .interactiveDismissDisabled()
+        }
+        .confirmationDialog(
+            "Position sélectionnée",
+            isPresented: Binding(get: { pendingTap != nil }, set: { if !$0 { pendingTap = nil } }),
+            titleVisibility: .visible
+        ) {
+            if let tap = pendingTap {
+                Button("Téléporter ici") {
+                    engine.setLocation(lat: tap.latitude, lon: tap.longitude)
+                    pendingTap = nil
+                }
+                Button("Lancer un trajet jusqu'ici") {
+                    engine.playRoute(endLat: tap.latitude, endLon: tap.longitude, speed: 30, profile: "driving")
+                    pendingTap = nil
+                }
+                Button("Ajouter aux favoris") {
+                    showAddFavorite = true
+                }
+                Button("Annuler", role: .cancel) { pendingTap = nil }
+            }
+        }
+        .alert("Nom du favori", isPresented: $showAddFavorite) {
+            TextField("Nom", text: $newFavoriteName)
+            Button("Enregistrer") {
+                if let tap = pendingTap {
+                    engine.addFavorite(lat: tap.latitude, lon: tap.longitude, name: newFavoriteName.isEmpty ? "Favori" : newFavoriteName)
+                }
+                newFavoriteName = ""
+                pendingTap = nil
+            }
+            Button("Annuler", role: .cancel) {
+                newFavoriteName = ""
+                pendingTap = nil
+            }
+        }
+        .onAppear { location.requestPermission() }
+    }
+
+    private var controlSheet: some View {
         NavigationView {
-            Form {
+            List {
                 Section("Moteur GPS-Mock") {
-                    TextField("IP:port (ex: 192.168.1.42:8080)", text: $engineAddress)
+                    TextField("IP:port", text: $engineAddress)
                         .keyboardType(.URL)
                         .autocorrectionDisabled()
                         .textInputAutocapitalization(.never)
@@ -23,9 +81,9 @@ struct ContentView: View {
                             .foregroundStyle(engine.state == .connected ? .green : .secondary)
                     }
 
-                    if let drift = engine.lastDrift {
+                    if let drift = engine.status?.lastRealLocation?.drift {
                         HStack {
-                            Text("Dérive détectée")
+                            Text("Dérive")
                             Spacer()
                             Text("\(Int(drift)) m")
                                 .foregroundStyle(drift > 100 ? .orange : .green)
@@ -41,41 +99,41 @@ struct ContentView: View {
                     }
                 }
 
-                Section("Position réelle (anti-dérive)") {
-                    HStack {
-                        Text("Permission")
-                        Spacer()
-                        Text(permissionLabel)
-                            .foregroundStyle(.secondary)
-                    }
-                    if location.authorizationStatus == .notDetermined {
-                        Button("Autoriser la localisation") {
-                            location.requestPermission()
+                Section("Favoris") {
+                    let favorites = engine.status?.favorites ?? []
+                    if favorites.isEmpty {
+                        Text("Aucun favori.").foregroundStyle(.secondary)
+                    } else {
+                        ForEach(favorites) { fav in
+                            Button {
+                                engine.setLocation(lat: fav.lat, lon: fav.lon, name: fav.name ?? "Favori")
+                            } label: {
+                                VStack(alignment: .leading) {
+                                    Text(fav.name ?? "Favori")
+                                        .foregroundStyle(Color.primary)
+                                    Text("\(fav.lat, specifier: "%.5f"), \(fav.lon, specifier: "%.5f")")
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                }
+                            }
+                            .swipeActions {
+                                Button("Supprimer", role: .destructive) {
+                                    engine.removeFavorite(lat: fav.lat, lon: fav.lon)
+                                }
+                            }
                         }
-                    }
-                    if let loc = location.lastLocation {
-                        Text("\(loc.coordinate.latitude, specifier: "%.5f"), \(loc.coordinate.longitude, specifier: "%.5f")")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
                     }
                 }
 
                 Section {
-                    Text("L'app envoie votre position réelle au moteur toutes les 10 secondes. Le moteur s'en sert pour confirmer que la position simulée est bien prise en compte par l'iPhone, et la réinjecte si elle a trop dérivé.")
+                    Text("Touchez la carte pour téléporter, lancer un trajet ou ajouter un favori. La position réelle est envoyée toutes les 10s pour le bouclier anti-dérive.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
             }
-            .navigationTitle("GPS-Mock Companion")
-        }
-        .onAppear { location.requestPermission() }
-    }
-
-    private var permissionLabel: String {
-        switch location.authorizationStatus {
-        case .authorizedAlways, .authorizedWhenInUse: return "Autorisée"
-        case .denied, .restricted: return "Refusée"
-        default: return "Non demandée"
+            .listStyle(.insetGrouped)
+            .navigationTitle("GPS-Mock")
+            .navigationBarTitleDisplayMode(.inline)
         }
     }
 
@@ -85,8 +143,7 @@ struct ContentView: View {
             engine.disconnect()
             return
         }
-        let url = "ws://\(engineAddress)/ws"
-        engine.connect(to: url)
+        engine.connect(to: "ws://\(engineAddress)/ws")
         startReporting()
     }
 
