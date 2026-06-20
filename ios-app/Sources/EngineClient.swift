@@ -29,11 +29,17 @@ struct RealLocationStamp: Codable, Equatable {
     let timestamp: Int64?
 }
 
+struct RoutePoint: Codable, Equatable {
+    let lat: Double
+    let lon: Double
+}
+
 struct EngineStatus: Codable, Equatable {
     let state: String?
     let favorites: [Favorite]?
     let lastInjectedLocation: LocationStamp?
     let lastRealLocation: RealLocationStamp?
+    let currentSequencePreview: [RoutePoint]?
 }
 
 /// Talks the same {type, data} WebSocket envelope as the desktop app

@@ -9,11 +9,11 @@ struct ContentView: View {
     @StateObject private var discovery = EngineDiscovery()
 
     @State private var reportTimer: Timer?
-    @State private var pendingTap: CLLocationCoordinate2D?
+    @State private var selectedPlace: SelectedPlace?
     @State private var showAddFavorite = false
     @State private var newFavoriteName = ""
     @State private var showSettings = false
-    @State private var cameraPosition: MapCameraPosition = .automatic
+    @State private var cameraPosition: MapCameraPosition = .userLocation(fallback: .automatic)
 
     @State private var searchQuery = ""
     @State private var searchResults: [MKMapItem] = []
@@ -25,11 +25,29 @@ struct ContentView: View {
         return CLLocationCoordinate2D(latitude: loc.lat, longitude: loc.lon)
     }
 
+    private var routePreview: [CLLocationCoordinate2D] {
+        (engine.status?.currentSequencePreview ?? []).map {
+            CLLocationCoordinate2D(latitude: $0.lat, longitude: $0.lon)
+        }
+    }
+
+    private var isSearching: Bool {
+        !searchQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
     var body: some View {
-        ZStack(alignment: .top) {
-            EngineMapView(spoofedLocation: spoofedCoordinate, cameraPosition: $cameraPosition) { coordinate in
+        ZStack(alignment: .bottom) {
+            EngineMapView(
+                spoofedLocation: spoofedCoordinate,
+                routePreview: routePreview,
+                cameraPosition: $cameraPosition
+            ) { coordinate in
                 searchFocused = false
-                pendingTap = coordinate
+                selectedPlace = SelectedPlace(
+                    coordinate: coordinate,
+                    title: "Position sélectionnée",
+                    subtitle: String(format: "%.5f, %.5f", coordinate.latitude, coordinate.longitude)
+                )
             }
             .ignoresSafeArea()
 
@@ -37,55 +55,70 @@ struct ContentView: View {
                 OmniBar(query: $searchQuery, isFocused: $searchFocused) {
                     showSettings = true
                 }
-                SuggestionsPanel(
-                    favorites: engine.status?.favorites ?? [],
-                    searchResults: searchResults,
-                    isSearching: !searchQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
-                    onSelectFavorite: { fav in
-                        selectFavorite(fav)
-                    },
-                    onSelectResult: { item in
+
+                if isSearching {
+                    SuggestionsPanel(searchResults: searchResults) { item in
                         selectSearchResult(item)
-                    },
-                    onDeleteFavorite: { fav in
-                        engine.removeFavorite(lat: fav.lat, lon: fav.lon)
                     }
-                )
+                } else if let favorites = engine.status?.favorites, !favorites.isEmpty {
+                    FavoriteChips(
+                        favorites: favorites,
+                        onSelect: { fav in selectFavorite(fav) },
+                        onDelete: { fav in engine.removeFavorite(lat: fav.lat, lon: fav.lon) }
+                    )
+                }
+
+                Spacer()
+
+                if selectedPlace == nil {
+                    HStack {
+                        Spacer()
+                        RecenterButton {
+                            withAnimation {
+                                cameraPosition = .userLocation(fallback: .automatic)
+                            }
+                        }
+                    }
+                    .padding(.trailing, 16)
+                }
             }
             .padding(.top, 8)
-        }
-        .confirmationDialog(
-            "Position sélectionnée",
-            isPresented: Binding(get: { pendingTap != nil }, set: { if !$0 { pendingTap = nil } }),
-            titleVisibility: .visible
-        ) {
-            if let tap = pendingTap {
-                Button("Téléporter ici") {
-                    engine.setLocation(lat: tap.latitude, lon: tap.longitude)
-                    pendingTap = nil
-                }
-                Button("Lancer un trajet jusqu'ici") {
-                    engine.playRoute(endLat: tap.latitude, endLon: tap.longitude, speed: 30, profile: "driving")
-                    pendingTap = nil
-                }
-                Button("Ajouter aux favoris") {
-                    showAddFavorite = true
-                }
-                Button("Annuler", role: .cancel) { pendingTap = nil }
+            .padding(.bottom, 16)
+
+            if let place = selectedPlace {
+                PlaceCard(
+                    place: place,
+                    onTeleport: {
+                        engine.setLocation(lat: place.coordinate.latitude, lon: place.coordinate.longitude)
+                        selectedPlace = nil
+                    },
+                    onRoute: {
+                        engine.playRoute(endLat: place.coordinate.latitude, endLon: place.coordinate.longitude, speed: 30, profile: "driving")
+                        selectedPlace = nil
+                    },
+                    onFavorite: {
+                        showAddFavorite = true
+                    },
+                    onDismiss: {
+                        selectedPlace = nil
+                    }
+                )
+                .padding(.bottom, 16)
+                .transition(.move(edge: .bottom).combined(with: .opacity))
             }
         }
+        .animation(.snappy, value: selectedPlace)
         .alert("Nom du favori", isPresented: $showAddFavorite) {
             TextField("Nom", text: $newFavoriteName)
             Button("Enregistrer") {
-                if let tap = pendingTap {
-                    engine.addFavorite(lat: tap.latitude, lon: tap.longitude, name: newFavoriteName.isEmpty ? "Favori" : newFavoriteName)
+                if let place = selectedPlace {
+                    engine.addFavorite(lat: place.coordinate.latitude, lon: place.coordinate.longitude, name: newFavoriteName.isEmpty ? "Favori" : newFavoriteName)
                 }
                 newFavoriteName = ""
-                pendingTap = nil
+                selectedPlace = nil
             }
             Button("Annuler", role: .cancel) {
                 newFavoriteName = ""
-                pendingTap = nil
             }
         }
         .sheet(isPresented: $showSettings) {
@@ -144,7 +177,7 @@ struct ContentView: View {
     private func selectSearchResult(_ item: MKMapItem) {
         guard let coordinate = item.placemark.location?.coordinate else { return }
         focus(on: coordinate)
-        pendingTap = coordinate
+        selectedPlace = SelectedPlace(coordinate: coordinate, title: item.name ?? "Lieu", subtitle: item.placemark.title)
         searchResults = []
         searchQuery = ""
         searchFocused = false
@@ -154,7 +187,6 @@ struct ContentView: View {
         let coordinate = CLLocationCoordinate2D(latitude: fav.lat, longitude: fav.lon)
         engine.setLocation(lat: fav.lat, lon: fav.lon, name: fav.name ?? "Favori")
         focus(on: coordinate)
-        searchFocused = false
     }
 
     private func focus(on coordinate: CLLocationCoordinate2D) {
