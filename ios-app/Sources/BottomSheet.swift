@@ -4,8 +4,9 @@ import MapKit
 /// Persistent draggable bottom sheet (à la Plans): collapsed it only shows
 /// the search field, dragging the slider up reveals search results, the
 /// itinerary being built, or favorites — instead of floating cards over the
-/// map. Settings (connection address/state/drift/discovery) are one more
-/// sheet away behind the gear icon.
+/// map. Settings now live in their own floating gear button (ContentView),
+/// not bundled into this header — the search field here is search-only,
+/// matching Plans' detached, single-purpose search bar.
 struct BottomSheet: View {
     @Binding var searchQuery: String
     var isFocused: FocusState<Bool>.Binding
@@ -22,14 +23,6 @@ struct BottomSheet: View {
     let favorites: [Favorite]
     var onSelectFavorite: (Favorite) -> Void
     var onDeleteFavorite: (Favorite) -> Void
-
-    @Binding var engineAddress: String
-    @ObservedObject var engine: EngineClient
-    @ObservedObject var discovery: EngineDiscovery
-    var onToggleConnection: () -> Void
-    var onRetryDiscovery: () -> Void
-
-    @State private var showSettings = false
 
     private var isSearching: Bool {
         !searchQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
@@ -72,55 +65,34 @@ struct BottomSheet: View {
             }
         }
         .padding(.top, 8)
-        .sheet(isPresented: $showSettings) {
-            SettingsSheet(
-                engineAddress: $engineAddress,
-                engine: engine,
-                discovery: discovery,
-                onToggleConnection: onToggleConnection,
-                onRetryDiscovery: onRetryDiscovery
-            )
-        }
     }
 
+    /// A single, self-contained glass capsule — search only, no settings
+    /// button riding along. Its own shadow gives it a floating-card look
+    /// distinct from the sheet's translucent backdrop, with margin on every
+    /// side instead of bleeding edge-to-edge.
     private var header: some View {
-        // Sibling glass elements grouped in one GlassEffectContainer for
-        // shared rendering/blending — see .claude/skills/swiftui-liquid-glass.
-        GlassEffectContainer(spacing: 12) {
-        HStack(spacing: 12) {
-            HStack(spacing: 8) {
-                Image(systemName: "magnifyingglass")
-                    .foregroundStyle(.secondary)
+        HStack(spacing: 8) {
+            Image(systemName: "magnifyingglass")
+                .foregroundStyle(.secondary)
 
-                TextField("Rechercher une adresse", text: $searchQuery)
-                    .focused(isFocused)
-                    .submitLabel(.search)
+            TextField("Rechercher une adresse", text: $searchQuery)
+                .focused(isFocused)
+                .submitLabel(.search)
 
-                if !searchQuery.isEmpty {
-                    Button {
-                        searchQuery = ""
-                    } label: {
-                        Image(systemName: "xmark.circle.fill")
-                            .foregroundStyle(.secondary)
-                    }
+            if !searchQuery.isEmpty {
+                Button {
+                    searchQuery = ""
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .foregroundStyle(.secondary)
                 }
             }
-            .padding(.horizontal, 14)
-            .padding(.vertical, 10)
-            .glassEffect(.regular.interactive(), in: .capsule)
-
-            Button {
-                showSettings = true
-            } label: {
-                Image(systemName: "gearshape.fill")
-                    .font(.system(size: 16, weight: .semibold))
-                    .frame(width: 42, height: 42)
-            }
-            .buttonStyle(.glass)
-            .buttonBorderShape(.circle)
-            .clipShape(Circle())
         }
-        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 10)
+        .glassEffect(.regular.interactive(), in: .capsule)
+        .shadow(color: .black.opacity(0.12), radius: 10, y: 3)
         .padding(.horizontal, 16)
     }
 

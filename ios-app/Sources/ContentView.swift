@@ -26,6 +26,7 @@ struct ContentView: View {
     @State private var estimatesTask: Task<Void, Never>?
 
     @State private var sheetDetent: PresentationDetent = .height(120)
+    @State private var showSettings = false
 
     private var spoofedCoordinate: CLLocationCoordinate2D? {
         guard let loc = engine.status?.lastInjectedLocation else { return nil }
@@ -54,6 +55,26 @@ struct ContentView: View {
                 )
             }
             .ignoresSafeArea()
+
+            VStack {
+                HStack {
+                    Spacer()
+                    Button {
+                        showSettings = true
+                    } label: {
+                        Image(systemName: "gearshape.fill")
+                            .font(.system(size: 16, weight: .semibold))
+                            .frame(width: 42, height: 42)
+                    }
+                    .buttonStyle(.glass)
+                    .buttonBorderShape(.circle)
+                    .clipShape(Circle())
+                    .shadow(color: .black.opacity(0.12), radius: 10, y: 3)
+                }
+                Spacer()
+            }
+            .padding(.top, 8)
+            .padding(.trailing, 16)
 
             if selectedPlace == nil {
                 HStack {
@@ -122,17 +143,21 @@ struct ContentView: View {
                 onLaunchItinerary: launchItinerary,
                 favorites: engine.status?.favorites ?? [],
                 onSelectFavorite: selectFavorite,
-                onDeleteFavorite: { fav in engine.removeFavorite(lat: fav.lat, lon: fav.lon) },
+                onDeleteFavorite: { fav in engine.removeFavorite(lat: fav.lat, lon: fav.lon) }
+            )
+            .presentationDetents([.height(120), .medium, .large], selection: $sheetDetent)
+            .presentationDragIndicator(.visible)
+            .presentationBackgroundInteraction(.enabled)
+            .interactiveDismissDisabled()
+        }
+        .sheet(isPresented: $showSettings) {
+            SettingsSheet(
                 engineAddress: $engineAddress,
                 engine: engine,
                 discovery: discovery,
                 onToggleConnection: toggleConnection,
                 onRetryDiscovery: startDiscovery
             )
-            .presentationDetents([.height(120), .medium, .large], selection: $sheetDetent)
-            .presentationDragIndicator(.visible)
-            .presentationBackgroundInteraction(.enabled)
-            .interactiveDismissDisabled()
         }
         .onAppear {
             location.requestPermission()
