@@ -22,6 +22,7 @@ struct PlaceCard: View {
     let place: SelectedPlace
     var onTeleport: () -> Void
     var onRoute: () -> Void
+    var onAddStop: () -> Void
     var onFavorite: () -> Void
     var onDismiss: () -> Void
 
@@ -48,6 +49,7 @@ struct PlaceCard: View {
             HStack(spacing: 10) {
                 actionButton("Téléporter", icon: "location.fill", action: onTeleport)
                 actionButton("Trajet", icon: "arrow.triangle.turn.up.right.diamond.fill", action: onRoute)
+                actionButton("Étape", icon: "plus.circle.fill", action: onAddStop)
                 actionButton("Favori", icon: "star.fill", action: onFavorite)
             }
         }

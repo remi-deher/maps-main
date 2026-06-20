@@ -20,6 +20,10 @@ struct ContentView: View {
     @State private var searchTask: Task<Void, Never>?
     @FocusState private var searchFocused: Bool
 
+    @State private var itineraryStops: [RouteStop] = []
+    @State private var itinerarySpeed: Double = 30
+    @State private var itineraryProfile: String = "driving"
+
     private var spoofedCoordinate: CLLocationCoordinate2D? {
         guard let loc = engine.status?.lastInjectedLocation else { return nil }
         return CLLocationCoordinate2D(latitude: loc.lat, longitude: loc.lon)
@@ -40,6 +44,7 @@ struct ContentView: View {
             EngineMapView(
                 spoofedLocation: spoofedCoordinate,
                 routePreview: routePreview,
+                itineraryStops: itineraryStops,
                 cameraPosition: $cameraPosition
             ) { coordinate in
                 searchFocused = false
@@ -56,7 +61,15 @@ struct ContentView: View {
                     showSettings = true
                 }
 
-                if isSearching {
+                if !itineraryStops.isEmpty {
+                    ItineraryPanel(
+                        stops: $itineraryStops,
+                        speed: $itinerarySpeed,
+                        profile: $itineraryProfile,
+                        onLaunch: launchItinerary,
+                        onCancel: { itineraryStops = [] }
+                    )
+                } else if isSearching {
                     SuggestionsPanel(searchResults: searchResults) { item in
                         selectSearchResult(item)
                     }
@@ -94,6 +107,10 @@ struct ContentView: View {
                     },
                     onRoute: {
                         engine.playRoute(endLat: place.coordinate.latitude, endLon: place.coordinate.longitude, speed: 30, profile: "driving")
+                        selectedPlace = nil
+                    },
+                    onAddStop: {
+                        itineraryStops.append(RouteStop(coordinate: place.coordinate, name: place.title))
                         selectedPlace = nil
                     },
                     onFavorite: {
@@ -181,6 +198,27 @@ struct ContentView: View {
         searchResults = []
         searchQuery = ""
         searchFocused = false
+    }
+
+    /// Mirrors tauri-app's handlePlaySequence: each leg's start is the
+    /// previous leg's end, chaining the stops into one continuous itinerary.
+    private func launchItinerary() {
+        guard !itineraryStops.isEmpty else { return }
+        let legType = itineraryProfile == "walking" ? "walk" : "drive"
+        var legs: [[String: Any]] = []
+        var previousCoordinate = itineraryStops[0].coordinate
+        for (index, stop) in itineraryStops.enumerated() {
+            let start = index == 0 ? stop.coordinate : previousCoordinate
+            legs.append([
+                "type": legType,
+                "start": ["lat": start.latitude, "lon": start.longitude],
+                "end": ["lat": stop.coordinate.latitude, "lon": stop.coordinate.longitude],
+                "speed": itinerarySpeed,
+            ])
+            previousCoordinate = stop.coordinate
+        }
+        engine.playSequence(legs: legs, looping: false)
+        itineraryStops = []
     }
 
     private func selectFavorite(_ fav: Favorite) {

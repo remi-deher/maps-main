@@ -9,6 +9,7 @@ import MapKit
 struct EngineMapView: View {
     var spoofedLocation: CLLocationCoordinate2D?
     var routePreview: [CLLocationCoordinate2D]
+    var itineraryStops: [RouteStop]
     @Binding var cameraPosition: MapCameraPosition
     var onTap: (CLLocationCoordinate2D) -> Void
 
@@ -23,6 +24,15 @@ struct EngineMapView: View {
                 if routePreview.count > 1 {
                     MapPolyline(coordinates: routePreview)
                         .stroke(.indigo, lineWidth: 4)
+                }
+                ForEach(Array(itineraryStops.enumerated()), id: \.element.id) { index, stop in
+                    Annotation(stop.name, coordinate: stop.coordinate) {
+                        Text("\(index + 1)")
+                            .font(.caption.bold())
+                            .foregroundStyle(.white)
+                            .frame(width: 24, height: 24)
+                            .background(.indigo, in: Circle())
+                    }
                 }
             }
             // .onTapGesture on Map is broken in iOS 26 (confirmed regression in

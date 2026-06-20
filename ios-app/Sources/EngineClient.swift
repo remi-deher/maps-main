@@ -177,6 +177,15 @@ final class EngineClient: NSObject, ObservableObject, URLSessionWebSocketDelegat
         sendEnvelope(type: "REMOVE_FAVORITE", data: ["lat": lat, "lon": lon])
     }
 
+    /// Plays a multi-stop itinerary. Mirrors tauri-app's sequence builder:
+    /// each leg's `start` is the previous leg's `end` (or the first stop's own
+    /// coordinate when there's nothing before it — the engine just needs a
+    /// valid LatLon, the real starting point is wherever the device already
+    /// is when the leg begins).
+    func playSequence(legs: [[String: Any]], looping: Bool) {
+        sendEnvelope(type: "PLAY_SEQUENCE", data: ["legs": legs, "looping": looping])
+    }
+
     private func sendEnvelope(type: String, data: [String: Any]) {
         guard let task else { return }
         guard let payload = try? JSONSerialization.data(withJSONObject: ["type": type, "data": data]),
