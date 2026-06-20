@@ -17,6 +17,7 @@ import (
 	"github.com/remi-deher/maps-main/engine/internal/domain"
 	"github.com/remi-deher/maps-main/engine/internal/driver"
 	_ "github.com/remi-deher/maps-main/engine/internal/driver/goios" // register go-ios
+	_ "github.com/remi-deher/maps-main/engine/internal/driver/pmd3"  // register pymobiledevice
 	"github.com/remi-deher/maps-main/engine/internal/engine"
 	"github.com/remi-deher/maps-main/engine/internal/server"
 	"github.com/remi-deher/maps-main/engine/internal/settings"
@@ -29,6 +30,8 @@ func main() {
 	transportFlag := flag.String("transport", "auto", "transport: auto | usb | wifi")
 	addrFlag := flag.String("addr", fmt.Sprintf(":%d", cfg.CompanionPort), "listen address")
 	goiosBin := flag.String("goios-bin", "", "explicit path to the go-ios binary")
+	pythonBin := flag.String("python-bin", "", "explicit path to the python interpreter (pmd3 driver)")
+	rsdFlag := flag.String("rsd", "", "manual RSD endpoint host:port (WiFi transport; skips tunnel start)")
 	noTunnel := flag.Bool("no-tunnel", false, "do not start the tunnel at boot")
 	flag.Parse()
 
@@ -44,9 +47,13 @@ func main() {
 		transport = driver.TransportWiFi
 	}
 
-	dcfg := driver.Config{Transport: transport, Fallback: cfg.FallbackEnabled}
+	dcfg := driver.Config{Transport: transport, Fallback: cfg.FallbackEnabled, ManualAddress: *rsdFlag}
+	dcfg.BinaryPaths = map[string]string{}
 	if *goiosBin != "" {
-		dcfg.BinaryPaths = map[string]string{"go-ios": *goiosBin}
+		dcfg.BinaryPaths["go-ios"] = *goiosBin
+	}
+	if *pythonBin != "" {
+		dcfg.BinaryPaths["python"] = *pythonBin
 	}
 
 	drv, err := driver.New(domain.DriverID(*driverFlag), dcfg)

@@ -1,8 +1,11 @@
 package driver
 
 import (
+	"fmt"
 	"net"
+	"strconv"
 	"strings"
+	"time"
 
 	"github.com/remi-deher/maps-main/engine/internal/domain"
 )
@@ -51,4 +54,19 @@ func Classify(address string) domain.ConnectionType {
 		return domain.ConnUSB
 	}
 	return domain.ConnWiFi
+}
+
+// ParseManual turns a manual "host:port" RSD endpoint (WiFi/network transport)
+// into a TunnelInfo, so a driver can target it directly without bringing up its
+// own tunnel. IPv6 hosts must be bracketed, e.g. "[fde6::1]:54321".
+func ParseManual(addr string) (TunnelInfo, error) {
+	host, portStr, err := net.SplitHostPort(addr)
+	if err != nil {
+		return TunnelInfo{}, fmt.Errorf("invalid manual RSD address %q (want host:port): %w", addr, err)
+	}
+	port, err := strconv.Atoi(portStr)
+	if err != nil {
+		return TunnelInfo{}, fmt.Errorf("invalid manual RSD port in %q: %w", addr, err)
+	}
+	return TunnelInfo{Address: host, Port: port, Type: Classify(host), Since: time.Now()}, nil
 }

@@ -15,6 +15,9 @@ type Config struct {
 	Fallback    bool
 	BinaryPaths map[string]string // logical name -> resolved path/command
 	StorageDir  string
+	// ManualAddress, when set ("host:port"), makes the driver target this RSD
+	// endpoint directly (WiFi/network transport) instead of starting a tunnel.
+	ManualAddress string
 }
 
 // Factory builds a Driver from a Config.

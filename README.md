@@ -18,15 +18,28 @@ Suite de simulation/injection de position GPS pour iPhone (iOS 17+, tunnel RSD v
 - **`legacy/`** — ancienne implémentation Node/Electron + Expo, gardée comme référence
   jusqu'à parité fonctionnelle.
 
-## Démarrage (moteur, phase 1)
+## Démarrage (moteur)
 
 ```bash
 cd engine
-go run ./cmd/headless                          # driver par défaut
-go run ./cmd/headless -driver go-ios -transport usb
+
+# go-ios en USB (nécessite un iPhone branché + privilèges admin)
+go run ./cmd/headless -driver go-ios -transport usb \
+  -goios-bin "../legacy/server/resources/ios.exe"
+
+# pymobiledevice3 en USB (nécessite python + pymobiledevice3 installés)
+go run ./cmd/headless -driver pymobiledevice -transport usb
+
+# transport WiFi : pointer directement sur un endpoint RSD (host:port)
+go run ./cmd/headless -driver pymobiledevice -transport wifi -rsd 192.168.1.50:54321
+
+# sans tunnel (test de l'API seule)
+go run ./cmd/headless -no-tunnel
 ```
 
-> Phase 1 = contrats uniquement : le moteur valide le câblage (sélection
-> driver/transport) puis s'arrête ; aucun backend n'est encore implémenté.
+Le serveur expose `REST /api/*` et un WebSocket `/ws` (enveloppes `{type,data}`).
+Le **menu** combine driver (`go-ios` ↔ `pymobiledevice`) et transport (`usb` ↔ `wifi`).
+
+> L'injection GPS réelle requiert un iPhone connecté et les privilèges du tunnel.
 
 Voir [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) pour la roadmap complète.

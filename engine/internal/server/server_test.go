@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -15,15 +16,29 @@ import (
 	"github.com/remi-deher/maps-main/engine/internal/settings"
 )
 
-// newTestServer wires a Server around the not-implemented pmd3 stub driver, which
-// is enough to exercise transport/status without a real device.
+// fakeDriver is an in-memory Driver so the server can be tested without a real
+// device or registered backend.
+type fakeDriver struct{ on bool }
+
+func (fakeDriver) ID() domain.DriverID { return domain.DriverPmd3 }
+func (f *fakeDriver) StartTunnel(context.Context) (driver.TunnelInfo, error) {
+	f.on = true
+	return driver.TunnelInfo{Address: "::1", Port: 1, Type: domain.ConnUSB}, nil
+}
+func (f *fakeDriver) StopTunnel(context.Context) error                  { f.on = false; return nil }
+func (*fakeDriver) SetLocation(context.Context, float64, float64) error { return nil }
+func (*fakeDriver) ClearLocation(context.Context) error                 { return nil }
+func (f *fakeDriver) CheckHealth(context.Context) bool                  { return f.on }
+func (*fakeDriver) ListDevices(context.Context) ([]driver.Device, error) {
+	return nil, nil
+}
+func (f *fakeDriver) Tunnel() (driver.TunnelInfo, bool) {
+	return driver.TunnelInfo{Address: "::1", Port: 1, Type: domain.ConnUSB}, f.on
+}
+
 func newTestServer(t *testing.T) (*httptest.Server, *Server) {
 	t.Helper()
-	drv, err := driver.New(domain.DriverPmd3, driver.Config{})
-	if err != nil {
-		t.Fatalf("driver.New: %v", err)
-	}
-	srv := New(engine.New(drv, settings.Default()), ":0")
+	srv := New(engine.New(&fakeDriver{}, settings.Default()), ":0")
 	srv.Start()
 	return httptest.NewServer(srv.Handler()), srv
 }

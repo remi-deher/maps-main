@@ -50,6 +50,33 @@ func goIosFallbacks() []string {
 	}
 }
 
+// Pmd3Command resolves how to invoke pymobiledevice3. It returns the executable
+// and the base args, e.g. ("python", ["-m","pymobiledevice3"]). Lookup order:
+//  1. an explicit Python path from cfg ("python" key),
+//  2. the system PATH (python / py on Windows, python3 / python elsewhere).
+func Pmd3Command(explicit map[string]string) (string, []string, error) {
+	base := []string{"-m", "pymobiledevice3"}
+	if p := explicit["python"]; p != "" {
+		if fileExists(p) {
+			return p, base, nil
+		}
+		return "", nil, fmt.Errorf("python not found at %q", p)
+	}
+	for _, name := range pythonCandidates() {
+		if p, err := exec.LookPath(name); err == nil {
+			return p, base, nil
+		}
+	}
+	return "", nil, fmt.Errorf("python not found (set BinaryPaths[\"python\"] or add python to PATH); needed by the pymobiledevice driver")
+}
+
+func pythonCandidates() []string {
+	if runtime.GOOS == "windows" {
+		return []string{"python", "py", "python3"}
+	}
+	return []string{"python3", "python"}
+}
+
 // LockdownDir returns the system Lockdown pairing-record folder if it exists,
 // or "" otherwise. go-ios uses it via --pair-record-path.
 func LockdownDir() string {

@@ -1,7 +1,7 @@
-// Package goios implements the Driver interface on top of the go-ios CLI.
-// It manages the RSD tunnel as a long-running child process and injects/clears
-// the GPS position through `ios setlocation`.
-package goios
+// Package pmd3 implements the Driver interface on top of pymobiledevice3, run as
+// a Python subprocess (python -m pymobiledevice3 ...). It manages the RSD tunnel
+// daemon and injects/clears the GPS position via the developer dvt commands.
+package pmd3
 
 import (
 	"bufio"
@@ -20,17 +20,16 @@ import (
 	"github.com/remi-deher/maps-main/engine/internal/platform"
 )
 
-// rsdRe matches the line go-ios prints once the tunnel is up, e.g.
-// "RSD address: fde6:...:1:54321" — mirrors the legacy GoIosDriver.
-var rsdRe = regexp.MustCompile(`RSD address:\s*([\w:.%]+):(\d+)`)
+// rsdRe matches the tunneld line, e.g. "Created tunnel --rsd fde6::1 54321".
+var rsdRe = regexp.MustCompile(`--rsd\s+([\w:.%]+)\s+(\d+)`)
 
-const tunnelStartTimeout = 45 * time.Second
+const tunnelStartTimeout = 60 * time.Second
 
-// Driver is the go-ios backed implementation.
+// Driver is the pymobiledevice3-backed implementation.
 type Driver struct {
-	bin          string
-	lockdownArgs []string
-	manual       string // optional "host:port" RSD endpoint (WiFi transport)
+	py     string   // python executable
+	base   []string // base args, e.g. ["-m","pymobiledevice3"]
+	manual string   // optional "host:port" RSD endpoint (WiFi transport)
 
 	mu        sync.Mutex
 	tunnel    driver.TunnelInfo
@@ -38,25 +37,21 @@ type Driver struct {
 	tunnelCmd *exec.Cmd
 }
 
-// New builds a go-ios Driver, resolving the CLI path from cfg/PATH/fallbacks.
+// New builds a pmd3 Driver, resolving the Python interpreter from cfg/PATH.
 func New(cfg driver.Config) (driver.Driver, error) {
-	bin, err := platform.ResolveGoIos(cfg.BinaryPaths)
+	py, base, err := platform.Pmd3Command(cfg.BinaryPaths)
 	if err != nil {
 		return nil, err
 	}
-	var lock []string
-	if dir := platform.LockdownDir(); dir != "" {
-		lock = []string{"--pair-record-path=" + dir}
-	}
-	return &Driver{bin: bin, lockdownArgs: lock, manual: cfg.ManualAddress}, nil
+	return &Driver{py: py, base: base, manual: cfg.ManualAddress}, nil
 }
 
-func init() { driver.Register(domain.DriverGoIos, New) }
+func init() { driver.Register(domain.DriverPmd3, New) }
 
-func (d *Driver) ID() domain.DriverID { return domain.DriverGoIos }
+func (d *Driver) ID() domain.DriverID { return domain.DriverPmd3 }
 
-// StartTunnel launches `ios tunnel start` and blocks until the RSD address is
-// parsed (or a timeout/ctx cancellation). The process is kept running.
+// StartTunnel mounts the developer image then runs `remote tunneld`, blocking
+// until the RSD address is parsed. With a manual address it targets it directly.
 func (d *Driver) StartTunnel(ctx context.Context) (driver.TunnelInfo, error) {
 	d.mu.Lock()
 	if d.tunnelOn {
@@ -66,7 +61,7 @@ func (d *Driver) StartTunnel(ctx context.Context) (driver.TunnelInfo, error) {
 	}
 	d.mu.Unlock()
 
-	// WiFi/network transport: target a manually provided RSD endpoint directly.
+	// WiFi/network transport: use a manually provided RSD endpoint directly.
 	if d.manual != "" {
 		ti, err := driver.ParseManual(d.manual)
 		if err != nil {
@@ -78,16 +73,15 @@ func (d *Driver) StartTunnel(ctx context.Context) (driver.TunnelInfo, error) {
 		return ti, nil
 	}
 
-	args := append([]string{"tunnel", "start"}, d.lockdownArgs...)
-	cmd := exec.Command(d.bin, args...)
+	// Best-effort: mount the Developer Disk Image (ignore failures).
+	_ = exec.CommandContext(ctx, d.py, d.args("mounter", "auto-mount")...).Run()
 
-	// Merge stdout+stderr: go-ios may print the RSD line on either stream.
+	cmd := exec.Command(d.py, d.args("remote", "tunneld")...)
 	pr, pw := io.Pipe()
 	cmd.Stdout = pw
 	cmd.Stderr = pw
-
 	if err := cmd.Start(); err != nil {
-		return driver.TunnelInfo{}, fmt.Errorf("go-ios tunnel start: %w", err)
+		return driver.TunnelInfo{}, fmt.Errorf("pmd3 remote tunneld: %w", err)
 	}
 	go func() { _ = cmd.Wait(); _ = pw.Close() }()
 
@@ -119,14 +113,14 @@ func (d *Driver) StartTunnel(ctx context.Context) (driver.TunnelInfo, error) {
 		return ti, nil
 	case <-time.After(tunnelStartTimeout):
 		_ = cmd.Process.Kill()
-		return driver.TunnelInfo{}, fmt.Errorf("go-ios: RSD address not detected within %s", tunnelStartTimeout)
+		return driver.TunnelInfo{}, fmt.Errorf("pmd3: RSD address not detected within %s", tunnelStartTimeout)
 	case <-ctx.Done():
 		_ = cmd.Process.Kill()
 		return driver.TunnelInfo{}, ctx.Err()
 	}
 }
 
-// StopTunnel terminates the tunnel child process.
+// StopTunnel terminates the tunneld child process.
 func (d *Driver) StopTunnel(context.Context) error {
 	d.mu.Lock()
 	cmd, on := d.tunnelCmd, d.tunnelOn
@@ -138,28 +132,24 @@ func (d *Driver) StopTunnel(context.Context) error {
 	return nil
 }
 
-// SetLocation injects a spoofed position via `ios setlocation`.
+// SetLocation injects a spoofed position via simulate-location set.
 func (d *Driver) SetLocation(ctx context.Context, lat, lon float64) error {
 	ti, ok := d.Tunnel()
 	if !ok {
-		return fmt.Errorf("go-ios: tunnel not started")
+		return fmt.Errorf("pmd3: tunnel not started")
 	}
-	args := []string{"setlocation", "--rsd", rsd(ti)}
-	args = append(args, d.lockdownArgs...)
-	args = append(args, ftoa(lat), ftoa(lon))
-	return d.run(ctx, args...)
+	return d.run(ctx, "developer", "dvt", "simulate-location", "set",
+		"--rsd", ti.Address, strconv.Itoa(ti.Port), "--", ftoa(lat), ftoa(lon))
 }
 
-// ClearLocation removes any spoofed position (`setlocation ... reset`).
+// ClearLocation removes any spoofed position via simulate-location clear.
 func (d *Driver) ClearLocation(ctx context.Context) error {
 	ti, ok := d.Tunnel()
 	if !ok {
-		return fmt.Errorf("go-ios: tunnel not started")
+		return fmt.Errorf("pmd3: tunnel not started")
 	}
-	args := []string{"setlocation", "--rsd", rsd(ti)}
-	args = append(args, d.lockdownArgs...)
-	args = append(args, "reset")
-	return d.run(ctx, args...)
+	return d.run(ctx, "developer", "dvt", "simulate-location", "clear",
+		"--rsd", ti.Address, strconv.Itoa(ti.Port))
 }
 
 // CheckHealth dials the RSD endpoint to confirm the tunnel is still reachable.
@@ -176,11 +166,11 @@ func (d *Driver) CheckHealth(context.Context) bool {
 	return true
 }
 
-// ListDevices runs `ios list` and returns the discovered UDIDs.
+// ListDevices runs `usbmux list` and returns the discovered devices.
 func (d *Driver) ListDevices(ctx context.Context) ([]driver.Device, error) {
-	out, err := exec.CommandContext(ctx, d.bin, "list").Output()
+	out, err := exec.CommandContext(ctx, d.py, d.args("usbmux", "list")...).Output()
 	if err != nil {
-		return nil, fmt.Errorf("go-ios list: %w", err)
+		return nil, fmt.Errorf("pmd3 usbmux list: %w", err)
 	}
 	return parseDeviceList(out), nil
 }
@@ -192,16 +182,17 @@ func (d *Driver) Tunnel() (driver.TunnelInfo, bool) {
 	return d.tunnel, d.tunnelOn
 }
 
-func (d *Driver) run(ctx context.Context, args ...string) error {
-	out, err := exec.CommandContext(ctx, d.bin, args...).CombinedOutput()
-	if err != nil {
-		return fmt.Errorf("go-ios %v: %w: %s", args, err, string(out))
-	}
-	return nil
+func (d *Driver) args(extra ...string) []string {
+	return append(append([]string{}, d.base...), extra...)
 }
 
-func rsd(ti driver.TunnelInfo) string {
-	return fmt.Sprintf("%s:%d", ti.Address, ti.Port)
+func (d *Driver) run(ctx context.Context, extra ...string) error {
+	args := d.args(extra...)
+	out, err := exec.CommandContext(ctx, d.py, args...).CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("pmd3 %v: %w: %s", extra, err, string(out))
+	}
+	return nil
 }
 
 func ftoa(v float64) string { return strconv.FormatFloat(v, 'f', -1, 64) }
