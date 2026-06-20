@@ -12,11 +12,13 @@ struct ContentView: View {
     @State private var pendingTap: CLLocationCoordinate2D?
     @State private var showAddFavorite = false
     @State private var newFavoriteName = ""
-    @State private var focusRequest: MapFocusRequest?
+    @State private var showSettings = false
+    @State private var cameraPosition: MapCameraPosition = .automatic
 
     @State private var searchQuery = ""
     @State private var searchResults: [MKMapItem] = []
     @State private var searchTask: Task<Void, Never>?
+    @FocusState private var searchFocused: Bool
 
     private var spoofedCoordinate: CLLocationCoordinate2D? {
         guard let loc = engine.status?.lastInjectedLocation else { return nil }
@@ -24,15 +26,33 @@ struct ContentView: View {
     }
 
     var body: some View {
-        EngineMapView(spoofedLocation: spoofedCoordinate, focusRequest: focusRequest) { coordinate in
-            pendingTap = coordinate
-        }
-        .ignoresSafeArea()
-        .sheet(isPresented: .constant(true)) {
-            controlSheet
-                .presentationDetents([.height(140), .medium, .large])
-                .presentationBackgroundInteraction(.enabled)
-                .interactiveDismissDisabled()
+        ZStack(alignment: .top) {
+            EngineMapView(spoofedLocation: spoofedCoordinate, cameraPosition: $cameraPosition) { coordinate in
+                searchFocused = false
+                pendingTap = coordinate
+            }
+            .ignoresSafeArea()
+
+            VStack(spacing: 10) {
+                OmniBar(query: $searchQuery, isFocused: $searchFocused) {
+                    showSettings = true
+                }
+                SuggestionsPanel(
+                    favorites: engine.status?.favorites ?? [],
+                    searchResults: searchResults,
+                    isSearching: !searchQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                    onSelectFavorite: { fav in
+                        selectFavorite(fav)
+                    },
+                    onSelectResult: { item in
+                        selectSearchResult(item)
+                    },
+                    onDeleteFavorite: { fav in
+                        engine.removeFavorite(lat: fav.lat, lon: fav.lon)
+                    }
+                )
+            }
+            .padding(.top, 8)
         }
         .confirmationDialog(
             "Position sélectionnée",
@@ -68,6 +88,15 @@ struct ContentView: View {
                 pendingTap = nil
             }
         }
+        .sheet(isPresented: $showSettings) {
+            SettingsSheet(
+                engineAddress: $engineAddress,
+                engine: engine,
+                discovery: discovery,
+                onToggleConnection: toggleConnection,
+                onRetryDiscovery: startDiscovery
+            )
+        }
         .onAppear {
             location.requestPermission()
             startDiscovery()
@@ -79,147 +108,13 @@ struct ContentView: View {
                 toggleConnection()
             }
         }
-    }
-
-    private var controlSheet: some View {
-        NavigationView {
-            List {
-                Section("Moteur GPS-Mock") {
-                    discoveryRow
-
-                    TextField("IP:port", text: $engineAddress)
-                        .keyboardType(.URL)
-                        .autocorrectionDisabled()
-                        .textInputAutocapitalization(.never)
-
-                    HStack {
-                        Text("État")
-                        Spacer()
-                        Text(engine.state.rawValue)
-                            .foregroundStyle(engine.state == .connected ? .green : .secondary)
-                    }
-
-                    if let drift = engine.status?.lastRealLocation?.drift {
-                        HStack {
-                            Text("Dérive")
-                            Spacer()
-                            Text("\(Int(drift)) m")
-                                .foregroundStyle(drift > 100 ? .orange : .green)
-                        }
-                    }
-
-                    if let error = engine.lastError {
-                        Text(error).font(.caption).foregroundStyle(.red)
-                    }
-
-                    Button(engine.state == .connected || engine.state == .connecting ? "Déconnecter" : "Connecter") {
-                        toggleConnection()
-                    }
-                }
-
-                if !searchQuery.isEmpty {
-                    Section("Résultats") {
-                        if searchResults.isEmpty {
-                            Text("Recherche...").foregroundStyle(.secondary)
-                        } else {
-                            ForEach(Array(searchResults.enumerated()), id: \.offset) { _, item in
-                                Button {
-                                    selectSearchResult(item)
-                                } label: {
-                                    VStack(alignment: .leading) {
-                                        Text(item.name ?? "Lieu")
-                                            .foregroundStyle(Color.primary)
-                                        if let address = item.placemark.title {
-                                            Text(address)
-                                                .font(.caption)
-                                                .foregroundStyle(.secondary)
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-
-                Section("Favoris") {
-                    let favorites = engine.status?.favorites ?? []
-                    if favorites.isEmpty {
-                        Text("Aucun favori.").foregroundStyle(.secondary)
-                    } else {
-                        ForEach(favorites) { fav in
-                            Button {
-                                engine.setLocation(lat: fav.lat, lon: fav.lon, name: fav.name ?? "Favori")
-                                focusRequest = MapFocusRequest(coordinate: CLLocationCoordinate2D(latitude: fav.lat, longitude: fav.lon))
-                            } label: {
-                                VStack(alignment: .leading) {
-                                    Text(fav.name ?? "Favori")
-                                        .foregroundStyle(Color.primary)
-                                    Text("\(fav.lat, specifier: "%.5f"), \(fav.lon, specifier: "%.5f")")
-                                        .font(.caption)
-                                        .foregroundStyle(.secondary)
-                                }
-                            }
-                            .swipeActions {
-                                Button("Supprimer", role: .destructive) {
-                                    engine.removeFavorite(lat: fav.lat, lon: fav.lon)
-                                }
-                            }
-                        }
-                    }
-                }
-
-                Section {
-                    Text("Cherchez une adresse, ou touchez la carte, pour téléporter, lancer un trajet ou ajouter un favori. La position réelle est envoyée toutes les 10s pour le bouclier anti-dérive.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-            }
-            .listStyle(.insetGrouped)
-            .navigationTitle("GPS-Mock")
-            .navigationBarTitleDisplayMode(.inline)
-            .searchable(text: $searchQuery, prompt: "Rechercher une adresse")
-            .onChange(of: searchQuery) { newValue in
-                performSearch(newValue)
-            }
-        }
-    }
-
-    @ViewBuilder
-    private var discoveryRow: some View {
-        switch discovery.state {
-        case .idle:
-            EmptyView()
-        case .searching:
-            HStack {
-                ProgressView().controlSize(.small)
-                Text("Recherche du moteur sur le réseau...")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-        case .found(let host, let port):
-            HStack {
-                Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
-                Text("Trouvé : \(host):\(port)")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-        case .notFound:
-            HStack {
-                Image(systemName: "wifi.exclamationmark").foregroundStyle(.orange)
-                Text("Moteur introuvable automatiquement, saisissez l'adresse")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                Spacer()
-                Button("Réessayer") { startDiscovery() }
-                    .font(.caption)
-            }
+        .onChange(of: searchQuery) { newValue in
+            performSearch(newValue)
         }
     }
 
     private func startDiscovery() {
         discovery.start()
-        // Auto-fill + auto-connect happens in the onChange(of: discovery.state)
-        // handler above once a result comes in.
     }
 
     private func performSearch(_ query: String) {
@@ -248,10 +143,24 @@ struct ContentView: View {
 
     private func selectSearchResult(_ item: MKMapItem) {
         guard let coordinate = item.placemark.location?.coordinate else { return }
+        focus(on: coordinate)
         pendingTap = coordinate
-        focusRequest = MapFocusRequest(coordinate: coordinate)
         searchResults = []
         searchQuery = ""
+        searchFocused = false
+    }
+
+    private func selectFavorite(_ fav: Favorite) {
+        let coordinate = CLLocationCoordinate2D(latitude: fav.lat, longitude: fav.lon)
+        engine.setLocation(lat: fav.lat, lon: fav.lon, name: fav.name ?? "Favori")
+        focus(on: coordinate)
+        searchFocused = false
+    }
+
+    private func focus(on coordinate: CLLocationCoordinate2D) {
+        withAnimation {
+            cameraPosition = .region(MKCoordinateRegion(center: coordinate, latitudinalMeters: 800, longitudinalMeters: 800))
+        }
     }
 
     private func toggleConnection() {

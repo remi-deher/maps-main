@@ -1,14 +1,22 @@
 # GPS-Mock Companion (iOS)
 
-App SwiftUI, façon Plans (carte plein écran MapKit + feuille flottante), qui
-tourne sur l'iPhone à côté de l'app GPS-Mock desktop :
+App SwiftUI, façon Plans (carte plein écran MapKit + omnibar flottante en
+Liquid Glass, iOS 26), qui tourne sur l'iPhone à côté de l'app GPS-Mock
+desktop :
 
-- Affiche la position réelle (point bleu) et la position simulée (pin) sur la
-  carte. Toucher la carte propose de téléporter, lancer un trajet jusqu'ici,
-  ou ajouter un favori.
-- Barre de recherche d'adresse (`MKLocalSearch`, natif, pas de clé API) —
-  sélectionner un résultat recentre la carte et ouvre le même menu d'actions
-  qu'un tap sur la carte.
+- Carte plein écran (`Map`/`MapReader` SwiftUI natifs) avec la position
+  réelle (point bleu) et la position simulée (marker) ; toucher la carte
+  propose de téléporter, lancer un trajet jusqu'ici, ou ajouter un favori.
+- **Omnibar flottante** (`OmniBar.swift`) en verre liquide (`.glassEffect`,
+  `GlassEffectContainer`) : recherche d'adresse (`MKLocalSearch`, natif, pas
+  de clé API) + bouton réglages séparé. Sous l'omnibar, un panneau flottant
+  (`SuggestionsPanel.swift`) affiche les résultats de recherche en train de
+  taper, ou les favoris en suggestions quand le champ est vide — sélectionner
+  une entrée recentre la carte et ouvre le même menu d'actions qu'un tap sur
+  la carte.
+- Les infos de connexion (adresse, état, dérive, découverte réseau) sont
+  déportées dans une feuille de réglages (`SettingsSheet.swift`) ouverte via
+  l'icône engrenage, pour garder l'écran principal épuré.
 - Découverte automatique du moteur sur le réseau local via Bonjour/mDNS
   (`_gpsmock._tcp`, voir `EngineDiscovery.swift`) : plus besoin de taper
   l'IP:port à la main si le moteur est sur le même réseau. Le moteur Go
@@ -29,7 +37,11 @@ Elle parle le même protocole WebSocket `{type, data}` que `tauri-app`
 (`engine/internal/api/messages.go`), donc tout changement de contrat côté
 moteur doit être répercuté ici aussi.
 
-## Build local (macOS + Xcode requis)
+Cible de déploiement : **iOS 26.0** (Liquid Glass nécessite Xcode 26+ /
+iPhone 11 ou SE 2e gen. minimum) — pas de souci de compatibilité ascendante
+recherché ici, c'est une app personnelle.
+
+## Build local (macOS + Xcode 26+ requis)
 
 ```bash
 brew install xcodegen
