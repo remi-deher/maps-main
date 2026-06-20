@@ -1,0 +1,55 @@
+name: Engine CI
+
+on:
+  push:
+    branches: [v3-rewrite, main]
+    paths:
+      - 'engine/**'
+      - '.github/workflows/engine-ci.yml'
+  pull_request:
+    paths:
+      - 'engine/**'
+      - '.github/workflows/engine-ci.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: build & test (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        working-directory: engine
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: engine/go.mod
+          cache-dependency-path: engine/go.sum
+
+      - name: gofmt
+        shell: bash
+        run: |
+          unformatted=$(gofmt -l .)
+          if [ -n "$unformatted" ]; then
+            echo "These files are not gofmt-ed:"; echo "$unformatted"; exit 1
+          fi
+
+      - name: go vet
+        run: go vet ./...
+
+      - name: build
+        run: go build ./...
+
+      - name: test
+        run: go test ./...
+
+      - name: test (race)
+        if: runner.os == 'Linux'
+        run: go test -race ./...
