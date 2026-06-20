@@ -2,6 +2,23 @@ import SwiftUI
 import CoreLocation
 import MapKit
 
+/// Codable snapshot of an itinerary, persisted to UserDefaults so it survives
+/// a disconnected-engine failure (or an app relaunch) — "charger le dernier
+/// itinéraire" rebuilds the stops from this instead of the user retyping.
+private struct SavedStop: Codable {
+    let lat: Double
+    let lon: Double
+    let name: String
+}
+
+private struct SavedItinerary: Codable {
+    let stops: [SavedStop]
+    let speed: Double
+    let profile: String
+}
+
+private let lastItineraryKey = "lastItinerary"
+
 struct ContentView: View {
     @AppStorage("engineAddress") private var engineAddress: String = "192.168.1.1:8080"
     @StateObject private var location = LocationManager()
@@ -27,6 +44,8 @@ struct ContentView: View {
 
     @State private var sheetDetent: PresentationDetent = .height(120)
     @State private var showSettings = false
+    @State private var showConnectionError = false
+    @State private var hasSavedItinerary = UserDefaults.standard.data(forKey: lastItineraryKey) != nil
 
     private var spoofedCoordinate: CLLocationCoordinate2D? {
         guard let loc = engine.status?.lastInjectedLocation else { return nil }
@@ -93,10 +112,12 @@ struct ContentView: View {
                 PlaceCard(
                     place: place,
                     onTeleport: {
+                        guard requireConnection() else { return }
                         engine.setLocation(lat: place.coordinate.latitude, lon: place.coordinate.longitude)
                         selectedPlace = nil
                     },
                     onRoute: {
+                        guard requireConnection() else { return }
                         engine.playRoute(endLat: place.coordinate.latitude, endLon: place.coordinate.longitude, speed: 30, profile: "driving")
                         selectedPlace = nil
                     },
@@ -119,7 +140,7 @@ struct ContentView: View {
         .alert("Nom du favori", isPresented: $showAddFavorite) {
             TextField("Nom", text: $newFavoriteName)
             Button("Enregistrer") {
-                if let place = selectedPlace {
+                if let place = selectedPlace, requireConnection() {
                     engine.addFavorite(lat: place.coordinate.latitude, lon: place.coordinate.longitude, name: newFavoriteName.isEmpty ? "Favori" : newFavoriteName)
                 }
                 newFavoriteName = ""
@@ -143,7 +164,9 @@ struct ContentView: View {
                 onLaunchItinerary: launchItinerary,
                 favorites: engine.status?.favorites ?? [],
                 onSelectFavorite: selectFavorite,
-                onDeleteFavorite: { fav in engine.removeFavorite(lat: fav.lat, lon: fav.lon) }
+                onDeleteFavorite: { fav in engine.removeFavorite(lat: fav.lat, lon: fav.lon) },
+                hasSavedItinerary: hasSavedItinerary,
+                onLoadLastItinerary: loadLastItinerary
             )
             .presentationDetents([.height(120), .medium, .large], selection: $sheetDetent)
             .presentationDragIndicator(.visible)
@@ -158,6 +181,11 @@ struct ContentView: View {
                 onToggleConnection: toggleConnection,
                 onRetryDiscovery: startDiscovery
             )
+        }
+        .alert("Action impossible", isPresented: $showConnectionError) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(engine.lastError ?? "Le moteur n'est pas connecté. Vérifiez les réglages, votre itinéraire reste enregistré.")
         }
         .onAppear {
             location.requestPermission()
@@ -235,8 +263,15 @@ struct ContentView: View {
 
     /// Mirrors tauri-app's handlePlaySequence: each leg's start is the
     /// previous leg's end, chaining the stops into one continuous itinerary.
+    /// Saves the itinerary before attempting to send it — if the engine
+    /// isn't connected, the stops stay on screen (not cleared) and the user
+    /// can retry, or reload this same snapshot later via "Charger le dernier
+    /// itinéraire" even after leaving the screen.
     private func launchItinerary() {
         guard !itineraryStops.isEmpty else { return }
+        saveLastItinerary()
+        guard requireConnection() else { return }
+
         let legType = itineraryProfile == "walking" ? "walk" : "drive"
         var legs: [[String: Any]] = []
         var previousCoordinate = itineraryStops[0].coordinate
@@ -252,6 +287,38 @@ struct ContentView: View {
         }
         engine.playSequence(legs: legs, looping: false)
         itineraryStops = []
+    }
+
+    /// Centralizes the "is the engine actually usable" check before any
+    /// pilot action — surfaces a visible alert instead of the action
+    /// silently no-oping (the original bug report).
+    private func requireConnection() -> Bool {
+        guard engine.state == .connected else {
+            showConnectionError = true
+            return false
+        }
+        return true
+    }
+
+    private func saveLastItinerary() {
+        let saved = SavedItinerary(
+            stops: itineraryStops.map { SavedStop(lat: $0.coordinate.latitude, lon: $0.coordinate.longitude, name: $0.name) },
+            speed: itinerarySpeed,
+            profile: itineraryProfile
+        )
+        guard let data = try? JSONEncoder().encode(saved) else { return }
+        UserDefaults.standard.set(data, forKey: lastItineraryKey)
+        hasSavedItinerary = true
+    }
+
+    private func loadLastItinerary() {
+        guard let data = UserDefaults.standard.data(forKey: lastItineraryKey),
+              let saved = try? JSONDecoder().decode(SavedItinerary.self, from: data) else { return }
+        itineraryStops = saved.stops.map {
+            RouteStop(coordinate: CLLocationCoordinate2D(latitude: $0.lat, longitude: $0.lon), name: $0.name)
+        }
+        itinerarySpeed = saved.speed
+        itineraryProfile = saved.profile
     }
 
     private func selectFavorite(_ fav: Favorite) {

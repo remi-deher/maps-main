@@ -24,6 +24,9 @@ struct BottomSheet: View {
     var onSelectFavorite: (Favorite) -> Void
     var onDeleteFavorite: (Favorite) -> Void
 
+    let hasSavedItinerary: Bool
+    var onLoadLastItinerary: () -> Void
+
     private var isSearching: Bool {
         !searchQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
@@ -52,13 +55,26 @@ struct BottomSheet: View {
                             onLaunch: onLaunchItinerary,
                             onCancel: { itineraryStops = [] }
                         )
-                    } else if favorites.isEmpty {
-                        ContentUnavailableView(
-                            "Aucun itinéraire",
-                            systemImage: "map",
-                            description: Text("Recherchez une adresse ou touchez la carte pour commencer.")
-                        )
-                        .padding(.top, 8)
+                    } else {
+                        if hasSavedItinerary {
+                            Button(action: onLoadLastItinerary) {
+                                HStack {
+                                    Image(systemName: "arrow.uturn.backward.circle.fill")
+                                    Text("Charger le dernier itinéraire")
+                                }
+                                .frame(maxWidth: .infinity)
+                            }
+                            .buttonStyle(.glass)
+                            .padding(.horizontal, 16)
+                        }
+                        if favorites.isEmpty {
+                            ContentUnavailableView(
+                                "Aucun itinéraire",
+                                systemImage: "map",
+                                description: Text("Recherchez une adresse ou touchez la carte pour commencer.")
+                            )
+                            .padding(.top, 8)
+                        }
                     }
                 }
                 .padding(.bottom, 24)

@@ -187,7 +187,10 @@ final class EngineClient: NSObject, ObservableObject, URLSessionWebSocketDelegat
     }
 
     private func sendEnvelope(type: String, data: [String: Any]) {
-        guard let task else { return }
+        guard let task else {
+            DispatchQueue.main.async { self.lastError = "Non connecté au moteur — action ignorée." }
+            return
+        }
         guard let payload = try? JSONSerialization.data(withJSONObject: ["type": type, "data": data]),
               let json = String(data: payload, encoding: .utf8) else { return }
         task.send(.string(json)) { [weak self] error in
