@@ -1,0 +1,13 @@
+.git
+.github
+docs
+legacy
+scripts
+spec
+tauri-app
+**/node_modules
+**/dist
+**/bin
+engine/bin
+engine/gpsmock-engine
+*.exe

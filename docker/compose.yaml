@@ -1,0 +1,37 @@
+services:
+  # WiFi / réseau : cible un endpoint RSD, pas d'USB ni de tunnel local.
+  gpsmock-wifi:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    image: gpsmock-engine
+    environment:
+      GPSMOCK_DRIVER: pymobiledevice
+      GPSMOCK_TRANSPORT: wifi
+      GPSMOCK_RSD: ${GPSMOCK_RSD:?set host:port}
+      GPSMOCK_ADDR: ":8080"
+    ports:
+      - "127.0.0.1:8080:8080"
+    restart: unless-stopped
+
+  # USB : passthrough usbmuxd + tunnel RSD (Linux uniquement).
+  gpsmock-usb:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    image: gpsmock-engine
+    user: root
+    environment:
+      GPSMOCK_DRIVER: pymobiledevice
+      GPSMOCK_TRANSPORT: usb
+      GPSMOCK_ADDR: ":8080"
+    ports:
+      - "127.0.0.1:8080:8080"
+    cap_add:
+      - NET_ADMIN
+    devices:
+      - "/dev/net/tun"
+    volumes:
+      - "/var/run/usbmuxd:/var/run/usbmuxd"
+      - "/var/lib/lockdown:/var/lib/lockdown"
+    restart: unless-stopped

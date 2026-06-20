@@ -68,7 +68,7 @@ Le **registre** (`registry.go`) mappe `DriverID → Factory` ; `New(id, cfg)` es
   asyncapi.yaml              # WebSocket (JSON brut, enveloppe {type,data})
 /desktop                     # (à venir) UI web + shell Tauri/natif
 /ios                         # (à venir) app Swift compagnon
-/docker                      # (à venir) images Linux/Windows-WSL
+/docker                      # images Linux / Windows-WSL (Phase 4)
 /docs                        # cette doc + ALTSTORE.md
 /legacy                      # ancienne implémentation (référence, supprimée à parité)
 ```
@@ -88,11 +88,19 @@ WebSocket **brut + JSON** (pas de socket.io). Chaque message est une enveloppe
 `{ "type": <ACTION|EVENT>, "data": {...} }`. Vocabulaire exhaustif dans
 `engine/internal/api/messages.go` et décrit dans `spec/asyncapi.yaml`.
 
+## Dockerisation (Phase 4)
+
+Le moteur supporte pleinement l'exécution conteneurisée via Docker. Les scénarios clés sont pris en compte dans le répertoire `/docker` :
+- **WiFi (Tous OS)** : Exécution légère sans périphérique local, en ciblant directement l'adresse RSD (`GPSMOCK_RSD`).
+- **USB (Linux/WSL2)** : Passthrough du socket `/var/run/usbmuxd`, des clés d'appairage `/var/lib/lockdown`, et droits réseau (`NET_ADMIN`) avec accès au device `/dev/net/tun` pour initier le tunnel RSD local.
+
+Les détails de construction et d'exécution sont documentés dans le [README Docker](file:///c:/Users/remi2/Documents/GitHub/maps-main/docker/README.md).
+
 ## Roadmap
 
-1. **Contrats & squelette** (cette phase) — interfaces, types, specs, stubs.
+1. **Contrats & squelette** — interfaces, types, specs, stubs.
 2. Engine Go + `GoIosDriver` USB — 1er flux d'injection bout-en-bout.
 3. `Pmd3Driver` + transport WiFi/RSD — le menu complet.
-4. Dockerisation (Linux USB+WiFi, Windows-WSL WiFi).
+4. **Dockerisation (Linux USB+WiFi, Windows-WSL WiFi)** (cette phase).
 5. UI web sur l'API, puis packaging Tauri/natif.
 6. App iOS Swift (keep-alive background, AltStore). Suppression de `/legacy` à parité.

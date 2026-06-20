@@ -12,7 +12,7 @@ Suite de simulation/injection de position GPS pour iPhone (iOS 17+, tunnel RSD v
 - **`spec/`** — contrat d'API (OpenAPI + AsyncAPI), **source de vérité** unique.
 - **`desktop/`** — *(à venir)* client lourd PC (UI web + shell Tauri/natif).
 - **`ios/`** — *(à venir)* app Swift compagnon (keep-alive, sideload AltStore).
-- **`docker/`** — *(à venir)* images Linux / Windows-WSL.
+- **[docker/](file:///c:/Users/remi2/Documents/GitHub/maps-main/docker/README.md)** — images Docker Linux / Windows-WSL (Phase 4).
 - **`docs/`** — architecture et contraintes ([ARCHITECTURE](docs/ARCHITECTURE.md),
   [ALTSTORE](docs/ALTSTORE.md)).
 - **`legacy/`** — ancienne implémentation Node/Electron + Expo, gardée comme référence
