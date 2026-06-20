@@ -46,4 +46,29 @@ describe("GPS-Mock v3 - App Integration Smoke Tests", () => {
     expect(screen.getByText("Configuration Moteur")).toBeInTheDocument();
     expect(screen.getByText("Port du Serveur Go")).toBeInTheDocument();
   });
+
+  it("renders new advanced map controls (Search, Styles, Draw, GPX)", async () => {
+    await act(async () => {
+      render(<App />);
+    });
+
+    // Check search input placeholder
+    expect(screen.getByPlaceholderText("Rechercher un lieu ou une adresse...")).toBeInTheDocument();
+
+    // Check map style selectors
+    expect(screen.getByText("Sombre")).toBeInTheDocument();
+    expect(screen.getByText("Plan")).toBeInTheDocument();
+    expect(screen.getByText("Sat")).toBeInTheDocument();
+
+    // Click on Séquences tab
+    const routeTab = screen.getByText("Séquences");
+    await act(async () => {
+      fireEvent.click(routeTab);
+    });
+
+    // Check drawing card and GPX upload cards are displayed
+    expect(screen.getByText("Dessin d'Itinéraire")).toBeInTheDocument();
+    expect(screen.getByText("Importation GPX")).toBeInTheDocument();
+    expect(screen.getByText("Cliquez pour charger un fichier .gpx")).toBeInTheDocument();
+  });
 });

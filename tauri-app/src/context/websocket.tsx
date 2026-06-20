@@ -101,6 +101,7 @@ interface WebSocketContextType {
   clearLocation: () => void;
   playRoute: (endLat: number, endLon: number, speed: number, profile: "driving" | "walking" | "cycling") => void;
   playSequence: (legs: any[], looping: boolean) => void;
+  playCustomGpx: (gpxContent: string, speed: number) => void;
   relance: () => void;
   saveSettings: (settings: Settings) => void;
   addFavorite: (lat: number, lon: number, name: string) => void;
@@ -235,6 +236,10 @@ export const WebSocketProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     sendMessage("PLAY_SEQUENCE", { legs, looping });
   };
 
+  const playCustomGpx = (gpxContent: string, speed: number) => {
+    sendMessage("PLAY_CUSTOM_GPX", { gpxContent, speed });
+  };
+
   const relance = () => {
     sendMessage("RELANCE");
   };
@@ -266,6 +271,7 @@ export const WebSocketProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         clearLocation,
         playRoute,
         playSequence,
+        playCustomGpx,
         relance,
         saveSettings,
         addFavorite,

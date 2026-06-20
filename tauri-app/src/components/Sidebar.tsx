@@ -26,6 +26,7 @@ export const Sidebar: React.FC = () => {
     setLocation,
     clearLocation,
     playSequence,
+    playCustomGpx,
     relance,
     saveSettings,
     removeFavorite,
@@ -53,6 +54,78 @@ export const Sidebar: React.FC = () => {
   const [preferredDriver, setPreferredDriver] = useState("go-ios");
   const [isEveilMode, setIsEveilMode] = useState(true);
   const [eveilInterval, setEveilInterval] = useState("15");
+
+  // GPX Upload state
+  const [gpxContent, setGpxContent] = useState("");
+  const [gpxFileName, setGpxFileName] = useState("");
+  const [gpxSpeed, setGpxSpeed] = useState("25");
+
+  // Map Drawing state
+  const [isDrawing, setIsDrawing] = useState(false);
+  const [drawnPointsCount, setDrawnPointsCount] = useState(0);
+  const [drawSpeed, setDrawSpeed] = useState("15");
+  const [drawLoop, setDrawLoop] = useState(false);
+  const [drawProfile, setDrawProfile] = useState<"driving" | "walking">("driving");
+
+  React.useEffect(() => {
+    const handlePointsUpdated = (e: Event) => {
+      const points = (e as CustomEvent).detail;
+      setDrawnPointsCount(points.length);
+    };
+
+    const handleModeDisabled = () => {
+      setIsDrawing(false);
+    };
+
+    window.addEventListener("draw-points-updated", handlePointsUpdated);
+    window.addEventListener("draw-mode-disabled", handleModeDisabled);
+
+    return () => {
+      window.removeEventListener("draw-points-updated", handlePointsUpdated);
+      window.removeEventListener("draw-mode-disabled", handleModeDisabled);
+    };
+  }, []);
+
+  const toggleDrawMode = () => {
+    const newMode = !isDrawing;
+    setIsDrawing(newMode);
+    window.dispatchEvent(new CustomEvent("draw-mode-toggle", { detail: newMode }));
+  };
+
+  const clearDrawnPath = () => {
+    window.dispatchEvent(new CustomEvent("draw-path-clear"));
+  };
+
+  const playDrawnPath = () => {
+    window.dispatchEvent(
+      new CustomEvent("draw-path-play", {
+        detail: {
+          speed: parseFloat(drawSpeed) || 15,
+          looping: drawLoop,
+          profile: drawProfile,
+        },
+      })
+    );
+  };
+
+  const handleGpxFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      setGpxFileName(file.name);
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        const text = event.target?.result as string;
+        setGpxContent(text);
+      };
+      reader.readAsText(file);
+    }
+  };
+
+  const handlePlayGpx = () => {
+    if (gpxContent) {
+      playCustomGpx(gpxContent, parseFloat(gpxSpeed) || 25);
+    }
+  };
 
   const triggerTeleport = () => {
     const lat = parseFloat(teleportLat);
@@ -327,9 +400,112 @@ export const Sidebar: React.FC = () => {
           {/* TAB 3: ROUTE & SEQUENCES BUILDER */}
           {activeTab === "route" && (
             <>
+              {/* Card 1: Interactive Path Drawing */}
               <div className="ui-card">
                 <h3 className="ui-card-title">
-                  <Route size={16} /> Séquence Multimodale
+                  <Route size={16} /> Dessin d'Itinéraire
+                </h3>
+                <p style={{ fontSize: "0.8rem", color: "#94a3b8", margin: 0 }}>
+                  Activez le mode dessin puis cliquez sur la carte pour placer vos points de passage successifs.
+                </p>
+
+                <button
+                  className={`btn ${isDrawing ? "btn-danger" : "btn-secondary"}`}
+                  onClick={toggleDrawMode}
+                >
+                  {isDrawing ? "Quitter le Mode Dessin" : "Activer le Mode Dessin"}
+                </button>
+
+                {drawnPointsCount > 0 && (
+                  <div style={{ display: "flex", flexDirection: "column", gap: "10px", marginTop: "4px" }}>
+                    <div style={{ fontSize: "0.85rem", color: "#10b981", fontWeight: "600" }}>
+                      {drawnPointsCount} points placés sur la carte
+                    </div>
+
+                    <div className="form-group">
+                      <label className="form-label">Type de déplacement</label>
+                      <select
+                        value={drawProfile}
+                        onChange={(e: any) => setDrawProfile(e.target.value)}
+                      >
+                        <option value="driving">Voiture</option>
+                        <option value="walking">Marche</option>
+                      </select>
+                    </div>
+
+                    <div className="form-group">
+                      <label className="form-label">Vitesse (km/h)</label>
+                      <input
+                        type="number"
+                        value={drawSpeed}
+                        onChange={(e) => setDrawSpeed(e.target.value)}
+                      />
+                    </div>
+
+                    <label className="switch-label">
+                      <span className="form-label">Itinéraire en boucle</span>
+                      <span className="switch-control">
+                        <input
+                          type="checkbox"
+                          checked={drawLoop}
+                          onChange={(e) => setDrawLoop(e.target.checked)}
+                        />
+                        <span className="switch-slider"></span>
+                      </span>
+                    </label>
+
+                    <div className="btn-group">
+                      <button className="btn btn-secondary" onClick={clearDrawnPath}>
+                        Effacer
+                      </button>
+                      <button className="btn btn-success" onClick={playDrawnPath}>
+                        <Play size={12} /> Lancer le trajet
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Card 2: GPX Upload */}
+              <div className="ui-card">
+                <h3 className="ui-card-title">
+                  <Save size={16} /> Importation GPX
+                </h3>
+                <div className="gpx-dropzone" onClick={() => document.getElementById("gpx-file-input")?.click()}>
+                  <input
+                    type="file"
+                    id="gpx-file-input"
+                    accept=".gpx"
+                    style={{ display: "none" }}
+                    onChange={handleGpxFileChange}
+                  />
+                  <div style={{ fontSize: "0.85rem", color: "#cbd5e1" }}>
+                    {gpxFileName ? "Fichier sélectionné :" : "Cliquez pour charger un fichier .gpx"}
+                  </div>
+                  {gpxFileName && <div className="gpx-file-info">{gpxFileName}</div>}
+                </div>
+
+                {gpxContent && (
+                  <div style={{ display: "flex", flexDirection: "column", gap: "10px", marginTop: "4px" }}>
+                    <div className="form-group">
+                      <label className="form-label">Vitesse de simulation (km/h)</label>
+                      <input
+                        type="number"
+                        value={gpxSpeed}
+                        onChange={(e) => setGpxSpeed(e.target.value)}
+                      />
+                    </div>
+                    <button className="btn btn-success" onClick={handlePlayGpx}>
+                      <Play size={12} /> Lancer simulation GPX
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              {/* Card 3: Manual Legs builder */}
+              <div className="ui-card">
+                <h3 className="ui-card-title">
+                  <Sliders size={16} /> Séquence Multimodale (Manuel)
                 </h3>
                 
                 {/* Legs List */}
@@ -354,7 +530,7 @@ export const Sidebar: React.FC = () => {
                   ))}
                   {sequenceLegs.length === 0 && (
                     <div style={{ fontSize: "0.85rem", color: "#64748b", textAlign: "center", padding: "12px" }}>
-                      Aucune étape définie. Utilisez le formulaire ci-dessous pour ajouter des trajets.
+                      Aucune étape définie. Saisissez des points ci-dessous.
                     </div>
                   )}
                 </div>
