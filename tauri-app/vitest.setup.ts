@@ -66,6 +66,15 @@ class MockWebSocket {
 
 global.WebSocket = MockWebSocket as any;
 
+// Mock the Tauri JS bridge: tests run in jsdom, not inside a real Tauri webview.
+vi.mock("@tauri-apps/api/core", () => ({
+  invoke: vi.fn().mockRejectedValue(new Error("not running in Tauri")),
+}));
+
+vi.mock("@tauri-apps/api/event", () => ({
+  listen: vi.fn().mockResolvedValue(() => {}),
+}));
+
 // Mock Leaflet
 vi.mock("react-leaflet", () => {
   return {

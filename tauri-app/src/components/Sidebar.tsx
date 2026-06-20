@@ -18,9 +18,21 @@ import {
 } from "lucide-react";
 import { useWebSocket } from "../context/websocket";
 
+const parseCoordinate = (value: string, min: number, max: number) => {
+  const parsed = Number(value.trim().replace(",", "."));
+  return Number.isFinite(parsed) && parsed >= min && parsed <= max ? parsed : null;
+};
+
 export const Sidebar: React.FC = () => {
   const {
     isConnected,
+    connectionStatus,
+    connectionUrl,
+    enginePort,
+    engineStatus,
+    setEnginePort,
+    lastError,
+    canSend,
     status,
     telemetry,
     setLocation,
@@ -30,10 +42,15 @@ export const Sidebar: React.FC = () => {
     relance,
     saveSettings,
     removeFavorite,
+    updatePatrolZone,
   } = useWebSocket();
 
   const [isOpen, setIsOpen] = useState(true);
   const [activeTab, setActiveTab] = useState<"control" | "favs" | "route" | "settings">("control");
+  const [toast, setToast] = useState<string | null>(null);
+  const [teleportError, setTeleportError] = useState("");
+  const [legError, setLegError] = useState("");
+  const [gpxError, setGpxError] = useState("");
 
   // Teleport input state
   const [teleportLat, setTeleportLat] = useState("");
@@ -49,27 +66,63 @@ export const Sidebar: React.FC = () => {
   const [newLegEndLon, setNewLegEndLon] = useState("");
   const [newLegSpeed, setNewLegSpeed] = useState("15");
 
+  // Engine sidecar port (Tauri-managed, separate from the moteur's own
+  // companionPort setting below which only annotates the RSD endpoint).
+  const [enginePortInput, setEnginePortInput] = useState(String(enginePort));
+  const [enginePortError, setEnginePortError] = useState("");
+
+  const handleApplyEnginePort = async () => {
+    const parsed = parseCoordinate(enginePortInput, 1, 65535);
+    if (parsed === null) {
+      setEnginePortError("Port invalide (1-65535).");
+      return;
+    }
+    setEnginePortError("");
+    await setEnginePort(parsed);
+    showToast(`Moteur redémarré sur le port ${parsed}.`);
+  };
+
   // Config settings form state
   const [companionPort, setCompanionPort] = useState("8080");
   const [preferredDriver, setPreferredDriver] = useState("go-ios");
   const [isEveilMode, setIsEveilMode] = useState(true);
   const [eveilInterval, setEveilInterval] = useState("15");
+  const [jitterEnabled, setJitterEnabled] = useState(true);
 
   // GPX Upload state
   const [gpxContent, setGpxContent] = useState("");
   const [gpxFileName, setGpxFileName] = useState("");
   const [gpxSpeed, setGpxSpeed] = useState("25");
 
+  // Patrol state
+  const [patrolType, setPatrolType] = useState<"circle" | "rectangle">("circle");
+  const [patrolRadius, setPatrolRadius] = useState("200");
+
   // Map Drawing state
   const [isDrawing, setIsDrawing] = useState(false);
+  const [drawnPoints, setDrawnPoints] = useState<any[]>([]);
   const [drawnPointsCount, setDrawnPointsCount] = useState(0);
   const [drawSpeed, setDrawSpeed] = useState("15");
   const [drawLoop, setDrawLoop] = useState(false);
   const [drawProfile, setDrawProfile] = useState<"driving" | "walking">("driving");
 
+  // Drag & drop state
+  const [isDragOver, setIsDragOver] = useState(false);
+
+  const showToast = (message: string) => {
+    setToast(message);
+    window.setTimeout(() => setToast(null), 3000);
+  };
+
+  const currentPos = status?.navigation?.progress
+    ? { lat: status.navigation.progress.lat, lon: status.navigation.progress.lon }
+    : (status?.lastInjectedLocation ? { lat: status.lastInjectedLocation.lat, lon: status.lastInjectedLocation.lon } : { lat: 48.8566, lon: 2.3522 });
+
+
   React.useEffect(() => {
     const handlePointsUpdated = (e: Event) => {
       const points = (e as CustomEvent).detail;
+      setDrawnPoints(points);
       setDrawnPointsCount(points.length);
     };
 
@@ -108,9 +161,60 @@ export const Sidebar: React.FC = () => {
     );
   };
 
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragOver(true);
+  };
+
+  const handleDragLeave = () => {
+    setIsDragOver(false);
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragOver(false);
+    const file = e.dataTransfer.files?.[0];
+    if (file && file.name.endsWith(".gpx")) {
+      setGpxError("");
+      setGpxFileName(file.name);
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        const text = event.target?.result as string;
+        setGpxContent(text);
+      };
+      reader.readAsText(file);
+    } else {
+      setGpxError("Déposez un fichier GPX valide.");
+    }
+  };
+
+  const exportDrawnGpx = () => {
+    if (drawnPoints.length === 0) return;
+    let gpx = '<?xml version="1.0" encoding="UTF-8"?>\n';
+    gpx += '<gpx version="1.1" creator="GPS-Mock v3" xmlns="http://www.topografix.com/GPX/1/1">\n';
+    gpx += '  <trk>\n';
+    gpx += '    <name>Drawn Path</name>\n';
+    gpx += '    <trkseg>\n';
+    drawnPoints.forEach((p) => {
+      gpx += `      <trkpt lat="${p.lat}" lon="${p.lon}"></trkpt>\n`;
+    });
+    gpx += '    </trkseg>\n';
+    gpx += '  </trk>\n';
+    gpx += '</gpx>';
+
+    const blob = new Blob([gpx], { type: "application/gpx+xml" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = "gpsmock_route.gpx";
+    link.click();
+    URL.revokeObjectURL(url);
+  };
+
   const handleGpxFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
+      setGpxError("");
       setGpxFileName(file.name);
       const reader = new FileReader();
       reader.onload = (event) => {
@@ -122,36 +226,50 @@ export const Sidebar: React.FC = () => {
   };
 
   const handlePlayGpx = () => {
+    if (!canSend) {
+      showToast("Moteur hors ligne: impossible de lancer le GPX.");
+      return;
+    }
     if (gpxContent) {
-      playCustomGpx(gpxContent, parseFloat(gpxSpeed) || 25);
+      playCustomGpx(gpxContent, parseFloat(gpxSpeed.replace(",", ".")) || 25);
+      showToast("Simulation GPX envoyée au moteur.");
     }
   };
 
   const triggerTeleport = () => {
-    const lat = parseFloat(teleportLat);
-    const lon = parseFloat(teleportLon);
-    if (!isNaN(lat) && !isNaN(lon)) {
-      setLocation(lat, lon, "Téléportation Manuelle");
+    const lat = parseCoordinate(teleportLat, -90, 90);
+    const lon = parseCoordinate(teleportLon, -180, 180);
+    if (lat === null || lon === null) {
+      setTeleportError("Saisissez une latitude entre -90 et 90 et une longitude entre -180 et 180.");
+      return;
     }
+    if (!canSend) {
+      setTeleportError("Moteur hors ligne: impossible d'injecter une position.");
+      return;
+    }
+    setTeleportError("");
+    setLocation(lat, lon, "Téléportation manuelle");
+    showToast("Position envoyée au moteur.");
   };
 
   const handleAddLeg = () => {
-    const startLat = parseFloat(newLegStartLat);
-    const startLon = parseFloat(newLegStartLon);
-    const endLat = parseFloat(newLegEndLat);
-    const endLon = parseFloat(newLegEndLon);
-    const speed = parseFloat(newLegSpeed);
+    const startLat = parseCoordinate(newLegStartLat, -90, 90);
+    const startLon = parseCoordinate(newLegStartLon, -180, 180);
+    const endLat = parseCoordinate(newLegEndLat, -90, 90);
+    const endLon = parseCoordinate(newLegEndLon, -180, 180);
+    const speed = Number(newLegSpeed.trim().replace(",", "."));
 
-    if (isNaN(endLat) || isNaN(endLon)) {
-      alert("Veuillez saisir des coordonnées de destination valides.");
+    if (endLat === null || endLon === null) {
+      setLegError("Destination invalide: latitude -90 à 90, longitude -180 à 180.");
       return;
     }
+    setLegError("");
 
     const newLeg = {
       type: newLegType,
-      start: isNaN(startLat) || isNaN(startLon) ? null : { lat: startLat, lon: startLon },
+      start: startLat === null || startLon === null ? null : { lat: startLat, lon: startLon },
       end: { lat: endLat, lon: endLon },
-      speed: isNaN(speed) ? 15 : speed,
+      speed: Number.isFinite(speed) && speed > 0 ? speed : 15,
       startTime: Date.now(),
       endTime: Date.now() + 60000 // Placeholder 1 minute
     };
@@ -166,6 +284,10 @@ export const Sidebar: React.FC = () => {
 
   const handlePlaySequence = () => {
     if (sequenceLegs.length === 0) return;
+    if (!canSend) {
+      showToast("Moteur hors ligne: impossible de lancer la séquence.");
+      return;
+    }
     // Map legs, filling missing starts with previous ends
     const preparedLegs = sequenceLegs.map((leg, index) => {
       if (!leg.start) {
@@ -176,15 +298,22 @@ export const Sidebar: React.FC = () => {
     });
 
     playSequence(preparedLegs, looping);
+    showToast("Séquence envoyée au moteur.");
   };
 
   const handleSaveSettings = () => {
+    if (!canSend) {
+      showToast("Moteur hors ligne: réglages non envoyés.");
+      return;
+    }
     saveSettings({
       companionPort: parseInt(companionPort),
       preferredDriver: preferredDriver as any,
       isEveilMode,
-      eveilInterval: parseInt(eveilInterval)
-    });
+      eveilInterval: parseInt(eveilInterval),
+      jitterEnabled,
+    } as any);
+    showToast("Réglages envoyés au moteur.");
   };
 
   return (
@@ -241,6 +370,43 @@ export const Sidebar: React.FC = () => {
           {/* TAB 1: CONTROL & TELEMETRY */}
           {activeTab === "control" && (
             <>
+              <div className="ui-card system-card">
+                <h3 className="ui-card-title">
+                  <Activity size={16} /> État système
+                </h3>
+                <div className="info-grid">
+                  <div className="info-item">
+                    <span className="info-label">Moteur</span>
+                    <span className={`info-value ${canSend ? "green" : "warning"}`}>
+                      {connectionStatus === "connected" ? "Connecté" : connectionStatus === "reconnecting" ? "Reconnexion" : "Hors ligne"}
+                    </span>
+                  </div>
+                  <div className="info-item">
+                    <span className="info-label">Endpoint</span>
+                    <span className="info-value compact">{connectionUrl}</span>
+                  </div>
+                  <div className="info-item">
+                    <span className="info-label">Tunnel</span>
+                    <span className={`info-value ${status?.tunnelActive ? "green" : ""}`}>
+                      {status?.tunnelActive ? "Actif" : "Inactif"}
+                    </span>
+                  </div>
+                  <div className="info-item">
+                    <span className="info-label">Dernière injection</span>
+                    <span className="info-value compact">
+                      {status?.lastInjectedLocation
+                        ? `${status.lastInjectedLocation.lat.toFixed(4)}, ${status.lastInjectedLocation.lon.toFixed(4)}`
+                        : "Aucune"}
+                    </span>
+                  </div>
+                </div>
+                {(lastError || !canSend) && (
+                  <div className="inline-alert">
+                    {lastError || "Démarrez le moteur GPS-Mock pour activer les commandes."}
+                  </div>
+                )}
+              </div>
+
               {/* Telemetry info */}
               {telemetry && (
                 <div className="ui-card">
@@ -253,11 +419,11 @@ export const Sidebar: React.FC = () => {
                       <span className="info-value blue">{telemetry.latency} ms</span>
                     </div>
                     <div className="info-item">
-                      <span className="info-label">Packet Loss</span>
+                      <span className="info-label">Pertes paquets</span>
                       <span className="info-value">{telemetry.packetLoss}%</span>
                     </div>
                     <div className="info-item">
-                      <span className="info-label">Uptime</span>
+                      <span className="info-label">Disponibilité</span>
                       <span className="info-value">{telemetry.uptime}s</span>
                     </div>
                     <div className="info-item">
@@ -280,7 +446,7 @@ export const Sidebar: React.FC = () => {
                       <span className="info-value">{status.deviceInfo.name}</span>
                     </div>
                     <div className="info-item">
-                      <span className="info-label">Driver Actif</span>
+                      <span className="info-label">Driver actif</span>
                       <span className="info-value blue">{status.deviceInfo.driver}</span>
                     </div>
                     <div className="info-item">
@@ -316,18 +482,79 @@ export const Sidebar: React.FC = () => {
                       onChange={(e) => setTeleportLon(e.target.value)}
                     />
                   </div>
-                  <button className="btn" onClick={triggerTeleport}>
+                  {teleportError && <div className="field-error">{teleportError}</div>}
+                  <button className="btn" onClick={triggerTeleport} disabled={!canSend}>
                     Téléporter
                   </button>
                 </div>
 
                 <div className="btn-group" style={{ marginTop: "8px" }}>
-                  <button className="btn btn-secondary" onClick={relance}>
+                  <button className="btn btn-secondary" onClick={relance} disabled={!canSend}>
                     <RefreshCw size={14} /> Relancer
                   </button>
-                  <button className="btn btn-danger" onClick={clearLocation}>
+                  <button className="btn btn-danger" onClick={clearLocation} disabled={!canSend}>
                     <Square size={14} /> Arrêter
                   </button>
+                </div>
+              </div>
+
+              {/* Patrol Control Card */}
+              <div className="ui-card">
+                <h3 className="ui-card-title">
+                  <Activity size={16} /> Patrouille de zone
+                </h3>
+                <div className="form-group">
+                  <label className="form-label">Type de zone</label>
+                  <select
+                    value={patrolType}
+                    onChange={(e) => setPatrolType(e.target.value as any)}
+                  >
+                    <option value="circle">Cercle</option>
+                    <option value="rectangle">Rectangle</option>
+                  </select>
+                </div>
+                {patrolType === "circle" && (
+                  <div className="form-group">
+                    <label className="form-label">Rayon (mètres)</label>
+                    <input
+                      type="number"
+                      value={patrolRadius}
+                      onChange={(e) => setPatrolRadius(e.target.value)}
+                    />
+                  </div>
+                )}
+                <div className="btn-group" style={{ marginTop: "8px" }}>
+                  {status?.patrolZone?.active ? (
+                    <button
+                      className="btn btn-danger"
+                      disabled={!canSend}
+                      onClick={() =>
+                        updatePatrolZone({
+                          type: patrolType,
+                          center: currentPos,
+                          radius: parseFloat(patrolRadius) || 200,
+                          active: false,
+                        })
+                      }
+                    >
+                      <Square size={14} /> Arrêter Patrouille
+                    </button>
+                  ) : (
+                    <button
+                      className="btn btn-success"
+                      disabled={!canSend}
+                      onClick={() =>
+                        updatePatrolZone({
+                          type: patrolType,
+                          center: currentPos,
+                          radius: parseFloat(patrolRadius) || 200,
+                          active: true,
+                        })
+                      }
+                    >
+                      <Play size={14} /> Lancer Patrouille
+                    </button>
+                  )}
                 </div>
               </div>
             </>
@@ -413,7 +640,7 @@ export const Sidebar: React.FC = () => {
                   className={`btn ${isDrawing ? "btn-danger" : "btn-secondary"}`}
                   onClick={toggleDrawMode}
                 >
-                  {isDrawing ? "Quitter le Mode Dessin" : "Activer le Mode Dessin"}
+                  {isDrawing ? "Quitter le mode dessin" : "Activer le mode dessin"}
                 </button>
 
                 {drawnPointsCount > 0 && (
@@ -458,7 +685,10 @@ export const Sidebar: React.FC = () => {
                       <button className="btn btn-secondary" onClick={clearDrawnPath}>
                         Effacer
                       </button>
-                      <button className="btn btn-success" onClick={playDrawnPath}>
+                      <button className="btn btn-secondary" onClick={exportDrawnGpx}>
+                        Exporter GPX
+                      </button>
+                      <button className="btn btn-success" onClick={playDrawnPath} disabled={!canSend || drawnPointsCount < 2}>
                         <Play size={12} /> Lancer le trajet
                       </button>
                     </div>
@@ -471,7 +701,13 @@ export const Sidebar: React.FC = () => {
                 <h3 className="ui-card-title">
                   <Save size={16} /> Importation GPX
                 </h3>
-                <div className="gpx-dropzone" onClick={() => document.getElementById("gpx-file-input")?.click()}>
+                <div
+                  className={`gpx-dropzone ${isDragOver ? "drag-over" : ""}`}
+                  onClick={() => document.getElementById("gpx-file-input")?.click()}
+                  onDragOver={handleDragOver}
+                  onDragLeave={handleDragLeave}
+                  onDrop={handleDrop}
+                >
                   <input
                     type="file"
                     id="gpx-file-input"
@@ -480,9 +716,10 @@ export const Sidebar: React.FC = () => {
                     onChange={handleGpxFileChange}
                   />
                   <div style={{ fontSize: "0.85rem", color: "#cbd5e1" }}>
-                    {gpxFileName ? "Fichier sélectionné :" : "Cliquez pour charger un fichier .gpx"}
+                    {gpxFileName ? "Fichier sélectionné :" : "Cliquez ou glissez un fichier .gpx ici"}
                   </div>
                   {gpxFileName && <div className="gpx-file-info">{gpxFileName}</div>}
+                  {gpxError && <div className="field-error">{gpxError}</div>}
                 </div>
 
                 {gpxContent && (
@@ -495,7 +732,7 @@ export const Sidebar: React.FC = () => {
                         onChange={(e) => setGpxSpeed(e.target.value)}
                       />
                     </div>
-                    <button className="btn btn-success" onClick={handlePlayGpx}>
+                    <button className="btn btn-success" onClick={handlePlayGpx} disabled={!canSend}>
                       <Play size={12} /> Lancer simulation GPX
                     </button>
                   </div>
@@ -571,6 +808,7 @@ export const Sidebar: React.FC = () => {
                         onChange={(e) => setNewLegEndLon(e.target.value)}
                       />
                     </div>
+                    {legError && <div className="field-error">{legError}</div>}
                   </div>
 
                   <div className="form-group">
@@ -610,8 +848,8 @@ export const Sidebar: React.FC = () => {
                       </span>
                     </label>
 
-                    <button className="btn btn-success" onClick={handlePlaySequence}>
-                      <Play size={14} /> Lancer la Séquence
+                    <button className="btn btn-success" onClick={handlePlaySequence} disabled={!canSend}>
+                      <Play size={14} /> Lancer la séquence
                     </button>
                   </div>
                 )}
@@ -624,11 +862,43 @@ export const Sidebar: React.FC = () => {
             <>
               <div className="ui-card">
                 <h3 className="ui-card-title">
-                  <Settings size={16} /> Configuration Moteur
+                  <Settings size={16} /> Connexion au moteur
+                </h3>
+
+                <div className="info-grid">
+                  <div className="info-item">
+                    <span className="info-label">État du sidecar</span>
+                    <span className={`info-value ${engineStatus === "running" ? "green" : engineStatus === "crashed" ? "warning" : ""}`}>
+                      {engineStatus === "running" ? "En cours" : engineStatus === "starting" ? "Démarrage" : engineStatus === "crashed" ? "Planté" : "Inconnu"}
+                    </span>
+                  </div>
+                  <div className="info-item">
+                    <span className="info-label">Endpoint actuel</span>
+                    <span className="info-value compact">{connectionUrl}</span>
+                  </div>
+                </div>
+
+                <div className="form-group">
+                  <label className="form-label">Port d'écoute du moteur</label>
+                  <input
+                    type="number"
+                    value={enginePortInput}
+                    onChange={(e) => setEnginePortInput(e.target.value)}
+                  />
+                  {enginePortError && <span className="field-error">{enginePortError}</span>}
+                  <button className="btn btn-secondary" style={{ marginTop: 8 }} onClick={handleApplyEnginePort}>
+                    <RefreshCw size={14} /> Redémarrer le moteur sur ce port
+                  </button>
+                </div>
+              </div>
+
+              <div className="ui-card">
+                <h3 className="ui-card-title">
+                  <Settings size={16} /> Configuration moteur
                 </h3>
 
                 <div className="form-group">
-                  <label className="form-label">Port du Serveur Go</label>
+                  <label className="form-label">Port RSD (annoté dans le statut)</label>
                   <input
                     type="number"
                     value={companionPort}
@@ -637,7 +907,7 @@ export const Sidebar: React.FC = () => {
                 </div>
 
                 <div className="form-group">
-                  <label className="form-label">Driver Préféré</label>
+                  <label className="form-label">Driver préféré</label>
                   <select
                     value={preferredDriver}
                     onChange={(e) => setPreferredDriver(e.target.value)}
@@ -659,6 +929,18 @@ export const Sidebar: React.FC = () => {
                   </span>
                 </label>
 
+                <label className="switch-label" style={{ margin: "8px 0" }}>
+                  <span className="form-label">Variation de vitesse (jitter)</span>
+                  <span className="switch-control">
+                    <input
+                      type="checkbox"
+                      checked={jitterEnabled}
+                      onChange={(e) => setJitterEnabled(e.target.checked)}
+                    />
+                    <span className="switch-slider"></span>
+                  </span>
+                </label>
+
                 {isEveilMode && (
                   <div className="form-group">
                     <label className="form-label">Intervalle Éveil (secondes)</label>
@@ -670,7 +952,7 @@ export const Sidebar: React.FC = () => {
                   </div>
                 )}
 
-                <button className="btn" onClick={handleSaveSettings} style={{ marginTop: "10px" }}>
+                <button className="btn" onClick={handleSaveSettings} style={{ marginTop: "10px" }} disabled={!canSend}>
                   <Save size={14} /> Enregistrer
                 </button>
               </div>
@@ -678,6 +960,12 @@ export const Sidebar: React.FC = () => {
           )}
         </div>
       </div>
+      {toast && (
+        <div className="toast-overlay" role="status" aria-live="polite">
+          <div className="toast">{toast}</div>
+        </div>
+      )}
     </>
   );
 };
+

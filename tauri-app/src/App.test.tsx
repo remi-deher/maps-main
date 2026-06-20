@@ -42,9 +42,9 @@ describe("GPS-Mock v3 - App Integration Smoke Tests", () => {
       fireEvent.click(settingsTab);
     });
 
-    // Should now show Configuration Moteur card
-    expect(screen.getByText("Configuration Moteur")).toBeInTheDocument();
-    expect(screen.getByText("Port du Serveur Go")).toBeInTheDocument();
+    // Should now show Configuration moteur card
+    expect(screen.getByText("Configuration moteur")).toBeInTheDocument();
+    expect(screen.getByText("Port RSD (annoté dans le statut)")).toBeInTheDocument();
   });
 
   it("renders new advanced map controls (Search, Styles, Draw, GPX)", async () => {
@@ -69,6 +69,7 @@ describe("GPS-Mock v3 - App Integration Smoke Tests", () => {
     // Check drawing card and GPX upload cards are displayed
     expect(screen.getByText("Dessin d'Itinéraire")).toBeInTheDocument();
     expect(screen.getByText("Importation GPX")).toBeInTheDocument();
-    expect(screen.getByText("Cliquez pour charger un fichier .gpx")).toBeInTheDocument();
+    expect(screen.getByText("Cliquez ou glissez un fichier .gpx ici")).toBeInTheDocument();
   });
 });
+

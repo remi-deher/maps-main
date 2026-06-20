@@ -149,6 +149,66 @@ func (s *Server) dispatch(c *client, env api.Envelope) {
 		var p api.HeartbeatPayload
 		_ = json.Unmarshal(env.Data, &p)
 		c.send <- encode(api.EventPong, s.eng.Heartbeat(p))
+	case api.ActionPlayRoute, api.ActionPlayOsrmRoute:
+		var p api.PlayRoutePayload
+		if json.Unmarshal(env.Data, &p) == nil {
+			if err := s.eng.PlayRoute(ctx, p.EndLat, p.EndLon, p.Speed, p.Profile); err != nil {
+				log.Printf("PLAY_ROUTE: %v", err)
+			}
+		}
+	case api.ActionPlaySequence:
+		var p api.PlaySequencePayload
+		if json.Unmarshal(env.Data, &p) == nil {
+			if err := s.eng.PlaySequence(ctx, p.Legs, p.Looping); err != nil {
+				log.Printf("PLAY_SEQUENCE: %v", err)
+			}
+		}
+	case api.ActionPlayCustomGpx:
+		var p api.PlayCustomGpxPayload
+		if json.Unmarshal(env.Data, &p) == nil {
+			if err := s.eng.PlayCustomGpx(ctx, p.GpxContent, p.Speed); err != nil {
+				log.Printf("PLAY_CUSTOM_GPX: %v", err)
+			}
+		}
+	case api.ActionPatrolUpdate:
+		var p api.PatrolUpdatePayload
+		if json.Unmarshal(env.Data, &p) == nil {
+			if err := s.eng.PatrolUpdate(ctx, p.Zone); err != nil {
+				log.Printf("PATROL_UPDATE: %v", err)
+			}
+		}
+	case api.ActionAddFavorite:
+		var p api.FavoritePayload
+		if json.Unmarshal(env.Data, &p) == nil {
+			if err := s.eng.AddFavorite(ctx, p.Lat, p.Lon, p.Name); err != nil {
+				log.Printf("ADD_FAVORITE: %v", err)
+			}
+		}
+	case api.ActionRemoveFavorite:
+		var p api.FavoritePayload
+		if json.Unmarshal(env.Data, &p) == nil {
+			if err := s.eng.RemoveFavorite(ctx, p.Lat, p.Lon); err != nil {
+				log.Printf("REMOVE_FAVORITE: %v", err)
+			}
+		}
+	case api.ActionRenameFavorite:
+		var p api.FavoritePayload
+		if json.Unmarshal(env.Data, &p) == nil {
+			if err := s.eng.RenameFavorite(ctx, p.Lat, p.Lon, p.NewName); err != nil {
+				log.Printf("RENAME_FAVORITE: %v", err)
+			}
+		}
+	case api.ActionSaveSettings:
+		var p api.SaveSettingsPayload
+		if json.Unmarshal(env.Data, &p) == nil {
+			if err := s.eng.SaveSettings(ctx, p); err != nil {
+				log.Printf("SAVE_SETTINGS: %v", err)
+			}
+		}
+	case api.ActionRelance:
+		if err := s.eng.Relance(ctx); err != nil {
+			log.Printf("RELANCE: %v", err)
+		}
 	default:
 		// Other actions land in later phases.
 	}

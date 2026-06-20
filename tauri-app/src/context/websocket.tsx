@@ -1,4 +1,8 @@
 import React, { createContext, useContext, useEffect, useRef, useState } from "react";
+import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
+
+const DEFAULT_PORT = 8080;
 
 export interface LatLon {
   lat: number;
@@ -83,6 +87,7 @@ export interface Status {
   currentSequencePreview: LatLon[];
   patrolZone: PatrolZone | null;
   navigation: Navigation;
+  lastInjectedLocation?: { lat: number; lon: number; name?: string; timestamp?: number } | null;
 }
 
 export interface Telemetry {
@@ -94,9 +99,16 @@ export interface Telemetry {
 
 interface WebSocketContextType {
   isConnected: boolean;
+  connectionStatus: "connecting" | "connected" | "reconnecting" | "disconnected";
+  connectionUrl: string;
+  enginePort: number;
+  engineStatus: "starting" | "running" | "crashed" | "unknown";
+  setEnginePort: (port: number) => Promise<void>;
+  lastError: string | null;
+  canSend: boolean;
   status: Status | null;
   telemetry: Telemetry | null;
-  sendMessage: (type: string, data?: any) => void;
+  sendMessage: (type: string, data?: any) => boolean;
   setLocation: (lat: number, lon: number, name?: string) => void;
   clearLocation: () => void;
   playRoute: (endLat: number, endLon: number, speed: number, profile: "driving" | "walking" | "cycling") => void;
@@ -107,6 +119,7 @@ interface WebSocketContextType {
   addFavorite: (lat: number, lon: number, name: string) => void;
   removeFavorite: (lat: number, lon: number) => void;
   renameFavorite: (lat: number, lon: number, newName: string) => void;
+  updatePatrolZone: (zone: PatrolZone | null) => void;
 }
 
 const WebSocketContext = createContext<WebSocketContextType | null>(null);
@@ -120,7 +133,12 @@ export const useWebSocket = () => {
 };
 
 export const WebSocketProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const [enginePort, setEnginePortState] = useState(DEFAULT_PORT);
+  const [engineStatus, setEngineStatus] = useState<WebSocketContextType["engineStatus"]>("unknown");
+  const connectionUrl = `ws://localhost:${enginePort}/ws`;
   const [isConnected, setIsConnected] = useState(false);
+  const [connectionStatus, setConnectionStatus] = useState<WebSocketContextType["connectionStatus"]>("connecting");
+  const [lastError, setLastError] = useState<string | null>(null);
   const [status, setStatus] = useState<Status | null>(null);
   const [telemetry, setTelemetry] = useState<Telemetry | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
@@ -131,13 +149,16 @@ export const WebSocketProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       wsRef.current.close();
     }
 
-    console.log("Connecting to GPS-Mock engine WebSocket...");
-    const ws = new WebSocket("ws://localhost:8080/ws");
+    console.log(`Connecting to GPS-Mock engine WebSocket on port ${enginePort}...`);
+    setConnectionStatus((previous) => (previous === "disconnected" ? "reconnecting" : "connecting"));
+    const ws = new WebSocket(`ws://localhost:${enginePort}/ws`);
     wsRef.current = ws;
 
     ws.onopen = () => {
       console.log("WebSocket connected successfully");
       setIsConnected(true);
+      setConnectionStatus("connected");
+      setLastError(null);
       // Request initial status
       ws.send(JSON.stringify({ type: "GET_STATUS" }));
     };
@@ -185,20 +206,51 @@ export const WebSocketProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         }
       } catch (err) {
         console.error("Error parsing WebSocket message:", err);
+        setLastError("Message moteur illisible.");
       }
     };
 
     ws.onclose = () => {
       console.log("WebSocket closed. Attempting reconnect in 2s...");
       setIsConnected(false);
+      setConnectionStatus("reconnecting");
+      setLastError("Connexion au moteur perdue. Nouvelle tentative dans 2 s.");
       reconnectTimeoutRef.current = setTimeout(connect, 2000);
     };
 
     ws.onerror = (err) => {
       console.error("WebSocket error:", err);
+      setLastError(`Impossible de joindre ${connectionUrl}.`);
       ws.close();
     };
   };
+
+  // Resolve the actual engine port chosen by the Rust side (persisted config,
+  // defaults to DEFAULT_PORT) before opening the first WebSocket connection.
+  useEffect(() => {
+    invoke<number>("get_engine_port")
+      .then((port) => setEnginePortState(port))
+      .catch(() => {
+        // Not running inside Tauri (e.g. `vite dev` in a browser): keep the default port.
+      });
+  }, []);
+
+  useEffect(() => {
+    const unlistenStatus = listen<string>("engine-status", (event) => {
+      const payload = event.payload;
+      if (payload === "starting") {
+        setEngineStatus("starting");
+      } else if (payload.startsWith("exited") || payload.startsWith("error")) {
+        setEngineStatus("crashed");
+        setLastError(`Moteur GPS-Mock indisponible (${payload}).`);
+      } else {
+        setEngineStatus("running");
+      }
+    });
+    return () => {
+      unlistenStatus.then((fn) => fn());
+    };
+  }, []);
 
   useEffect(() => {
     connect();
@@ -210,13 +262,24 @@ export const WebSocketProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         clearTimeout(reconnectTimeoutRef.current);
       }
     };
-  }, []);
+  }, [enginePort]);
+
+  const setEnginePort = async (port: number) => {
+    setEngineStatus("starting");
+    await invoke("set_engine_port", { port });
+    setEnginePortState(port);
+  };
+
+  const canSend = isConnected && wsRef.current?.readyState === WebSocket.OPEN;
 
   const sendMessage = (type: string, data: any = {}) => {
     if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
       wsRef.current.send(JSON.stringify({ type, data }));
+      return true;
     } else {
       console.warn("WebSocket not connected. Cannot send:", type);
+      setLastError("Action impossible: le moteur GPS-Mock est hors ligne.");
+      return false;
     }
   };
 
@@ -260,10 +323,21 @@ export const WebSocketProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     sendMessage("RENAME_FAVORITE", { lat, lon, newName });
   };
 
+  const updatePatrolZone = (zone: PatrolZone | null) => {
+    sendMessage("PATROL_UPDATE", { zone });
+  };
+
   return (
     <WebSocketContext.Provider
       value={{
         isConnected,
+        connectionStatus,
+        connectionUrl,
+        enginePort,
+        engineStatus,
+        setEnginePort,
+        lastError,
+        canSend,
         status,
         telemetry,
         sendMessage,
@@ -277,6 +351,7 @@ export const WebSocketProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         addFavorite,
         removeFavorite,
         renameFavorite,
+        updatePatrolZone,
       }}
     >
       {children}
