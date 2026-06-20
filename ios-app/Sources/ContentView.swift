@@ -12,7 +12,6 @@ struct ContentView: View {
     @State private var selectedPlace: SelectedPlace?
     @State private var showAddFavorite = false
     @State private var newFavoriteName = ""
-    @State private var showSettings = false
     @State private var cameraPosition: MapCameraPosition = .userLocation(fallback: .automatic)
 
     @State private var searchQuery = ""
@@ -35,10 +34,6 @@ struct ContentView: View {
         }
     }
 
-    private var isSearching: Bool {
-        !searchQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-    }
-
     var body: some View {
         ZStack(alignment: .bottom) {
             EngineMapView(
@@ -56,51 +51,18 @@ struct ContentView: View {
             }
             .ignoresSafeArea()
 
-            VStack(spacing: 10) {
-                OmniBar(query: $searchQuery, isFocused: $searchFocused) {
-                    showSettings = true
-                }
-
-                if isSearching {
-                    // Takes priority even mid-itinerary: tapping "Ajouter un
-                    // arrêt" refocuses this same field, so results must stay
-                    // visible while typing the next stop.
-                    SuggestionsPanel(searchResults: searchResults) { item in
-                        selectSearchResult(item)
-                    }
-                } else if !itineraryStops.isEmpty {
-                    ItineraryPanel(
-                        stops: $itineraryStops,
-                        speed: $itinerarySpeed,
-                        profile: $itineraryProfile,
-                        onAddStop: { searchFocused = true },
-                        onLaunch: launchItinerary,
-                        onCancel: { itineraryStops = [] }
-                    )
-                } else if let favorites = engine.status?.favorites, !favorites.isEmpty {
-                    FavoriteChips(
-                        favorites: favorites,
-                        onSelect: { fav in selectFavorite(fav) },
-                        onDelete: { fav in engine.removeFavorite(lat: fav.lat, lon: fav.lon) }
-                    )
-                }
-
-                Spacer()
-
-                if selectedPlace == nil {
-                    HStack {
-                        Spacer()
-                        RecenterButton {
-                            withAnimation {
-                                cameraPosition = .userLocation(fallback: .automatic)
-                            }
+            if selectedPlace == nil {
+                HStack {
+                    Spacer()
+                    RecenterButton {
+                        withAnimation {
+                            cameraPosition = .userLocation(fallback: .automatic)
                         }
                     }
-                    .padding(.trailing, 16)
                 }
+                .padding(.trailing, 16)
+                .padding(.bottom, 140)
             }
-            .padding(.top, 8)
-            .padding(.bottom, 16)
 
             if let place = selectedPlace {
                 PlaceCard(
@@ -142,14 +104,30 @@ struct ContentView: View {
                 newFavoriteName = ""
             }
         }
-        .sheet(isPresented: $showSettings) {
-            SettingsSheet(
+        .sheet(isPresented: .constant(true)) {
+            BottomSheet(
+                searchQuery: $searchQuery,
+                isFocused: $searchFocused,
+                searchResults: searchResults,
+                onSelectResult: selectSearchResult,
+                itineraryStops: $itineraryStops,
+                itinerarySpeed: $itinerarySpeed,
+                itineraryProfile: $itineraryProfile,
+                onAddStop: { searchFocused = true },
+                onLaunchItinerary: launchItinerary,
+                favorites: engine.status?.favorites ?? [],
+                onSelectFavorite: selectFavorite,
+                onDeleteFavorite: { fav in engine.removeFavorite(lat: fav.lat, lon: fav.lon) },
                 engineAddress: $engineAddress,
                 engine: engine,
                 discovery: discovery,
                 onToggleConnection: toggleConnection,
                 onRetryDiscovery: startDiscovery
             )
+            .presentationDetents([.height(120), .medium, .large])
+            .presentationDragIndicator(.visible)
+            .presentationBackgroundInteraction(.enabled)
+            .interactiveDismissDisabled()
         }
         .onAppear {
             location.requestPermission()
