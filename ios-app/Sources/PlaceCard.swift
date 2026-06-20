@@ -26,6 +26,8 @@ struct PlaceCard: View {
     var onFavorite: () -> Void
     var onDismiss: () -> Void
 
+    @State private var actionFeedback = 0
+
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             HStack(alignment: .top) {
@@ -56,11 +58,15 @@ struct PlaceCard: View {
         .padding(18)
         .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 26, style: .continuous))
         .padding(.horizontal, 16)
+        .sensoryFeedback(.success, trigger: actionFeedback)
     }
 
     @ViewBuilder
     private func actionButton(_ title: String, icon: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
+        Button {
+            actionFeedback += 1
+            action()
+        } label: {
             VStack(spacing: 4) {
                 Image(systemName: icon)
                     .font(.system(size: 16, weight: .semibold))

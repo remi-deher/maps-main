@@ -12,6 +12,8 @@ struct ItineraryPanel: View {
     var onLaunch: () -> Void
     var onCancel: () -> Void
 
+    @State private var launchFeedback = 0
+
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
@@ -89,15 +91,19 @@ struct ItineraryPanel: View {
             }
             .pickerStyle(.segmented)
 
-            Button("Lancer l'itinéraire", action: onLaunch)
-                .buttonStyle(.glassProminent)
-                .tint(.indigo)
-                .frame(maxWidth: .infinity)
-                .disabled(stops.isEmpty)
+            Button("Lancer l'itinéraire") {
+                launchFeedback += 1
+                onLaunch()
+            }
+            .buttonStyle(.glassProminent)
+            .tint(.indigo)
+            .frame(maxWidth: .infinity)
+            .disabled(stops.isEmpty)
         }
         .padding(18)
         .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 26, style: .continuous))
         .padding(.horizontal, 16)
+        .sensoryFeedback(.success, trigger: launchFeedback)
     }
 
     private func moveUp(_ index: Int) {

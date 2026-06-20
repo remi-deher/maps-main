@@ -54,10 +54,12 @@ struct BottomSheet: View {
                     } else if !favorites.isEmpty {
                         FavoriteChips(favorites: favorites, onSelect: onSelectFavorite, onDelete: onDeleteFavorite)
                     } else {
-                        Text("Recherchez une adresse ou touchez la carte pour commencer.")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                            .padding(.top, 8)
+                        ContentUnavailableView(
+                            "Aucun itinéraire",
+                            systemImage: "map",
+                            description: Text("Recherchez une adresse ou touchez la carte pour commencer.")
+                        )
+                        .padding(.top, 8)
                     }
                 }
                 .padding(.bottom, 24)
