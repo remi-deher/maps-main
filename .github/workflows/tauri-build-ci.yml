@@ -1,0 +1,60 @@
+name: Tauri App Build CI
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [v3-rewrite, main]
+    paths:
+      - 'tauri-app/**'
+      - '.github/workflows/tauri-build-ci.yml'
+      - 'engine/**'
+  pull_request:
+    paths:
+      - 'tauri-app/**'
+      - '.github/workflows/tauri-build-ci.yml'
+      - 'engine/**'
+
+permissions:
+  contents: read
+
+jobs:
+  build-tauri:
+    name: Build & Compile Tauri App
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Go (for sidecar compilation)
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: engine/go.mod
+          cache-dependency-path: engine/go.sum
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+          cache-dependency-path: tauri-app/package-lock.json
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install frontend dependencies
+        run: |
+          cd tauri-app
+          npm ci
+
+      - name: Build Go sidecar
+        shell: pwsh
+        run: ./scripts/build-sidecar.ps1
+
+      - name: Build Tauri App (Compilation Check)
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          projectPath: tauri-app
+          args: --no-bundle
