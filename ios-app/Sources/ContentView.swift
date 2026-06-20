@@ -165,6 +165,11 @@ struct ContentView: View {
         .onChange(of: searchQuery) { newValue in
             performSearch(newValue)
         }
+        .onChange(of: itineraryStops) { newStops in
+            // Plans-style: adding (or removing/reordering) a stop reframes
+            // the camera to show the whole itinerary, not just the new point.
+            fitItinerary(newStops)
+        }
     }
 
     private func startDiscovery() {
@@ -200,7 +205,6 @@ struct ContentView: View {
     /// append another one) instead of going through the one-off PlaceCard.
     private func selectSearchResult(_ item: MKMapItem) {
         guard let coordinate = item.placemark.location?.coordinate else { return }
-        focus(on: coordinate)
         itineraryStops.append(RouteStop(coordinate: coordinate, name: item.name ?? "Lieu"))
         searchResults = []
         searchQuery = ""
@@ -238,6 +242,45 @@ struct ContentView: View {
         withAnimation {
             cameraPosition = .region(MKCoordinateRegion(center: coordinate, latitudinalMeters: 800, longitudinalMeters: 800))
         }
+    }
+
+    /// Reframes the camera so every stop (plus the device's real position,
+    /// when known — itineraries start from wherever the phone actually is)
+    /// fits on screen, instead of just zooming in on the latest addition.
+    private func fitItinerary(_ stops: [RouteStop]) {
+        guard !stops.isEmpty else { return }
+        var coordinates = stops.map(\.coordinate)
+        if let real = location.lastLocation?.coordinate {
+            coordinates.append(real)
+        }
+        withAnimation {
+            cameraPosition = .region(boundingRegion(for: coordinates))
+        }
+    }
+
+    private func boundingRegion(for coordinates: [CLLocationCoordinate2D]) -> MKCoordinateRegion {
+        guard let first = coordinates.first else {
+            return MKCoordinateRegion(center: CLLocationCoordinate2D(latitude: 48.8566, longitude: 2.3522), latitudinalMeters: 800, longitudinalMeters: 800)
+        }
+        guard coordinates.count > 1 else {
+            return MKCoordinateRegion(center: first, latitudinalMeters: 800, longitudinalMeters: 800)
+        }
+
+        let latitudes = coordinates.map(\.latitude)
+        let longitudes = coordinates.map(\.longitude)
+        let minLat = latitudes.min()!
+        let maxLat = latitudes.max()!
+        let minLon = longitudes.min()!
+        let maxLon = longitudes.max()!
+
+        let center = CLLocationCoordinate2D(latitude: (minLat + maxLat) / 2, longitude: (minLon + maxLon) / 2)
+        // 1.6x padding so stops near the edge aren't flush against the screen
+        // border, with a floor so two very close stops don't over-zoom.
+        let span = MKCoordinateSpan(
+            latitudeDelta: max((maxLat - minLat) * 1.6, 0.01),
+            longitudeDelta: max((maxLon - minLon) * 1.6, 0.01)
+        )
+        return MKCoordinateRegion(center: center, span: span)
     }
 
     private func toggleConnection() {
