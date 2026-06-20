@@ -1,6 +1,7 @@
 name: Specs CI
 
 on:
+  workflow_dispatch:
   push:
     branches: [v3-rewrite, main]
     paths:

@@ -1,6 +1,7 @@
 name: Scripts Lint
 
 on:
+  workflow_dispatch:
   push:
     branches: [v3-rewrite, main]
     paths:
