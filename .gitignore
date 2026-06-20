@@ -36,6 +36,8 @@ __pycache__/
 
 # --- Go (engine) ---
 engine/bin/
+engine/headless
+engine/headless.exe
 *.exe
 *.test
 *.out
