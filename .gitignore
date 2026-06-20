@@ -33,3 +33,11 @@ out/
 coverage/
 __pycache__/
 *.pyc
+
+# --- Go (engine) ---
+engine/bin/
+*.exe
+*.test
+*.out
+go.work
+go.work.sum

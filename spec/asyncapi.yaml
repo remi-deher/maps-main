@@ -1,0 +1,375 @@
+asyncapi: 3.0.0
+info:
+  title: GPS-Mock Engine — WebSocket API
+  version: 0.1.0
+  description: >
+    Real-time channel of the Go engine (v3). Raw WebSocket, JSON messages.
+    Every message is an envelope { "type": <string>, "data": <object> }.
+    "send" = client -> engine (inbound actions); "receive" = engine -> client
+    (outbound events). Source of truth: engine/internal/api.
+
+servers:
+  default:
+    host: "localhost:8080"
+    protocol: ws
+    description: Companion WebSocket endpoint (ws://host:port)
+
+defaultContentType: application/json
+
+channels:
+  ws:
+    address: /
+    messages:
+      # ── Inbound (client -> engine) ──
+      SET_LOCATION: { $ref: "#/components/messages/SET_LOCATION" }
+      CLEAR_LOCATION: { $ref: "#/components/messages/CLEAR_LOCATION" }
+      PLAY_ROUTE: { $ref: "#/components/messages/PLAY_ROUTE" }
+      PLAY_OSRM_ROUTE: { $ref: "#/components/messages/PLAY_ROUTE" }
+      PLAY_SEQUENCE: { $ref: "#/components/messages/PLAY_SEQUENCE" }
+      PLAY_CUSTOM_GPX: { $ref: "#/components/messages/PLAY_CUSTOM_GPX" }
+      STOP_ROUTE: { $ref: "#/components/messages/EMPTY" }
+      PAUSE_ROUTE: { $ref: "#/components/messages/EMPTY" }
+      RESUME_ROUTE: { $ref: "#/components/messages/EMPTY" }
+      ADD_FAVORITE: { $ref: "#/components/messages/FAVORITE" }
+      REMOVE_FAVORITE: { $ref: "#/components/messages/FAVORITE" }
+      RENAME_FAVORITE: { $ref: "#/components/messages/FAVORITE" }
+      ADD_HISTORY: { $ref: "#/components/messages/FAVORITE" }
+      SAVE_SETTINGS: { $ref: "#/components/messages/SAVE_SETTINGS" }
+      HEARTBEAT: { $ref: "#/components/messages/HEARTBEAT" }
+      REAL_LOCATION: { $ref: "#/components/messages/REAL_LOCATION" }
+      GET_STATUS: { $ref: "#/components/messages/EMPTY" }
+      DEBUG_LOG: { $ref: "#/components/messages/DEBUG_LOG" }
+      SEQUENCE_SYNC: { $ref: "#/components/messages/SEQUENCE_SYNC" }
+      PATROL_UPDATE: { $ref: "#/components/messages/PATROL_UPDATE" }
+      RELANCE: { $ref: "#/components/messages/EMPTY" }
+      # ── Outbound (engine -> client) ──
+      STATUS: { $ref: "#/components/messages/STATUS" }
+      STATUS_UPDATE: { $ref: "#/components/messages/STATUS_UPDATE" }
+      ACK: { $ref: "#/components/messages/ACK" }
+      PONG: { $ref: "#/components/messages/PONG" }
+      LOCATION: { $ref: "#/components/messages/LOCATION" }
+      TELEMETRY: { $ref: "#/components/messages/TELEMETRY" }
+      SEQUENCE_PREVIEW_UPDATED: { $ref: "#/components/messages/SEQUENCE_PREVIEW_UPDATED" }
+      ROUTE_FINISHED: { $ref: "#/components/messages/ROUTE_FINISHED" }
+
+operations:
+  sendAction:
+    action: send
+    channel: { $ref: "#/channels/ws" }
+    messages:
+      - { $ref: "#/channels/ws/messages/SET_LOCATION" }
+      - { $ref: "#/channels/ws/messages/CLEAR_LOCATION" }
+      - { $ref: "#/channels/ws/messages/PLAY_ROUTE" }
+      - { $ref: "#/channels/ws/messages/PLAY_SEQUENCE" }
+      - { $ref: "#/channels/ws/messages/PLAY_CUSTOM_GPX" }
+      - { $ref: "#/channels/ws/messages/HEARTBEAT" }
+      - { $ref: "#/channels/ws/messages/REAL_LOCATION" }
+      - { $ref: "#/channels/ws/messages/PATROL_UPDATE" }
+      - { $ref: "#/channels/ws/messages/SEQUENCE_SYNC" }
+  receiveEvent:
+    action: receive
+    channel: { $ref: "#/channels/ws" }
+    messages:
+      - { $ref: "#/channels/ws/messages/STATUS" }
+      - { $ref: "#/channels/ws/messages/ACK" }
+      - { $ref: "#/channels/ws/messages/LOCATION" }
+      - { $ref: "#/channels/ws/messages/TELEMETRY" }
+      - { $ref: "#/channels/ws/messages/ROUTE_FINISHED" }
+
+components:
+  messages:
+    EMPTY:
+      name: empty
+      payload:
+        type: object
+        properties:
+          type: { type: string }
+          data: { type: object }
+    SET_LOCATION:
+      payload: { $ref: "#/components/schemas/Envelope_SetLocation" }
+    CLEAR_LOCATION:
+      payload: { $ref: "#/components/schemas/Envelope_Empty" }
+    PLAY_ROUTE:
+      payload: { $ref: "#/components/schemas/Envelope_PlayRoute" }
+    PLAY_SEQUENCE:
+      payload: { $ref: "#/components/schemas/Envelope_PlaySequence" }
+    PLAY_CUSTOM_GPX:
+      payload: { $ref: "#/components/schemas/Envelope_PlayCustomGpx" }
+    FAVORITE:
+      payload: { $ref: "#/components/schemas/Envelope_Favorite" }
+    SAVE_SETTINGS:
+      payload: { $ref: "#/components/schemas/Envelope_SaveSettings" }
+    HEARTBEAT:
+      payload: { $ref: "#/components/schemas/Envelope_Heartbeat" }
+    REAL_LOCATION:
+      payload: { $ref: "#/components/schemas/Envelope_RealLocation" }
+    DEBUG_LOG:
+      payload: { $ref: "#/components/schemas/Envelope_DebugLog" }
+    SEQUENCE_SYNC:
+      payload: { $ref: "#/components/schemas/Envelope_SequenceSync" }
+    PATROL_UPDATE:
+      payload: { $ref: "#/components/schemas/Envelope_PatrolUpdate" }
+    STATUS:
+      payload: { $ref: "#/components/schemas/Envelope_Status" }
+    STATUS_UPDATE:
+      payload: { $ref: "#/components/schemas/Envelope_Empty" }
+    ACK:
+      payload: { $ref: "#/components/schemas/Envelope_Ack" }
+    PONG:
+      payload: { $ref: "#/components/schemas/Envelope_Pong" }
+    LOCATION:
+      payload: { $ref: "#/components/schemas/Envelope_Location" }
+    TELEMETRY:
+      payload: { $ref: "#/components/schemas/Envelope_Telemetry" }
+    SEQUENCE_PREVIEW_UPDATED:
+      payload: { $ref: "#/components/schemas/Envelope_SequenceSync" }
+    ROUTE_FINISHED:
+      payload: { $ref: "#/components/schemas/Envelope_RouteFinished" }
+
+  schemas:
+    Envelope_Empty:
+      type: object
+      properties:
+        type: { type: string }
+        data: { type: object }
+      required: [type]
+
+    Envelope_SetLocation:
+      type: object
+      properties:
+        type: { const: SET_LOCATION }
+        data:
+          type: object
+          properties:
+            lat: { type: number }
+            lon: { type: number }
+            name: { type: string }
+          required: [lat, lon]
+      required: [type, data]
+
+    Envelope_PlayRoute:
+      type: object
+      properties:
+        type: { type: string, enum: [PLAY_ROUTE, PLAY_OSRM_ROUTE] }
+        data:
+          type: object
+          properties:
+            endLat: { type: number }
+            endLon: { type: number }
+            speed: { type: number }
+            profile: { type: string, enum: [driving, walking, cycling] }
+          required: [endLat, endLon]
+      required: [type, data]
+
+    Envelope_PlaySequence:
+      type: object
+      properties:
+        type: { const: PLAY_SEQUENCE }
+        data:
+          type: object
+          properties:
+            legs:
+              type: array
+              items:
+                type: object
+                properties:
+                  type: { type: string, enum: [start, drive, walk, flight, wait] }
+                  start: { $ref: "#/components/schemas/LatLon" }
+                  end: { $ref: "#/components/schemas/LatLon" }
+                  startTime: { type: integer }
+                  endTime: { type: integer }
+                  speed: { type: number }
+                required: [type, start, end]
+            looping: { type: boolean }
+          required: [legs]
+      required: [type, data]
+
+    Envelope_PlayCustomGpx:
+      type: object
+      properties:
+        type: { const: PLAY_CUSTOM_GPX }
+        data:
+          type: object
+          properties:
+            gpxContent: { type: string }
+            speed: { type: number }
+          required: [gpxContent]
+      required: [type, data]
+
+    Envelope_Favorite:
+      type: object
+      properties:
+        type: { type: string, enum: [ADD_FAVORITE, REMOVE_FAVORITE, RENAME_FAVORITE, ADD_HISTORY] }
+        data:
+          type: object
+          properties:
+            lat: { type: number }
+            lon: { type: number }
+            name: { type: string }
+            newName: { type: string }
+          required: [lat, lon]
+      required: [type, data]
+
+    Envelope_SaveSettings:
+      type: object
+      properties:
+        type: { const: SAVE_SETTINGS }
+        data: { type: object, description: partial settings object }
+      required: [type, data]
+
+    Envelope_Heartbeat:
+      type: object
+      properties:
+        type: { const: HEARTBEAT }
+        data:
+          type: object
+          properties:
+            isMaintaining: { type: boolean }
+            latitude: { type: number }
+            longitude: { type: number }
+            timestamp: { type: integer }
+      required: [type]
+
+    Envelope_RealLocation:
+      type: object
+      properties:
+        type: { const: REAL_LOCATION }
+        data:
+          type: object
+          properties:
+            latitude: { type: number }
+            longitude: { type: number }
+          required: [latitude, longitude]
+      required: [type, data]
+
+    Envelope_DebugLog:
+      type: object
+      properties:
+        type: { const: DEBUG_LOG }
+        data:
+          type: object
+          properties: { message: { type: string } }
+          required: [message]
+      required: [type, data]
+
+    Envelope_SequenceSync:
+      type: object
+      properties:
+        type: { type: string, enum: [SEQUENCE_SYNC, SEQUENCE_PREVIEW_UPDATED] }
+        data:
+          type: object
+          properties:
+            points:
+              type: array
+              items: { $ref: "#/components/schemas/SequencePoint" }
+      required: [type, data]
+
+    Envelope_PatrolUpdate:
+      type: object
+      properties:
+        type: { const: PATROL_UPDATE }
+        data:
+          type: object
+          properties:
+            zone: { $ref: "#/components/schemas/PatrolZone" }
+          required: [zone]
+      required: [type, data]
+
+    Envelope_Status:
+      type: object
+      properties:
+        type: { const: STATUS }
+        data: { type: object, description: "full Status object (see openapi.yaml Status)" }
+      required: [type, data]
+
+    Envelope_Ack:
+      type: object
+      properties:
+        type: { const: ACK }
+        data:
+          type: object
+          properties:
+            lat: { type: number }
+            lon: { type: number }
+            timestamp: { type: integer }
+      required: [type, data]
+
+    Envelope_Pong:
+      type: object
+      properties:
+        type: { const: PONG }
+        data:
+          type: object
+          properties: { timestamp: { type: integer } }
+      required: [type, data]
+
+    Envelope_Location:
+      type: object
+      properties:
+        type: { const: LOCATION }
+        data:
+          type: object
+          properties:
+            lat: { type: number }
+            lon: { type: number }
+            name: { type: string }
+          required: [lat, lon]
+      required: [type, data]
+
+    Envelope_Telemetry:
+      type: object
+      properties:
+        type: { const: TELEMETRY }
+        data:
+          type: object
+          properties:
+            latency: { type: number }
+            packetLoss: { type: number }
+            uptime: { type: integer }
+            throughput: { type: number }
+      required: [type, data]
+
+    Envelope_RouteFinished:
+      type: object
+      properties:
+        type: { const: ROUTE_FINISHED }
+        data:
+          type: object
+          properties:
+            timestamp: { type: integer }
+            location:
+              type: object
+              properties:
+                lat: { type: number }
+                lon: { type: number }
+                name: { type: string }
+      required: [type, data]
+
+    LatLon:
+      type: object
+      properties:
+        lat: { type: number }
+        lon: { type: number }
+      required: [lat, lon]
+
+    SequencePoint:
+      type: object
+      properties:
+        lat: { type: number }
+        lon: { type: number }
+        time: { type: integer }
+      required: [lat, lon]
+
+    PatrolZone:
+      type: object
+      properties:
+        type: { type: string, enum: [circle, rectangle] }
+        center: { $ref: "#/components/schemas/LatLon" }
+        radius: { type: number }
+        bounds:
+          type: object
+          properties:
+            ne: { $ref: "#/components/schemas/LatLon" }
+            sw: { $ref: "#/components/schemas/LatLon" }
+        active: { type: boolean }
+      required: [type, active]
