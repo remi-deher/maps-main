@@ -7,6 +7,10 @@ desktop.ini
 *.log
 logs/
 
+# --- Claude Code (local-only state; .claude/skills/ stays tracked) ---
+.claude/settings.local.json
+.claude/scheduled_tasks.lock
+
 # --- IDEs ---
 .vscode/
 .idea/

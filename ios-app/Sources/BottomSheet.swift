@@ -76,6 +76,9 @@ struct BottomSheet: View {
     }
 
     private var header: some View {
+        // Sibling glass elements grouped in one GlassEffectContainer for
+        // shared rendering/blending — see .claude/skills/swiftui-liquid-glass.
+        GlassEffectContainer(spacing: 12) {
         HStack(spacing: 12) {
             HStack(spacing: 8) {
                 Image(systemName: "magnifyingglass")
@@ -108,6 +111,7 @@ struct BottomSheet: View {
             .buttonStyle(.glass)
             .buttonBorderShape(.circle)
             .clipShape(Circle())
+        }
         }
         .padding(.horizontal, 16)
     }
