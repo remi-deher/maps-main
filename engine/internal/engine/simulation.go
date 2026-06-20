@@ -187,7 +187,7 @@ func (e *Engine) startRouteSimulation(ctx context.Context, points []domain.LatLo
 			e.mu.Unlock()
 
 			// Inject location
-			if err := e.SetLocation(ctx, p.Lat, p.Lon, "Route simulation"); err != nil {
+			if err := e.simSetLocation(ctx, p.Lat, p.Lon, "Route simulation"); err != nil {
 				fmt.Printf("Error injecting location: %v\n", err)
 			}
 
@@ -303,7 +303,7 @@ func (e *Engine) startPatrolSimulation(ctx context.Context, zone domain.PatrolZo
 			e.mu.Unlock()
 
 			// Inject location
-			if err := e.SetLocation(ctx, p.Lat, p.Lon, "Patrol Mode"); err != nil {
+			if err := e.simSetLocation(ctx, p.Lat, p.Lon, "Patrol Mode"); err != nil {
 				fmt.Printf("Error injecting location: %v\n", err)
 			}
 		}
@@ -313,15 +313,15 @@ func (e *Engine) startPatrolSimulation(ctx context.Context, zone domain.PatrolZo
 // Simple GPX coordinate extraction using regular expressions
 func parseGPXCoordinates(gpxContent string) []domain.LatLon {
 	var points []domain.LatLon
-	
+
 	// Support matching both single and double quotes for lat/lon in trkpt
 	latRegex := regexp.MustCompile(`lat=["'](-?\d+\.?\d*)["']`)
 	lonRegex := regexp.MustCompile(`lon=["'](-?\d+\.?\d*)["']`)
-	
+
 	// Split by trkpt tags
 	trkptRegex := regexp.MustCompile(`<trkpt\s+[^>]*>`)
 	matches := trkptRegex.FindAllString(gpxContent, -1)
-	
+
 	for _, match := range matches {
 		latMatch := latRegex.FindStringSubmatch(match)
 		lonMatch := lonRegex.FindStringSubmatch(match)
@@ -335,4 +335,3 @@ func parseGPXCoordinates(gpxContent string) []domain.LatLon {
 	}
 	return points
 }
-

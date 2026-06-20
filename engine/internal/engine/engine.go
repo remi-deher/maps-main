@@ -6,6 +6,7 @@ package engine
 import (
 	"context"
 	"fmt"
+	"log"
 	"os"
 	"runtime"
 	"sync"
@@ -28,6 +29,11 @@ type Engine struct {
 	emit      EmitFunc
 	cancelSim context.CancelFunc
 	simMu     sync.Mutex
+
+	// Anti-drift shield: tracks consecutive REAL_LOCATION reports that drift
+	// too far from the spoofed position, to confirm before forcing a re-inject.
+	driftFailures   int
+	lastReinjection time.Time
 }
 
 // New builds an Engine seeded from settings.
@@ -87,6 +93,17 @@ func (e *Engine) StartTunnel(ctx context.Context) error {
 
 // SetLocation injects a spoofed position and broadcasts ACK/LOCATION/STATUS.
 func (e *Engine) SetLocation(ctx context.Context, lat, lon float64, name string) error {
+	return e.injectLocation(ctx, lat, lon, name, true)
+}
+
+// simSetLocation injects a position from a running route/patrol simulation
+// tick. It skips the history list — recording every tick would flood it with
+// a new entry every second instead of the handful of user-initiated jumps.
+func (e *Engine) simSetLocation(ctx context.Context, lat, lon float64, name string) error {
+	return e.injectLocation(ctx, lat, lon, name, false)
+}
+
+func (e *Engine) injectLocation(ctx context.Context, lat, lon float64, name string, recordHistory bool) error {
 	if err := e.drv.SetLocation(ctx, lat, lon); err != nil {
 		return err
 	}
@@ -94,6 +111,9 @@ func (e *Engine) SetLocation(ctx context.Context, lat, lon float64, name string)
 	e.mu.Lock()
 	e.st.LastInjectedLocation = &api.LocationStamp{Lat: lat, Lon: lon, Name: name, Timestamp: now}
 	e.st.State = "running"
+	if recordHistory {
+		e.pushHistory(lat, lon, name, now)
+	}
 	emit, st := e.emit, e.st
 	e.mu.Unlock()
 
@@ -101,6 +121,25 @@ func (e *Engine) SetLocation(ctx context.Context, lat, lon float64, name string)
 	emit(api.EventLocation, api.LocationPayload{Lat: lat, Lon: lon, Name: name})
 	emit(api.EventStatus, st)
 	return nil
+}
+
+// pushHistory prepends a recent-history entry, skipping consecutive duplicates
+// and capping the list at 20 entries. Caller must hold e.mu.
+const maxHistoryEntries = 20
+
+func (e *Engine) pushHistory(lat, lon float64, name string, now int64) {
+	if len(e.st.RecentHistory) > 0 {
+		last := e.st.RecentHistory[0]
+		if last.Lat == lat && last.Lon == lon {
+			return
+		}
+	}
+	entry := domain.HistoryEntry{Lat: lat, Lon: lon, Name: name, Timestamp: now}
+	history := append([]domain.HistoryEntry{entry}, e.st.RecentHistory...)
+	if len(history) > maxHistoryEntries {
+		history = history[:maxHistoryEntries]
+	}
+	e.st.RecentHistory = history
 }
 
 // ClearLocation removes any spoofed position and broadcasts ACK/STATUS.
@@ -130,6 +169,59 @@ func (e *Engine) Heartbeat(p api.HeartbeatPayload) api.PongPayload {
 	e.st.LastHeartbeat = nowMs()
 	e.mu.Unlock()
 	return api.PongPayload{Timestamp: nowMs()}
+}
+
+// Anti-drift shield tuning, ported from the legacy companion server: a
+// generous tolerance (real GPS/network jitter is normal) confirmed over two
+// consecutive reports, with a cooldown so a flaky reading can't trigger a
+// re-injection storm.
+const (
+	driftThresholdMeters     = 100.0
+	driftConfirmFailures     = 2
+	driftReinjectionCooldown = 15 * time.Second
+)
+
+// ReportRealLocation records the device's actual GPS position (REAL_LOCATION,
+// reported by the companion/iOS side) and, if it has drifted too far from the
+// spoofed position for two consecutive reports, forces a re-injection rather
+// than letting the device silently fall back to its real position.
+func (e *Engine) ReportRealLocation(ctx context.Context, lat, lon float64) {
+	e.mu.Lock()
+	target := e.st.LastInjectedLocation
+	if target == nil {
+		target = e.st.LastVerifiedLocation
+	}
+	if target == nil {
+		e.mu.Unlock()
+		return
+	}
+
+	dist := haversineDistance(domain.LatLon{Lat: lat, Lon: lon}, domain.LatLon{Lat: target.Lat, Lon: target.Lon})
+	now := nowMs()
+	e.st.LastRealLocation = &api.RealLocation{Lat: lat, Lon: lon, Drift: dist, Timestamp: now}
+
+	reinject := false
+	reinjectTarget := *target
+	if dist > driftThresholdMeters {
+		e.driftFailures++
+		if e.driftFailures >= driftConfirmFailures && time.Since(e.lastReinjection) > driftReinjectionCooldown {
+			reinject = true
+			e.driftFailures = 0
+			e.lastReinjection = time.Now()
+		}
+	} else {
+		e.driftFailures = 0
+		e.st.LastVerifiedLocation = &api.LocationStamp{Lat: target.Lat, Lon: target.Lon, Name: target.Name, Timestamp: now}
+	}
+	emit, st := e.emit, e.st
+	e.mu.Unlock()
+
+	emit(api.EventStatus, st)
+
+	if reinject {
+		log.Printf("anti-drift shield: %.0fm drift confirmed twice, forcing re-injection", dist)
+		_ = e.SetLocation(ctx, reinjectTarget.Lat, reinjectTarget.Lon, reinjectTarget.Name)
+	}
 }
 
 // Status returns a snapshot of the current state.
@@ -257,6 +349,16 @@ func (e *Engine) PatrolUpdate(ctx context.Context, zone domain.PatrolZone) error
 	return nil
 }
 
+// GetDeviceInfo asks the driver for rich device metadata, if it supports it
+// (currently go-ios only — see driver.DeviceInfoProvider).
+func (e *Engine) GetDeviceInfo(ctx context.Context) (driver.DeviceDetails, error) {
+	provider, ok := e.drv.(driver.DeviceInfoProvider)
+	if !ok {
+		return driver.DeviceDetails{}, fmt.Errorf("device info not supported by driver %q", e.drv.ID())
+	}
+	return provider.DeviceDetails(ctx)
+}
+
 // AddFavorite adds a new favorite location
 func (e *Engine) AddFavorite(ctx context.Context, lat, lon float64, name string) error {
 	e.mu.Lock()
@@ -364,4 +466,3 @@ func isDocker() bool {
 	}
 	return false
 }
-

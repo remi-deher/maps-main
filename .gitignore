@@ -34,6 +34,14 @@ coverage/
 __pycache__/
 *.pyc
 
+# --- iOS (ios-app) ---
+ios-app/*.xcodeproj/
+ios-app/dist/
+ios-app/build/
+ios-app/Payload/
+DerivedData/
+*.xcuserstate
+
 # --- Go (engine) ---
 engine/bin/
 engine/headless

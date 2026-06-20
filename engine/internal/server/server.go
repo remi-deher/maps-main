@@ -145,6 +145,11 @@ func (s *Server) dispatch(c *client, env api.Envelope) {
 		}
 	case api.ActionGetStatus:
 		c.send <- encode(api.EventStatus, s.eng.Status())
+	case api.ActionRealLocation:
+		var p api.RealLocationPayload
+		if json.Unmarshal(env.Data, &p) == nil {
+			s.eng.ReportRealLocation(ctx, p.Latitude, p.Longitude)
+		}
 	case api.ActionHeartbeat:
 		var p api.HeartbeatPayload
 		_ = json.Unmarshal(env.Data, &p)
@@ -209,6 +214,22 @@ func (s *Server) dispatch(c *client, env api.Envelope) {
 		if err := s.eng.Relance(ctx); err != nil {
 			log.Printf("RELANCE: %v", err)
 		}
+	case api.ActionGetDeviceInfo:
+		info, err := s.eng.GetDeviceInfo(ctx)
+		if err != nil {
+			log.Printf("GET_DEVICE_INFO: %v", err)
+			c.send <- encode(api.EventDeviceInfo, api.DeviceInfoPayload{Error: err.Error()})
+			break
+		}
+		c.send <- encode(api.EventDeviceInfo, api.DeviceInfoPayload{
+			UDID:           info.UDID,
+			Name:           info.Name,
+			ProductType:    info.ProductType,
+			ProductVersion: info.ProductVersion,
+			SerialNumber:   info.SerialNumber,
+			WifiAddress:    info.WifiAddress,
+			TunnelAddress:  info.TunnelAddress,
+		})
 	default:
 		// Other actions land in later phases.
 	}

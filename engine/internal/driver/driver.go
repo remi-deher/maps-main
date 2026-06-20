@@ -56,3 +56,22 @@ type Driver interface {
 	// Tunnel returns the current tunnel info and whether one is active.
 	Tunnel() (TunnelInfo, bool)
 }
+
+// DeviceDetails carries descriptive metadata about a connected device (name,
+// model, serial, network address...).
+type DeviceDetails struct {
+	UDID           string
+	Name           string
+	ProductType    string
+	ProductVersion string
+	SerialNumber   string
+	WifiAddress    string
+	TunnelAddress  string
+}
+
+// DeviceInfoProvider is an optional capability: drivers able to fetch rich
+// device metadata implement it. Only the go-ios backend does today —
+// pymobiledevice3 support can be added later behind the same interface.
+type DeviceInfoProvider interface {
+	DeviceDetails(ctx context.Context) (DeviceDetails, error)
+}

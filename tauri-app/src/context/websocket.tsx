@@ -32,6 +32,17 @@ export interface Settings {
   dynamicIslandEnabled?: boolean;
 }
 
+export interface DeviceDetails {
+  udid?: string;
+  name?: string;
+  productType?: string;
+  productVersion?: string;
+  serialNumber?: string;
+  wifiAddress?: string;
+  tunnelAddress?: string;
+  error?: string;
+}
+
 export interface DeviceInfo {
   udid: string;
   name: string;
@@ -88,6 +99,7 @@ export interface Status {
   patrolZone: PatrolZone | null;
   navigation: Navigation;
   lastInjectedLocation?: { lat: number; lon: number; name?: string; timestamp?: number } | null;
+  lastRealLocation?: { lat: number; lon: number; drift?: number; timestamp?: number } | null;
 }
 
 export interface Telemetry {
@@ -108,6 +120,8 @@ interface WebSocketContextType {
   canSend: boolean;
   status: Status | null;
   telemetry: Telemetry | null;
+  deviceDetails: DeviceDetails | null;
+  getDeviceInfo: () => void;
   sendMessage: (type: string, data?: any) => boolean;
   setLocation: (lat: number, lon: number, name?: string) => void;
   clearLocation: () => void;
@@ -141,11 +155,23 @@ export const WebSocketProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   const [lastError, setLastError] = useState<string | null>(null);
   const [status, setStatus] = useState<Status | null>(null);
   const [telemetry, setTelemetry] = useState<Telemetry | null>(null);
+  const [deviceDetails, setDeviceDetails] = useState<DeviceDetails | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectTimeoutRef = useRef<any>(null);
 
   const connect = () => {
+    if (reconnectTimeoutRef.current) {
+      clearTimeout(reconnectTimeoutRef.current);
+      reconnectTimeoutRef.current = null;
+    }
     if (wsRef.current) {
+      // Detach handlers before closing: otherwise the replaced socket's own
+      // onclose fires and schedules an orphaned reconnect that later closes
+      // the new, healthy connection — a self-sustaining reconnect loop.
+      wsRef.current.onclose = null;
+      wsRef.current.onerror = null;
+      wsRef.current.onmessage = null;
+      wsRef.current.onopen = null;
       wsRef.current.close();
     }
 
@@ -175,6 +201,9 @@ export const WebSocketProvider: React.FC<{ children: React.ReactNode }> = ({ chi
             break;
           case "TELEMETRY":
             setTelemetry(data);
+            break;
+          case "DEVICE_INFO":
+            setDeviceDetails(data);
             break;
           case "LOCATION":
             // Can update location inside status if necessary
@@ -256,6 +285,10 @@ export const WebSocketProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     connect();
     return () => {
       if (wsRef.current) {
+        wsRef.current.onclose = null;
+        wsRef.current.onerror = null;
+        wsRef.current.onmessage = null;
+        wsRef.current.onopen = null;
         wsRef.current.close();
       }
       if (reconnectTimeoutRef.current) {
@@ -327,6 +360,11 @@ export const WebSocketProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     sendMessage("PATROL_UPDATE", { zone });
   };
 
+  const getDeviceInfo = () => {
+    setDeviceDetails(null);
+    sendMessage("GET_DEVICE_INFO");
+  };
+
   return (
     <WebSocketContext.Provider
       value={{
@@ -340,6 +378,8 @@ export const WebSocketProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         canSend,
         status,
         telemetry,
+        deviceDetails,
+        getDeviceInfo,
         sendMessage,
         setLocation,
         clearLocation,

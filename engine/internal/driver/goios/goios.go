@@ -6,6 +6,7 @@ package goios
 import (
 	"bufio"
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net"
@@ -183,6 +184,48 @@ func (d *Driver) ListDevices(ctx context.Context) ([]driver.Device, error) {
 		return nil, fmt.Errorf("go-ios list: %w", err)
 	}
 	return parseDeviceList(out), nil
+}
+
+// DeviceDetails runs `ios info` against the first detected device and returns
+// its lockdown metadata (name, model, serial, WiFi MAC), enriched with the
+// tunnel address currently used to spoof its position.
+func (d *Driver) DeviceDetails(ctx context.Context) (driver.DeviceDetails, error) {
+	devices, err := d.ListDevices(ctx)
+	if err != nil {
+		return driver.DeviceDetails{}, err
+	}
+	if len(devices) == 0 {
+		return driver.DeviceDetails{}, fmt.Errorf("go-ios: no device detected")
+	}
+	udid := devices[0].UDID
+
+	out, err := exec.CommandContext(ctx, d.bin, "info", "--udid="+udid).Output()
+	if err != nil {
+		return driver.DeviceDetails{}, fmt.Errorf("go-ios info: %w", err)
+	}
+
+	var raw map[string]any
+	if err := json.Unmarshal(out, &raw); err != nil {
+		return driver.DeviceDetails{}, fmt.Errorf("go-ios info: invalid JSON: %w", err)
+	}
+
+	details := driver.DeviceDetails{
+		UDID:           udid,
+		Name:           stringField(raw, "DeviceName"),
+		ProductType:    stringField(raw, "ProductType"),
+		ProductVersion: stringField(raw, "ProductVersion"),
+		SerialNumber:   stringField(raw, "SerialNumber"),
+		WifiAddress:    stringField(raw, "WiFiAddress"),
+	}
+	if ti, ok := d.Tunnel(); ok {
+		details.TunnelAddress = ti.Address
+	}
+	return details, nil
+}
+
+func stringField(raw map[string]any, key string) string {
+	s, _ := raw[key].(string)
+	return s
 }
 
 // Tunnel returns the current tunnel info and whether one is active.

@@ -1,0 +1,43 @@
+name: GpsMockCompanion
+
+options:
+  bundleIdPrefix: com.remi2.gpsmock
+  deploymentTarget:
+    iOS: "16.0"
+  createIntermediateGroups: true
+
+settings:
+  base:
+    SWIFT_VERSION: "5.0"
+    # AltStore re-signs the .ipa on-device with the user's own (free) Apple
+    # ID at install time — CI deliberately produces an unsigned build.
+    CODE_SIGNING_ALLOWED: NO
+    CODE_SIGNING_REQUIRED: NO
+    DEVELOPMENT_TEAM: ""
+
+targets:
+  GpsMockCompanion:
+    type: application
+    platform: iOS
+    deploymentTarget: "16.0"
+    sources:
+      - path: Sources
+    info:
+      path: Sources/Info.plist
+      properties:
+        UILaunchScreen: {}
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+        NSLocationWhenInUseUsageDescription: >-
+          GPS-Mock Companion lit votre position réelle pour la transmettre au
+          moteur GPS-Mock (vérification anti-dérive), sans jamais la partager
+          ailleurs.
+        NSLocationAlwaysAndWhenInUseUsageDescription: >-
+          GPS-Mock Companion lit votre position réelle pour la transmettre au
+          moteur GPS-Mock (vérification anti-dérive), sans jamais la partager
+          ailleurs.
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.remi2.gpsmock.companion
+        INFOPLIST_FILE: Sources/Info.plist
+        GENERATE_INFOPLIST_FILE: NO

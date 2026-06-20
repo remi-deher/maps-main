@@ -38,6 +38,7 @@ const (
 	ActionSequenceSync   = "SEQUENCE_SYNC"
 	ActionPatrolUpdate   = "PATROL_UPDATE"
 	ActionRelance        = "RELANCE"
+	ActionGetDeviceInfo  = "GET_DEVICE_INFO"
 )
 
 // Outbound event types (engine -> client).
@@ -50,6 +51,7 @@ const (
 	EventTelemetry              = "TELEMETRY"
 	EventSequencePreviewUpdated = "SEQUENCE_PREVIEW_UPDATED"
 	EventRouteFinished          = "ROUTE_FINISHED"
+	EventDeviceInfo             = "DEVICE_INFO"
 )
 
 // ─── Inbound payloads ────────────────────────────────────────────────────────
@@ -156,4 +158,18 @@ type TelemetryPayload struct {
 type RouteFinishedPayload struct {
 	Timestamp int64          `json:"timestamp"`
 	Location  *LocationStamp `json:"location,omitempty"`
+}
+
+// DeviceInfoPayload is the data for DEVICE_INFO (the response to
+// GET_DEVICE_INFO). Error is set instead of the other fields when the active
+// driver doesn't support fetching device metadata (e.g. pymobiledevice3).
+type DeviceInfoPayload struct {
+	UDID           string `json:"udid,omitempty"`
+	Name           string `json:"name,omitempty"`
+	ProductType    string `json:"productType,omitempty"`
+	ProductVersion string `json:"productVersion,omitempty"`
+	SerialNumber   string `json:"serialNumber,omitempty"`
+	WifiAddress    string `json:"wifiAddress,omitempty"`
+	TunnelAddress  string `json:"tunnelAddress,omitempty"`
+	Error          string `json:"error,omitempty"`
 }

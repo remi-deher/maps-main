@@ -35,12 +35,15 @@ export const Sidebar: React.FC = () => {
     canSend,
     status,
     telemetry,
+    deviceDetails,
+    getDeviceInfo,
     setLocation,
     clearLocation,
     playSequence,
     playCustomGpx,
     relance,
     saveSettings,
+    addFavorite,
     removeFavorite,
     updatePatrolZone,
   } = useWebSocket();
@@ -112,6 +115,50 @@ export const Sidebar: React.FC = () => {
   const showToast = (message: string) => {
     setToast(message);
     window.setTimeout(() => setToast(null), 3000);
+  };
+
+  const importFileInputRef = React.useRef<HTMLInputElement>(null);
+
+  const handleExportFavorites = () => {
+    const payload = {
+      favorites: status?.favorites || [],
+      recentHistory: status?.recentHistory || [],
+    };
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `gps-mock-favorites-${new Date().toISOString().slice(0, 10)}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+    showToast("Favoris exportés.");
+  };
+
+  const handleImportFileSelected = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        const parsed = JSON.parse(String(reader.result));
+        const favorites = Array.isArray(parsed.favorites) ? parsed.favorites : Array.isArray(parsed) ? parsed : [];
+        if (favorites.length === 0) {
+          showToast("Aucun favori trouvé dans ce fichier.");
+          return;
+        }
+        favorites.forEach((fav: any) => {
+          if (typeof fav.lat === "number" && typeof fav.lon === "number") {
+            addFavorite(fav.lat, fav.lon, fav.name || "Favori importé");
+          }
+        });
+        showToast(`${favorites.length} favori(s) importé(s).`);
+      } catch {
+        showToast("Fichier invalide.");
+      }
+    };
+    reader.readAsText(file);
   };
 
   const currentPos = status?.navigation?.progress
@@ -399,6 +446,14 @@ export const Sidebar: React.FC = () => {
                         : "Aucune"}
                     </span>
                   </div>
+                  {status?.lastRealLocation && (
+                    <div className="info-item">
+                      <span className="info-label">Dérive (bouclier anti-dérive)</span>
+                      <span className={`info-value ${(status.lastRealLocation.drift || 0) > 100 ? "warning" : "green"}`}>
+                        {Math.round(status.lastRealLocation.drift || 0)} m
+                      </span>
+                    </div>
+                  )}
                 </div>
                 {(lastError || !canSend) && (
                   <div className="inline-alert">
@@ -567,6 +622,21 @@ export const Sidebar: React.FC = () => {
                 <h3 className="ui-card-title">
                   <Star size={16} /> Lieux Favoris
                 </h3>
+                <div style={{ display: "flex", gap: "8px", marginBottom: "8px" }}>
+                  <button className="btn btn-secondary" onClick={handleExportFavorites}>
+                    <Save size={14} /> Exporter
+                  </button>
+                  <button className="btn btn-secondary" onClick={() => importFileInputRef.current?.click()}>
+                    <Plus size={14} /> Importer
+                  </button>
+                  <input
+                    ref={importFileInputRef}
+                    type="file"
+                    accept="application/json"
+                    style={{ display: "none" }}
+                    onChange={handleImportFileSelected}
+                  />
+                </div>
                 <div className="list-container">
                   {status?.favorites && status.favorites.length > 0 ? (
                     status.favorites.map((fav, i) => (
@@ -890,6 +960,52 @@ export const Sidebar: React.FC = () => {
                     <RefreshCw size={14} /> Redémarrer le moteur sur ce port
                   </button>
                 </div>
+              </div>
+
+              <div className="ui-card">
+                <h3 className="ui-card-title">
+                  <Smartphone size={16} /> Infos appareil
+                </h3>
+                <p style={{ fontSize: "0.8rem", color: "#94a3b8", margin: 0 }}>
+                  Disponible uniquement avec le driver go-ios pour le moment.
+                </p>
+
+                <button className="btn btn-secondary" style={{ marginTop: 8 }} onClick={getDeviceInfo} disabled={!canSend}>
+                  <RefreshCw size={14} /> Récupérer les infos
+                </button>
+
+                {deviceDetails && (
+                  deviceDetails.error ? (
+                    <div className="inline-alert" style={{ marginTop: 8 }}>{deviceDetails.error}</div>
+                  ) : (
+                    <div className="info-grid" style={{ marginTop: 8 }}>
+                      <div className="info-item">
+                        <span className="info-label">Nom</span>
+                        <span className="info-value compact">{deviceDetails.name || "—"}</span>
+                      </div>
+                      <div className="info-item">
+                        <span className="info-label">Modèle</span>
+                        <span className="info-value compact">{deviceDetails.productType || "—"}</span>
+                      </div>
+                      <div className="info-item">
+                        <span className="info-label">iOS</span>
+                        <span className="info-value compact">{deviceDetails.productVersion || "—"}</span>
+                      </div>
+                      <div className="info-item">
+                        <span className="info-label">Numéro de série</span>
+                        <span className="info-value compact">{deviceDetails.serialNumber || "—"}</span>
+                      </div>
+                      <div className="info-item">
+                        <span className="info-label">Adresse WiFi</span>
+                        <span className="info-value compact">{deviceDetails.wifiAddress || "—"}</span>
+                      </div>
+                      <div className="info-item">
+                        <span className="info-label">Adresse tunnel</span>
+                        <span className="info-value compact">{deviceDetails.tunnelAddress || "—"}</span>
+                      </div>
+                    </div>
+                  )
+                )}
               </div>
 
               <div className="ui-card">
