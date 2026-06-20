@@ -61,18 +61,22 @@ struct ContentView: View {
                     showSettings = true
                 }
 
-                if !itineraryStops.isEmpty {
+                if isSearching {
+                    // Takes priority even mid-itinerary: tapping "Ajouter un
+                    // arrêt" refocuses this same field, so results must stay
+                    // visible while typing the next stop.
+                    SuggestionsPanel(searchResults: searchResults) { item in
+                        selectSearchResult(item)
+                    }
+                } else if !itineraryStops.isEmpty {
                     ItineraryPanel(
                         stops: $itineraryStops,
                         speed: $itinerarySpeed,
                         profile: $itineraryProfile,
+                        onAddStop: { searchFocused = true },
                         onLaunch: launchItinerary,
                         onCancel: { itineraryStops = [] }
                     )
-                } else if isSearching {
-                    SuggestionsPanel(searchResults: searchResults) { item in
-                        selectSearchResult(item)
-                    }
                 } else if let favorites = engine.status?.favorites, !favorites.isEmpty {
                     FavoriteChips(
                         favorites: favorites,
@@ -191,10 +195,13 @@ struct ContentView: View {
         }
     }
 
+    /// Searching builds the itinerary directly (à la Plans: type a
+    /// destination, it becomes a stop; "Ajouter un arrêt" reopens search to
+    /// append another one) instead of going through the one-off PlaceCard.
     private func selectSearchResult(_ item: MKMapItem) {
         guard let coordinate = item.placemark.location?.coordinate else { return }
         focus(on: coordinate)
-        selectedPlace = SelectedPlace(coordinate: coordinate, title: item.name ?? "Lieu", subtitle: item.placemark.title)
+        itineraryStops.append(RouteStop(coordinate: coordinate, name: item.name ?? "Lieu"))
         searchResults = []
         searchQuery = ""
         searchFocused = false

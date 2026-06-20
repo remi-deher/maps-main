@@ -8,6 +8,7 @@ struct ItineraryPanel: View {
     @Binding var stops: [RouteStop]
     @Binding var speed: Double
     @Binding var profile: String
+    var onAddStop: () -> Void
     var onLaunch: () -> Void
     var onCancel: () -> Void
 
@@ -66,6 +67,15 @@ struct ItineraryPanel: View {
                     }
                 }
             }
+
+            Button(action: onAddStop) {
+                HStack {
+                    Image(systemName: "plus.circle.fill")
+                    Text("Ajouter un arrêt")
+                }
+                .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.glass)
 
             HStack {
                 Text("Vitesse")
