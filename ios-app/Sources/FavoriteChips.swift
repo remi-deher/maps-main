@@ -16,7 +16,7 @@ struct FavoriteChips: View {
                         onSelect(fav)
                     } label: {
                         HStack(spacing: 6) {
-                            Image(systemName: "star.fill")
+                            Image(systemName: icon(for: fav))
                             Text(fav.name ?? "Favori")
                         }
                         .padding(.horizontal, 14)
@@ -32,5 +32,18 @@ struct FavoriteChips: View {
             }
             .padding(.horizontal, 16)
         }
+    }
+
+    /// Mirrors Plans' "Maison"/"Travail" iconography by sniffing the
+    /// favorite's name, falling back to a plain star for everything else.
+    private func icon(for favorite: Favorite) -> String {
+        let name = (favorite.name ?? "").lowercased()
+        if name.contains("maison") || name.contains("domicile") || name.contains("home") {
+            return "house.fill"
+        }
+        if name.contains("travail") || name.contains("bureau") || name.contains("work") {
+            return "briefcase.fill"
+        }
+        return "star.fill"
     }
 }

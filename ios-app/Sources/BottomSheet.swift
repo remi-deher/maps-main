@@ -15,6 +15,7 @@ struct BottomSheet: View {
     @Binding var itineraryStops: [RouteStop]
     @Binding var itinerarySpeed: Double
     @Binding var itineraryProfile: String
+    let legEstimates: [UUID: LegEstimate]
     var onAddStop: () -> Void
     var onLaunchItinerary: () -> Void
 
@@ -40,6 +41,12 @@ struct BottomSheet: View {
 
             ScrollView {
                 VStack(spacing: 12) {
+                    // Favorites stay visible like Plans' "Maison"/"Travail" row,
+                    // regardless of what's below — they're quick-access, not content.
+                    if !isSearching && !favorites.isEmpty {
+                        FavoriteChips(favorites: favorites, onSelect: onSelectFavorite, onDelete: onDeleteFavorite)
+                    }
+
                     if isSearching {
                         searchResultsSection
                     } else if !itineraryStops.isEmpty {
@@ -47,13 +54,12 @@ struct BottomSheet: View {
                             stops: $itineraryStops,
                             speed: $itinerarySpeed,
                             profile: $itineraryProfile,
+                            legEstimates: legEstimates,
                             onAddStop: onAddStop,
                             onLaunch: onLaunchItinerary,
                             onCancel: { itineraryStops = [] }
                         )
-                    } else if !favorites.isEmpty {
-                        FavoriteChips(favorites: favorites, onSelect: onSelectFavorite, onDelete: onDeleteFavorite)
-                    } else {
+                    } else if favorites.isEmpty {
                         ContentUnavailableView(
                             "Aucun itinéraire",
                             systemImage: "map",

@@ -1,18 +1,43 @@
 import SwiftUI
+import CoreLocation
+
+/// Drive-time/distance for the leg ending at a given stop, computed via
+/// MKDirections (keyed by the destination RouteStop's id) — mirrors the ETA
+/// Plans shows under each leg of a multi-stop trip.
+struct LegEstimate {
+    let distanceMeters: CLLocationDistance
+    let travelTime: TimeInterval
+}
+
+private let estimateFormatter: MeasurementFormatter = {
+    let formatter = MeasurementFormatter()
+    formatter.unitOptions = .naturalScale
+    formatter.unitStyle = .medium
+    return formatter
+}()
+
+private let durationFormatter: DateComponentsFormatter = {
+    let formatter = DateComponentsFormatter()
+    formatter.allowedUnits = [.hour, .minute]
+    formatter.unitsStyle = .abbreviated
+    return formatter
+}()
 
 /// Floating glass card listing the stops of an itinerary being built — à la
-/// Plans' multi-stop directions editor. Reordering uses up/down buttons
-/// rather than drag handles, since this card lives outside a List (which is
-/// where SwiftUI's native drag-to-reorder normally requires hosting it).
+/// Plans' multi-stop directions editor. Stops live in a List so SwiftUI's
+/// native long-press drag-to-reorder works without a separate drag handle.
 struct ItineraryPanel: View {
     @Binding var stops: [RouteStop]
     @Binding var speed: Double
     @Binding var profile: String
+    let legEstimates: [UUID: LegEstimate]
     var onAddStop: () -> Void
     var onLaunch: () -> Void
     var onCancel: () -> Void
 
     @State private var launchFeedback = 0
+
+    private var rowHeight: CGFloat { 52 }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -26,7 +51,7 @@ struct ItineraryPanel: View {
                 }
             }
 
-            VStack(spacing: 0) {
+            List {
                 ForEach(Array(stops.enumerated()), id: \.element.id) { index, stop in
                     HStack(spacing: 10) {
                         Text("\(index + 1)")
@@ -35,40 +60,36 @@ struct ItineraryPanel: View {
                             .background(.indigo, in: Circle())
                             .foregroundStyle(.white)
 
-                        Text(stop.name)
-                            .lineLimit(1)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(stop.name).lineLimit(1)
+                            if let estimate = legEstimates[stop.id] {
+                                Text("\(estimateFormatter.string(from: Measurement(value: estimate.distanceMeters, unit: UnitLength.meters))) · \(durationFormatter.string(from: estimate.travelTime) ?? "")")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
 
                         Spacer()
 
-                        Button {
-                            moveUp(index)
-                        } label: {
-                            Image(systemName: "chevron.up")
-                        }
-                        .disabled(index == 0)
-
-                        Button {
-                            moveDown(index)
-                        } label: {
-                            Image(systemName: "chevron.down")
-                        }
-                        .disabled(index == stops.count - 1)
-
-                        Button {
+                        Button(role: .destructive) {
                             stops.remove(at: index)
                         } label: {
                             Image(systemName: "trash")
                                 .foregroundStyle(.red)
                         }
+                        .buttonStyle(.plain)
                     }
-                    .buttonStyle(.plain)
-                    .padding(.vertical, 6)
-
-                    if index < stops.count - 1 {
-                        Divider()
-                    }
+                    .listRowBackground(Color.clear)
+                    .listRowSeparator(index == stops.count - 1 ? .hidden : .visible)
+                }
+                .onMove { source, destination in
+                    stops.move(fromOffsets: source, toOffset: destination)
                 }
             }
+            .listStyle(.plain)
+            .scrollContentBackground(.hidden)
+            .scrollDisabled(true)
+            .frame(height: rowHeight * CGFloat(stops.count))
 
             Button(action: onAddStop) {
                 HStack {
@@ -104,15 +125,5 @@ struct ItineraryPanel: View {
         .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 26, style: .continuous))
         .padding(.horizontal, 16)
         .sensoryFeedback(.success, trigger: launchFeedback)
-    }
-
-    private func moveUp(_ index: Int) {
-        guard index > 0 else { return }
-        stops.swapAt(index, index - 1)
-    }
-
-    private func moveDown(_ index: Int) {
-        guard index < stops.count - 1 else { return }
-        stops.swapAt(index, index + 1)
     }
 }

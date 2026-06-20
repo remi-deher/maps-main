@@ -22,6 +22,10 @@ struct ContentView: View {
     @State private var itineraryStops: [RouteStop] = []
     @State private var itinerarySpeed: Double = 30
     @State private var itineraryProfile: String = "driving"
+    @State private var legEstimates: [UUID: LegEstimate] = [:]
+    @State private var estimatesTask: Task<Void, Never>?
+
+    @State private var sheetDetent: PresentationDetent = .height(120)
 
     private var spoofedCoordinate: CLLocationCoordinate2D? {
         guard let loc = engine.status?.lastInjectedLocation else { return nil }
@@ -113,6 +117,7 @@ struct ContentView: View {
                 itineraryStops: $itineraryStops,
                 itinerarySpeed: $itinerarySpeed,
                 itineraryProfile: $itineraryProfile,
+                legEstimates: legEstimates,
                 onAddStop: { searchFocused = true },
                 onLaunchItinerary: launchItinerary,
                 favorites: engine.status?.favorites ?? [],
@@ -124,7 +129,7 @@ struct ContentView: View {
                 onToggleConnection: toggleConnection,
                 onRetryDiscovery: startDiscovery
             )
-            .presentationDetents([.height(120), .medium, .large])
+            .presentationDetents([.height(120), .medium, .large], selection: $sheetDetent)
             .presentationDragIndicator(.visible)
             .presentationBackgroundInteraction(.enabled)
             .interactiveDismissDisabled()
@@ -143,10 +148,24 @@ struct ContentView: View {
         .onChange(of: searchQuery) { newValue in
             performSearch(newValue)
         }
+        .onChange(of: searchFocused) { focused in
+            // Plans expands its sheet the moment you start typing, so results
+            // aren't hidden under a collapsed handle.
+            if focused {
+                withAnimation { sheetDetent = .medium }
+            }
+        }
         .onChange(of: itineraryStops) { newStops in
             // Plans-style: adding (or removing/reordering) a stop reframes
             // the camera to show the whole itinerary, not just the new point.
             fitItinerary(newStops)
+            recomputeLegEstimates(newStops)
+            if !newStops.isEmpty {
+                withAnimation { sheetDetent = .medium }
+            }
+        }
+        .onChange(of: itineraryProfile) { _ in
+            recomputeLegEstimates(itineraryStops)
         }
     }
 
@@ -259,6 +278,36 @@ struct ContentView: View {
             longitudeDelta: max((maxLon - minLon) * 1.6, 0.01)
         )
         return MKCoordinateRegion(center: center, span: span)
+    }
+
+    /// Recomputes per-leg distance/ETA via MKDirections, keyed by destination
+    /// stop id — mirrors the duration Plans shows under each leg of a trip.
+    /// Real road-routing distance, not as-the-crow-flies, since the user
+    /// picked "calcul via MKDirections" explicitly.
+    private func recomputeLegEstimates(_ stops: [RouteStop]) {
+        estimatesTask?.cancel()
+        guard stops.count > 1 else {
+            legEstimates = [:]
+            return
+        }
+        let transportType: MKDirectionsTransportType = itineraryProfile == "walking" ? .walking : .automobile
+        estimatesTask = Task {
+            var results: [UUID: LegEstimate] = [:]
+            for index in 1..<stops.count {
+                guard !Task.isCancelled else { return }
+                let origin = stops[index - 1]
+                let destination = stops[index]
+                let request = MKDirections.Request()
+                request.source = MKMapItem(placemark: MKPlacemark(coordinate: origin.coordinate))
+                request.destination = MKMapItem(placemark: MKPlacemark(coordinate: destination.coordinate))
+                request.transportType = transportType
+                if let route = try? await MKDirections(request: request).calculate().routes.first {
+                    results[destination.id] = LegEstimate(distanceMeters: route.distance, travelTime: route.expectedTravelTime)
+                }
+            }
+            guard !Task.isCancelled else { return }
+            await MainActor.run { legEstimates = results }
+        }
     }
 
     private func toggleConnection() {
