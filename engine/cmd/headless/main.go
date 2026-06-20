@@ -1,7 +1,6 @@
-// Command headless is the entry point for the engine running without a UI
-// (server / Docker). In phase 1 it only proves the config -> registry -> driver
-// wiring: it selects a driver from flags/defaults and exits, since no backend is
-// implemented yet.
+// Command headless runs the engine without a UI (server / Docker): it selects a
+// driver, starts the HTTP/WebSocket server, brings up the tunnel best-effort,
+// and shuts down cleanly on SIGINT/SIGTERM.
 package main
 
 import (
@@ -9,10 +8,17 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"net/http"
 	"os"
+	"os/signal"
+	"syscall"
+	"time"
 
 	"github.com/remi-deher/maps-main/engine/internal/domain"
 	"github.com/remi-deher/maps-main/engine/internal/driver"
+	_ "github.com/remi-deher/maps-main/engine/internal/driver/goios" // register go-ios
+	"github.com/remi-deher/maps-main/engine/internal/engine"
+	"github.com/remi-deher/maps-main/engine/internal/server"
 	"github.com/remi-deher/maps-main/engine/internal/settings"
 )
 
@@ -21,9 +27,12 @@ func main() {
 
 	driverFlag := flag.String("driver", string(cfg.PreferredDriver), "tunnel driver: pymobiledevice | go-ios")
 	transportFlag := flag.String("transport", "auto", "transport: auto | usb | wifi")
+	addrFlag := flag.String("addr", fmt.Sprintf(":%d", cfg.CompanionPort), "listen address")
+	goiosBin := flag.String("goios-bin", "", "explicit path to the go-ios binary")
+	noTunnel := flag.Bool("no-tunnel", false, "do not start the tunnel at boot")
 	flag.Parse()
 
-	log.SetFlags(0)
+	log.SetFlags(log.Ltime)
 	log.Printf("gps-mock engine (v3) — headless")
 	log.Printf("available drivers: %v", driver.Available())
 
@@ -35,19 +44,49 @@ func main() {
 		transport = driver.TransportWiFi
 	}
 
-	d, err := driver.New(domain.DriverID(*driverFlag), driver.Config{
-		Transport: transport,
-		Fallback:  cfg.FallbackEnabled,
-	})
+	dcfg := driver.Config{Transport: transport, Fallback: cfg.FallbackEnabled}
+	if *goiosBin != "" {
+		dcfg.BinaryPaths = map[string]string{"go-ios": *goiosBin}
+	}
+
+	drv, err := driver.New(domain.DriverID(*driverFlag), dcfg)
 	if err != nil {
 		log.Fatalf("cannot create driver %q: %v", *driverFlag, err)
 	}
-	log.Printf("selected driver: %s (transport=%s)", d.ID(), transport)
+	log.Printf("driver: %s (transport=%s)", drv.ID(), transport)
 
-	// Phase 1 is contracts-only: exercise the wiring then stop.
-	if _, err := d.StartTunnel(context.Background()); err != nil {
-		log.Printf("driver %s: %v (expected in phase 1)", d.ID(), err)
+	eng := engine.New(drv, cfg)
+	srv := server.New(eng, *addrFlag)
+
+	// Start the HTTP/WebSocket server.
+	go func() {
+		log.Printf("listening on %s (REST /api/*, WebSocket /ws)", *addrFlag)
+		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			log.Fatalf("server: %v", err)
+		}
+	}()
+
+	// Bring up the tunnel best-effort (needs a device + privileges).
+	if !*noTunnel {
+		go func() {
+			ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+			defer cancel()
+			if err := eng.StartTunnel(ctx); err != nil {
+				log.Printf("tunnel not started: %v", err)
+			} else {
+				st := eng.Status()
+				log.Printf("tunnel up: %s:%d (%s)", st.RSDAddress, st.RSDPort, st.ConnectionType)
+			}
+		}()
 	}
 
-	fmt.Fprintln(os.Stdout, "phase 1 scaffold OK — engine not yet functional")
+	// Wait for a termination signal.
+	sig := make(chan os.Signal, 1)
+	signal.Notify(sig, syscall.SIGINT, syscall.SIGTERM)
+	<-sig
+	log.Printf("shutting down...")
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	_ = srv.Shutdown(ctx)
 }

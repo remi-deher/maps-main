@@ -6,8 +6,8 @@ import (
 	"github.com/remi-deher/maps-main/engine/internal/domain"
 )
 
-// notImplemented is a placeholder Driver registered for every backend until the
-// real go-ios (phase 2) and pymobiledevice3 (phase 3) implementations land.
+// notImplemented is a placeholder Driver for backends not yet built. go-ios is
+// implemented (package driver/goios, phase 2); pymobiledevice3 lands in phase 3.
 // Its factory succeeds so the config -> registry -> driver wiring can be
 // exercised end to end, but every operation returns ErrNotImplemented.
 type notImplemented struct{ id domain.DriverID }
@@ -27,9 +27,7 @@ func (d notImplemented) ListDevices(context.Context) ([]Device, error) { return 
 func (d notImplemented) Tunnel() (TunnelInfo, bool)                    { return TunnelInfo{}, false }
 
 func init() {
-	Register(domain.DriverGoIos, func(Config) (Driver, error) {
-		return notImplemented{domain.DriverGoIos}, nil
-	})
+	// go-ios is registered by package driver/goios. Only pmd3 stays a stub.
 	Register(domain.DriverPmd3, func(Config) (Driver, error) {
 		return notImplemented{domain.DriverPmd3}, nil
 	})
