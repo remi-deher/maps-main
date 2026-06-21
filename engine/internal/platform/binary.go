@@ -13,7 +13,7 @@ import (
 // ResolveGoIos returns the path to the go-ios CLI. Lookup order:
 //  1. an explicit path from cfg ("go-ios" key),
 //  2. the system PATH ("ios", then "go-ios"),
-//  3. known fallback locations (incl. the legacy bundled binary).
+//  3. a "resources" folder next to the binary (manual vendoring, no PATH entry).
 func ResolveGoIos(explicit map[string]string) (string, error) {
 	if p := explicit["go-ios"]; p != "" {
 		if fileExists(p) {
@@ -44,7 +44,6 @@ func goIosFallbacks() []string {
 		name = "ios.exe"
 	}
 	return []string{
-		filepath.Join("legacy", "server", "resources", name),
 		filepath.Join("resources", name),
 		name,
 	}

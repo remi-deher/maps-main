@@ -44,7 +44,6 @@ en ligne de commande / conteneur. Driver iOS **sélectionnable au runtime**
 | [`docker/`](docker) | Image Docker (Linux) pour le moteur headless — voir [docker/README.md](docker/README.md). |
 | [`docs/`](docs) | Architecture et contraintes ([ARCHITECTURE](docs/ARCHITECTURE.md), [ALTSTORE](docs/ALTSTORE.md), [UI_UX_BASELINE](docs/UI_UX_BASELINE.md)). |
 | [`scripts/`](scripts) | Scripts de dev/build (sidecar Tauri, contrôle du moteur en CLI Windows/Linux). |
-| [`legacy/`](legacy) | Ancienne implémentation Node/Electron + Expo, gardée comme référence jusqu'à parité fonctionnelle. |
 
 ## Démarrage rapide
 
@@ -54,8 +53,9 @@ en ligne de commande / conteneur. Driver iOS **sélectionnable au runtime**
 cd engine
 
 # go-ios en USB (nécessite un iPhone branché + privilèges admin)
+# binaire go-ios attendu sur le PATH ("ios"/"go-ios"), ou pointé explicitement :
 go run ./cmd/headless -driver go-ios -transport usb \
-  -goios-bin "../legacy/server/resources/ios.exe"
+  -goios-bin "C:\chemin\vers\ios.exe"
 
 # pymobiledevice3 en USB (nécessite python + pymobiledevice3 installés)
 go run ./cmd/headless -driver pymobiledevice -transport usb
@@ -119,3 +119,7 @@ docker run --rm -p 8080:8080 ghcr.io/remi-deher/maps-main/gpsmock-engine:latest
 - **Release** : [Release](.github/workflows/release.yml) — sur tag `v*`, build et publie les binaires du moteur (toutes plateformes), les bundles desktop Tauri (Windows/macOS/Linux), l'IPA iOS non signé, et pousse l'image Docker du moteur sur GitHub Container Registry (`ghcr.io`).
 
 Voir [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) pour la roadmap complète.
+
+> L'ancienne implémentation Node/Electron + Expo (`legacy/`) a été supprimée une fois la
+> parité fonctionnelle atteinte avec le moteur Go — elle reste consultable dans l'historique
+> Git (branche `v3-rewrite`) si besoin de retrouver un détail d'implémentation d'origine.

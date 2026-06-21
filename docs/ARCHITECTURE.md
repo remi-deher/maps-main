@@ -70,8 +70,10 @@ Le **registre** (`registry.go`) mappe `DriverID → Factory` ; `New(id, cfg)` es
 /ios                         # (à venir) app Swift compagnon
 /docker                      # images Linux / Windows-WSL (Phase 4)
 /docs                        # cette doc + ALTSTORE.md
-/legacy                      # ancienne implémentation (référence, supprimée à parité)
 ```
+
+`/legacy` (ancienne implémentation Node/Electron + Expo) a été supprimé une fois la parité
+fonctionnelle atteinte — toujours consultable dans l'historique Git si besoin.
 
 ## Cibles de déploiement
 
@@ -103,4 +105,4 @@ Les détails de construction et d'exécution sont documentés dans le [README Do
 3. `Pmd3Driver` + transport WiFi/RSD — le menu complet.
 4. **Dockerisation (Linux USB+WiFi, Windows-WSL WiFi)** (cette phase).
 5. UI web sur l'API, puis packaging Tauri/natif.
-6. App iOS Swift (keep-alive background, AltStore). Suppression de `/legacy` à parité.
+6. App iOS Swift (keep-alive background, AltStore). Suppression de `/legacy` à parité — fait.
