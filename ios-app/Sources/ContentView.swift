@@ -30,8 +30,17 @@ struct ContentView: View {
     @StateObject private var discovery = EngineDiscovery()
     @StateObject private var liveActivity = LiveActivityManager()
     @AppStorage("liveActivityEnabled") private var liveActivityEnabled = true
+    // Mirrors the engine's EveilMode/EveilInterval defaults (settings/schema.go)
+    // — keeping them in sync means the iOS keep-alive cadence matches what the
+    // desktop app and headless engine already assume "maintaining" means.
+    @AppStorage("keepAliveEnabled") private var keepAliveEnabled = true
+    @AppStorage("keepAliveInterval") private var keepAliveInterval: Double = 5
+    @AppStorage("notificationsEnabled") private var notificationsEnabled = true
 
     @State private var reportTask: Task<Void, Never>?
+    @State private var keepAliveTask: Task<Void, Never>?
+    @State private var wasConnected = false
+    @State private var lastSimulationState: String?
     @State private var selectedPlace: SelectedPlace?
     @State private var showAddFavorite = false
     @State private var newFavoriteName = ""
@@ -197,12 +206,39 @@ struct ContentView: View {
                 discovery: discovery,
                 onToggleConnection: toggleConnection,
                 onRetryDiscovery: startDiscovery,
-                liveActivityEnabled: $liveActivityEnabled
+                liveActivityEnabled: $liveActivityEnabled,
+                keepAliveEnabled: $keepAliveEnabled,
+                keepAliveInterval: $keepAliveInterval,
+                notificationsEnabled: $notificationsEnabled
             )
         }
         .onAppear {
             location.requestPermission()
+            if notificationsEnabled { NotificationManager.shared.requestPermission() }
             startDiscovery()
+        }
+        .onChange(of: keepAliveEnabled) { enabled in
+            location.enableBackgroundUpdates(enabled)
+            if enabled && engine.state == .connected { startKeepAlive() } else { stopKeepAlive() }
+        }
+        .onChange(of: notificationsEnabled) { enabled in
+            if enabled { NotificationManager.shared.requestPermission() }
+        }
+        .onChange(of: engine.state) { newState in
+            if newState == .connected {
+                wasConnected = true
+            } else if wasConnected && (newState == .reconnecting || newState == .disconnected) {
+                wasConnected = false
+                if notificationsEnabled { NotificationManager.shared.notifyDisconnect() }
+            }
+        }
+        .onChange(of: engine.status?.state) { newState in
+            let previous = lastSimulationState
+            lastSimulationState = newState
+            guard notificationsEnabled, let newState else { return }
+            if newState == "ready" && (previous == "running" || previous == "moving") {
+                NotificationManager.shared.notifyArrival(locationName: engine.status?.lastInjectedLocation?.name)
+            }
         }
         .onChange(of: discovery.state) { newState in
             guard case .found(let host, let port) = newState else { return }
@@ -396,29 +432,30 @@ struct ContentView: View {
         return MKCoordinateRegion(center: center, span: span)
     }
 
-    /// Recomputes per-leg distance/ETA via MKDirections, keyed by destination
-    /// stop id — mirrors the duration Plans shows under each leg of a trip.
-    /// Real road-routing distance, not as-the-crow-flies, since the user
-    /// picked "calcul via MKDirections" explicitly.
+    /// Recomputes per-leg distance/ETA via OSRM, keyed by destination stop id
+    /// — mirrors the duration Plans shows under each leg of a trip, but uses
+    /// the same router the engine itself uses to actually drive the
+    /// simulation (engine/internal/engine/simulation.go), instead of
+    /// MapKit/Apple Maps routing which can disagree on which road it picks.
+    /// Falls back to MKDirections per-leg if OSRM is unreachable (offline
+    /// demo server, no network) so estimates degrade rather than vanish.
     private func recomputeLegEstimates(_ stops: [RouteStop]) {
         estimatesTask?.cancel()
         guard stops.count > 1 else {
             legEstimates = [:]
             return
         }
-        let transportType: MKDirectionsTransportType = itineraryProfile == "walking" ? .walking : .automobile
+        let profile = itineraryProfile
         estimatesTask = Task {
             var results: [UUID: LegEstimate] = [:]
             for index in 1..<stops.count {
                 guard !Task.isCancelled else { return }
                 let origin = stops[index - 1]
                 let destination = stops[index]
-                let request = MKDirections.Request()
-                request.source = MKMapItem(placemark: MKPlacemark(coordinate: origin.coordinate))
-                request.destination = MKMapItem(placemark: MKPlacemark(coordinate: destination.coordinate))
-                request.transportType = transportType
-                if let route = try? await MKDirections(request: request).calculate().routes.first {
-                    results[destination.id] = LegEstimate(distanceMeters: route.distance, travelTime: route.expectedTravelTime)
+                if let route = await OSRMClient.fetchRoute(from: origin.coordinate, to: destination.coordinate, profile: profile) {
+                    results[destination.id] = LegEstimate(distanceMeters: route.distanceMeters, travelTime: route.durationSeconds)
+                } else if let fallback = await fetchMapKitEstimate(from: origin.coordinate, to: destination.coordinate, profile: profile) {
+                    results[destination.id] = fallback
                 }
             }
             guard !Task.isCancelled else { return }
@@ -426,14 +463,52 @@ struct ContentView: View {
         }
     }
 
+    private func fetchMapKitEstimate(from origin: CLLocationCoordinate2D, to destination: CLLocationCoordinate2D, profile: String) async -> LegEstimate? {
+        let request = MKDirections.Request()
+        request.source = MKMapItem(placemark: MKPlacemark(coordinate: origin))
+        request.destination = MKMapItem(placemark: MKPlacemark(coordinate: destination))
+        request.transportType = profile == "walking" ? .walking : .automobile
+        guard let route = try? await MKDirections(request: request).calculate().routes.first else { return nil }
+        AppLogger.shared.warn("OSRM indisponible, repli MKDirections pour l'estimation d'étape")
+        return LegEstimate(distanceMeters: route.distance, travelTime: route.expectedTravelTime)
+    }
+
     private func toggleConnection() {
         if engine.state == .connected || engine.state == .connecting {
             stopReporting()
+            stopKeepAlive()
             engine.disconnect()
             return
         }
         engine.connect(to: "ws://\(engineAddress)/ws")
         startReporting()
+        if keepAliveEnabled {
+            location.requestAlwaysPermission()
+            location.enableBackgroundUpdates(true)
+            startKeepAlive()
+        }
+    }
+
+    /// Periodically re-sends RELANCE so the engine re-asserts the last
+    /// injected position — the "maintien" the legacy background task
+    /// (services/background.ts) achieved by posting to /api/relance on every
+    /// background location tick. Runs independently of REAL_LOCATION
+    /// reporting so it keeps the spoof alive even if the device's own GPS
+    /// briefly drifts or the anti-drift shield hasn't re-injected yet.
+    private func startKeepAlive() {
+        keepAliveTask?.cancel()
+        keepAliveTask = Task {
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(max(keepAliveInterval, 1)))
+                guard !Task.isCancelled, engine.state == .connected else { continue }
+                engine.relance()
+            }
+        }
+    }
+
+    private func stopKeepAlive() {
+        keepAliveTask?.cancel()
+        keepAliveTask = nil
     }
 
     /// Task-based instead of `Timer.scheduledTimer`: a Timer keeps firing

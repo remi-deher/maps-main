@@ -22,6 +22,23 @@ final class LocationManager: NSObject, ObservableObject, CLLocationManagerDelega
         manager.requestWhenInUseAuthorization()
     }
 
+    /// Upgrades to "Always" so the keep-alive loop (relance périodique,
+    /// §EveilMode) can keep re-asserting the spoofed position while the app
+    /// is backgrounded — iOS only wakes a backgrounded process for location
+    /// work when it holds Always authorization + the `location` background
+    /// mode (project.yml) AND `allowsBackgroundLocationUpdates` is set.
+    func requestAlwaysPermission() {
+        manager.requestAlwaysAuthorization()
+    }
+
+    /// Must only be called once Always authorization is granted and
+    /// UIBackgroundModes contains "location" — CoreLocation traps otherwise.
+    func enableBackgroundUpdates(_ enabled: Bool) {
+        guard authorizationStatus == .authorizedAlways else { return }
+        manager.allowsBackgroundLocationUpdates = enabled
+        manager.pausesLocationUpdatesAutomatically = !enabled
+    }
+
     func startUpdating() {
         manager.startUpdatingLocation()
     }

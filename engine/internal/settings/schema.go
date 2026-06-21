@@ -31,9 +31,10 @@ type Settings struct {
 	NetworkOnlyMode     bool   `json:"networkOnlyMode"`
 
 	// Cluster
-	ClusterMode  string   `json:"clusterMode"` // off | manual | auto
-	ClusterNodes []string `json:"clusterNodes,omitempty"`
-	ServerName   string   `json:"serverName,omitempty"`
+	ClusterMode      string   `json:"clusterMode"` // off | manual | auto
+	ClusterNodes     []string `json:"clusterNodes,omitempty"`
+	ServerName       string   `json:"serverName,omitempty"`
+	ClusterSyncCerts bool     `json:"clusterSyncCerts"` // sync the Lockdown pairing-record folder across the cluster (opt-in)
 
 	// Misc / iOS prefs
 	LogLevel             string `json:"logLevel"`

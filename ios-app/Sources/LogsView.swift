@@ -1,13 +1,23 @@
 import SwiftUI
 
-/// Live view of the engine's in-memory log buffer (LOG/LOGS events) — gives
-/// admin/debug visibility from the phone alone, no terminal/SSH access to the
-/// machine running the engine required.
+/// Live view of two log sources: the engine's in-memory buffer (LOG/LOGS
+/// events over the WebSocket) and the app's own client-side buffer
+/// (`AppLogger` — connection, discovery, OSRM, notifications). Gives
+/// admin/debug visibility from the phone alone, no terminal/SSH access to
+/// the machine running the engine, or a Mac + Console.app for the client
+/// side, required.
 struct LogsView: View {
     @ObservedObject var engine: EngineClient
+    @ObservedObject private var appLogger = AppLogger.shared
 
     @State private var query = ""
     @State private var levelFilter: LevelFilter = .all
+    @State private var source: LogSource = .engine
+
+    private enum LogSource: String, CaseIterable {
+        case engine = "Moteur"
+        case app = "App"
+    }
 
     private enum LevelFilter: String, CaseIterable {
         case all = "Tous"
@@ -25,28 +35,65 @@ struct LogsView: View {
         }
     }
 
+    private struct DisplayRow: Identifiable {
+        let id: Int
+        let level: String
+        let message: String
+        let detail: String
+        let date: Date
+    }
+
     private let timeFormatter: DateFormatter = {
         let formatter = DateFormatter()
         formatter.dateFormat = "HH:mm:ss"
         return formatter
     }()
 
-    private var filteredLogs: [LogEntryPayload] {
-        engine.logs.reversed().filter { entry in
-            if let rawLevel = levelFilter.rawLevel, entry.level != rawLevel { return false }
+    private var rows: [DisplayRow] {
+        switch source {
+        case .engine:
+            return engine.logs.reversed().enumerated().map { offset, entry in
+                DisplayRow(
+                    id: offset,
+                    level: entry.level,
+                    message: entry.message,
+                    detail: entry.source,
+                    date: Date(timeIntervalSince1970: Double(entry.timestamp) / 1000)
+                )
+            }
+        case .app:
+            return appLogger.entries.reversed().enumerated().map { offset, entry in
+                DisplayRow(id: offset, level: entry.level, message: entry.message, detail: "app", date: entry.timestamp)
+            }
+        }
+    }
+
+    private var filteredRows: [DisplayRow] {
+        rows.filter { row in
+            if let rawLevel = levelFilter.rawLevel, row.level != rawLevel { return false }
             guard !query.isEmpty else { return true }
-            return entry.message.localizedCaseInsensitiveContains(query)
-                || entry.source.localizedCaseInsensitiveContains(query)
+            return row.message.localizedCaseInsensitiveContains(query)
+                || row.detail.localizedCaseInsensitiveContains(query)
         }
     }
 
     var body: some View {
         List {
-            if engine.logs.isEmpty {
+            Picker("Source", selection: $source) {
+                ForEach(LogSource.allCases, id: \.self) { source in
+                    Text(source.rawValue).tag(source)
+                }
+            }
+            .pickerStyle(.segmented)
+            .listRowSeparator(.hidden)
+
+            if rows.isEmpty {
                 ContentUnavailableView(
                     "Aucun journal",
                     systemImage: "doc.text",
-                    description: Text("Les événements du moteur apparaîtront ici en temps réel.")
+                    description: Text(source == .engine
+                        ? "Les événements du moteur apparaîtront ici en temps réel."
+                        : "Les événements côté app (connexion, découverte, OSRM, notifications) apparaîtront ici.")
                 )
             } else {
                 Picker("Niveau", selection: $levelFilter) {
@@ -57,18 +104,18 @@ struct LogsView: View {
                 .pickerStyle(.segmented)
                 .listRowSeparator(.hidden)
 
-                ForEach(Array(filteredLogs.enumerated()), id: \.offset) { _, entry in
+                ForEach(filteredRows) { row in
                     HStack(alignment: .top, spacing: 10) {
-                        Image(systemName: icon(for: entry.level))
-                            .foregroundStyle(color(for: entry.level))
+                        Image(systemName: icon(for: row.level))
+                            .foregroundStyle(color(for: row.level))
                             .frame(width: 18)
                         VStack(alignment: .leading, spacing: 2) {
-                            Text(entry.message)
+                            Text(row.message)
                                 .font(.subheadline)
                             HStack(spacing: 6) {
-                                Text(entry.source)
+                                Text(row.detail)
                                 Text("·")
-                                Text(timeFormatter.string(from: Date(timeIntervalSince1970: Double(entry.timestamp) / 1000)))
+                                Text(timeFormatter.string(from: row.date))
                             }
                             .font(.caption2)
                             .foregroundStyle(.secondary)

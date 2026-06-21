@@ -27,8 +27,11 @@ final class EngineDiscovery: ObservableObject {
         let browser = NWBrowser(for: .bonjour(type: "_gpsmock._tcp", domain: nil), using: parameters)
         self.browser = browser
 
+        AppLogger.shared.info("Découverte Bonjour démarrée (_gpsmock._tcp)")
+
         browser.stateUpdateHandler = { [weak self] newState in
-            if case .failed = newState {
+            if case .failed(let error) = newState {
+                AppLogger.shared.warn("Découverte Bonjour échouée: \(error.localizedDescription)")
                 DispatchQueue.main.async { self?.state = .notFound }
             }
         }
@@ -44,6 +47,7 @@ final class EngineDiscovery: ObservableObject {
         // manual entry — mDNS on a busy/unusual LAN can be slow.
         DispatchQueue.main.asyncAfter(deadline: .now() + 5) { [weak self] in
             guard let self, self.state == .searching else { return }
+            AppLogger.shared.warn("Découverte Bonjour: aucun moteur trouvé après 5s")
             self.state = .notFound
             self.stop()
         }
@@ -68,6 +72,7 @@ final class EngineDiscovery: ObservableObject {
                   case let .hostPort(host, port) = innerEndpoint else { return }
 
             let hostString = "\(host)".split(separator: "%").first.map(String.init) ?? "\(host)"
+            AppLogger.shared.info("Moteur trouvé en Bonjour: \(hostString):\(port.rawValue)")
             DispatchQueue.main.async {
                 self.state = .found(host: hostString, port: Int(port.rawValue))
                 self.stop()

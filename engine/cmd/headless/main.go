@@ -13,6 +13,7 @@ import (
 	"log"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 
 	"github.com/remi-deher/maps-main/engine/internal/settings"
@@ -33,17 +34,30 @@ func main() {
 	rsdFlag := flag.String("rsd", os.Getenv("GPSMOCK_RSD"), "manual RSD endpoint host:port (WiFi transport; skips tunnel start)")
 	logFile := flag.String("log-file", os.Getenv("GPSMOCK_LOG_FILE"), "also write logs to this file (used by the Windows service)")
 	noTunnel := flag.Bool("no-tunnel", envBool("GPSMOCK_NO_TUNNEL"), "do not start the tunnel at boot")
+	clusterMode := flag.String("cluster-mode", envOr("GPSMOCK_CLUSTER_MODE", def.ClusterMode), "HA cluster mode: off | manual | auto (auto discovers peers via mDNS)")
+	clusterNodes := flag.String("cluster-nodes", os.Getenv("GPSMOCK_CLUSTER_NODES"), "comma-separated host:port list of manual cluster peers")
+	serverName := flag.String("server-name", os.Getenv("GPSMOCK_SERVER_NAME"), "name this node reports to cluster peers (defaults to hostname)")
+	clusterSyncCerts := flag.Bool("cluster-sync-certs", envBool("GPSMOCK_CLUSTER_SYNC_CERTS"), "opt-in: replicate the Lockdown pairing-record folder across the cluster")
 	flag.Parse()
 
+	var nodes []string
+	if *clusterNodes != "" {
+		nodes = strings.Split(*clusterNodes, ",")
+	}
+
 	cfg := runConfig{
-		driverID:  *driverFlag,
-		transport: *transportFlag,
-		addr:      *addrFlag,
-		goiosBin:  *goiosBin,
-		pythonBin: *pythonBin,
-		rsd:       *rsdFlag,
-		logFile:   *logFile,
-		noTunnel:  *noTunnel,
+		driverID:         *driverFlag,
+		transport:        *transportFlag,
+		addr:             *addrFlag,
+		goiosBin:         *goiosBin,
+		pythonBin:        *pythonBin,
+		rsd:              *rsdFlag,
+		logFile:          *logFile,
+		noTunnel:         *noTunnel,
+		clusterMode:      *clusterMode,
+		clusterNodes:     nodes,
+		serverName:       *serverName,
+		clusterSyncCerts: *clusterSyncCerts,
 	}
 
 	// Windows service mode: when launched by the SCM, run under the service

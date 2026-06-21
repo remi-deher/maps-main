@@ -12,11 +12,12 @@ type EnvInfo struct {
 
 // ClusterPeer is a known node in the HA cluster.
 type ClusterPeer struct {
-	Address string `json:"address"`
-	Port    int    `json:"port"`
-	Online  bool   `json:"online,omitempty"`
-	Role    string `json:"role,omitempty"`
-	Name    string `json:"name,omitempty"`
+	Address    string `json:"address"`
+	Port       int    `json:"port"`
+	Online     bool   `json:"online,omitempty"`
+	Role       string `json:"role,omitempty"`
+	Name       string `json:"name,omitempty"`
+	Discovered bool   `json:"discovered,omitempty"` // found via mDNS auto-discovery rather than manual config
 }
 
 // ClusterInfo is the cluster section of the status.

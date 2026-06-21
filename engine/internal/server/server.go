@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"log"
+	"math/rand"
 	"net/http"
 	"time"
 
@@ -18,14 +19,15 @@ const actionTimeout = 60 * time.Second
 
 // Server ties the Engine to an HTTP/WebSocket front end.
 type Server struct {
-	eng  *engine.Engine
-	hub  *hub
-	http *http.Server
+	eng       *engine.Engine
+	hub       *hub
+	http      *http.Server
+	startedAt time.Time
 }
 
 // New builds a Server listening on addr (e.g. ":8080").
 func New(eng *engine.Engine, addr string) *Server {
-	s := &Server{eng: eng, hub: newHub()}
+	s := &Server{eng: eng, hub: newHub(), startedAt: time.Now()}
 
 	// Engine events -> broadcast to every connected client.
 	eng.OnEvent(func(eventType string, data any) {
@@ -38,13 +40,46 @@ func New(eng *engine.Engine, addr string) *Server {
 	mux.HandleFunc("POST /api/location/clear", s.handleClear)
 	mux.HandleFunc("/ws", s.handleWS)
 
+	// Cluster peer-to-peer protocol (ping/takeover/status between engines),
+	// distinct from the client-facing API above. Registered even if cluster
+	// mode starts "off" so it can be turned on at runtime via SaveSettings.
+	if mgr := eng.ClusterManager(); mgr != nil {
+		mgr.RegisterRoutes(mux)
+	}
+
 	s.http = &http.Server{Addr: addr, Handler: mux}
 	return s
 }
 
 // Start launches the broadcast hub (non-blocking). Called by ListenAndServe and
 // by tests that drive the Handler directly.
-func (s *Server) Start() { go s.hub.run() }
+func (s *Server) Start() {
+	go s.hub.run()
+	go s.runTelemetry()
+}
+
+// runTelemetry mirrors legacy's companion-server.js _telemetryInterval: every
+// 5s it broadcasts a TELEMETRY event so the desktop app's network-status
+// widget (tauri-app's MapContainer/Sidebar) has live data. Latency/throughput
+// are simulated the same way the legacy server did (no real network probe
+// existed); uptime is real. Broadcasting unconditionally is harmless when no
+// client is connected — the hub's fan-out loop over an empty client map is a
+// no-op.
+func (s *Server) runTelemetry() {
+	if s.startedAt.IsZero() {
+		s.startedAt = time.Now()
+	}
+	ticker := time.NewTicker(5 * time.Second)
+	defer ticker.Stop()
+	for range ticker.C {
+		s.hub.broadcast(encode(api.EventTelemetry, api.TelemetryPayload{
+			Latency:    5 + rand.Float64()*10,
+			PacketLoss: 0,
+			Uptime:     int64(time.Since(s.startedAt).Seconds()),
+			Throughput: rand.Float64() * 100,
+		}))
+	}
+}
 
 // Handler exposes the HTTP handler (REST + WebSocket) for testing.
 func (s *Server) Handler() http.Handler { return s.http.Handler }

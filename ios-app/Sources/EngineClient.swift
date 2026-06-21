@@ -126,6 +126,7 @@ final class EngineClient: NSObject, ObservableObject, URLSessionWebSocketDelegat
     }
 
     private func handleDisconnect(error: Error, generation: Int) {
+        AppLogger.shared.warn("Connexion moteur perdue: \(error.localizedDescription)")
         DispatchQueue.main.async {
             self.lastError = error.localizedDescription
             self.state = .reconnecting
@@ -137,6 +138,7 @@ final class EngineClient: NSObject, ObservableObject, URLSessionWebSocketDelegat
     }
 
     func urlSession(_ session: URLSession, webSocketTask: URLSessionWebSocketTask, didOpenWithProtocol protocol: String?) {
+        AppLogger.shared.info("Connecté au moteur (\(self.urlString))")
         DispatchQueue.main.async { self.state = .connected }
         sendEnvelope(type: "GET_STATUS", data: [:])
         sendEnvelope(type: "GET_LOGS", data: [:])
@@ -247,6 +249,7 @@ final class EngineClient: NSObject, ObservableObject, URLSessionWebSocketDelegat
 
     private func sendEnvelope(type: String, data: [String: Any]) {
         guard let task else {
+            AppLogger.shared.warn("Action \(type) ignorée: non connecté au moteur")
             DispatchQueue.main.async { self.lastError = "Non connecté au moteur — action ignorée." }
             return
         }
@@ -254,6 +257,7 @@ final class EngineClient: NSObject, ObservableObject, URLSessionWebSocketDelegat
               let json = String(data: payload, encoding: .utf8) else { return }
         task.send(.string(json)) { [weak self] error in
             if let error {
+                AppLogger.shared.error("Envoi \(type) échoué: \(error.localizedDescription)")
                 DispatchQueue.main.async { self?.lastError = error.localizedDescription }
             }
         }

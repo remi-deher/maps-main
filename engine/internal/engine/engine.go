@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/remi-deher/maps-main/engine/internal/api"
+	"github.com/remi-deher/maps-main/engine/internal/cluster"
 	"github.com/remi-deher/maps-main/engine/internal/domain"
 	"github.com/remi-deher/maps-main/engine/internal/driver"
 	"github.com/remi-deher/maps-main/engine/internal/settings"
@@ -45,6 +46,34 @@ type Engine struct {
 	// startup (cmd/headless), so SwitchDriver can rebuild a driver.Config at
 	// runtime without re-resolving python/go-ios from PATH every time.
 	driverCfgBase driver.Config
+
+	// clusterMgr is optional: set via SetClusterManager when cluster mode is
+	// enabled, nil otherwise (Status() then omits the Cluster field).
+	clusterMgr *cluster.Manager
+}
+
+// SetClusterManager attaches the HA cluster manager so Status() reports its
+// state and SaveSettings can push live config changes to it.
+func (e *Engine) SetClusterManager(m *cluster.Manager) {
+	e.mu.Lock()
+	e.clusterMgr = m
+	e.mu.Unlock()
+}
+
+// ClusterManager returns the attached cluster manager, or nil if cluster mode
+// is off (used by the server to wire the peer-to-peer HTTP routes).
+func (e *Engine) ClusterManager() *cluster.Manager {
+	e.mu.RLock()
+	defer e.mu.RUnlock()
+	return e.clusterMgr
+}
+
+// TunnelActive reports whether the driver tunnel is currently up — exposed so
+// the cluster manager can answer peer pings without importing this package.
+func (e *Engine) TunnelActive() bool {
+	e.mu.RLock()
+	defer e.mu.RUnlock()
+	return e.st.TunnelActive
 }
 
 // SetDriverConfigBase records the resolved driver.Config used to build the
@@ -341,8 +370,19 @@ func (e *Engine) ReportRealLocation(ctx context.Context, lat, lon float64) {
 // Status returns a snapshot of the current state.
 func (e *Engine) Status() api.Status {
 	e.mu.RLock()
-	defer e.mu.RUnlock()
-	return e.st
+	st := e.st
+	mgr := e.clusterMgr
+	e.mu.RUnlock()
+
+	if mgr != nil {
+		info := mgr.Status()
+		peers := make([]api.ClusterPeer, len(info.Peers))
+		for i, p := range info.Peers {
+			peers[i] = api.ClusterPeer{Address: p.Address, Port: p.Port, Online: p.Online, Role: p.Role, Name: p.Name, Discovered: p.Discovered}
+		}
+		st.Cluster = &api.ClusterInfo{Role: info.Role, Mode: info.Mode, Peers: peers}
+	}
+	return st
 }
 
 // stopActiveSimulation terminates any running routing/navigation or patrol goroutines
@@ -645,6 +685,36 @@ func (e *Engine) SaveSettings(ctx context.Context, payload api.SaveSettingsPaylo
 			e.st.DynamicIslandEnabled = island
 		}
 	}
+
+	mgr := e.clusterMgr
+	clusterMode, hasMode := payload["clusterMode"].(string)
+	rawNodes, hasNodes := payload["clusterNodes"].([]any)
+	syncCerts, hasSyncCerts := payload["clusterSyncCerts"].(bool)
+	if mgr != nil && (hasMode || hasNodes || hasSyncCerts) {
+		var nodeAddrs []string
+		if hasNodes {
+			for _, n := range rawNodes {
+				if s, ok := n.(string); ok {
+					nodeAddrs = append(nodeAddrs, s)
+				}
+			}
+		} else {
+			for _, p := range mgr.Status().Peers {
+				if !p.Discovered {
+					nodeAddrs = append(nodeAddrs, fmt.Sprintf("%s:%d", p.Address, p.Port))
+				}
+			}
+		}
+		mode := mgr.Status().Mode
+		if hasMode {
+			mode = clusterMode
+		}
+		if !hasSyncCerts {
+			syncCerts = mgr.SyncCertsEnabled()
+		}
+		go mgr.UpdateConfig(ctx, mode, nodeAddrs, syncCerts)
+	}
+
 	e.emit(api.EventStatus, e.st)
 	return nil
 }

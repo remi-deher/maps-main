@@ -27,6 +27,37 @@ desktop :
   pour le bouclier anti-dérive du moteur (re-injecte la position simulée si
   elle a trop dérivé — voir `engine/internal/engine/engine.go`,
   `ReportRealLocation`).
+- **Maintien en arrière-plan** (réglable, activé par défaut — mirroring
+  `EveilMode`/`EveilInterval` du moteur, `engine/internal/settings/schema.go`) :
+  une fois l'autorisation de localisation « Toujours » accordée et
+  `allowsBackgroundLocationUpdates` activé (`LocationManager.swift`,
+  `UIBackgroundModes: location` dans `project.yml`), l'app continue de
+  tourner en arrière-plan et renvoie périodiquement `RELANCE` au moteur
+  (`ContentView.swift`, `startKeepAlive`) pour qu'il ré-injecte la dernière
+  position simulée — le même rôle que la tâche `expo-task-manager` de
+  `legacy/client/src/services/background.ts`, qui postait sur `/api/relance`.
+  Le cadran (toggle + intervalle) est dans Réglages → « Maintien en
+  arrière-plan ».
+- **Notifications locales configurables** (`NotificationManager.swift`),
+  portage de `legacy/client/src/services/notifications.ts` : prévient à
+  l'arrivée d'un itinéraire et en cas de perte de connexion au moteur.
+  Indépendant de la Live Activity (qui reste l'affichage permanent
+  écran verrouillé/Dynamic Island) ; réglable dans Réglages → Notifications.
+- **Routing OSRM côté client** (`OSRMClient.swift`), portage de
+  `legacy/client/src/utils/routing.ts` (`fetchRoute`/`snapToRoad`) : les
+  estimations distance/ETA par étape d'itinéraire (`recomputeLegEstimates`
+  dans `ContentView.swift`) interrogent le même routeur OSRM que celui
+  utilisé côté moteur (`engine/internal/engine/simulation.go`), au lieu du
+  routing Apple Maps de MapKit qui peut choisir un trajet différent de celui
+  que la simulation va réellement suivre. Repli automatique sur MKDirections
+  si le serveur OSRM public est inaccessible (pas de réseau, indisponibilité).
+- **Journaux côté app** (`AppLogger.swift`) : buffer en mémoire (200 entrées,
+  aussi miroité vers `os.Logger`/Console.app) des événements client —
+  connexion/déconnexion moteur, découverte Bonjour, erreurs OSRM, actions
+  WebSocket en échec. Visible dans Réglages → Journaux du moteur, onglet
+  « App » (à côté de l'onglet « Moteur » qui montre les logs du moteur
+  Go) — permet de diagnostiquer un souci côté téléphone sans Mac ni
+  Console.app.
 
 Le moteur Go est l'unique source de vérité et diffuse son état à **tous**
 les clients connectés (desktop, iOS, headless via le hub WebSocket) — donc

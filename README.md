@@ -65,9 +65,25 @@ go run ./cmd/headless -driver pymobiledevice -transport wifi -rsd 192.168.1.50:5
 
 # sans tunnel (test de l'API seule)
 go run ./cmd/headless -no-tunnel
+
+# cluster HA : auto-découverte des pairs en mDNS (pas d'IP à saisir)
+go run ./cmd/headless -cluster-mode auto
+
+# cluster HA : liste manuelle de pairs
+go run ./cmd/headless -cluster-mode manual -cluster-nodes 192.168.1.10:8080,192.168.1.11:8080
 ```
 
 > L'injection GPS réelle requiert un iPhone connecté et les privilèges du tunnel.
+
+Le mode cluster (`-cluster-mode off|manual|auto`) porte la haute disponibilité maître/esclave du
+serveur legacy (heartbeat, takeover automatique, synchronisation) — en mode `auto`, les pairs sont
+découverts via le même service Bonjour/mDNS (`_gpsmock._tcp`) que celui utilisé par l'app iOS, sans
+configuration d'IP. `-cluster-mode`, `-cluster-nodes` et `-cluster-sync-certs` sont aussi modifiables
+à chaud via `SAVE_SETTINGS`.
+
+`-cluster-sync-certs` (désactivé par défaut) réplique en plus le dossier Lockdown (pairing records
+iOS) entre les nœuds du cluster — un nœud esclave promu maître peut alors reprendre l'injection sur
+un device déjà appairé sur un autre nœud sans avoir à le ré-appairer.
 
 ### App desktop (Tauri)
 

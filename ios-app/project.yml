@@ -42,6 +42,8 @@ targets:
         NSBonjourServices:
           - _gpsmock._tcp
         NSSupportsLiveActivities: true
+        UIBackgroundModes:
+          - location
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.remi2.gpsmock.companion

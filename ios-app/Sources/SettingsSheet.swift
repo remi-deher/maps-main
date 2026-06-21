@@ -9,6 +9,9 @@ struct SettingsSheet: View {
     var onToggleConnection: () -> Void
     var onRetryDiscovery: () -> Void
     @Binding var liveActivityEnabled: Bool
+    @Binding var keepAliveEnabled: Bool
+    @Binding var keepAliveInterval: Double
+    @Binding var notificationsEnabled: Bool
 
     @State private var selectedDriver = "go-ios"
     @State private var selectedTransport = "auto"
@@ -71,6 +74,25 @@ struct SettingsSheet: View {
                 Section("Live Activity") {
                     Toggle("Écran verrouillé / Dynamic Island", isOn: $liveActivityEnabled)
                     Text("Affiche l'état de la simulation en cours sans ouvrir l'application.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
+                Section("Maintien en arrière-plan") {
+                    Toggle("Garder la position active", isOn: $keepAliveEnabled)
+                    if keepAliveEnabled {
+                        Stepper(value: $keepAliveInterval, in: 2...60, step: 1) {
+                            Text("Toutes les \(Int(keepAliveInterval)) s")
+                        }
+                    }
+                    Text("Relance périodiquement la dernière position injectée pendant que l'app est en arrière-plan, pour qu'elle ne se perde pas. Nécessite l'autorisation de localisation « Toujours ».")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
+                Section("Notifications") {
+                    Toggle("Arrivée et déconnexion", isOn: $notificationsEnabled)
+                    Text("Prévient quand un itinéraire se termine ou que la liaison avec le moteur est perdue.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }

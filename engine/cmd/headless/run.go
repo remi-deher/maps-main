@@ -12,17 +12,13 @@ import (
 
 	"github.com/grandcat/zeroconf"
 
+	"github.com/remi-deher/maps-main/engine/internal/cluster"
 	"github.com/remi-deher/maps-main/engine/internal/domain"
 	"github.com/remi-deher/maps-main/engine/internal/driver"
 	"github.com/remi-deher/maps-main/engine/internal/engine"
 	"github.com/remi-deher/maps-main/engine/internal/server"
 	"github.com/remi-deher/maps-main/engine/internal/settings"
 )
-
-// mdnsServiceType is the Bonjour/mDNS service the engine advertises itself
-// under, so the iOS companion app can auto-discover it on the LAN instead of
-// requiring the user to type an IP:port (see ios-app's EngineDiscovery).
-const mdnsServiceType = "_gpsmock._tcp"
 
 // runConfig is the resolved configuration for one engine run.
 type runConfig struct {
@@ -34,6 +30,11 @@ type runConfig struct {
 	rsd       string
 	logFile   string
 	noTunnel  bool
+
+	clusterMode      string // off | manual | auto
+	clusterNodes     []string
+	serverName       string
+	clusterSyncCerts bool
 }
 
 // runEngine builds the driver, engine and server, starts everything, and blocks
@@ -75,6 +76,12 @@ func runEngine(ctx context.Context, cfg runConfig) error {
 
 	eng := engine.New(drv, settings.Default())
 	eng.SetDriverConfigBase(dcfg)
+
+	_, portStr, _ := net.SplitHostPort(cfg.addr)
+	selfPort, _ := strconv.Atoi(portStr)
+	clusterMgr := cluster.New(cfg.clusterMode, cfg.clusterNodes, cfg.serverName, selfPort, eng.TunnelActive, cfg.clusterSyncCerts)
+	eng.SetClusterManager(clusterMgr)
+
 	srv := server.New(eng, cfg.addr)
 
 	go func() {
@@ -87,6 +94,10 @@ func runEngine(ctx context.Context, cfg runConfig) error {
 	if mdnsServer := advertiseMdns(cfg.addr); mdnsServer != nil {
 		defer mdnsServer.Shutdown()
 	}
+
+	clusterMgr.Start(ctx)
+	defer clusterMgr.Release()
+	defer clusterMgr.Stop()
 
 	if !cfg.noTunnel {
 		go func() {
@@ -129,11 +140,11 @@ func advertiseMdns(addr string) *zeroconf.Server {
 		instance = hostname
 	}
 
-	mdnsServer, err := zeroconf.Register(instance, mdnsServiceType, "local.", port, []string{"v=1"}, nil)
+	mdnsServer, err := zeroconf.Register(instance, cluster.ServiceType, "local.", port, []string{"v=1"}, nil)
 	if err != nil {
 		log.Printf("mdns: advertisement failed: %v", err)
 		return nil
 	}
-	log.Printf("mdns: advertising %q on %s, port %d", instance, mdnsServiceType, port)
+	log.Printf("mdns: advertising %q on %s, port %d", instance, cluster.ServiceType, port)
 	return mdnsServer
 }
