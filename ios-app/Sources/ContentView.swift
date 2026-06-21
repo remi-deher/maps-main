@@ -73,7 +73,6 @@ struct ContentView: View {
                 },
                 onRegionChange: { visibleRegion = $0 }
             )
-            .popoverTip(MapLongPressTip())
             .ignoresSafeArea()
             .mapControls {
                 MapCompass()
@@ -85,7 +84,7 @@ struct ContentView: View {
             // lensing pass and can morph together instead of each posing as
             // its own independent glass layer (swiftui-liquid-glass skill).
             GlassEffectContainer(spacing: 16) {
-                VStack {
+                VStack(alignment: .trailing, spacing: 10) {
                     HStack {
                         Spacer()
                         Button {
@@ -99,6 +98,15 @@ struct ContentView: View {
                         .buttonStyle(.glass)
                         .buttonBorderShape(.circle)
                     }
+                    // TipView instead of .popoverTip: a popover's source view
+                    // would have to be the map itself, but the map fills the
+                    // whole screen (.ignoresSafeArea() below) — TipKit then
+                    // has no real anchor rect to avoid and can render its
+                    // bubble right over this gear button or the search bar,
+                    // swallowing their first tap. A TipView has a fixed,
+                    // bounded frame instead, so it can't cover anything else.
+                    TipView(MapLongPressTip(), arrowEdge: .top)
+                        .frame(maxWidth: 280)
                     Spacer()
                 }
                 .padding(.top, 8)
@@ -242,11 +250,13 @@ struct ContentView: View {
                 searchCompleter.updateRegion(center: coordinate)
             }
             searchCompleter.queryFragment = newValue
-        }
-        .onChange(of: searchFocused) { focused in
             // Plans expands its sheet the moment you start typing, so results
-            // aren't hidden under a collapsed handle.
-            if focused {
+            // aren't hidden under a collapsed handle. Triggered by the query
+            // itself rather than `searchFocused`: expanding the sheet the
+            // instant the field is tapped raced the keyboard's own slide-up
+            // animation (both resize/reposition the same view hierarchy at
+            // once), which made the keyboard visibly slow to appear.
+            if !newValue.isEmpty {
                 withAnimation { sheetDetent = .medium }
             }
         }
