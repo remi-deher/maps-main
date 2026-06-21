@@ -153,6 +153,9 @@ func (e *Engine) startRouteSimulation(ctx context.Context, points []domain.LatLo
 			e.mu.Unlock()
 			return
 		case <-ticker.C:
+			if e.isPaused() {
+				continue
+			}
 			if index >= len(points) {
 				if looping {
 					index = 0
@@ -235,6 +238,9 @@ func (e *Engine) startPatrolSimulation(ctx context.Context, zone domain.PatrolZo
 			e.mu.Unlock()
 			return
 		case <-ticker.C:
+			if e.isPaused() {
+				continue
+			}
 			// Pick new target if reached or not set
 			if !hasTarget {
 				if zone.Type == "circle" && zone.Center != nil {

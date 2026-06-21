@@ -28,6 +28,7 @@ type Engine struct {
 	st        api.Status
 	emit      EmitFunc
 	cancelSim context.CancelFunc
+	simPaused bool
 	simMu     sync.Mutex
 
 	// Anti-drift shield: tracks consecutive REAL_LOCATION reports that drift
@@ -239,6 +240,79 @@ func (e *Engine) stopActiveSimulation() {
 		e.cancelSim()
 		e.cancelSim = nil
 	}
+	e.simPaused = false
+}
+
+// StopRoute is the explicit STOP_ROUTE action: same effect as starting a new
+// simulation (cancels the running one), but exposed as its own action so a
+// client can stop without having to issue another PLAY_* to do it.
+func (e *Engine) StopRoute(ctx context.Context) error {
+	e.stopActiveSimulation()
+	e.mu.Lock()
+	e.st.State = "ready"
+	e.st.Navigation.Status = nil
+	e.st.Navigation.Progress = nil
+	e.st.CurrentSequencePreview = nil
+	emit, st := e.emit, e.st
+	e.mu.Unlock()
+	emit(api.EventStatus, st)
+	return nil
+}
+
+// PauseRoute freezes the active simulation in place: the goroutine keeps
+// running (its index/state is preserved) but skips ticks until resumed —
+// unlike StopRoute/a new PLAY_*, nothing is lost, so ResumeRoute continues
+// from the exact same point instead of restarting.
+func (e *Engine) PauseRoute(ctx context.Context) error {
+	e.simMu.Lock()
+	hasSim := e.cancelSim != nil
+	if hasSim {
+		e.simPaused = true
+	}
+	e.simMu.Unlock()
+	if !hasSim {
+		return nil
+	}
+
+	e.mu.Lock()
+	e.st.State = "paused"
+	if e.st.Navigation.Status != nil {
+		e.st.Navigation.Status.State = "paused"
+	}
+	emit, st := e.emit, e.st
+	e.mu.Unlock()
+	emit(api.EventStatus, st)
+	return nil
+}
+
+// ResumeRoute un-freezes a simulation paused by PauseRoute.
+func (e *Engine) ResumeRoute(ctx context.Context) error {
+	e.simMu.Lock()
+	hasSim := e.cancelSim != nil
+	if hasSim {
+		e.simPaused = false
+	}
+	e.simMu.Unlock()
+	if !hasSim {
+		return nil
+	}
+
+	e.mu.Lock()
+	e.st.State = "moving"
+	if e.st.Navigation.Status != nil {
+		e.st.Navigation.Status.State = "running"
+	}
+	emit, st := e.emit, e.st
+	e.mu.Unlock()
+	emit(api.EventStatus, st)
+	return nil
+}
+
+// isPaused reports whether the active simulation should skip this tick.
+func (e *Engine) isPaused() bool {
+	e.simMu.Lock()
+	defer e.simMu.Unlock()
+	return e.simPaused
 }
 
 // PlayRoute fetches a route from OSRM and runs the movement simulation

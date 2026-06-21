@@ -182,6 +182,18 @@ func (s *Server) dispatch(c *client, env api.Envelope) {
 				log.Printf("PATROL_UPDATE: %v", err)
 			}
 		}
+	case api.ActionStopRoute:
+		if err := s.eng.StopRoute(ctx); err != nil {
+			log.Printf("STOP_ROUTE: %v", err)
+		}
+	case api.ActionPauseRoute:
+		if err := s.eng.PauseRoute(ctx); err != nil {
+			log.Printf("PAUSE_ROUTE: %v", err)
+		}
+	case api.ActionResumeRoute:
+		if err := s.eng.ResumeRoute(ctx); err != nil {
+			log.Printf("RESUME_ROUTE: %v", err)
+		}
 	case api.ActionAddFavorite:
 		var p api.FavoritePayload
 		if json.Unmarshal(env.Data, &p) == nil {
