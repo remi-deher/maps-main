@@ -187,6 +187,7 @@ func New(drv driver.Driver, cfg settings.Settings) *Engine {
 			FallbackEnabled:      cfg.FallbackEnabled,
 			NotificationsEnabled: cfg.NotificationsEnabled,
 			DynamicIslandEnabled: cfg.DynamicIslandEnabled,
+			JitterEnabled:        cfg.JitterEnabled,
 			Favorites:            cfg.Favorites,
 			RecentHistory:        cfg.RecentHistory,
 			Navigation:           domain.Navigation{},
@@ -691,6 +692,11 @@ func (e *Engine) SaveSettings(ctx context.Context, payload api.SaveSettingsPaylo
 	if val, ok := payload["dynamicIslandEnabled"]; ok {
 		if island, ok := val.(bool); ok {
 			e.st.DynamicIslandEnabled = island
+		}
+	}
+	if val, ok := payload["jitterEnabled"]; ok {
+		if jitter, ok := val.(bool); ok {
+			e.st.JitterEnabled = jitter
 		}
 	}
 

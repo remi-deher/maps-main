@@ -67,6 +67,7 @@ type Status struct {
 
 	NotificationsEnabled bool `json:"notificationsEnabled"`
 	DynamicIslandEnabled bool `json:"dynamicIslandEnabled"`
+	JitterEnabled        bool `json:"jitterEnabled"`
 
 	Favorites              []domain.Favorite      `json:"favorites"`
 	RecentHistory          []domain.HistoryEntry  `json:"recentHistory"`

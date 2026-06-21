@@ -221,6 +221,18 @@ extension ContentView {
         }
     }
 
+    /// Drops the current connection and reopens it against the (possibly
+    /// just-edited) `engineAddress` — used when the user changes the port in
+    /// settings, mirroring tauri-app's "Appliquer" button for its engine
+    /// port field (Sidebar.tsx's handleApplyEnginePort).
+    func reconnect() {
+        if engine.state == .connected || engine.state == .connecting {
+            engine.disconnect()
+        }
+        engine.connect(to: "ws://\(engineAddress)/ws")
+        startReporting()
+    }
+
     /// Periodically re-sends RELANCE so the engine re-asserts the last
     /// injected position — the "maintien" the legacy background task
     /// (services/background.ts) achieved by posting to /api/relance on every

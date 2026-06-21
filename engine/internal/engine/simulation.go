@@ -192,8 +192,7 @@ func (e *Engine) startRouteSimulation(ctx context.Context, points []domain.LatLo
 
 			// Apply Jitter/Noise if enabled
 			e.mu.Lock()
-			// Check settings or enable by default for demo
-			jitterEnabled := true // Fallback to true or use status settings
+			jitterEnabled := e.st.JitterEnabled
 			if jitterEnabled {
 				// Offset coordinates by ~0.5 to 1.5 meters randomly
 				latOffset := (rand.Float64() - 0.5) * 0.00001
@@ -312,7 +311,7 @@ func (e *Engine) startPatrolSimulation(ctx context.Context, zone domain.PatrolZo
 
 			// Apply Jitter/Noise
 			e.mu.Lock()
-			jitterEnabled := true
+			jitterEnabled := e.st.JitterEnabled
 			p := currentPos
 			if jitterEnabled {
 				latOffset := (rand.Float64() - 0.5) * 0.00001

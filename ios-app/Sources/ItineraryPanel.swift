@@ -38,6 +38,8 @@ struct ItineraryPanel: View {
 
     @State private var launchFeedback = 0
     @State private var draggingStopID: UUID?
+    @State private var showGpxExporter = false
+    @State private var gpxExportError: String?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -104,19 +106,43 @@ struct ItineraryPanel: View {
             }
             .pickerStyle(.segmented)
 
-            Button("Lancer l'itinéraire") {
-                launchFeedback += 1
-                onLaunch()
+            HStack(spacing: 10) {
+                Button {
+                    showGpxExporter = true
+                } label: {
+                    Label("Exporter en GPX", systemImage: "square.and.arrow.up")
+                        .frame(maxWidth: .infinity, minHeight: 44)
+                }
+                .buttonStyle(.glass)
+                .disabled(stops.isEmpty)
+
+                Button("Lancer l'itinéraire") {
+                    launchFeedback += 1
+                    onLaunch()
+                }
+                .buttonStyle(.glassProminent)
+                .tint(.accentColor)
+                .frame(maxWidth: .infinity, minHeight: 44)
+                .disabled(stops.isEmpty)
             }
-            .buttonStyle(.glassProminent)
-            .tint(.accentColor)
-            .frame(maxWidth: .infinity, minHeight: 44)
-            .disabled(stops.isEmpty)
+            if let gpxExportError {
+                Text(gpxExportError).font(.caption).foregroundStyle(.red)
+            }
         }
         .padding(18)
         .adaptiveGlassEffect(in: RoundedRectangle(cornerRadius: 26, style: .continuous))
         .padding(.horizontal, 16)
         .sensoryFeedback(.success, trigger: launchFeedback)
+        .fileExporter(
+            isPresented: $showGpxExporter,
+            document: GPXFile(content: GPX.document(name: "Itinéraire GPS-Mock", points: stops.map(\.coordinate))),
+            contentType: .gpx,
+            defaultFilename: "gpsmock_route"
+        ) { result in
+            if case .failure(let error) = result {
+                gpxExportError = error.localizedDescription
+            }
+        }
     }
 
     @ViewBuilder

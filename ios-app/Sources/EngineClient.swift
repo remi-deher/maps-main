@@ -1,4 +1,5 @@
 import Foundation
+import CoreLocation
 
 enum EngineConnectionState: String {
     case disconnected = "Déconnecté"
@@ -44,12 +45,29 @@ struct LogEntryPayload: Codable, Equatable {
     let message: String
 }
 
+struct PatrolBounds: Codable, Equatable {
+    let ne: RoutePoint
+    let sw: RoutePoint
+}
+
+/// Mirrors engine/internal/domain.PatrolZone — a circle (center+radius) or
+/// rectangle (bounds) the engine wanders the spoofed position around.
+struct PatrolZone: Codable, Equatable {
+    let type: String // "circle" | "rectangle"
+    let center: RoutePoint?
+    let radius: Double?
+    let bounds: PatrolBounds?
+    let active: Bool
+}
+
 struct EngineStatus: Codable, Equatable {
     let state: String?
     let favorites: [Favorite]?
     let lastInjectedLocation: LocationStamp?
     let lastRealLocation: RealLocationStamp?
     let currentSequencePreview: [RoutePoint]?
+    let jitterEnabled: Bool?
+    let patrolZone: PatrolZone?
 }
 
 /// Talks the same {type, data} WebSocket envelope as the desktop app
@@ -202,6 +220,13 @@ final class EngineClient: NSObject, ObservableObject, URLSessionWebSocketDelegat
         sendEnvelope(type: "PLAY_ROUTE", data: ["endLat": endLat, "endLon": endLon, "speed": speed, "profile": profile])
     }
 
+    /// Plays back a GPX track's raw text content — the engine parses the
+    /// `<trkpt>` tags itself (engine/internal/engine/simulation.go), so the
+    /// app just forwards the file content it read, same as tauri-app.
+    func playCustomGpx(gpxContent: String, speed: Double) {
+        sendEnvelope(type: "PLAY_CUSTOM_GPX", data: ["gpxContent": gpxContent, "speed": speed])
+    }
+
     func stopRoute() {
         sendEnvelope(type: "STOP_ROUTE", data: [:])
     }
@@ -228,6 +253,35 @@ final class EngineClient: NSObject, ObservableObject, URLSessionWebSocketDelegat
 
     func switchDriver(driverId: String, transport: String) {
         sendEnvelope(type: "SWITCH_DRIVER", data: ["driverId": driverId, "transport": transport])
+    }
+
+    /// Starts, updates, or stops a patrol zone — same PATROL_UPDATE envelope
+    /// as tauri-app's `updatePatrolZone` (engine/internal/api/messages.go's
+    /// PatrolUpdatePayload). Sending `active: false` stops it; the engine
+    /// requires `center`+`radius` for "circle" or `bounds` for "rectangle".
+    func updatePatrolZone(type: String, center: CLLocationCoordinate2D?, radius: Double?, bounds: (sw: CLLocationCoordinate2D, ne: CLLocationCoordinate2D)?, active: Bool) {
+        var zone: [String: Any] = ["type": type, "active": active]
+        if let center {
+            zone["center"] = ["lat": center.latitude, "lon": center.longitude]
+        }
+        if let radius {
+            zone["radius"] = radius
+        }
+        if let bounds {
+            zone["bounds"] = [
+                "sw": ["lat": bounds.sw.latitude, "lon": bounds.sw.longitude],
+                "ne": ["lat": bounds.ne.latitude, "lon": bounds.ne.longitude],
+            ]
+        }
+        sendEnvelope(type: "PATROL_UPDATE", data: ["zone": zone])
+    }
+
+    /// Pushes a partial settings update — same SAVE_SETTINGS envelope and
+    /// merge-by-key semantics as tauri-app's `saveSettings` (only the
+    /// provided keys are applied; see engine/internal/engine/engine.go's
+    /// SaveSettings).
+    func saveSettings(_ settings: [String: Any]) {
+        sendEnvelope(type: "SAVE_SETTINGS", data: settings)
     }
 
     func addFavorite(lat: Double, lon: Double, name: String) {

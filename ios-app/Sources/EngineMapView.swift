@@ -12,8 +12,10 @@ struct EngineMapView: View {
     var spoofedLocation: CLLocationCoordinate2D?
     var routePreview: [CLLocationCoordinate2D]
     var itineraryStops: [RouteStop]
+    var patrolZone: PatrolZone?
     @Binding var cameraPosition: MapCameraPosition
     var onLongPress: (CLLocationCoordinate2D) -> Void
+    var onRegionChange: (MKCoordinateRegion) -> Void = { _ in }
 
     @State private var longPressFeedback = 0
 
@@ -45,6 +47,12 @@ struct EngineMapView: View {
                             .background(Color.accentColor, in: Circle())
                     }
                 }
+                if let zone = patrolZone, zone.active {
+                    patrolOverlay(for: zone)
+                }
+            }
+            .onMapCameraChange { context in
+                onRegionChange(context.region)
             }
             // .onTapGesture on Map is broken in iOS 26 (confirmed regression in
             // Apple's release notes), and we want a long-press anyway, not a
@@ -62,6 +70,23 @@ struct EngineMapView: View {
                     }
             )
             .sensoryFeedback(.success, trigger: longPressFeedback)
+        }
+    }
+
+    @MapContentBuilder
+    private func patrolOverlay(for zone: PatrolZone) -> some MapContent {
+        if zone.type == "rectangle", let bounds = zone.bounds {
+            let sw = CLLocationCoordinate2D(latitude: bounds.sw.lat, longitude: bounds.sw.lon)
+            let ne = CLLocationCoordinate2D(latitude: bounds.ne.lat, longitude: bounds.ne.lon)
+            let nw = CLLocationCoordinate2D(latitude: ne.latitude, longitude: sw.longitude)
+            let se = CLLocationCoordinate2D(latitude: sw.latitude, longitude: ne.longitude)
+            MapPolygon(coordinates: [sw, se, ne, nw])
+                .foregroundStyle(Color.accentColor.opacity(0.15))
+                .stroke(Color.accentColor, lineWidth: 2)
+        } else if let center = zone.center, let radius = zone.radius {
+            MapCircle(center: CLLocationCoordinate2D(latitude: center.lat, longitude: center.lon), radius: radius)
+                .foregroundStyle(Color.accentColor.opacity(0.15))
+                .stroke(Color.accentColor, lineWidth: 2)
         }
     }
 }

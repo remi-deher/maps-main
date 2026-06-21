@@ -44,4 +44,8 @@ func TestDefault(t *testing.T) {
 	if !def.DynamicIslandEnabled {
 		t.Errorf("expected DynamicIslandEnabled to be true by default")
 	}
+
+	if !def.JitterEnabled {
+		t.Errorf("expected JitterEnabled to be true by default")
+	}
 }

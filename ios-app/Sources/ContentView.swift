@@ -28,6 +28,7 @@ struct ContentView: View {
     @State var showAddFavorite = false
     @State var newFavoriteName = ""
     @State var cameraPosition: MapCameraPosition = .userLocation(fallback: .automatic)
+    @State var visibleRegion: MKCoordinateRegion?
 
     @State var searchQuery = ""
     @StateObject var searchCompleter = SearchCompleter()
@@ -60,15 +61,18 @@ struct ContentView: View {
                 spoofedLocation: spoofedCoordinate,
                 routePreview: routePreview,
                 itineraryStops: itineraryStops,
-                cameraPosition: $cameraPosition
-            ) { coordinate in
-                searchFocused = false
-                MapLongPressTip().invalidate(reason: .actionPerformed)
-                Task {
-                    let place = await reverseGeocode(coordinate)
-                    await MainActor.run { selectedPlace = place }
-                }
-            }
+                patrolZone: engine.status?.patrolZone,
+                cameraPosition: $cameraPosition,
+                onLongPress: { coordinate in
+                    searchFocused = false
+                    MapLongPressTip().invalidate(reason: .actionPerformed)
+                    Task {
+                        let place = await reverseGeocode(coordinate)
+                        await MainActor.run { selectedPlace = place }
+                    }
+                },
+                onRegionChange: { visibleRegion = $0 }
+            )
             .ignoresSafeArea()
             .mapControls {
                 MapCompass()
@@ -189,10 +193,13 @@ struct ContentView: View {
                 discovery: discovery,
                 onToggleConnection: toggleConnection,
                 onRetryDiscovery: startDiscovery,
+                onApplyPort: reconnect,
                 liveActivityEnabled: $liveActivityEnabled,
                 keepAliveEnabled: $keepAliveEnabled,
                 keepAliveInterval: $keepAliveInterval,
-                notificationsEnabled: $notificationsEnabled
+                notificationsEnabled: $notificationsEnabled,
+                patrolCenter: spoofedCoordinate ?? location.lastLocation?.coordinate,
+                visibleRegion: visibleRegion
             )
         }
         .onAppear {

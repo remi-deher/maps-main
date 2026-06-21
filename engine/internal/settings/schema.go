@@ -40,6 +40,7 @@ type Settings struct {
 	LogLevel             string `json:"logLevel"`
 	NotificationsEnabled bool   `json:"notificationsEnabled"`
 	DynamicIslandEnabled bool   `json:"dynamicIslandEnabled"`
+	JitterEnabled        bool   `json:"jitterEnabled"`
 
 	// Data
 	Favorites          []domain.Favorite     `json:"favorites"`
@@ -63,6 +64,7 @@ func Default() Settings {
 		LogLevel:             "info",
 		NotificationsEnabled: true,
 		DynamicIslandEnabled: true,
+		JitterEnabled:        true,
 		Favorites:            []domain.Favorite{},
 		RecentHistory:        []domain.HistoryEntry{},
 	}

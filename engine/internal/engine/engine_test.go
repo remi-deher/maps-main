@@ -337,6 +337,27 @@ func TestSaveSettingsAppliesKnownFields(t *testing.T) {
 	}
 }
 
+func TestSaveSettingsAppliesJitterEnabled(t *testing.T) {
+	eng := New(&mockDriver{id: domain.DriverPmd3}, settings.Default())
+	if !eng.Status().JitterEnabled {
+		t.Fatalf("expected JitterEnabled to default to true")
+	}
+
+	if err := eng.SaveSettings(context.Background(), api.SaveSettingsPayload{"jitterEnabled": false}); err != nil {
+		t.Fatalf("SaveSettings: %v", err)
+	}
+	if eng.Status().JitterEnabled {
+		t.Errorf("expected JitterEnabled to be false after SaveSettings, got true")
+	}
+
+	if err := eng.SaveSettings(context.Background(), api.SaveSettingsPayload{"jitterEnabled": true}); err != nil {
+		t.Fatalf("SaveSettings: %v", err)
+	}
+	if !eng.Status().JitterEnabled {
+		t.Errorf("expected JitterEnabled to be true again after re-enabling, got false")
+	}
+}
+
 func TestSaveSettingsIgnoresWrongTypedValues(t *testing.T) {
 	eng := New(&mockDriver{id: domain.DriverPmd3}, settings.Default())
 	before := eng.Status()
@@ -346,12 +367,13 @@ func TestSaveSettingsIgnoresWrongTypedValues(t *testing.T) {
 	payload := api.SaveSettingsPayload{
 		"companionPort":   "not-a-number",
 		"fallbackEnabled": "not-a-bool",
+		"jitterEnabled":   "not-a-bool",
 	}
 	if err := eng.SaveSettings(context.Background(), payload); err != nil {
 		t.Fatalf("SaveSettings: %v", err)
 	}
 	after := eng.Status()
-	if after.RSDPort != before.RSDPort || after.FallbackEnabled != before.FallbackEnabled {
+	if after.RSDPort != before.RSDPort || after.FallbackEnabled != before.FallbackEnabled || after.JitterEnabled != before.JitterEnabled {
 		t.Errorf("expected mistyped settings values to be ignored, before=%+v after=%+v", before, after)
 	}
 }
