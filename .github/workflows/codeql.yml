@@ -29,6 +29,7 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version-file: engine/go.mod
+          cache-dependency-path: engine/go.sum
 
       - name: Initialize CodeQL
         uses: github/codeql-action/init@v3
@@ -74,8 +75,11 @@ jobs:
             -project GpsMockCompanion.xcodeproj \
             -scheme GpsMockCompanion \
             -configuration Debug \
-            -sdk iphonesimulator \
+            -destination 'generic/platform=iOS Simulator' \
             -derivedDataPath build \
+            ONLY_ACTIVE_ARCH=YES \
+            ARCHS=arm64 \
+            EXCLUDED_ARCHS=x86_64 \
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGN_IDENTITY="" \
