@@ -63,7 +63,9 @@ struct ItineraryPanel: View {
                         VStack(alignment: .leading, spacing: 2) {
                             Text(stop.name).lineLimit(1)
                             if let estimate = legEstimates[stop.id] {
-                                Text("\(estimateFormatter.string(from: Measurement(value: estimate.distanceMeters, unit: UnitLength.meters))) · \(durationFormatter.string(from: estimate.travelTime) ?? "")")
+                                let distance = Measurement(value: estimate.distanceMeters, unit: UnitLength.meters)
+                                let duration = durationFormatter.string(from: estimate.travelTime) ?? ""
+                                Text("\(estimateFormatter.string(from: distance)) · \(duration)")
                                     .font(.caption)
                                     .foregroundStyle(.secondary)
                             }

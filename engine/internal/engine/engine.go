@@ -56,6 +56,15 @@ func (e *Engine) SetDriverConfigBase(cfg driver.Config) {
 	e.mu.Unlock()
 }
 
+// driver returns the active driver under e.mu. e.drv is reassigned at runtime
+// by SwitchDriver, so every read of it (outside of SwitchDriver itself) must
+// go through this accessor instead of touching the field directly.
+func (e *Engine) driver() driver.Driver {
+	e.mu.RLock()
+	defer e.mu.RUnlock()
+	return e.drv
+}
+
 // SwitchDriver tears down the current tunnel/driver and rebuilds the engine
 // around a different backend (go-ios <-> pymobiledevice3) and/or transport —
 // the runtime equivalent of restarting headless with different -driver/
@@ -173,18 +182,19 @@ func (e *Engine) OnEvent(f EmitFunc) {
 
 // StartTunnel brings up the driver tunnel and updates the status.
 func (e *Engine) StartTunnel(ctx context.Context) error {
-	ti, err := e.drv.StartTunnel(ctx)
+	drv := e.driver()
+	ti, err := drv.StartTunnel(ctx)
 	if err != nil {
-		e.Log("error", "tunnel", fmt.Sprintf("Échec du démarrage du tunnel (%s) : %v", e.drv.ID(), err))
+		e.Log("error", "tunnel", fmt.Sprintf("Échec du démarrage du tunnel (%s) : %v", drv.ID(), err))
 		return err
 	}
-	e.Log("info", "tunnel", fmt.Sprintf("Tunnel actif (%s) : %s:%d", e.drv.ID(), ti.Address, ti.Port))
+	e.Log("info", "tunnel", fmt.Sprintf("Tunnel actif (%s) : %s:%d", drv.ID(), ti.Address, ti.Port))
 	e.mu.Lock()
 	e.st.TunnelActive = true
 	e.st.RSDAddress = ti.Address
 	e.st.RSDPort = ti.Port
 	e.st.ConnectionType = ti.Type
-	e.st.DeviceInfo = &domain.DeviceInfo{Name: "iPhone", Driver: e.drv.ID()}
+	e.st.DeviceInfo = &domain.DeviceInfo{Name: "iPhone", Driver: drv.ID()}
 	if e.st.State == "idle" {
 		e.st.State = "ready"
 	}
@@ -208,7 +218,7 @@ func (e *Engine) simSetLocation(ctx context.Context, lat, lon float64, name stri
 }
 
 func (e *Engine) injectLocation(ctx context.Context, lat, lon float64, name string, recordHistory bool) error {
-	if err := e.drv.SetLocation(ctx, lat, lon); err != nil {
+	if err := e.driver().SetLocation(ctx, lat, lon); err != nil {
 		return err
 	}
 	now := nowMs()
@@ -248,7 +258,7 @@ func (e *Engine) pushHistory(lat, lon float64, name string, now int64) {
 
 // ClearLocation removes any spoofed position and broadcasts ACK/STATUS.
 func (e *Engine) ClearLocation(ctx context.Context) error {
-	if err := e.drv.ClearLocation(ctx); err != nil {
+	if err := e.driver().ClearLocation(ctx); err != nil {
 		return err
 	}
 	e.mu.Lock()
@@ -532,9 +542,10 @@ func (e *Engine) PatrolUpdate(ctx context.Context, zone domain.PatrolZone) error
 // GetDeviceInfo asks the driver for rich device metadata, if it supports it
 // (currently go-ios only — see driver.DeviceInfoProvider).
 func (e *Engine) GetDeviceInfo(ctx context.Context) (driver.DeviceDetails, error) {
-	provider, ok := e.drv.(driver.DeviceInfoProvider)
+	drv := e.driver()
+	provider, ok := drv.(driver.DeviceInfoProvider)
 	if !ok {
-		return driver.DeviceDetails{}, fmt.Errorf("device info not supported by driver %q", e.drv.ID())
+		return driver.DeviceDetails{}, fmt.Errorf("device info not supported by driver %q", drv.ID())
 	}
 	return provider.DeviceDetails(ctx)
 }

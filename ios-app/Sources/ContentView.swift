@@ -111,7 +111,11 @@ struct ContentView: View {
             TextField("Nom", text: $newFavoriteName)
             Button("Enregistrer") {
                 if let place = selectedPlace, requireConnection() {
-                    engine.addFavorite(lat: place.coordinate.latitude, lon: place.coordinate.longitude, name: newFavoriteName.isEmpty ? "Favori" : newFavoriteName)
+                    engine.addFavorite(
+                        lat: place.coordinate.latitude,
+                        lon: place.coordinate.longitude,
+                        name: newFavoriteName.isEmpty ? "Favori" : newFavoriteName
+                    )
                 }
                 newFavoriteName = ""
                 selectedPlace = nil
@@ -303,7 +307,7 @@ struct ContentView: View {
                 "type": legType,
                 "start": ["lat": start.latitude, "lon": start.longitude],
                 "end": ["lat": stop.coordinate.latitude, "lon": stop.coordinate.longitude],
-                "speed": itinerarySpeed,
+                "speed": itinerarySpeed
             ])
             previousCoordinate = stop.coordinate
         }

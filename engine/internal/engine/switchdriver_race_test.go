@@ -28,18 +28,15 @@ func init() {
 	driver.Register(raceTestDriverB, factory(raceTestDriverB))
 }
 
-// TestSwitchDriverRacesWithUnguardedDriverReads is a regression test for the
-// data race introduced alongside SwitchDriver: e.drv is written under e.mu in
-// SwitchDriver, but read without any lock everywhere else (injectLocation,
-// ClearLocation, StartTunnel, GetDeviceInfo). Before SwitchDriver existed,
-// e.drv was effectively immutable after New(), so those unguarded reads were
-// safe; SwitchDriver makes them a race.
+// TestSwitchDriverRacesWithUnguardedDriverReads is a regression test for a
+// data race that existed between SwitchDriver writing e.drv under e.mu and
+// injectLocation/ClearLocation/StartTunnel/GetDeviceInfo reading it with no
+// lock at all. All reads now go through the driver() accessor, which takes
+// e.mu.RLock — this test exercises both paths concurrently under -race to
+// guard against that regressing.
 //
 // Run with `go test -race -run TestSwitchDriverRacesWithUnguardedDriverReads
-// ./engine/internal/engine/...` — the race detector should report a
-// read/write race on e.drv between this test's two goroutines. This test
-// passes (silently) without -race; the regression is the race itself, not a
-// wrong return value.
+// ./engine/internal/engine/...` to confirm no race is reported.
 func TestSwitchDriverRacesWithUnguardedDriverReads(t *testing.T) {
 	drv := &mockDriver{id: domain.DriverPmd3}
 	eng := New(drv, settings.Default())
