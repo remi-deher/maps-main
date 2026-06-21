@@ -37,6 +37,35 @@ updates:
     schedule:
       interval: weekly
 
+  # Legacy Node/Electron + Expo implementation, kept as reference until the
+  # v3 rewrite reaches parity — still worth patching known vulnerabilities.
+  - package-ecosystem: npm
+    directory: /legacy/client
+    schedule:
+      interval: weekly
+    groups:
+      npm-deps:
+        patterns:
+          - '*'
+
+  - package-ecosystem: npm
+    directory: /legacy/server
+    schedule:
+      interval: weekly
+    groups:
+      npm-deps:
+        patterns:
+          - '*'
+
+  - package-ecosystem: npm
+    directory: /legacy/ios-enroller
+    schedule:
+      interval: weekly
+    groups:
+      npm-deps:
+        patterns:
+          - '*'
+
   # The workflows themselves.
   - package-ecosystem: github-actions
     directory: /
