@@ -169,6 +169,18 @@ final class EngineClient: NSObject, ObservableObject, URLSessionWebSocketDelegat
         sendEnvelope(type: "PLAY_ROUTE", data: ["endLat": endLat, "endLon": endLon, "speed": speed, "profile": profile])
     }
 
+    func stopRoute() {
+        sendEnvelope(type: "STOP_ROUTE", data: [:])
+    }
+
+    func pauseRoute() {
+        sendEnvelope(type: "PAUSE_ROUTE", data: [:])
+    }
+
+    func resumeRoute() {
+        sendEnvelope(type: "RESUME_ROUTE", data: [:])
+    }
+
     func addFavorite(lat: Double, lon: Double, name: String) {
         sendEnvelope(type: "ADD_FAVORITE", data: ["lat": lat, "lon": lon, "name": name])
     }

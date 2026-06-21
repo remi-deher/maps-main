@@ -7,6 +7,7 @@ import {
   Trash,
   Plus,
   Play,
+  Pause,
   Square,
   RefreshCw,
   Sliders,
@@ -41,6 +42,9 @@ export const Sidebar: React.FC = () => {
     clearLocation,
     playSequence,
     playCustomGpx,
+    stopRoute,
+    pauseRoute,
+    resumeRoute,
     relance,
     saveSettings,
     addFavorite,
@@ -461,6 +465,28 @@ export const Sidebar: React.FC = () => {
                   </div>
                 )}
               </div>
+
+              {(status?.state === "moving" || status?.state === "paused") && (
+                <div className="ui-card">
+                  <h3 className="ui-card-title">
+                    <Activity size={16} /> Simulation en cours ({status.state === "paused" ? "en pause" : "en mouvement"})
+                  </h3>
+                  <div className="btn-group" style={{ marginTop: "8px" }}>
+                    {status.state === "paused" ? (
+                      <button className="btn btn-success" onClick={resumeRoute} disabled={!canSend}>
+                        <Play size={14} /> Reprendre
+                      </button>
+                    ) : (
+                      <button className="btn" onClick={pauseRoute} disabled={!canSend}>
+                        <Pause size={14} /> Pause
+                      </button>
+                    )}
+                    <button className="btn btn-danger" onClick={stopRoute} disabled={!canSend}>
+                      <Square size={14} /> Stop
+                    </button>
+                  </div>
+                </div>
+              )}
 
               {/* Telemetry info */}
               {telemetry && (

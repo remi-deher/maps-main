@@ -152,7 +152,11 @@ struct ContentView: View {
                     selectedPlace = nil
                 },
                 onPlaceFavorite: { showAddFavorite = true },
-                onPlaceDismiss: { selectedPlace = nil }
+                onPlaceDismiss: { selectedPlace = nil },
+                simulationState: engine.status?.state,
+                onPauseRoute: { engine.pauseRoute() },
+                onResumeRoute: { engine.resumeRoute() },
+                onStopRoute: { engine.stopRoute() }
             )
             .presentationDetents([.height(120), .medium, .large], selection: $sheetDetent)
             .presentationDragIndicator(.visible)

@@ -34,6 +34,11 @@ struct BottomSheet: View {
     var onPlaceFavorite: () -> Void
     var onPlaceDismiss: () -> Void
 
+    let simulationState: String?
+    var onPauseRoute: () -> Void
+    var onResumeRoute: () -> Void
+    var onStopRoute: () -> Void
+
     private var isSearching: Bool {
         !searchQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
@@ -44,6 +49,13 @@ struct BottomSheet: View {
 
             ScrollView {
                 VStack(spacing: 12) {
+                    // Persistent like Plans' "navigation active" banner — visible
+                    // regardless of what else is on screen, since pausing/
+                    // stopping a running simulation is a system-level action.
+                    if simulationState == "moving" || simulationState == "paused" {
+                        simulationControlBar
+                    }
+
                     if let place = selectedPlace {
                         // Selecting a place (search result or map long-press)
                         // takes over the sheet's content — this used to float
@@ -131,6 +143,41 @@ struct BottomSheet: View {
         .padding(.vertical, 10)
         .glassEffect(.regular.interactive(), in: .capsule)
         .shadow(color: .black.opacity(0.12), radius: 10, y: 3)
+        .padding(.horizontal, 16)
+    }
+
+    private var simulationControlBar: some View {
+        HStack(spacing: 10) {
+            Text(simulationState == "paused" ? "Simulation en pause" : "Simulation en cours")
+                .font(.subheadline.weight(.medium))
+            Spacer()
+            if simulationState == "paused" {
+                Button(action: onResumeRoute) {
+                    Image(systemName: "play.fill")
+                        .frame(width: 36, height: 36)
+                }
+                .buttonStyle(.glassProminent)
+                .tint(.indigo)
+                .buttonBorderShape(.circle)
+            } else {
+                Button(action: onPauseRoute) {
+                    Image(systemName: "pause.fill")
+                        .frame(width: 36, height: 36)
+                }
+                .buttonStyle(.glass)
+                .buttonBorderShape(.circle)
+            }
+            Button(action: onStopRoute) {
+                Image(systemName: "stop.fill")
+                    .foregroundStyle(.red)
+                    .frame(width: 36, height: 36)
+            }
+            .buttonStyle(.glass)
+            .buttonBorderShape(.circle)
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 10)
+        .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
         .padding(.horizontal, 16)
     }
 
