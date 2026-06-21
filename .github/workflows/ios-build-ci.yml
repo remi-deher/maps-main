@@ -24,7 +24,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Select latest stable Xcode (need the iOS 26 SDK)
         uses: maxim-lobanov/setup-xcode@v1

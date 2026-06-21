@@ -27,7 +27,7 @@ jobs:
     name: go vulnerability scan (engine)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: actions/setup-go@v5
         with:
@@ -45,7 +45,7 @@ jobs:
     name: npm audit (tauri-app)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: actions/setup-node@v4
         with:
@@ -65,7 +65,7 @@ jobs:
     name: cargo audit (tauri-app/src-tauri)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: dtolnay/rust-toolchain@stable
 
@@ -84,7 +84,7 @@ jobs:
     name: container image scan (engine)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Build image
         uses: docker/build-push-action@v6
