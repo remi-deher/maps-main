@@ -125,7 +125,7 @@ struct ItineraryPanel: View {
             Text("\(index + 1)")
                 .font(.caption.bold())
                 .frame(width: 22, height: 22)
-                .background(.accentColor, in: Circle())
+                .background(Color.accentColor, in: Circle())
                 .foregroundStyle(.white)
 
             VStack(alignment: .leading, spacing: 2) {

@@ -34,7 +34,7 @@ struct EngineMapView: View {
                 }
                 if routePreview.count > 1 {
                     MapPolyline(coordinates: routePreview)
-                        .stroke(.accentColor, lineWidth: 4)
+                        .stroke(Color.accentColor, lineWidth: 4)
                 }
                 ForEach(Array(itineraryStops.enumerated()), id: \.element.id) { index, stop in
                     Annotation(stop.name, coordinate: stop.coordinate) {
@@ -42,7 +42,7 @@ struct EngineMapView: View {
                             .font(.caption.bold())
                             .foregroundStyle(.white)
                             .frame(width: 24, height: 24)
-                            .background(.accentColor, in: Circle())
+                            .background(Color.accentColor, in: Circle())
                     }
                 }
             }

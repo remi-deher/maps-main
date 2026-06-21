@@ -230,7 +230,7 @@ struct BottomSheet: View {
                     } label: {
                         HStack(spacing: 12) {
                             Image(systemName: "mappin.circle.fill")
-                                .foregroundStyle(.accentColor)
+                                .foregroundStyle(Color.accentColor)
                                 .frame(width: 28)
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(completion.title).foregroundStyle(.primary)
