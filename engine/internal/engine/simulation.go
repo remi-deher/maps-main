@@ -191,7 +191,7 @@ func (e *Engine) startRouteSimulation(ctx context.Context, points []domain.LatLo
 
 			// Inject location
 			if err := e.simSetLocation(ctx, p.Lat, p.Lon, "Route simulation"); err != nil {
-				fmt.Printf("Error injecting location: %v\n", err)
+				e.Log("error", "simulation", fmt.Sprintf("Erreur d'injection de position : %v", err))
 			}
 
 			e.mu.Lock()
@@ -310,7 +310,7 @@ func (e *Engine) startPatrolSimulation(ctx context.Context, zone domain.PatrolZo
 
 			// Inject location
 			if err := e.simSetLocation(ctx, p.Lat, p.Lon, "Patrol Mode"); err != nil {
-				fmt.Printf("Error injecting location: %v\n", err)
+				e.Log("error", "simulation", fmt.Sprintf("Erreur d'injection de position : %v", err))
 			}
 		}
 	}

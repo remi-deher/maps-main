@@ -34,6 +34,16 @@ struct RoutePoint: Codable, Equatable {
     let lon: Double
 }
 
+/// One entry from the engine's in-memory log buffer (LOG/LOGS events) — lets
+/// the app show what the engine is doing without terminal/SSH access, which
+/// matters when piloting from the phone alone.
+struct LogEntryPayload: Codable, Equatable {
+    let timestamp: Int64
+    let level: String // info | warn | error
+    let source: String
+    let message: String
+}
+
 struct EngineStatus: Codable, Equatable {
     let state: String?
     let favorites: [Favorite]?
@@ -54,6 +64,9 @@ final class EngineClient: NSObject, ObservableObject, URLSessionWebSocketDelegat
     @Published var state: EngineConnectionState = .disconnected
     @Published var lastError: String?
     @Published var status: EngineStatus?
+    @Published var logs: [LogEntryPayload] = []
+
+    private let maxLogEntries = 200
 
     private var session: URLSession!
     private var task: URLSessionWebSocketTask?
@@ -126,6 +139,7 @@ final class EngineClient: NSObject, ObservableObject, URLSessionWebSocketDelegat
     func urlSession(_ session: URLSession, webSocketTask: URLSessionWebSocketTask, didOpenWithProtocol protocol: String?) {
         DispatchQueue.main.async { self.state = .connected }
         sendEnvelope(type: "GET_STATUS", data: [:])
+        sendEnvelope(type: "GET_LOGS", data: [:])
     }
 
     func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
@@ -138,8 +152,12 @@ final class EngineClient: NSObject, ObservableObject, URLSessionWebSocketDelegat
               let obj = try? JSONSerialization.jsonObject(with: raw) as? [String: Any],
               let type = obj["type"] as? String else { return }
 
+        // "data" can be a dict (most events) or an array (LOGS' snapshot) —
+        // JSONSerialization.isValidJSONObject accepts both top-level shapes,
+        // unlike forcing a [String: Any] cast which would silently drop arrays.
         let payloadData: Data
-        if let dict = obj["data"] as? [String: Any], let encoded = try? JSONSerialization.data(withJSONObject: dict) {
+        if let raw = obj["data"], JSONSerialization.isValidJSONObject(raw),
+           let encoded = try? JSONSerialization.data(withJSONObject: raw) {
             payloadData = encoded
         } else {
             payloadData = Data("{}".utf8)
@@ -149,6 +167,19 @@ final class EngineClient: NSObject, ObservableObject, URLSessionWebSocketDelegat
         case "STATUS", "STATUS_UPDATE":
             if let decoded = try? JSONDecoder().decode(EngineStatus.self, from: payloadData) {
                 DispatchQueue.main.async { self.status = decoded }
+            }
+        case "LOG":
+            if let entry = try? JSONDecoder().decode(LogEntryPayload.self, from: payloadData) {
+                DispatchQueue.main.async {
+                    self.logs.append(entry)
+                    if self.logs.count > self.maxLogEntries {
+                        self.logs.removeFirst(self.logs.count - self.maxLogEntries)
+                    }
+                }
+            }
+        case "LOGS":
+            if let entries = try? JSONDecoder().decode([LogEntryPayload].self, from: payloadData) {
+                DispatchQueue.main.async { self.logs = entries }
             }
         default:
             break
@@ -179,6 +210,18 @@ final class EngineClient: NSObject, ObservableObject, URLSessionWebSocketDelegat
 
     func resumeRoute() {
         sendEnvelope(type: "RESUME_ROUTE", data: [:])
+    }
+
+    func getLogs() {
+        sendEnvelope(type: "GET_LOGS", data: [:])
+    }
+
+    func clearHistory() {
+        sendEnvelope(type: "CLEAR_HISTORY", data: [:])
+    }
+
+    func relance() {
+        sendEnvelope(type: "RELANCE", data: [:])
     }
 
     func addFavorite(lat: Double, lon: Double, name: String) {

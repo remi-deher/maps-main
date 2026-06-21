@@ -39,6 +39,8 @@ const (
 	ActionPatrolUpdate   = "PATROL_UPDATE"
 	ActionRelance        = "RELANCE"
 	ActionGetDeviceInfo  = "GET_DEVICE_INFO"
+	ActionGetLogs        = "GET_LOGS"
+	ActionClearHistory   = "CLEAR_HISTORY"
 )
 
 // Outbound event types (engine -> client).
@@ -52,6 +54,8 @@ const (
 	EventSequencePreviewUpdated = "SEQUENCE_PREVIEW_UPDATED"
 	EventRouteFinished          = "ROUTE_FINISHED"
 	EventDeviceInfo             = "DEVICE_INFO"
+	EventLog                    = "LOG"
+	EventLogs                   = "LOGS"
 )
 
 // ─── Inbound payloads ────────────────────────────────────────────────────────
@@ -158,6 +162,17 @@ type TelemetryPayload struct {
 type RouteFinishedPayload struct {
 	Timestamp int64          `json:"timestamp"`
 	Location  *LocationStamp `json:"location,omitempty"`
+}
+
+// LogEntryPayload is one entry in the engine's in-memory log buffer,
+// broadcast as EventLog in real time (or as part of EventLogs for the
+// initial snapshot a client requests via GET_LOGS) — gives a remote client
+// like the iOS app visibility into what's happening without terminal access.
+type LogEntryPayload struct {
+	Timestamp int64  `json:"timestamp"`
+	Level     string `json:"level"` // info | warn | error
+	Source    string `json:"source"`
+	Message   string `json:"message"`
 }
 
 // DeviceInfoPayload is the data for DEVICE_INFO (the response to

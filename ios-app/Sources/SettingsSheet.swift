@@ -49,6 +49,27 @@ struct SettingsSheet: View {
                     }
                 }
 
+                Section("Administration") {
+                    Button("Relancer la dernière position") {
+                        engine.relance()
+                    }
+                    Button("Vider l'historique récent", role: .destructive) {
+                        engine.clearHistory()
+                    }
+                }
+
+                Section {
+                    NavigationLink {
+                        LogsView(engine: engine)
+                    } label: {
+                        HStack {
+                            Text("Journaux du moteur")
+                            Spacer()
+                            Text("\(engine.logs.count)").foregroundStyle(.secondary)
+                        }
+                    }
+                }
+
                 Section {
                     Text("La position réelle est envoyée toutes les 10s pour le bouclier anti-dérive du moteur.")
                         .font(.caption)

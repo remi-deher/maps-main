@@ -6,7 +6,6 @@ package engine
 import (
 	"context"
 	"fmt"
-	"log"
 	"os"
 	"runtime"
 	"sync"
@@ -35,6 +34,42 @@ type Engine struct {
 	// too far from the spoofed position, to confirm before forcing a re-inject.
 	driftFailures   int
 	lastReinjection time.Time
+
+	// In-memory log buffer, broadcast in real time so a client without
+	// terminal access (the iOS app, piloting headless over the network) can
+	// still see what the engine is doing.
+	logMu sync.Mutex
+	logs  []api.LogEntryPayload
+}
+
+const maxLogEntries = 200
+
+// Log appends an entry to the in-memory buffer and broadcasts it immediately.
+// level is "info" | "warn" | "error"; source identifies what produced it
+// (e.g. "simulation", "anti-drift", "ios-client" for client-relayed DEBUG_LOG).
+func (e *Engine) Log(level, source, message string) {
+	entry := api.LogEntryPayload{Timestamp: nowMs(), Level: level, Source: source, Message: message}
+
+	e.logMu.Lock()
+	e.logs = append(e.logs, entry)
+	if len(e.logs) > maxLogEntries {
+		e.logs = e.logs[len(e.logs)-maxLogEntries:]
+	}
+	e.logMu.Unlock()
+
+	e.mu.RLock()
+	emit := e.emit
+	e.mu.RUnlock()
+	emit(api.EventLog, entry)
+}
+
+// GetLogs returns a snapshot of the current log buffer, oldest first.
+func (e *Engine) GetLogs() []api.LogEntryPayload {
+	e.logMu.Lock()
+	defer e.logMu.Unlock()
+	out := make([]api.LogEntryPayload, len(e.logs))
+	copy(out, e.logs)
+	return out
 }
 
 // New builds an Engine seeded from settings.
@@ -74,8 +109,10 @@ func (e *Engine) OnEvent(f EmitFunc) {
 func (e *Engine) StartTunnel(ctx context.Context) error {
 	ti, err := e.drv.StartTunnel(ctx)
 	if err != nil {
+		e.Log("error", "tunnel", fmt.Sprintf("Échec du démarrage du tunnel (%s) : %v", e.drv.ID(), err))
 		return err
 	}
+	e.Log("info", "tunnel", fmt.Sprintf("Tunnel actif (%s) : %s:%d", e.drv.ID(), ti.Address, ti.Port))
 	e.mu.Lock()
 	e.st.TunnelActive = true
 	e.st.RSDAddress = ti.Address
@@ -220,7 +257,7 @@ func (e *Engine) ReportRealLocation(ctx context.Context, lat, lon float64) {
 	emit(api.EventStatus, st)
 
 	if reinject {
-		log.Printf("anti-drift shield: %.0fm drift confirmed twice, forcing re-injection", dist)
+		e.Log("warn", "anti-drift", fmt.Sprintf("Dérive de %.0fm confirmée deux fois, ré-injection forcée", dist))
 		_ = e.SetLocation(ctx, reinjectTarget.Lat, reinjectTarget.Lon, reinjectTarget.Name)
 	}
 }
@@ -256,6 +293,7 @@ func (e *Engine) StopRoute(ctx context.Context) error {
 	emit, st := e.emit, e.st
 	e.mu.Unlock()
 	emit(api.EventStatus, st)
+	e.Log("info", "simulation", "Trajet arrêté")
 	return nil
 }
 
@@ -282,6 +320,7 @@ func (e *Engine) PauseRoute(ctx context.Context) error {
 	emit, st := e.emit, e.st
 	e.mu.Unlock()
 	emit(api.EventStatus, st)
+	e.Log("info", "simulation", "Trajet mis en pause")
 	return nil
 }
 
@@ -305,6 +344,7 @@ func (e *Engine) ResumeRoute(ctx context.Context) error {
 	emit, st := e.emit, e.st
 	e.mu.Unlock()
 	emit(api.EventStatus, st)
+	e.Log("info", "simulation", "Trajet repris")
 	return nil
 }
 
@@ -479,6 +519,18 @@ func (e *Engine) RenameFavorite(ctx context.Context, lat, lon float64, newName s
 		}
 	}
 	e.emit(api.EventStatus, e.st)
+	return nil
+}
+
+// ClearHistory wipes the recent-history list — an admin/housekeeping action,
+// distinct from favorites (which the user curates deliberately).
+func (e *Engine) ClearHistory(ctx context.Context) error {
+	e.mu.Lock()
+	e.st.RecentHistory = nil
+	emit, st := e.emit, e.st
+	e.mu.Unlock()
+	emit(api.EventStatus, st)
+	e.Log("info", "admin", "Historique vidé")
 	return nil
 }
 

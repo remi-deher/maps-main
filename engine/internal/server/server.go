@@ -215,6 +215,17 @@ func (s *Server) dispatch(c *client, env api.Envelope) {
 				log.Printf("RENAME_FAVORITE: %v", err)
 			}
 		}
+	case api.ActionClearHistory:
+		if err := s.eng.ClearHistory(ctx); err != nil {
+			log.Printf("CLEAR_HISTORY: %v", err)
+		}
+	case api.ActionGetLogs:
+		c.send <- encode(api.EventLogs, s.eng.GetLogs())
+	case api.ActionDebugLog:
+		var p api.DebugLogPayload
+		if json.Unmarshal(env.Data, &p) == nil {
+			s.eng.Log("info", "ios-client", p.Message)
+		}
 	case api.ActionSaveSettings:
 		var p api.SaveSettingsPayload
 		if json.Unmarshal(env.Data, &p) == nil {
