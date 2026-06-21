@@ -1,0 +1,158 @@
+package goios
+
+import (
+	"context"
+	"testing"
+
+	"github.com/remi-deher/maps-main/engine/internal/domain"
+	"github.com/remi-deher/maps-main/engine/internal/driver"
+)
+
+func TestParseDeviceList(t *testing.T) {
+	cases := []struct {
+		name string
+		in   string
+		want []driver.Device
+	}{
+		{
+			name: "two devices",
+			in:   `{"deviceList":["udid-1","udid-2"]}`,
+			want: []driver.Device{
+				{UDID: "udid-1", Source: "usb"},
+				{UDID: "udid-2", Source: "usb"},
+			},
+		},
+		{
+			name: "empty list",
+			in:   `{"deviceList":[]}`,
+			want: []driver.Device{},
+		},
+		{
+			name: "malformed JSON degrades to nil",
+			in:   `not json`,
+			want: nil,
+		},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			got := parseDeviceList([]byte(c.in))
+			if len(got) != len(c.want) {
+				t.Fatalf("got %d devices, want %d", len(got), len(c.want))
+			}
+			for i := range got {
+				if got[i] != c.want[i] {
+					t.Errorf("device[%d] = %+v, want %+v", i, got[i], c.want[i])
+				}
+			}
+		})
+	}
+}
+
+func TestStringField(t *testing.T) {
+	raw := map[string]any{"DeviceName": "iPhone", "ProductVersion": 17}
+	if got := stringField(raw, "DeviceName"); got != "iPhone" {
+		t.Errorf("DeviceName = %q, want iPhone", got)
+	}
+	// Wrong type or missing key must degrade to "", not panic.
+	if got := stringField(raw, "ProductVersion"); got != "" {
+		t.Errorf("ProductVersion (non-string) = %q, want empty", got)
+	}
+	if got := stringField(raw, "Missing"); got != "" {
+		t.Errorf("Missing key = %q, want empty", got)
+	}
+}
+
+func TestFtoaAndRsd(t *testing.T) {
+	if got := ftoa(48.8566); got != "48.8566" {
+		t.Errorf("ftoa(48.8566) = %q, want 48.8566", got)
+	}
+	if got := ftoa(-2.0); got != "-2" {
+		t.Errorf("ftoa(-2.0) = %q, want -2", got)
+	}
+	ti := driver.TunnelInfo{Address: "::1", Port: 54321}
+	if got := rsd(ti); got != "::1:54321" {
+		t.Errorf("rsd(...) = %q, want ::1:54321", got)
+	}
+}
+
+func TestID(t *testing.T) {
+	d := &Driver{}
+	if got := d.ID(); got != domain.DriverGoIos {
+		t.Errorf("ID() = %q, want %q", got, domain.DriverGoIos)
+	}
+}
+
+func TestTunnelReflectsState(t *testing.T) {
+	d := &Driver{}
+	if _, ok := d.Tunnel(); ok {
+		t.Fatal("expected no tunnel before StartTunnel")
+	}
+
+	d.mu.Lock()
+	d.tunnel = driver.TunnelInfo{Address: "10.0.0.1", Port: 1234}
+	d.tunnelOn = true
+	d.mu.Unlock()
+
+	ti, ok := d.Tunnel()
+	if !ok || ti.Address != "10.0.0.1" {
+		t.Fatalf("Tunnel() = %+v, %v; want active tunnel at 10.0.0.1", ti, ok)
+	}
+}
+
+func TestSetClearLocationWithoutTunnelFail(t *testing.T) {
+	d := &Driver{}
+	ctx := context.Background()
+	if err := d.SetLocation(ctx, 1, 2); err == nil {
+		t.Error("SetLocation without a tunnel should fail")
+	}
+	if err := d.ClearLocation(ctx); err == nil {
+		t.Error("ClearLocation without a tunnel should fail")
+	}
+}
+
+func TestCheckHealthWithoutTunnelIsFalse(t *testing.T) {
+	d := &Driver{}
+	if d.CheckHealth(context.Background()) {
+		t.Error("CheckHealth without a tunnel should be false")
+	}
+}
+
+func TestStopTunnelNoopWhenNotStarted(t *testing.T) {
+	d := &Driver{}
+	if err := d.StopTunnel(context.Background()); err != nil {
+		t.Errorf("StopTunnel on an inactive driver should be a no-op, got %v", err)
+	}
+}
+
+func TestStartTunnelWithManualAddressSkipsProcessSpawn(t *testing.T) {
+	d := &Driver{manual: "192.168.1.50:54321"}
+	ti, err := d.StartTunnel(context.Background())
+	if err != nil {
+		t.Fatalf("StartTunnel with manual address: %v", err)
+	}
+	if ti.Address != "192.168.1.50" || ti.Port != 54321 {
+		t.Errorf("StartTunnel manual = %+v, want 192.168.1.50:54321", ti)
+	}
+	if got, ok := d.Tunnel(); !ok || got.Address != "192.168.1.50" {
+		t.Errorf("Tunnel() after manual start = %+v, %v", got, ok)
+	}
+
+	// A second call must short-circuit on tunnelOn and return the cached info
+	// rather than re-parsing — verified by changing `manual` and confirming
+	// the cached value wins.
+	d.manual = "10.0.0.9:1"
+	ti2, err := d.StartTunnel(context.Background())
+	if err != nil {
+		t.Fatalf("second StartTunnel: %v", err)
+	}
+	if ti2.Address != "192.168.1.50" {
+		t.Errorf("second StartTunnel = %+v, want cached 192.168.1.50 (not re-parsed)", ti2)
+	}
+}
+
+func TestStartTunnelWithInvalidManualAddressFails(t *testing.T) {
+	d := &Driver{manual: "not-a-valid-address"}
+	if _, err := d.StartTunnel(context.Background()); err == nil {
+		t.Error("StartTunnel with an invalid manual address should fail")
+	}
+}

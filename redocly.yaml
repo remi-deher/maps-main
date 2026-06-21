@@ -1,0 +1,4 @@
+# Redocly config for spec validation in CI. The "minimal" ruleset enforces
+# OpenAPI spec correctness without failing on stylistic warnings.
+extends:
+  - minimal

@@ -1,0 +1,30 @@
+name: Swift Lint
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'ios-app/**'
+      - '.swiftlint.yml'
+      - '.github/workflows/swift-lint.yml'
+  pull_request:
+    paths:
+      - 'ios-app/**'
+      - '.swiftlint.yml'
+      - '.github/workflows/swift-lint.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  swiftlint:
+    name: SwiftLint
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+
+      - name: Install SwiftLint
+        run: brew install swiftlint
+
+      - name: Run SwiftLint
+        run: swiftlint lint --strict --reporter github-actions-logging

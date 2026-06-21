@@ -7,6 +7,20 @@ desktop.ini
 *.log
 logs/
 
+# --- AI assistants (local-only state; .claude/skills/ stays tracked) ---
+.claude/settings.local.json
+.claude/scheduled_tasks.lock
+.claude/shell-snapshots/
+.claude/todos/
+.claude/projects/
+.claude/memory/
+.mcp.json
+.cursor/
+.windsurf/
+.aider*
+.copilot/
+CLAUDE.local.md
+
 # --- IDEs ---
 .vscode/
 .idea/
@@ -33,3 +47,21 @@ out/
 coverage/
 __pycache__/
 *.pyc
+
+# --- iOS (ios-app) ---
+ios-app/*.xcodeproj/
+ios-app/dist/
+ios-app/build/
+ios-app/Payload/
+DerivedData/
+*.xcuserstate
+
+# --- Go (engine) ---
+engine/bin/
+engine/headless
+engine/headless.exe
+*.exe
+*.test
+*.out
+go.work
+go.work.sum

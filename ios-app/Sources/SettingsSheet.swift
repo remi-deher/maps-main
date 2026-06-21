@@ -1,0 +1,166 @@
+import SwiftUI
+
+/// Connection settings, moved out of the main map screen behind a gear icon
+/// so the primary UI stays just the map + omnibar.
+struct SettingsSheet: View {
+    @Binding var engineAddress: String
+    @ObservedObject var engine: EngineClient
+    @ObservedObject var discovery: EngineDiscovery
+    var onToggleConnection: () -> Void
+    var onRetryDiscovery: () -> Void
+    @Binding var liveActivityEnabled: Bool
+    @Binding var keepAliveEnabled: Bool
+    @Binding var keepAliveInterval: Double
+    @Binding var notificationsEnabled: Bool
+
+    @State private var selectedDriver = "go-ios"
+    @State private var selectedTransport = "auto"
+
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            List {
+                Section("Découverte automatique") {
+                    discoveryRow
+                }
+
+                Section("Moteur GPS-Mock") {
+                    TextField("ex. 192.168.1.42:8080", text: $engineAddress, prompt: Text("Auto-découverte en cours…"))
+                        .keyboardType(.URL)
+                        .autocorrectionDisabled()
+                        .textInputAutocapitalization(.never)
+
+                    HStack {
+                        Text("État")
+                        Spacer()
+                        Text(engine.state.rawValue)
+                            .foregroundStyle(engine.state == .connected ? .green : .secondary)
+                    }
+
+                    if let drift = engine.status?.lastRealLocation?.drift {
+                        HStack {
+                            Text("Dérive (bouclier anti-dérive)")
+                            Spacer()
+                            Text("\(Int(drift)) m")
+                                .foregroundStyle(drift > 100 ? .orange : .green)
+                        }
+                    }
+
+                    if let error = engine.lastError {
+                        Text(error).font(.caption).foregroundStyle(.red)
+                    }
+
+                    Button(engine.state == .connected || engine.state == .connecting ? "Déconnecter" : "Connecter") {
+                        onToggleConnection()
+                    }
+                }
+
+                Section("Pilote iOS") {
+                    Picker("Pilote", selection: $selectedDriver) {
+                        Text("go-ios (natif)").tag("go-ios")
+                        Text("pymobiledevice3 (Python)").tag("pymobiledevice")
+                    }
+                    Picker("Transport", selection: $selectedTransport) {
+                        Text("Auto").tag("auto")
+                        Text("USB").tag("usb")
+                        Text("Wi-Fi").tag("wifi")
+                    }
+                    Button("Appliquer et relancer le tunnel") {
+                        engine.switchDriver(driverId: selectedDriver, transport: selectedTransport)
+                    }
+                }
+
+                Section("Live Activity") {
+                    Toggle("Écran verrouillé / Dynamic Island", isOn: $liveActivityEnabled)
+                    Text("Affiche l'état de la simulation en cours sans ouvrir l'application.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
+                Section("Maintien en arrière-plan") {
+                    Toggle("Garder la position active", isOn: $keepAliveEnabled)
+                    if keepAliveEnabled {
+                        Stepper(value: $keepAliveInterval, in: 2...60, step: 1) {
+                            Text("Toutes les \(Int(keepAliveInterval)) s")
+                        }
+                    }
+                    Text("Relance périodiquement la dernière position injectée pendant que l'app est en arrière-plan, "
+                         + "pour qu'elle ne se perde pas. Nécessite l'autorisation de localisation « Toujours ».")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
+                Section("Notifications") {
+                    Toggle("Arrivée et déconnexion", isOn: $notificationsEnabled)
+                    Text("Prévient quand un itinéraire se termine ou que la liaison avec le moteur est perdue.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
+                Section("Administration") {
+                    Button("Relancer la dernière position") {
+                        engine.relance()
+                    }
+                    Button("Vider l'historique récent", role: .destructive) {
+                        engine.clearHistory()
+                    }
+                }
+
+                Section {
+                    NavigationLink {
+                        LogsView(engine: engine)
+                    } label: {
+                        HStack {
+                            Text("Journaux du moteur")
+                            Spacer()
+                            Text("\(engine.logs.count)").foregroundStyle(.secondary)
+                        }
+                    }
+                }
+
+                Section {
+                    Text("La position réelle est envoyée toutes les 10s pour le bouclier anti-dérive du moteur.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .navigationTitle("Réglages")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    // "Terminé" (not "Fermer") matches the HIG convention for
+                    // dismissing a settings sheet where nothing is confirmed
+                    // or cancelled — see §3.15 of docs/UI_UX_BASELINE.md.
+                    Button("Terminé") { dismiss() }
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var discoveryRow: some View {
+        switch discovery.state {
+        case .idle:
+            Text("Inactif").foregroundStyle(.secondary)
+        case .searching:
+            HStack {
+                ProgressView().controlSize(.small)
+                Text("Recherche du moteur...")
+                    .foregroundStyle(.secondary)
+            }
+        case .found(let host, let port):
+            HStack {
+                Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
+                Text("Trouvé : \(host):\(port)")
+            }
+        case .notFound:
+            HStack {
+                Image(systemName: "wifi.exclamationmark").foregroundStyle(.orange)
+                Text("Introuvable automatiquement")
+                Spacer()
+                Button("Réessayer") { onRetryDiscovery() }
+            }
+        }
+    }
+}

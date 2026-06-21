@@ -1,55 +1,33 @@
 #!/bin/sh
 set -e
 
-echo "[boot] Initialisation du système..."
+echo "=================================================="
+echo " Starting GPS-Mock Engine (v3 - Docker)          "
+echo "=================================================="
+echo "Driver:    ${GPSMOCK_DRIVER:-pymobiledevice (default)}"
+echo "Transport: ${GPSMOCK_TRANSPORT:-auto (default)}"
+echo "Listen:    ${GPSMOCK_ADDR:-:8080}"
+echo "=================================================="
 
-# 1. Préparation des répertoires de runtime
-mkdir -p /var/run/dbus /var/run/avahi-daemon
-rm -f /var/run/dbus/pid /var/run/avahi-daemon/pid
-
-# 2. Configuration Réseau & Avahi
-sysctl -w net.ipv6.conf.all.disable_ipv6=0 || true
-sysctl -w net.ipv6.conf.default.disable_ipv6=0 || true
-
-echo "[boot] État réseau IPv6 :"
-ip -6 addr show || echo "Pas d'IPv6 détecté"
-echo "[boot] Liste des interfaces :"
-ip addr show | grep 'state UP' -A2 || true
-
-sed -i 's/.*use-ipv6=.*/use-ipv6=yes/' /etc/avahi/avahi-daemon.conf
-sed -i 's/.*enable-dbus=.*/enable-dbus=yes/' /etc/avahi/avahi-daemon.conf
-
-# 3. Démarrage des démons
-echo "[boot] Démarrage D-Bus..."
-dbus-daemon --system --fork || true
-
-echo "[boot] Démarrage Avahi..."
-chown -R avahi:avahi /var/run/avahi-daemon
-avahi-daemon --daemonize --no-drop-root || true
-
-echo "[boot] Analyse environnement..."
-if getent hosts host.docker.internal > /dev/null; then
-    echo "[boot] Windows détecté. Pont socat vers l'hôte..."
-    mkdir -p /var/run && rm -rf /var/run/usbmuxd
-    socat UNIX-LISTEN:/var/run/usbmuxd,fork,group=root,mode=777 TCP:host.docker.internal:27015 &
-elif [ -S /var/run/usbmuxd ]; then
-    echo "[boot] Socket usbmuxd partagé détecté dans /var/run/usbmuxd"
-else
-    echo "[boot] Analyse socket usbmuxd..."
-    if [ -S /var/run/usbmuxd ] || mountpoint -q /var/run/usbmuxd; then
-        echo "[boot] Socket usbmuxd partagé détecté. Utilisation du service hôte."
+# Diagnostic checks for USB transport
+if [ "${GPSMOCK_TRANSPORT}" = "usb" ]; then
+    if [ ! -S /var/run/usbmuxd ]; then
+        echo "WARNING: /var/run/usbmuxd socket not found! Did you mount it from the host?"
+        echo "         e.g. -v /var/run/usbmuxd:/var/run/usbmuxd"
     else
-        echo "[boot] Aucun service usbmuxd détecté. Démarrage local..."
-        mkdir -p /var/run
-        if ! mountpoint -q /var/run/usbmuxd; then
-            rm -rf /var/run/usbmuxd
+        echo "Found usbmuxd socket."
+    fi
+
+    # Check for TUN device when tunnel creation is expected
+    if [ "${GPSMOCK_NO_TUNNEL}" != "1" ] && [ "${GPSMOCK_NO_TUNNEL}" != "true" ]; then
+        if [ ! -c /dev/net/tun ]; then
+            echo "WARNING: /dev/net/tun device not found! Tunnel start may fail."
+            echo "         Ensure you run with --cap-add=NET_ADMIN --device=/dev/net/tun (or --privileged)."
+        else
+            echo "Found TUN device."
         fi
-        usbmuxd --user root --foreground &
     fi
 fi
 
-sleep 2
-
-echo "[boot] Lancement Node.js..."
-cd /app
-exec node server/src/main/index-headless.js
+# Execute the Go engine binary passing all arguments
+exec /usr/local/bin/gpsmock-engine "$@"

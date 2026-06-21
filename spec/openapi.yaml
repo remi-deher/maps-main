@@ -1,0 +1,241 @@
+openapi: 3.1.0
+info:
+  title: GPS-Mock Engine — REST API
+  version: 0.1.0
+  description: >
+    HTTP contract of the Go engine (v3). REST is intentionally minimal — just
+    status/health plus the two simplest location actions. Every other action
+    (routing, sequences, patrol, favorites, history, settings, driver switch,
+    device info, admin actions...) is WebSocket-only; see asyncapi.yaml for
+    those. This split mirrors the actual server implementation
+    (engine/internal/server/server.go): don't add a REST path here unless a
+    handler for it actually exists, and don't remove a WS action from
+    asyncapi.yaml without removing its dispatch case too.
+servers:
+  - url: http://{host}:{port}
+    variables:
+      host: { default: localhost }
+      port: { default: "8080" }
+
+paths:
+  /api/status:
+    get:
+      summary: Full engine state
+      operationId: getStatus
+      responses:
+        "200":
+          description: Current status
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Status" }
+
+  /api/location/set:
+    post:
+      summary: Inject a spoofed GPS position
+      operationId: setLocation
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/SetLocation" }
+      responses:
+        "200": { description: Result, content: { application/json: { schema: { $ref: "#/components/schemas/OpResult" } } } }
+
+  /api/location/clear:
+    post:
+      summary: Remove any spoofed position
+      operationId: clearLocation
+      responses:
+        "200": { description: Result, content: { application/json: { schema: { $ref: "#/components/schemas/OpResult" } } } }
+
+  /api/health:
+    get:
+      summary: Liveness/readiness probe (load balancer, systemd, Docker HEALTHCHECK, k8s)
+      operationId: getHealth
+      responses:
+        "200":
+          description: Process is up
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string, enum: [ok] }
+                  uptimeSeconds: { type: integer }
+                required: [status, uptimeSeconds]
+
+  /metrics:
+    get:
+      summary: Prometheus text-format metrics (uptime, WS client/byte counters, cluster latency/epoch)
+      operationId: getMetrics
+      responses:
+        "200":
+          description: Metrics in the Prometheus text exposition format
+          content:
+            text/plain: { schema: { type: string } }
+
+components:
+  # Some schemas below (PlayRoute, RouteLeg, PlaySequence, Settings...) aren't
+  # referenced by any path above — they describe the shape of WS-only action
+  # payloads (see asyncapi.yaml) and are kept here so both specs can share one
+  # vocabulary instead of duplicating type definitions.
+  schemas:
+    OpResult:
+      type: object
+      properties:
+        success: { type: boolean }
+        error: { type: string }
+        ignored: { type: boolean }
+      required: [success]
+
+    LatLon:
+      type: object
+      properties:
+        lat: { type: number }
+        lon: { type: number }
+      required: [lat, lon]
+
+    Coords:
+      type: object
+      properties:
+        lat: { type: number }
+        lon: { type: number }
+        name: { type: string }
+      required: [lat, lon]
+
+    SetLocation:
+      allOf:
+        - $ref: "#/components/schemas/Coords"
+
+    Favorite:
+      type: object
+      properties:
+        lat: { type: number }
+        lon: { type: number }
+        name: { type: string }
+        timestamp: { type: integer }
+      required: [lat, lon]
+
+    PlayRoute:
+      type: object
+      properties:
+        endLat: { type: number }
+        endLon: { type: number }
+        speed: { type: number }
+        profile: { type: string, enum: [driving, walking, cycling] }
+      required: [endLat, endLon]
+
+    RouteLeg:
+      type: object
+      properties:
+        type: { type: string, enum: [start, drive, walk, flight, wait] }
+        start: { $ref: "#/components/schemas/LatLon" }
+        end: { $ref: "#/components/schemas/LatLon" }
+        startTime: { type: integer }
+        endTime: { type: integer }
+        speed: { type: number }
+      required: [type, start, end]
+
+    PlaySequence:
+      type: object
+      properties:
+        legs:
+          type: array
+          items: { $ref: "#/components/schemas/RouteLeg" }
+        looping: { type: boolean }
+      required: [legs]
+
+    SequencePoint:
+      type: object
+      properties:
+        lat: { type: number }
+        lon: { type: number }
+        time: { type: integer }
+      required: [lat, lon]
+
+    PatrolZone:
+      type: object
+      properties:
+        type: { type: string, enum: [circle, rectangle] }
+        center: { $ref: "#/components/schemas/LatLon" }
+        radius: { type: number }
+        bounds:
+          type: object
+          properties:
+            ne: { $ref: "#/components/schemas/LatLon" }
+            sw: { $ref: "#/components/schemas/LatLon" }
+        active: { type: boolean }
+      required: [type, active]
+
+    Navigation:
+      type: object
+      properties:
+        progress:
+          type: [object, "null"]
+          properties:
+            index: { type: integer }
+            total: { type: integer }
+            lat: { type: number }
+            lon: { type: number }
+            speed: { type: number }
+        status:
+          type: [object, "null"]
+          properties:
+            state: { type: string, enum: [running, paused, stopped] }
+            index: { type: integer }
+            total: { type: integer }
+
+    Settings:
+      type: object
+      description: Partial on write; full on read. See engine/internal/settings.
+      properties:
+        companionPort: { type: integer }
+        connectionMode: { type: string, enum: [usb, wifi, both] }
+        operationMode: { type: string, enum: [hybrid, client-server, autonomous] }
+        isEveilMode: { type: boolean }
+        eveilInterval: { type: integer }
+        preferredDriver: { $ref: "#/components/schemas/DriverID" }
+        usbDriver: { $ref: "#/components/schemas/DriverID" }
+        wifiDriver: { $ref: "#/components/schemas/DriverID" }
+        fallbackEnabled: { type: boolean }
+        clusterMode: { type: string, enum: [off, manual, auto] }
+        logLevel: { type: string }
+        notificationsEnabled: { type: boolean }
+        dynamicIslandEnabled: { type: boolean }
+
+    DriverID:
+      type: string
+      enum: [pymobiledevice, go-ios]
+
+    ConnectionType:
+      type: string
+      enum: [USB, WiFi, MANUAL, UNKNOWN]
+
+    DeviceInfo:
+      type: object
+      properties:
+        udid: { type: string }
+        name: { type: string }
+        driver: { $ref: "#/components/schemas/DriverID" }
+
+    Status:
+      type: object
+      properties:
+        state: { type: string, enum: [idle, ready, starting, running, moving] }
+        tunnelActive: { type: boolean }
+        rsdAddress: { type: [string, "null"] }
+        rsdPort: { type: [integer, "null"] }
+        connectionType: { $ref: "#/components/schemas/ConnectionType" }
+        deviceInfo: { oneOf: [ { $ref: "#/components/schemas/DeviceInfo" }, { type: "null" } ] }
+        maintainActive: { type: boolean }
+        lastHeartbeat: { type: [integer, "null"] }
+        usbDriver: { $ref: "#/components/schemas/DriverID" }
+        wifiDriver: { $ref: "#/components/schemas/DriverID" }
+        fallbackEnabled: { type: boolean }
+        notificationsEnabled: { type: boolean }
+        dynamicIslandEnabled: { type: boolean }
+        favorites: { type: array, items: { $ref: "#/components/schemas/Favorite" } }
+        recentHistory: { type: array, items: { $ref: "#/components/schemas/Favorite" } }
+        currentSequencePreview: { type: array, items: { $ref: "#/components/schemas/SequencePoint" } }
+        patrolZone: { oneOf: [ { $ref: "#/components/schemas/PatrolZone" }, { type: "null" } ] }
+        navigation: { $ref: "#/components/schemas/Navigation" }

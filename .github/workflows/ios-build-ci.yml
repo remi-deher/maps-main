@@ -1,0 +1,87 @@
+name: iOS Companion Build CI
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'ios-app/**'
+      - '.github/workflows/ios-build-ci.yml'
+  pull_request:
+    paths:
+      - 'ios-app/**'
+      - '.github/workflows/ios-build-ci.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  build-ios:
+    name: Build unsigned .ipa
+    runs-on: macos-latest
+    defaults:
+      run:
+        working-directory: ios-app
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+
+      - name: Select latest stable Xcode (need the iOS 26 SDK)
+        uses: maxim-lobanov/setup-xcode@ed7a3b1fda3918c0306d1b724322adc0b8cc0a90 # v1
+        with:
+          xcode-version: latest-stable
+
+      - name: Show selected Xcode/SDKs (diagnostic — deployment target is iOS 26)
+        run: |
+          xcodebuild -version
+          xcodebuild -showsdks
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Generate Xcode project
+        run: xcodegen generate
+
+      - name: Run Unit Tests
+        run: |
+          xcodebuild test \
+            -project GpsMockCompanion.xcodeproj \
+            -scheme GpsMockCompanion \
+            -sdk iphonesimulator \
+            -destination "platform=iOS Simulator,name=iPhone 16" \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            DEVELOPMENT_TEAM=""
+
+      - name: Build (unsigned)
+
+        run: |
+          xcodebuild build \
+            -project GpsMockCompanion.xcodeproj \
+            -scheme GpsMockCompanion \
+            -configuration Release \
+            -sdk iphoneos \
+            -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            DEVELOPMENT_TEAM=""
+
+      - name: Package .ipa
+        run: |
+          set -e
+          APP_PATH="build/Build/Products/Release-iphoneos/GpsMockCompanion.app"
+          mkdir -p Payload
+          cp -R "$APP_PATH" Payload/
+          mkdir -p dist
+          # AltStore re-signs on install; this .ipa is intentionally unsigned.
+          zip -r "dist/GpsMockCompanion-unsigned.ipa" Payload
+          rm -rf Payload
+
+      - name: Upload .ipa artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: GpsMockCompanion-unsigned-ipa
+          path: ios-app/dist/GpsMockCompanion-unsigned.ipa
+          retention-days: 30

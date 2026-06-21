@@ -1,0 +1,82 @@
+name: GpsMockCompanion
+
+options:
+  bundleIdPrefix: com.remi2.gpsmock
+  deploymentTarget:
+    iOS: "26.0"
+  createIntermediateGroups: true
+
+settings:
+  base:
+    SWIFT_VERSION: "5.0"
+    # AltStore re-signs the .ipa on-device with the user's own (free) Apple
+    # ID at install time — CI deliberately produces an unsigned build.
+    CODE_SIGNING_ALLOWED: NO
+    CODE_SIGNING_REQUIRED: NO
+    DEVELOPMENT_TEAM: ""
+
+targets:
+  GpsMockCompanion:
+    type: application
+    platform: iOS
+    deploymentTarget: "26.0"
+    sources:
+      - path: Sources
+    info:
+      path: Sources/Info.plist
+      properties:
+        UILaunchScreen: {}
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+        NSLocationWhenInUseUsageDescription: >-
+          GPS-Mock Companion lit votre position réelle pour la transmettre au
+          moteur GPS-Mock (vérification anti-dérive), sans jamais la partager
+          ailleurs.
+        NSLocationAlwaysAndWhenInUseUsageDescription: >-
+          GPS-Mock Companion lit votre position réelle pour la transmettre au
+          moteur GPS-Mock (vérification anti-dérive), sans jamais la partager
+          ailleurs.
+        NSLocalNetworkUsageDescription: >-
+          GPS-Mock Companion recherche le moteur GPS-Mock sur votre réseau
+          local (Bonjour) pour s'y connecter automatiquement.
+        NSBonjourServices:
+          - _gpsmock._tcp
+        NSSupportsLiveActivities: true
+        UIBackgroundModes:
+          - location
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.remi2.gpsmock.companion
+        INFOPLIST_FILE: Sources/Info.plist
+        GENERATE_INFOPLIST_FILE: NO
+    dependencies:
+      - target: GpsMockWidgets
+        embed: true
+
+  GpsMockWidgets:
+    type: app-extension
+    platform: iOS
+    deploymentTarget: "26.0"
+    sources:
+      - path: Widgets
+      - path: Sources/SimulationActivityAttributes.swift
+    info:
+      path: Widgets/Info.plist
+      properties:
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.widgetkit-extension
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.remi2.gpsmock.companion.widgets
+        INFOPLIST_FILE: Widgets/Info.plist
+        GENERATE_INFOPLIST_FILE: NO
+
+  GpsMockCompanionTests:
+    type: bundle.unit-test
+    platform: iOS
+    deploymentTarget: "26.0"
+    sources:
+      - path: Tests
+    dependencies:
+      - target: GpsMockCompanion
+

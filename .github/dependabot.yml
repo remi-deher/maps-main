@@ -1,0 +1,44 @@
+version: 2
+
+updates:
+  # Go module used by the engine.
+  - package-ecosystem: gomod
+    directory: /engine
+    schedule:
+      interval: weekly
+    groups:
+      go-deps:
+        patterns:
+          - '*'
+
+  # Tauri desktop app frontend (npm).
+  - package-ecosystem: npm
+    directory: /tauri-app
+    schedule:
+      interval: weekly
+    groups:
+      npm-deps:
+        patterns:
+          - '*'
+
+  # Tauri desktop app backend (Rust/Cargo).
+  - package-ecosystem: cargo
+    directory: /tauri-app/src-tauri
+    schedule:
+      interval: weekly
+    groups:
+      cargo-deps:
+        patterns:
+          - '*'
+
+  # Docker base image used by the engine container.
+  - package-ecosystem: docker
+    directory: /docker
+    schedule:
+      interval: weekly
+
+  # The workflows themselves.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly

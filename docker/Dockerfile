@@ -1,66 +1,73 @@
-# Utilisation d'une base Debian Slim pour la compatibilité glibc (pymobiledevice3)
-FROM node:20-bookworm-slim
+# --- build ---
+FROM golang:1.26-bookworm AS build
+WORKDIR /src
 
-# Installation des dépendances système
-RUN apt-get update && apt-get install -y \
-    python3 \
-    python3-pip \
-    python3-venv \
-    curl \
-    git \
-    libusb-1.0-0 \
-    usbmuxd \
-    socat \
-    procps \
-    iputils-ping \
-    usbutils \
-    avahi-daemon \
-    avahi-utils \
-    libavahi-client3 \
-    libnss-mdns \
-    dbus \
-    net-tools \
-    iproute2 \
-    netcat-openbsd \
-    && rm -rf /var/lib/apt/lists/*
+# Leverage Docker cache for Go modules download
+COPY engine/go.mod engine/go.sum ./engine/
+RUN cd engine && go mod download
 
-# Création de l'environnement Python et installation de pymobiledevice3
-RUN python3 -m venv /opt/venv
+# Copy the rest of the Go engine source code and build it
+COPY engine/ ./engine/
+RUN cd engine && CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" \
+    -o /out/gpsmock-engine ./cmd/headless
+
+# Build arguments to customize driver installation
+ARG WITH_GOIOS=1
+ARG GOIOS_VERSION=v1.2.0
+
+# Compile go-ios from source (enables multi-architecture/platform support, e.g. ARM64)
+RUN if [ "$WITH_GOIOS" = "1" ]; then \
+      GOBIN=/out CGO_ENABLED=0 go install github.com/danielpaulus/go-ios@${GOIOS_VERSION} \
+      && mv /out/go-ios /out/ios ; \
+    fi
+
+# --- runtime ---
+FROM debian:bookworm-slim
+
+ARG WITH_PYMOBILEDEVICE=1
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      ca-certificates \
+      curl \
+      usbmuxd \
+      libusb-1.0-0 \
+      iproute2 \
+ && rm -rf /var/lib/apt/lists/*
+
+# Create a non-root system user and group for security
+RUN groupadd -g 10001 gpsmock && useradd -u 10001 -g gpsmock -m -s /sbin/nologin gpsmock
+
+# Conditional installation of Python 3 + pymobiledevice3 using a clean venv
+RUN if [ "$WITH_PYMOBILEDEVICE" = "1" ]; then \
+      apt-get update && apt-get install -y --no-install-recommends \
+        python3 \
+        python3-pip \
+        python3-venv \
+      && python3 -m venv /opt/venv \
+      && /opt/venv/bin/pip install --upgrade pip setuptools \
+      && /opt/venv/bin/pip install --no-cache-dir pymobiledevice3 \
+      && rm -rf /var/lib/apt/lists/* ; \
+    fi
+
+# Prepend virtual environment binaries to PATH
 ENV PATH="/opt/venv/bin:$PATH"
-RUN pip3 install --no-cache-dir pymobiledevice3
 
-# Téléchargement de go-ios (binaire Linux)
-# Utilisation de la v1.0.211 (dernière version) pour le support iOS 17/18+ et --address
-RUN curl -L https://github.com/danielpaulus/go-ios/releases/download/v1.0.211/go-ios-linux.zip -o /tmp/go-ios.zip && \
-    apt-get update && apt-get install -y unzip && \
-    unzip /tmp/go-ios.zip -d /usr/local/bin/ && \
-    mv /usr/local/bin/ios-amd64 /usr/local/bin/ios && \
-    chmod +x /usr/local/bin/ios && \
-    rm /tmp/go-ios.zip
+# Copy all compiled binaries from the build stage
+COPY --from=build /out/ /usr/local/bin/
 
-# Création du dossier de travail
-WORKDIR /app
-
-# Copie des fichiers package.json et installation des dépendances Node
-COPY server/package*.json ./server/
-RUN cd server && npm install --production
-
-# Copie du reste du code source (incluant dist-web/)
-COPY server/ ./server/
-
-# Dossier pour les certificats Lockdown (volume)
-RUN mkdir -p /var/lib/lockdown
-
-# Variables d'environnement par défaut
-ENV NODE_ENV=production
-ENV PORT=8080
-
-# Copie du script d'entrée
+# Copy the entrypoint script and make it executable
 COPY docker/entrypoint.sh /usr/local/bin/entrypoint.sh
-RUN sed -i 's/\r$//' /usr/local/bin/entrypoint.sh && \
-    chmod +x /usr/local/bin/entrypoint.sh
+RUN chmod +x /usr/local/bin/entrypoint.sh
 
-# Exposition du port (Dashboard + WS)
+# Run as non-root user by default (USB mode must override this with user: root or --user root)
+USER gpsmock
+
+# Configuration defaults
+ENV GPSMOCK_ADDR=:8080
 EXPOSE 8080
+
+HEALTHCHECK --interval=30s --timeout=3s --start-period=10s \
+  CMD curl -fsS http://localhost:8080/api/status || exit 1
 
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]

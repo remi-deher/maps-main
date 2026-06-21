@@ -1,0 +1,33 @@
+name: Specs CI
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [v3-rewrite, main]
+    paths:
+      - 'spec/**'
+      - 'redocly.yaml'
+      - '.github/workflows/specs-ci.yml'
+  pull_request:
+    paths:
+      - 'spec/**'
+      - '.github/workflows/specs-ci.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 20
+
+      - name: Validate OpenAPI (Redocly)
+        run: npx --yes @redocly/cli@latest lint spec/openapi.yaml
+
+      - name: Validate AsyncAPI
+        run: npx --yes @asyncapi/cli@latest validate spec/asyncapi.yaml
