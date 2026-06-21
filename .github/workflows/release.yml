@@ -38,7 +38,7 @@ jobs:
           out="gpsmock-engine-${{ matrix.goos }}-${{ matrix.goarch }}${{ matrix.ext }}"
           go build -trimpath -ldflags="-s -w" -o "../dist/${out}" ./cmd/headless
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: gpsmock-engine-${{ matrix.goos }}-${{ matrix.goarch }}
           path: dist/*
@@ -89,7 +89,7 @@ jobs:
         with:
           projectPath: tauri-app
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: gpsmock-desktop-${{ matrix.platform }}
           path: |
@@ -145,7 +145,7 @@ jobs:
           zip -r "dist/GpsMockCompanion-unsigned.ipa" Payload
           rm -rf Payload
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: GpsMockCompanion-unsigned-ipa
           path: ios-app/dist/GpsMockCompanion-unsigned.ipa

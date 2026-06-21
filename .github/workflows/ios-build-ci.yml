@@ -67,7 +67,7 @@ jobs:
           rm -rf Payload
 
       - name: Upload .ipa artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: GpsMockCompanion-unsigned-ipa
           path: ios-app/dist/GpsMockCompanion-unsigned.ipa
