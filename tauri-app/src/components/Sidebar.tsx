@@ -50,6 +50,7 @@ export const Sidebar: React.FC = () => {
     addFavorite,
     removeFavorite,
     updatePatrolZone,
+    sendMessage,
   } = useWebSocket();
 
   const [isOpen, setIsOpen] = useState(true);
@@ -92,6 +93,7 @@ export const Sidebar: React.FC = () => {
   // Config settings form state
   const [companionPort, setCompanionPort] = useState("8080");
   const [preferredDriver, setPreferredDriver] = useState("go-ios");
+  const [preferredTransport, setPreferredTransport] = useState("auto");
   const [isEveilMode, setIsEveilMode] = useState(true);
   const [eveilInterval, setEveilInterval] = useState("15");
   const [jitterEnabled, setJitterEnabled] = useState(true);
@@ -1058,6 +1060,30 @@ export const Sidebar: React.FC = () => {
                     <option value="pymobiledevice">pymobiledevice3 (Python)</option>
                   </select>
                 </div>
+
+                <div className="form-group">
+                  <label className="form-label">Transport</label>
+                  <select
+                    value={preferredTransport}
+                    onChange={(e) => setPreferredTransport(e.target.value)}
+                  >
+                    <option value="auto">Auto</option>
+                    <option value="usb">USB</option>
+                    <option value="wifi">Wi-Fi</option>
+                  </select>
+                </div>
+
+                <button
+                  className="btn"
+                  style={{ marginTop: "4px" }}
+                  disabled={!canSend}
+                  onClick={() => {
+                    sendMessage("SWITCH_DRIVER", { driverId: preferredDriver, transport: preferredTransport });
+                    showToast("Changement de driver demandé, redémarrage du tunnel...");
+                  }}
+                >
+                  <RefreshCw size={14} /> Appliquer et relancer le tunnel
+                </button>
 
                 <label className="switch-label" style={{ margin: "8px 0" }}>
                   <span className="form-label">Mode Éveil</span>

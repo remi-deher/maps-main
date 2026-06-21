@@ -8,6 +8,10 @@ struct SettingsSheet: View {
     @ObservedObject var discovery: EngineDiscovery
     var onToggleConnection: () -> Void
     var onRetryDiscovery: () -> Void
+    @Binding var liveActivityEnabled: Bool
+
+    @State private var selectedDriver = "go-ios"
+    @State private var selectedTransport = "auto"
 
     @Environment(\.dismiss) private var dismiss
 
@@ -47,6 +51,28 @@ struct SettingsSheet: View {
                     Button(engine.state == .connected || engine.state == .connecting ? "Déconnecter" : "Connecter") {
                         onToggleConnection()
                     }
+                }
+
+                Section("Pilote iOS") {
+                    Picker("Pilote", selection: $selectedDriver) {
+                        Text("go-ios (natif)").tag("go-ios")
+                        Text("pymobiledevice3 (Python)").tag("pymobiledevice")
+                    }
+                    Picker("Transport", selection: $selectedTransport) {
+                        Text("Auto").tag("auto")
+                        Text("USB").tag("usb")
+                        Text("Wi-Fi").tag("wifi")
+                    }
+                    Button("Appliquer et relancer le tunnel") {
+                        engine.switchDriver(driverId: selectedDriver, transport: selectedTransport)
+                    }
+                }
+
+                Section("Live Activity") {
+                    Toggle("Écran verrouillé / Dynamic Island", isOn: $liveActivityEnabled)
+                    Text("Affiche l'état de la simulation en cours sans ouvrir l'application.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                 }
 
                 Section("Administration") {

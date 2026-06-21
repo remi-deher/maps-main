@@ -219,6 +219,21 @@ func (s *Server) dispatch(c *client, env api.Envelope) {
 		if err := s.eng.ClearHistory(ctx); err != nil {
 			log.Printf("CLEAR_HISTORY: %v", err)
 		}
+	case api.ActionSwitchDriver:
+		var p api.SwitchDriverPayload
+		if json.Unmarshal(env.Data, &p) == nil {
+			// Switching drivers can involve a full tunnel restart (up to ~90s
+			// for the developer-image mount + RSD handshake), well past the
+			// per-message actionTimeout — run it on its own longer-lived
+			// context instead of blocking (or timing out) this dispatch.
+			go func(driverID, transport string) {
+				swCtx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+				defer cancel()
+				if err := s.eng.SwitchDriver(swCtx, driverID, transport); err != nil {
+					log.Printf("SWITCH_DRIVER: %v", err)
+				}
+			}(p.DriverID, p.Transport)
+		}
 	case api.ActionGetLogs:
 		c.send <- encode(api.EventLogs, s.eng.GetLogs())
 	case api.ActionDebugLog:

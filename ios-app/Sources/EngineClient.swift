@@ -224,6 +224,10 @@ final class EngineClient: NSObject, ObservableObject, URLSessionWebSocketDelegat
         sendEnvelope(type: "RELANCE", data: [:])
     }
 
+    func switchDriver(driverId: String, transport: String) {
+        sendEnvelope(type: "SWITCH_DRIVER", data: ["driverId": driverId, "transport": transport])
+    }
+
     func addFavorite(lat: Double, lon: Double, name: String) {
         sendEnvelope(type: "ADD_FAVORITE", data: ["lat": lat, "lon": lon, "name": name])
     }

@@ -40,6 +40,72 @@ type Engine struct {
 	// still see what the engine is doing.
 	logMu sync.Mutex
 	logs  []api.LogEntryPayload
+
+	// driverCfgBase holds the resolved binary paths/manual address from
+	// startup (cmd/headless), so SwitchDriver can rebuild a driver.Config at
+	// runtime without re-resolving python/go-ios from PATH every time.
+	driverCfgBase driver.Config
+}
+
+// SetDriverConfigBase records the resolved driver.Config used to build the
+// initial driver, so a later SwitchDriver call can reuse its BinaryPaths/
+// ManualAddress instead of starting from a blank Config.
+func (e *Engine) SetDriverConfigBase(cfg driver.Config) {
+	e.mu.Lock()
+	e.driverCfgBase = cfg
+	e.mu.Unlock()
+}
+
+// SwitchDriver tears down the current tunnel/driver and rebuilds the engine
+// around a different backend (go-ios <-> pymobiledevice3) and/or transport —
+// the runtime equivalent of restarting headless with different -driver/
+// -transport flags, exposed so a client (tauri-app, iOS) can do it without
+// PC access to the machine running the engine.
+func (e *Engine) SwitchDriver(ctx context.Context, driverID, transport string) error {
+	e.stopActiveSimulation()
+
+	e.mu.Lock()
+	base := e.driverCfgBase
+	oldDrv := e.drv
+	e.mu.Unlock()
+
+	if oldDrv != nil {
+		_ = oldDrv.StopTunnel(ctx)
+	}
+
+	cfg := base
+	switch transport {
+	case "usb":
+		cfg.Transport = driver.TransportUSB
+	case "wifi":
+		cfg.Transport = driver.TransportWiFi
+	default:
+		cfg.Transport = driver.TransportAuto
+	}
+
+	newDrv, err := driver.New(domain.DriverID(driverID), cfg)
+	if err != nil {
+		e.Log("error", "admin", fmt.Sprintf("Changement de pilote vers %q échoué : %v", driverID, err))
+		return err
+	}
+
+	e.mu.Lock()
+	e.drv = newDrv
+	e.st.TunnelActive = false
+	e.st.RSDAddress = ""
+	e.st.RSDPort = 0
+	e.st.State = "idle"
+	e.st.DeviceInfo = nil
+	emit, st := e.emit, e.st
+	e.mu.Unlock()
+	emit(api.EventStatus, st)
+	e.Log("info", "admin", fmt.Sprintf("Pilote changé pour %s (transport=%s), redémarrage du tunnel...", driverID, transport))
+
+	if err := e.StartTunnel(ctx); err != nil {
+		e.Log("error", "tunnel", fmt.Sprintf("Tunnel non démarré après changement de pilote : %v", err))
+		return err
+	}
+	return nil
 }
 
 const maxLogEntries = 200

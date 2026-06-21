@@ -41,6 +41,7 @@ const (
 	ActionGetDeviceInfo  = "GET_DEVICE_INFO"
 	ActionGetLogs        = "GET_LOGS"
 	ActionClearHistory   = "CLEAR_HISTORY"
+	ActionSwitchDriver   = "SWITCH_DRIVER"
 )
 
 // Outbound event types (engine -> client).
@@ -162,6 +163,12 @@ type TelemetryPayload struct {
 type RouteFinishedPayload struct {
 	Timestamp int64          `json:"timestamp"`
 	Location  *LocationStamp `json:"location,omitempty"`
+}
+
+// SwitchDriverPayload is the data for SWITCH_DRIVER.
+type SwitchDriverPayload struct {
+	DriverID  string `json:"driverId"`
+	Transport string `json:"transport,omitempty"` // auto | usb | wifi
 }
 
 // LogEntryPayload is one entry in the engine's in-memory log buffer,

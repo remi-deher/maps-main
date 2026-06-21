@@ -24,6 +24,8 @@ struct ContentView: View {
     @StateObject private var location = LocationManager()
     @StateObject private var engine = EngineClient()
     @StateObject private var discovery = EngineDiscovery()
+    @StateObject private var liveActivity = LiveActivityManager()
+    @AppStorage("liveActivityEnabled") private var liveActivityEnabled = true
 
     @State private var reportTimer: Timer?
     @State private var selectedPlace: SelectedPlace?
@@ -169,7 +171,8 @@ struct ContentView: View {
                 engine: engine,
                 discovery: discovery,
                 onToggleConnection: toggleConnection,
-                onRetryDiscovery: startDiscovery
+                onRetryDiscovery: startDiscovery,
+                liveActivityEnabled: $liveActivityEnabled
             )
         }
         .alert("Action impossible", isPresented: $showConnectionError) {
@@ -209,6 +212,12 @@ struct ContentView: View {
         }
         .onChange(of: itineraryProfile) { _ in
             recomputeLegEstimates(itineraryStops)
+        }
+        .onChange(of: engine.status) { status in
+            liveActivity.sync(state: status?.state, locationName: status?.lastInjectedLocation?.name, enabled: liveActivityEnabled)
+        }
+        .onChange(of: liveActivityEnabled) { enabled in
+            liveActivity.sync(state: engine.status?.state, locationName: engine.status?.lastInjectedLocation?.name, enabled: enabled)
         }
         .onChange(of: selectedPlace) { place in
             // The place card now lives inside the bottom sheet (it used to

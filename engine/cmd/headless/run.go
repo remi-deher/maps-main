@@ -74,6 +74,7 @@ func runEngine(ctx context.Context, cfg runConfig) error {
 	log.Printf("driver: %s (transport=%s)", drv.ID(), transport)
 
 	eng := engine.New(drv, settings.Default())
+	eng.SetDriverConfigBase(dcfg)
 	srv := server.New(eng, cfg.addr)
 
 	go func() {
