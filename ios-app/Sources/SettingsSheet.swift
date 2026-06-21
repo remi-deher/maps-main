@@ -287,15 +287,15 @@ struct SettingsSheet: View {
                 patrolError = "Zone de carte indisponible."
                 return
             }
-            let sw = CLLocationCoordinate2D(
+            let southWest = CLLocationCoordinate2D(
                 latitude: region.center.latitude - region.span.latitudeDelta / 2,
                 longitude: region.center.longitude - region.span.longitudeDelta / 2
             )
-            let ne = CLLocationCoordinate2D(
+            let northEast = CLLocationCoordinate2D(
                 latitude: region.center.latitude + region.span.latitudeDelta / 2,
                 longitude: region.center.longitude + region.span.longitudeDelta / 2
             )
-            engine.updatePatrolZone(type: "rectangle", center: nil, radius: nil, bounds: (sw: sw, ne: ne), active: true)
+            engine.updatePatrolZone(type: "rectangle", center: nil, radius: nil, bounds: (southWest: southWest, northEast: northEast), active: true)
         } else {
             guard let center = patrolCenter else {
                 patrolError = "Position de départ indisponible."

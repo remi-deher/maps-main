@@ -76,11 +76,11 @@ struct EngineMapView: View {
     @MapContentBuilder
     private func patrolOverlay(for zone: PatrolZone) -> some MapContent {
         if zone.type == "rectangle", let bounds = zone.bounds {
-            let sw = CLLocationCoordinate2D(latitude: bounds.sw.lat, longitude: bounds.sw.lon)
-            let ne = CLLocationCoordinate2D(latitude: bounds.ne.lat, longitude: bounds.ne.lon)
-            let nw = CLLocationCoordinate2D(latitude: ne.latitude, longitude: sw.longitude)
-            let se = CLLocationCoordinate2D(latitude: sw.latitude, longitude: ne.longitude)
-            MapPolygon(coordinates: [sw, se, ne, nw])
+            let southWest = CLLocationCoordinate2D(latitude: bounds.southWest.lat, longitude: bounds.southWest.lon)
+            let northEast = CLLocationCoordinate2D(latitude: bounds.northEast.lat, longitude: bounds.northEast.lon)
+            let northWest = CLLocationCoordinate2D(latitude: northEast.latitude, longitude: southWest.longitude)
+            let southEast = CLLocationCoordinate2D(latitude: southWest.latitude, longitude: northEast.longitude)
+            MapPolygon(coordinates: [southWest, southEast, northEast, northWest])
                 .foregroundStyle(Color.accentColor.opacity(0.15))
                 .stroke(Color.accentColor, lineWidth: 2)
         } else if let center = zone.center, let radius = zone.radius {

@@ -46,8 +46,13 @@ struct LogEntryPayload: Codable, Equatable {
 }
 
 struct PatrolBounds: Codable, Equatable {
-    let ne: RoutePoint
-    let sw: RoutePoint
+    let northEast: RoutePoint
+    let southWest: RoutePoint
+
+    private enum CodingKeys: String, CodingKey {
+        case northEast = "ne"
+        case southWest = "sw"
+    }
 }
 
 /// Mirrors engine/internal/domain.PatrolZone — a circle (center+radius) or
@@ -259,7 +264,13 @@ final class EngineClient: NSObject, ObservableObject, URLSessionWebSocketDelegat
     /// as tauri-app's `updatePatrolZone` (engine/internal/api/messages.go's
     /// PatrolUpdatePayload). Sending `active: false` stops it; the engine
     /// requires `center`+`radius` for "circle" or `bounds` for "rectangle".
-    func updatePatrolZone(type: String, center: CLLocationCoordinate2D?, radius: Double?, bounds: (sw: CLLocationCoordinate2D, ne: CLLocationCoordinate2D)?, active: Bool) {
+    func updatePatrolZone(
+        type: String,
+        center: CLLocationCoordinate2D?,
+        radius: Double?,
+        bounds: (southWest: CLLocationCoordinate2D, northEast: CLLocationCoordinate2D)?,
+        active: Bool
+    ) {
         var zone: [String: Any] = ["type": type, "active": active]
         if let center {
             zone["center"] = ["lat": center.latitude, "lon": center.longitude]
@@ -269,8 +280,8 @@ final class EngineClient: NSObject, ObservableObject, URLSessionWebSocketDelegat
         }
         if let bounds {
             zone["bounds"] = [
-                "sw": ["lat": bounds.sw.latitude, "lon": bounds.sw.longitude],
-                "ne": ["lat": bounds.ne.latitude, "lon": bounds.ne.longitude],
+                "sw": ["lat": bounds.southWest.latitude, "lon": bounds.southWest.longitude],
+                "ne": ["lat": bounds.northEast.latitude, "lon": bounds.northEast.longitude]
             ]
         }
         sendEnvelope(type: "PATROL_UPDATE", data: ["zone": zone])

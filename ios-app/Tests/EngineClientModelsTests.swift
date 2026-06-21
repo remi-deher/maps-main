@@ -51,8 +51,8 @@ final class EngineClientModelsTests: XCTestCase {
         XCTAssertEqual(zone.type, "rectangle")
         XCTAssertNil(zone.center)
         let bounds = try XCTUnwrap(zone.bounds)
-        XCTAssertEqual(bounds.sw.lat, 48.85)
-        XCTAssertEqual(bounds.ne.lat, 48.86)
+        XCTAssertEqual(bounds.southWest.lat, 48.85)
+        XCTAssertEqual(bounds.northEast.lat, 48.86)
     }
 
     func testEngineStatusWithoutPatrolZoneOrJitterDecodesAsNil() throws {
