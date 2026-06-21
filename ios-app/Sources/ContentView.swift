@@ -67,11 +67,10 @@ struct ContentView: View {
                 cameraPosition: $cameraPosition
             ) { coordinate in
                 searchFocused = false
-                selectedPlace = SelectedPlace(
-                    coordinate: coordinate,
-                    title: "Position sélectionnée",
-                    subtitle: String(format: "%.5f, %.5f", coordinate.latitude, coordinate.longitude)
-                )
+                Task {
+                    let place = await reverseGeocode(coordinate)
+                    await MainActor.run { selectedPlace = place }
+                }
             }
             .ignoresSafeArea()
 
@@ -95,48 +94,17 @@ struct ContentView: View {
             .padding(.top, 8)
             .padding(.trailing, 16)
 
-            if selectedPlace == nil {
-                HStack {
-                    Spacer()
-                    RecenterButton {
-                        withAnimation {
-                            cameraPosition = .userLocation(fallback: .automatic)
-                        }
+            HStack {
+                Spacer()
+                RecenterButton {
+                    withAnimation {
+                        cameraPosition = .userLocation(fallback: .automatic)
                     }
                 }
-                .padding(.trailing, 16)
-                .padding(.bottom, 140)
             }
-
-            if let place = selectedPlace {
-                PlaceCard(
-                    place: place,
-                    onTeleport: {
-                        guard requireConnection() else { return }
-                        engine.setLocation(lat: place.coordinate.latitude, lon: place.coordinate.longitude)
-                        selectedPlace = nil
-                    },
-                    onRoute: {
-                        guard requireConnection() else { return }
-                        engine.playRoute(endLat: place.coordinate.latitude, endLon: place.coordinate.longitude, speed: 30, profile: "driving")
-                        selectedPlace = nil
-                    },
-                    onAddStop: {
-                        itineraryStops.append(RouteStop(coordinate: place.coordinate, name: place.title))
-                        selectedPlace = nil
-                    },
-                    onFavorite: {
-                        showAddFavorite = true
-                    },
-                    onDismiss: {
-                        selectedPlace = nil
-                    }
-                )
-                .padding(.bottom, 16)
-                .transition(.move(edge: .bottom).combined(with: .opacity))
-            }
+            .padding(.trailing, 16)
+            .padding(.bottom, 140)
         }
-        .animation(.snappy, value: selectedPlace)
         .alert("Nom du favori", isPresented: $showAddFavorite) {
             TextField("Nom", text: $newFavoriteName)
             Button("Enregistrer") {
@@ -166,7 +134,25 @@ struct ContentView: View {
                 onSelectFavorite: selectFavorite,
                 onDeleteFavorite: { fav in engine.removeFavorite(lat: fav.lat, lon: fav.lon) },
                 hasSavedItinerary: hasSavedItinerary,
-                onLoadLastItinerary: loadLastItinerary
+                onLoadLastItinerary: loadLastItinerary,
+                selectedPlace: selectedPlace,
+                onPlaceTeleport: {
+                    guard let place = selectedPlace, requireConnection() else { return }
+                    engine.setLocation(lat: place.coordinate.latitude, lon: place.coordinate.longitude)
+                    selectedPlace = nil
+                },
+                onPlaceRoute: {
+                    guard let place = selectedPlace, requireConnection() else { return }
+                    engine.playRoute(endLat: place.coordinate.latitude, endLon: place.coordinate.longitude, speed: 30, profile: "driving")
+                    selectedPlace = nil
+                },
+                onPlaceAddStop: {
+                    guard let place = selectedPlace else { return }
+                    itineraryStops.append(RouteStop(coordinate: place.coordinate, name: place.title))
+                    selectedPlace = nil
+                },
+                onPlaceFavorite: { showAddFavorite = true },
+                onPlaceDismiss: { selectedPlace = nil }
             )
             .presentationDetents([.height(120), .medium, .large], selection: $sheetDetent)
             .presentationDragIndicator(.visible)
@@ -220,6 +206,28 @@ struct ContentView: View {
         .onChange(of: itineraryProfile) { _ in
             recomputeLegEstimates(itineraryStops)
         }
+        .onChange(of: selectedPlace) { place in
+            // The place card now lives inside the bottom sheet (it used to
+            // float over the map, where the sheet could end up covering it)
+            // — expand the sheet so it's actually visible when set.
+            if place != nil {
+                withAnimation { sheetDetent = .medium }
+            }
+        }
+    }
+
+    /// Reverse-geocodes a long-press coordinate into a place name, so it
+    /// reads the same as picking a search result instead of showing raw
+    /// coordinates whenever a name is available — falls back to the
+    /// coordinates only when geocoding fails (no network, ocean, etc).
+    private func reverseGeocode(_ coordinate: CLLocationCoordinate2D) async -> SelectedPlace {
+        let coordsText = String(format: "%.5f, %.5f", coordinate.latitude, coordinate.longitude)
+        let location = CLLocation(latitude: coordinate.latitude, longitude: coordinate.longitude)
+        guard let placemark = try? await CLGeocoder().reverseGeocodeLocation(location).first else {
+            return SelectedPlace(coordinate: coordinate, title: coordsText, subtitle: nil)
+        }
+        let title = placemark.name ?? [placemark.thoroughfare, placemark.locality].compactMap { $0 }.joined(separator: ", ")
+        return SelectedPlace(coordinate: coordinate, title: title.isEmpty ? coordsText : title, subtitle: coordsText)
     }
 
     private func startDiscovery() {
