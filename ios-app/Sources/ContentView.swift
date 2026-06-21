@@ -73,6 +73,7 @@ struct ContentView: View {
                 },
                 onRegionChange: { visibleRegion = $0 }
             )
+            .popoverTip(MapLongPressTip())
             .ignoresSafeArea()
             .mapControls {
                 MapCompass()
@@ -97,7 +98,6 @@ struct ContentView: View {
                         }
                         .buttonStyle(.glass)
                         .buttonBorderShape(.circle)
-                        .popoverTip(MapLongPressTip())
                     }
                     Spacer()
                 }

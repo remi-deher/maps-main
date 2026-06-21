@@ -39,6 +39,10 @@ targets:
         NSLocalNetworkUsageDescription: >-
           GPS-Mock Companion recherche le moteur GPS-Mock sur votre réseau
           local (Bonjour) pour s'y connecter automatiquement.
+        NSCameraUsageDescription: >-
+          GPS-Mock Companion utilise l'appareil photo pour scanner le QR Code
+          affiché par l'app desktop et s'y connecter, sans enregistrer ni
+          envoyer aucune image.
         NSBonjourServices:
           - _gpsmock._tcp
         NSSupportsLiveActivities: true

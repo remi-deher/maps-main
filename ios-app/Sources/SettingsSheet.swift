@@ -35,6 +35,8 @@ struct SettingsSheet: View {
     @State private var gpxSpeed: Double = 25
     @State private var gpxError: String?
 
+    @State private var showQrScanner = false
+
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
@@ -49,6 +51,12 @@ struct SettingsSheet: View {
                         .keyboardType(.URL)
                         .autocorrectionDisabled()
                         .textInputAutocapitalization(.never)
+
+                    Button {
+                        showQrScanner = true
+                    } label: {
+                        Label("Scanner le QR Code du moteur", systemImage: "qrcode.viewfinder")
+                    }
 
                     HStack {
                         Text("Port")
@@ -242,6 +250,11 @@ struct SettingsSheet: View {
                     gpxError = error.localizedDescription
                 }
             }
+            .sheet(isPresented: $showQrScanner) {
+                QRScannerSheet { scanned in
+                    applyScannedAddress(scanned)
+                }
+            }
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
                     // "Terminé" (not "Fermer") matches the HIG convention for
@@ -251,6 +264,24 @@ struct SettingsSheet: View {
                 }
             }
         }
+    }
+
+    /// Accepts the raw "host:port" string scanned from tauri-app's pairing
+    /// QR code (Sidebar.tsx's `qrPairingAddress`) and reconnects to it.
+    /// Mistrusts the payload exactly like a manually-typed address: a
+    /// malformed scan (wrong app, damaged code) just fails the host:port
+    /// shape check below rather than being passed anywhere unvalidated.
+    private func applyScannedAddress(_ value: String) {
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        let parts = trimmed.split(separator: ":")
+        guard parts.count == 2, let port = Int(parts[1]), (1...65535).contains(port), !parts[0].isEmpty else {
+            portError = "QR Code invalide — ce n'est pas une adresse de moteur GPS-Mock."
+            return
+        }
+        portError = nil
+        engineAddress = trimmed
+        portInput = String(port)
+        onApplyPort()
     }
 
     /// Replaces the port suffix of `engineAddress` (host:port) and

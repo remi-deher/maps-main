@@ -22,14 +22,15 @@ import (
 
 // runConfig is the resolved configuration for one engine run.
 type runConfig struct {
-	driverID  string
-	transport string
-	addr      string
-	goiosBin  string
-	pythonBin string
-	rsd       string
-	logFile   string
-	noTunnel  bool
+	driverID      string
+	transport     string
+	addr          string
+	mdnsInterface string
+	goiosBin      string
+	pythonBin     string
+	rsd           string
+	logFile       string
+	noTunnel      bool
 
 	clusterMode      string // off | manual | auto
 	clusterNodes     []string
@@ -103,7 +104,7 @@ func runEngine(ctx context.Context, cfg runConfig) error {
 		}
 	}()
 
-	if mdnsServer := advertiseMdns(cfg.addr); mdnsServer != nil {
+	if mdnsServer := advertiseMdns(cfg.addr, cfg.mdnsInterface); mdnsServer != nil {
 		defer mdnsServer.Shutdown()
 	}
 
@@ -143,7 +144,16 @@ func runEngine(ctx context.Context, cfg runConfig) error {
 // (the iOS companion app) can find it without the user typing an IP:port.
 // Returns nil if the addr's port can't be parsed or registration fails —
 // mDNS is a convenience, never a hard requirement to run the engine.
-func advertiseMdns(addr string) *zeroconf.Server {
+//
+// ifaceName restricts which network interface's address gets advertised —
+// on a machine with several NICs (Wi-Fi, Ethernet, a VPN adapter...),
+// zeroconf would otherwise announce one arbitrarily, which may not be the
+// one actually reachable from the iPhone. This only affects what address is
+// *announced*; the HTTP/WebSocket listener itself still binds to every
+// interface per cfg.addr (typically ":8080"), so the desktop client talking
+// to it over loopback is unaffected either way. Empty ifaceName keeps the
+// previous behavior of advertising on every interface.
+func advertiseMdns(addr, ifaceName string) *zeroconf.Server {
 	_, portStr, err := net.SplitHostPort(addr)
 	if err != nil {
 		log.Printf("mdns: cannot parse port from %q, skipping advertisement: %v", addr, err)
@@ -160,11 +170,25 @@ func advertiseMdns(addr string) *zeroconf.Server {
 		instance = hostname
 	}
 
-	mdnsServer, err := zeroconf.Register(instance, cluster.ServiceType, "local.", port, []string{"v=1"}, nil)
+	var ifaces []net.Interface
+	if ifaceName != "" {
+		iface, ierr := net.InterfaceByName(ifaceName)
+		if ierr != nil {
+			log.Printf("mdns: interface %q not found, advertising on every interface instead: %v", ifaceName, ierr)
+		} else {
+			ifaces = []net.Interface{*iface}
+		}
+	}
+
+	mdnsServer, err := zeroconf.Register(instance, cluster.ServiceType, "local.", port, []string{"v=1"}, ifaces)
 	if err != nil {
 		log.Printf("mdns: advertisement failed: %v", err)
 		return nil
 	}
-	log.Printf("mdns: advertising %q on %s, port %d", instance, cluster.ServiceType, port)
+	if ifaceName != "" {
+		log.Printf("mdns: advertising %q on %s, port %d, restricted to interface %q", instance, cluster.ServiceType, port, ifaceName)
+	} else {
+		log.Printf("mdns: advertising %q on %s, port %d", instance, cluster.ServiceType, port)
+	}
 	return mdnsServer
 }

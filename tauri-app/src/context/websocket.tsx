@@ -102,6 +102,11 @@ export interface Status {
   lastRealLocation?: { lat: number; lon: number; drift?: number; timestamp?: number } | null;
 }
 
+export interface NetworkInterfaceInfo {
+  name: string;
+  ip: string;
+}
+
 export interface Telemetry {
   latency: number;
   packetLoss: number;
@@ -116,6 +121,9 @@ interface WebSocketContextType {
   enginePort: number;
   engineStatus: "starting" | "running" | "crashed" | "unknown";
   setEnginePort: (port: number) => Promise<void>;
+  mdnsInterface: string | null;
+  setMdnsInterface: (interfaceName: string | null) => Promise<void>;
+  networkInterfaces: NetworkInterfaceInfo[];
   lastError: string | null;
   canSend: boolean;
   status: Status | null;
@@ -152,6 +160,8 @@ export const useWebSocket = () => {
 export const WebSocketProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [enginePort, setEnginePortState] = useState(DEFAULT_PORT);
   const [engineStatus, setEngineStatus] = useState<WebSocketContextType["engineStatus"]>("unknown");
+  const [mdnsInterface, setMdnsInterfaceState] = useState<string | null>(null);
+  const [networkInterfaces, setNetworkInterfaces] = useState<NetworkInterfaceInfo[]>([]);
   const connectionUrl = `ws://localhost:${enginePort}/ws`;
   const [isConnected, setIsConnected] = useState(false);
   const [connectionStatus, setConnectionStatus] = useState<WebSocketContextType["connectionStatus"]>("connecting");
@@ -265,6 +275,16 @@ export const WebSocketProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       .catch(() => {
         // Not running inside Tauri (e.g. `vite dev` in a browser): keep the default port.
       });
+    invoke<string | null>("get_mdns_interface")
+      .then((iface) => setMdnsInterfaceState(iface))
+      .catch(() => {
+        // Not running inside Tauri: no interface to restrict.
+      });
+    invoke<NetworkInterfaceInfo[]>("list_network_interfaces")
+      .then((interfaces) => setNetworkInterfaces(interfaces))
+      .catch(() => {
+        // Not running inside Tauri: nothing to list.
+      });
   }, []);
 
   useEffect(() => {
@@ -304,6 +324,12 @@ export const WebSocketProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     setEngineStatus("starting");
     await invoke("set_engine_port", { port });
     setEnginePortState(port);
+  };
+
+  const setMdnsInterface = async (interfaceName: string | null) => {
+    setEngineStatus("starting");
+    await invoke("set_mdns_interface", { interface: interfaceName });
+    setMdnsInterfaceState(interfaceName);
   };
 
   const canSend = isConnected && wsRef.current?.readyState === WebSocket.OPEN;
@@ -389,6 +415,9 @@ export const WebSocketProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         enginePort,
         engineStatus,
         setEnginePort,
+        mdnsInterface,
+        setMdnsInterface,
+        networkInterfaces,
         lastError,
         canSend,
         status,

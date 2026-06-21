@@ -15,8 +15,10 @@ import {
   ChevronRight,
   Route,
   Smartphone,
-  Save
+  Save,
+  QrCode
 } from "lucide-react";
+import { QRCodeSVG } from "qrcode.react";
 import { useWebSocket } from "../context/websocket";
 
 const parseCoordinate = (value: string, min: number, max: number) => {
@@ -32,6 +34,9 @@ export const Sidebar: React.FC = () => {
     enginePort,
     engineStatus,
     setEnginePort,
+    mdnsInterface,
+    setMdnsInterface,
+    networkInterfaces,
     lastError,
     canSend,
     status,
@@ -78,6 +83,15 @@ export const Sidebar: React.FC = () => {
   // companionPort setting below which only annotates the RSD endpoint).
   const [enginePortInput, setEnginePortInput] = useState(String(enginePort));
   const [enginePortError, setEnginePortError] = useState("");
+
+  const [showQrCode, setShowQrCode] = useState(false);
+  // Pick the interface the user restricted mDNS to, if any; otherwise the
+  // first detected LAN interface — "localhost" would be useless in the QR
+  // code since it's scanned by a *different* device (the iPhone).
+  const qrPairingHost = networkInterfaces.find((iface) => iface.name === mdnsInterface)?.ip
+    ?? networkInterfaces[0]?.ip
+    ?? null;
+  const qrPairingAddress = qrPairingHost ? `${qrPairingHost}:${enginePort}` : null;
 
   const handleApplyEnginePort = async () => {
     const parsed = parseCoordinate(enginePortInput, 1, 65535);
@@ -988,6 +1002,43 @@ export const Sidebar: React.FC = () => {
                     <RefreshCw size={14} /> Redémarrer le moteur sur ce port
                   </button>
                 </div>
+
+                <div className="form-group">
+                  <label className="form-label">Carte réseau annoncée (découverte iOS)</label>
+                  <select
+                    value={mdnsInterface ?? ""}
+                    onChange={(e) => setMdnsInterface(e.target.value || null)}
+                  >
+                    <option value="">Toutes les interfaces (auto)</option>
+                    {networkInterfaces.map((iface) => (
+                      <option key={iface.name} value={iface.name}>
+                        {iface.name} ({iface.ip})
+                      </option>
+                    ))}
+                  </select>
+                  <p style={{ fontSize: "0.78rem", color: "#94a3b8", margin: "6px 0 0" }}>
+                    Restreint l'adresse annoncée en mDNS à cette carte réseau — utile si plusieurs
+                    interfaces (Wi-Fi, Ethernet, VPN) sont actives et que l'app iOS découvre la
+                    mauvaise IP.
+                  </p>
+                </div>
+
+                <div className="form-group">
+                  <label className="form-label">Appairage par QR Code</label>
+                  <button
+                    className="btn btn-secondary"
+                    disabled={!qrPairingAddress}
+                    onClick={() => setShowQrCode(true)}
+                  >
+                    <QrCode size={14} /> Afficher le QR Code
+                  </button>
+                  {!qrPairingAddress && (
+                    <p style={{ fontSize: "0.78rem", color: "#94a3b8", margin: "6px 0 0" }}>
+                      Aucune interface réseau locale détectée — connectez-vous à un réseau Wi-Fi
+                      ou Ethernet pour générer un QR Code.
+                    </p>
+                  )}
+                </div>
               </div>
 
               <div className="ui-card">
@@ -1131,6 +1182,25 @@ export const Sidebar: React.FC = () => {
       {toast && (
         <div className="toast-overlay" role="status" aria-live="polite">
           <div className="toast">{toast}</div>
+        </div>
+      )}
+      {showQrCode && qrPairingAddress && (
+        <div className="qr-overlay" role="dialog" aria-modal="true" onClick={() => setShowQrCode(false)}>
+          <div className="qr-modal" onClick={(e) => e.stopPropagation()}>
+            <h3 className="ui-card-title" style={{ margin: 0 }}>
+              <QrCode size={16} /> Appairer un iPhone
+            </h3>
+            <div className="qr-modal-code">
+              <QRCodeSVG value={qrPairingAddress} size={200} />
+            </div>
+            <p style={{ fontSize: "0.85rem", color: "#cbd5e1", margin: 0 }}>
+              Dans l'app iOS, ouvrez les réglages puis scannez ce code pour vous connecter
+              directement à <strong>{qrPairingAddress}</strong>.
+            </p>
+            <button className="btn btn-secondary" onClick={() => setShowQrCode(false)}>
+              Fermer
+            </button>
+          </div>
         </div>
       )}
     </>

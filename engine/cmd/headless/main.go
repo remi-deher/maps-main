@@ -30,6 +30,7 @@ func main() {
 	driverFlag := flag.String("driver", envOr("GPSMOCK_DRIVER", string(def.PreferredDriver)), "tunnel driver: pymobiledevice | go-ios")
 	transportFlag := flag.String("transport", envOr("GPSMOCK_TRANSPORT", "auto"), "transport: auto | usb | wifi")
 	addrFlag := flag.String("addr", envOr("GPSMOCK_ADDR", fmt.Sprintf(":%d", def.CompanionPort)), "listen address")
+	mdnsInterface := flag.String("mdns-interface", os.Getenv("GPSMOCK_MDNS_INTERFACE"), "network interface name to restrict the mDNS advertisement to (default: advertise on every interface)")
 	goiosBin := flag.String("goios-bin", os.Getenv("GPSMOCK_GOIOS_BIN"), "explicit path to the go-ios binary")
 	pythonBin := flag.String("python-bin", os.Getenv("GPSMOCK_PYTHON_BIN"), "explicit path to the python interpreter (pmd3 driver)")
 	rsdFlag := flag.String("rsd", os.Getenv("GPSMOCK_RSD"), "manual RSD endpoint host:port (WiFi transport; skips tunnel start)")
@@ -54,6 +55,7 @@ func main() {
 		driverID:           *driverFlag,
 		transport:          *transportFlag,
 		addr:               *addrFlag,
+		mdnsInterface:      *mdnsInterface,
 		goiosBin:           *goiosBin,
 		pythonBin:          *pythonBin,
 		rsd:                *rsdFlag,

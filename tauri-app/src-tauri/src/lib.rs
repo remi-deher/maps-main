@@ -16,6 +16,20 @@ struct EngineState {
 #[derive(Serialize, Deserialize)]
 struct EngineConfig {
     port: u16,
+    /// Network interface name (e.g. "Wi-Fi", "Ethernet", "en0") to restrict
+    /// the engine's mDNS advertisement to — None/empty means "every
+    /// interface", the previous default behavior. Only affects which
+    /// address gets *announced* to LAN clients (the iOS app's Bonjour
+    /// discovery); the HTTP/WebSocket listener itself always binds to every
+    /// interface, so this can't break the desktop app's own connection.
+    #[serde(default)]
+    mdns_interface: Option<String>,
+}
+
+#[derive(Serialize)]
+struct NetworkInterfaceInfo {
+    name: String,
+    ip: String,
 }
 
 fn config_path(app: &AppHandle) -> std::path::PathBuf {
@@ -27,18 +41,20 @@ fn config_path(app: &AppHandle) -> std::path::PathBuf {
     dir.join(CONFIG_FILE)
 }
 
-fn read_port(app: &AppHandle) -> u16 {
+fn read_config(app: &AppHandle) -> EngineConfig {
     let path = config_path(app);
     fs::read_to_string(path)
         .ok()
         .and_then(|raw| serde_json::from_str::<EngineConfig>(&raw).ok())
-        .map(|cfg| cfg.port)
-        .unwrap_or(DEFAULT_PORT)
+        .unwrap_or(EngineConfig {
+            port: DEFAULT_PORT,
+            mdns_interface: None,
+        })
 }
 
-fn write_port(app: &AppHandle, port: u16) {
+fn write_config(app: &AppHandle, cfg: &EngineConfig) {
     let path = config_path(app);
-    if let Ok(raw) = serde_json::to_string(&EngineConfig { port }) {
+    if let Ok(raw) = serde_json::to_string(cfg) {
         fs::write(path, raw).ok();
     }
 }
@@ -47,7 +63,7 @@ fn write_port(app: &AppHandle, port: u16) {
 /// running instance, and forwards its stdout/stderr/exit as `engine-log` /
 /// `engine-status` events so the frontend can tell "starting" apart from
 /// "crashed" instead of just retrying the WebSocket forever.
-fn spawn_engine(app: &AppHandle, port: u16) -> Result<(), String> {
+fn spawn_engine(app: &AppHandle, port: u16, mdns_interface: Option<&str>) -> Result<(), String> {
     let state = app.state::<EngineState>();
     {
         let mut guard = state.child.lock().unwrap();
@@ -57,10 +73,17 @@ fn spawn_engine(app: &AppHandle, port: u16) -> Result<(), String> {
     }
 
     let shell = app.shell();
+    let mut args = vec!["-addr".to_string(), format!(":{port}")];
+    if let Some(iface) = mdns_interface {
+        if !iface.is_empty() {
+            args.push("-mdns-interface".to_string());
+            args.push(iface.to_string());
+        }
+    }
     let sidecar = shell
         .sidecar("gpsmock-engine")
         .map_err(|err| format!("sidecar config not found: {err}"))?
-        .args(["-addr", &format!(":{port}")]);
+        .args(args);
 
     let (mut rx, child) = sidecar
         .spawn()
@@ -99,7 +122,7 @@ fn spawn_engine(app: &AppHandle, port: u16) -> Result<(), String> {
 
 #[tauri::command]
 fn get_engine_port(app: AppHandle) -> u16 {
-    read_port(&app)
+    read_config(&app).port
 }
 
 #[tauri::command]
@@ -107,8 +130,43 @@ fn set_engine_port(app: AppHandle, port: u16) -> Result<(), String> {
     if port < 1024 {
         return Err("Port must be at least 1024".to_string());
     }
-    write_port(&app, port);
-    spawn_engine(&app, port)
+    let mut cfg = read_config(&app);
+    cfg.port = port;
+    let mdns_interface = cfg.mdns_interface.clone();
+    write_config(&app, &cfg);
+    spawn_engine(&app, port, mdns_interface.as_deref())
+}
+
+#[tauri::command]
+fn get_mdns_interface(app: AppHandle) -> Option<String> {
+    read_config(&app).mdns_interface
+}
+
+#[tauri::command]
+fn set_mdns_interface(app: AppHandle, interface: Option<String>) -> Result<(), String> {
+    let mut cfg = read_config(&app);
+    cfg.mdns_interface = interface.filter(|s| !s.is_empty());
+    let port = cfg.port;
+    let mdns_interface = cfg.mdns_interface.clone();
+    write_config(&app, &cfg);
+    spawn_engine(&app, port, mdns_interface.as_deref())
+}
+
+/// Lists local, non-loopback IPv4 network interfaces so the settings UI can
+/// offer a picker instead of asking the user to know their interface name —
+/// e.g. distinguishing "Wi-Fi (192.168.1.42)" from "Ethernet (10.0.0.5)" on a
+/// machine with both, which matters for which one the iOS app can reach.
+#[tauri::command]
+fn list_network_interfaces() -> Vec<NetworkInterfaceInfo> {
+    if_addrs::get_if_addrs()
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|iface| !iface.is_loopback() && iface.ip().is_ipv4())
+        .map(|iface| NetworkInterfaceInfo {
+            name: iface.name.clone(),
+            ip: iface.ip().to_string(),
+        })
+        .collect()
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -121,8 +179,8 @@ pub fn run() {
             #[cfg(desktop)]
             {
                 let handle = app.handle().clone();
-                let port = read_port(&handle);
-                if let Err(err) = spawn_engine(&handle, port) {
+                let cfg = read_config(&handle);
+                if let Err(err) = spawn_engine(&handle, cfg.port, cfg.mdns_interface.as_deref()) {
                     eprintln!("{err}");
                     let _ = handle.emit("engine-status", format!("error: {err}"));
                 }
@@ -138,7 +196,13 @@ pub fn run() {
                 }
             }
         })
-        .invoke_handler(tauri::generate_handler![get_engine_port, set_engine_port])
+        .invoke_handler(tauri::generate_handler![
+            get_engine_port,
+            set_engine_port,
+            get_mdns_interface,
+            set_mdns_interface,
+            list_network_interfaces
+        ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
