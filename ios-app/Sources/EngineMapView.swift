@@ -22,12 +22,19 @@ struct EngineMapView: View {
             Map(position: $cameraPosition) {
                 UserAnnotation()
                 if let spoofed = spoofedLocation {
-                    Marker("Position simulée", systemImage: "location.fill", coordinate: spoofed)
-                        .tint(.indigo)
+                    // Custom annotation instead of Marker: Marker's
+                    // permanently visible text label gets noisy once drift
+                    // is small and it overlaps the blue dot — a pulsing ring
+                    // distinguishes the spoofed position actively instead.
+                    // The title is kept for VoiceOver, not shown on screen.
+                    // See §3.13 of docs/UI_UX_BASELINE.md.
+                    Annotation("Position simulée", coordinate: spoofed) {
+                        SpoofedLocationMarker()
+                    }
                 }
                 if routePreview.count > 1 {
                     MapPolyline(coordinates: routePreview)
-                        .stroke(.indigo, lineWidth: 4)
+                        .stroke(.accentColor, lineWidth: 4)
                 }
                 ForEach(Array(itineraryStops.enumerated()), id: \.element.id) { index, stop in
                     Annotation(stop.name, coordinate: stop.coordinate) {
@@ -35,7 +42,7 @@ struct EngineMapView: View {
                             .font(.caption.bold())
                             .foregroundStyle(.white)
                             .frame(width: 24, height: 24)
-                            .background(.indigo, in: Circle())
+                            .background(.accentColor, in: Circle())
                     }
                 }
             }
@@ -55,6 +62,34 @@ struct EngineMapView: View {
                     }
             )
             .sensoryFeedback(.success, trigger: longPressFeedback)
+        }
+    }
+}
+
+/// Pulsing indigo dot with a white ring, used in place of `Marker` for the
+/// spoofed position so it stays visually distinct from the system blue dot
+/// even when drift is near zero and the two would otherwise sit on top of
+/// each other.
+private struct SpoofedLocationMarker: View {
+    @State private var isPulsing = false
+
+    var body: some View {
+        ZStack {
+            Circle()
+                .fill(Color.accentColor.opacity(0.25))
+                .frame(width: 36, height: 36)
+                .scaleEffect(isPulsing ? 1 : 0.5)
+                .opacity(isPulsing ? 0 : 1)
+            Circle()
+                .strokeBorder(.white, lineWidth: 2)
+                .background(Circle().fill(Color.accentColor))
+                .frame(width: 16, height: 16)
+        }
+        .accessibilityHidden(true)
+        .onAppear {
+            withAnimation(.easeOut(duration: 1.6).repeatForever(autoreverses: false)) {
+                isPulsing = true
+            }
         }
     }
 }

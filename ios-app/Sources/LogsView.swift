@@ -6,11 +6,39 @@ import SwiftUI
 struct LogsView: View {
     @ObservedObject var engine: EngineClient
 
+    @State private var query = ""
+    @State private var levelFilter: LevelFilter = .all
+
+    private enum LevelFilter: String, CaseIterable {
+        case all = "Tous"
+        case info = "Info"
+        case warn = "Avertissements"
+        case error = "Erreurs"
+
+        var rawLevel: String? {
+            switch self {
+            case .all: return nil
+            case .info: return "info"
+            case .warn: return "warn"
+            case .error: return "error"
+            }
+        }
+    }
+
     private let timeFormatter: DateFormatter = {
         let formatter = DateFormatter()
         formatter.dateFormat = "HH:mm:ss"
         return formatter
     }()
+
+    private var filteredLogs: [LogEntryPayload] {
+        engine.logs.reversed().filter { entry in
+            if let rawLevel = levelFilter.rawLevel, entry.level != rawLevel { return false }
+            guard !query.isEmpty else { return true }
+            return entry.message.localizedCaseInsensitiveContains(query)
+                || entry.source.localizedCaseInsensitiveContains(query)
+        }
+    }
 
     var body: some View {
         List {
@@ -21,7 +49,15 @@ struct LogsView: View {
                     description: Text("Les événements du moteur apparaîtront ici en temps réel.")
                 )
             } else {
-                ForEach(Array(engine.logs.reversed().enumerated()), id: \.offset) { _, entry in
+                Picker("Niveau", selection: $levelFilter) {
+                    ForEach(LevelFilter.allCases, id: \.self) { filter in
+                        Text(filter.rawValue).tag(filter)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .listRowSeparator(.hidden)
+
+                ForEach(Array(filteredLogs.enumerated()), id: \.offset) { _, entry in
                     HStack(alignment: .top, spacing: 10) {
                         Image(systemName: icon(for: entry.level))
                             .foregroundStyle(color(for: entry.level))
@@ -41,6 +77,7 @@ struct LogsView: View {
                 }
             }
         }
+        .searchable(text: $query, prompt: "Rechercher dans les journaux")
         .navigationTitle("Journaux")
         .navigationBarTitleDisplayMode(.inline)
         .refreshable { engine.getLogs() }

@@ -10,8 +10,8 @@ import MapKit
 struct BottomSheet: View {
     @Binding var searchQuery: String
     var isFocused: FocusState<Bool>.Binding
-    let searchResults: [MKMapItem]
-    var onSelectResult: (MKMapItem) -> Void
+    let searchSuggestions: [MKLocalSearchCompletion]
+    var onSelectSuggestion: (MKLocalSearchCompletion) -> Void
 
     @Binding var itineraryStops: [RouteStop]
     @Binding var itinerarySpeed: Double
@@ -39,6 +39,9 @@ struct BottomSheet: View {
     var onResumeRoute: () -> Void
     var onStopRoute: () -> Void
 
+    let isEngineConnected: Bool
+    var onConnect: () -> Void
+
     private var isSearching: Bool {
         !searchQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
@@ -49,6 +52,15 @@ struct BottomSheet: View {
 
             ScrollView {
                 VStack(spacing: 12) {
+                    // Inline, persistent indicator instead of a modal alert —
+                    // a routine "engine not connected" state shouldn't
+                    // interrupt with a dialog every time a pilot action is
+                    // attempted (HIG: alerts are for important, infrequent
+                    // information). See §3.9 of docs/UI_UX_BASELINE.md.
+                    if !isEngineConnected {
+                        connectionBanner
+                    }
+
                     // Persistent like Plans' "navigation active" banner — visible
                     // regardless of what else is on screen, since pausing/
                     // stopping a running simulation is a system-level action.
@@ -118,9 +130,9 @@ struct BottomSheet: View {
     }
 
     /// A single, self-contained glass capsule — search only, no settings
-    /// button riding along. Its own shadow gives it a floating-card look
-    /// distinct from the sheet's translucent backdrop, with margin on every
-    /// side instead of bleeding edge-to-edge.
+    /// button riding along, with margin on every side instead of bleeding
+    /// edge-to-edge. No manual shadow: the glass material already carries
+    /// its own elevation (§3.1 of docs/UI_UX_BASELINE.md).
     private var header: some View {
         HStack(spacing: 8) {
             Image(systemName: "magnifyingglass")
@@ -134,16 +146,35 @@ struct BottomSheet: View {
                 Button {
                     searchQuery = ""
                 } label: {
-                    Image(systemName: "xmark.circle.fill")
+                    Label("Effacer la recherche", systemImage: "xmark.circle.fill")
+                        .labelStyle(.iconOnly)
                         .foregroundStyle(.secondary)
+                        .frame(width: 28, height: 28)
                 }
             }
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 10)
         .glassEffect(.regular.interactive(), in: .capsule)
-        .shadow(color: .black.opacity(0.12), radius: 10, y: 3)
         .padding(.horizontal, 16)
+    }
+
+    private var connectionBanner: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "wifi.exclamationmark")
+                .foregroundStyle(.orange)
+            Text("Moteur non connecté")
+                .font(.subheadline.weight(.medium))
+            Spacer()
+            Button("Connecter", action: onConnect)
+                .buttonStyle(.glass)
+                .frame(minHeight: 44)
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 10)
+        .adaptiveGlassEffect(in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .padding(.horizontal, 16)
+        .accessibilityElement(children: .combine)
     }
 
     private var simulationControlBar: some View {
@@ -153,63 +184,67 @@ struct BottomSheet: View {
             Spacer()
             if simulationState == "paused" {
                 Button(action: onResumeRoute) {
-                    Image(systemName: "play.fill")
-                        .frame(width: 36, height: 36)
+                    Label("Reprendre", systemImage: "play.fill")
+                        .labelStyle(.iconOnly)
+                        .frame(width: 44, height: 44)
                 }
                 .buttonStyle(.glassProminent)
-                .tint(.indigo)
+                .tint(.accentColor)
                 .buttonBorderShape(.circle)
             } else {
                 Button(action: onPauseRoute) {
-                    Image(systemName: "pause.fill")
-                        .frame(width: 36, height: 36)
+                    Label("Mettre en pause", systemImage: "pause.fill")
+                        .labelStyle(.iconOnly)
+                        .frame(width: 44, height: 44)
                 }
                 .buttonStyle(.glass)
                 .buttonBorderShape(.circle)
             }
             Button(action: onStopRoute) {
-                Image(systemName: "stop.fill")
+                Label("Arrêter", systemImage: "stop.fill")
+                    .labelStyle(.iconOnly)
                     .foregroundStyle(.red)
-                    .frame(width: 36, height: 36)
+                    .frame(width: 44, height: 44)
             }
             .buttonStyle(.glass)
             .buttonBorderShape(.circle)
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 10)
-        .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .adaptiveGlassEffect(in: RoundedRectangle(cornerRadius: 20, style: .continuous))
         .padding(.horizontal, 16)
     }
 
     @ViewBuilder
     private var searchResultsSection: some View {
-        if searchResults.isEmpty {
+        if searchSuggestions.isEmpty {
             Text("Recherche...")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
                 .padding(.top, 8)
         } else {
             VStack(spacing: 0) {
-                ForEach(Array(searchResults.enumerated()), id: \.offset) { index, item in
+                ForEach(Array(searchSuggestions.enumerated()), id: \.offset) { index, completion in
                     Button {
-                        onSelectResult(item)
+                        onSelectSuggestion(completion)
                     } label: {
                         HStack(spacing: 12) {
                             Image(systemName: "mappin.circle.fill")
-                                .foregroundStyle(.indigo)
+                                .foregroundStyle(.accentColor)
                                 .frame(width: 28)
                             VStack(alignment: .leading, spacing: 2) {
-                                Text(item.name ?? "Lieu").foregroundStyle(.primary)
-                                if let subtitle = item.placemark.title {
-                                    Text(subtitle).font(.caption).foregroundStyle(.secondary)
+                                Text(completion.title).foregroundStyle(.primary)
+                                if !completion.subtitle.isEmpty {
+                                    Text(completion.subtitle).font(.caption).foregroundStyle(.secondary)
                                 }
                             }
                             Spacer()
                         }
                         .padding(.vertical, 8)
+                        .frame(minHeight: 44)
                         .contentShape(Rectangle())
                     }
-                    if index < searchResults.count - 1 {
+                    if index < searchSuggestions.count - 1 {
                         Divider()
                     }
                 }

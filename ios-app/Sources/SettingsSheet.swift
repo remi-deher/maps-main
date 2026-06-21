@@ -23,7 +23,7 @@ struct SettingsSheet: View {
                 }
 
                 Section("Moteur GPS-Mock") {
-                    TextField("IP:port", text: $engineAddress)
+                    TextField("ex. 192.168.1.42:8080", text: $engineAddress, prompt: Text("Auto-découverte en cours…"))
                         .keyboardType(.URL)
                         .autocorrectionDisabled()
                         .textInputAutocapitalization(.never)
@@ -106,7 +106,10 @@ struct SettingsSheet: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Fermer") { dismiss() }
+                    // "Terminé" (not "Fermer") matches the HIG convention for
+                    // dismissing a settings sheet where nothing is confirmed
+                    // or cancelled — see §3.15 of docs/UI_UX_BASELINE.md.
+                    Button("Terminé") { dismiss() }
                 }
             }
         }

@@ -7,12 +7,12 @@ struct RecenterButton: View {
 
     var body: some View {
         Button(action: onTap) {
-            Image(systemName: "location.fill")
-                .font(.system(size: 17, weight: .semibold))
+            Label("Recentrer sur ma position", systemImage: "location.fill")
+                .labelStyle(.iconOnly)
+                .font(.title3.weight(.semibold))
                 .frame(width: 46, height: 46)
         }
         .buttonStyle(.glass)
         .buttonBorderShape(.circle)
-        .clipShape(Circle())
     }
 }

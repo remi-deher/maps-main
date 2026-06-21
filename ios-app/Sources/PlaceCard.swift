@@ -42,21 +42,28 @@ struct PlaceCard: View {
                 }
                 Spacer()
                 Button(action: onDismiss) {
-                    Image(systemName: "xmark.circle.fill")
+                    Label("Fermer", systemImage: "xmark.circle.fill")
+                        .labelStyle(.iconOnly)
                         .foregroundStyle(.secondary)
-                        .font(.system(size: 20))
+                        .font(.title3)
+                        .frame(width: 44, height: 44)
                 }
             }
 
-            HStack(spacing: 10) {
-                actionButton("Téléporter", icon: "location.fill", action: onTeleport)
-                actionButton("Itinéraire", icon: "arrow.triangle.turn.up.right.diamond.fill", action: onRoute)
-                actionButton("Étape", icon: "plus.circle.fill", action: onAddStop)
-                actionButton("Favori", icon: "star.fill", action: onFavorite)
+            // Horizontally scrollable so four full-width labels never get
+            // clipped at large Dynamic Type sizes (e.g. iPhone SE under AX
+            // text sizes) — matches Plans' own action row behavior.
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 10) {
+                    actionButton("Téléporter", icon: "location.fill", action: onTeleport)
+                    actionButton("Itinéraire", icon: "arrow.triangle.turn.up.right.diamond.fill", action: onRoute)
+                    actionButton("Étape", icon: "plus.circle.fill", action: onAddStop)
+                    actionButton("Favori", icon: "star.fill", action: onFavorite)
+                }
             }
         }
         .padding(18)
-        .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 26, style: .continuous))
+        .adaptiveGlassEffect(in: RoundedRectangle(cornerRadius: 26, style: .continuous))
         .padding(.horizontal, 16)
         .sensoryFeedback(.success, trigger: actionFeedback)
     }
@@ -69,14 +76,14 @@ struct PlaceCard: View {
         } label: {
             VStack(spacing: 4) {
                 Image(systemName: icon)
-                    .font(.system(size: 16, weight: .semibold))
+                    .font(.headline)
                 Text(title)
-                    .font(.caption2)
+                    .font(.caption)
             }
-            .frame(maxWidth: .infinity)
+            .frame(minWidth: 72, minHeight: 44)
             .padding(.vertical, 8)
         }
         .buttonStyle(.glassProminent)
-        .tint(.indigo)
+        .tint(.accentColor)
     }
 }

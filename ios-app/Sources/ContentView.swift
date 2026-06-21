@@ -1,6 +1,7 @@
 import SwiftUI
 import CoreLocation
 import MapKit
+import TipKit
 
 /// Codable snapshot of an itinerary, persisted to UserDefaults so it survives
 /// a disconnected-engine failure (or an app relaunch) — "charger le dernier
@@ -20,22 +21,24 @@ private struct SavedItinerary: Codable {
 private let lastItineraryKey = "lastItinerary"
 
 struct ContentView: View {
-    @AppStorage("engineAddress") private var engineAddress: String = "192.168.1.1:8080"
+    // Empty by default — an arbitrary placeholder IP used to read as a false
+    // "already configured" state before Bonjour discovery had a chance to
+    // run. See §3.24 of docs/UI_UX_BASELINE.md.
+    @AppStorage("engineAddress") private var engineAddress: String = ""
     @StateObject private var location = LocationManager()
     @StateObject private var engine = EngineClient()
     @StateObject private var discovery = EngineDiscovery()
     @StateObject private var liveActivity = LiveActivityManager()
     @AppStorage("liveActivityEnabled") private var liveActivityEnabled = true
 
-    @State private var reportTimer: Timer?
+    @State private var reportTask: Task<Void, Never>?
     @State private var selectedPlace: SelectedPlace?
     @State private var showAddFavorite = false
     @State private var newFavoriteName = ""
     @State private var cameraPosition: MapCameraPosition = .userLocation(fallback: .automatic)
 
     @State private var searchQuery = ""
-    @State private var searchResults: [MKMapItem] = []
-    @State private var searchTask: Task<Void, Never>?
+    @StateObject private var searchCompleter = SearchCompleter()
     @FocusState private var searchFocused: Bool
 
     @State private var itineraryStops: [RouteStop] = []
@@ -46,7 +49,6 @@ struct ContentView: View {
 
     @State private var sheetDetent: PresentationDetent = .height(120)
     @State private var showSettings = false
-    @State private var showConnectionError = false
     @State private var hasSavedItinerary = UserDefaults.standard.data(forKey: lastItineraryKey) != nil
 
     private var spoofedCoordinate: CLLocationCoordinate2D? {
@@ -69,43 +71,54 @@ struct ContentView: View {
                 cameraPosition: $cameraPosition
             ) { coordinate in
                 searchFocused = false
+                MapLongPressTip().invalidate(reason: .actionPerformed)
                 Task {
                     let place = await reverseGeocode(coordinate)
                     await MainActor.run { selectedPlace = place }
                 }
             }
             .ignoresSafeArea()
+            .mapControls {
+                MapCompass()
+                MapScaleView()
+                MapPitchToggle()
+            }
 
-            VStack {
+            // Both floating controls are glass siblings, so they share one
+            // lensing pass and can morph together instead of each posing as
+            // its own independent glass layer (swiftui-liquid-glass skill).
+            GlassEffectContainer(spacing: 16) {
+                VStack {
+                    HStack {
+                        Spacer()
+                        Button {
+                            showSettings = true
+                        } label: {
+                            Label("Réglages", systemImage: "gearshape.fill")
+                                .labelStyle(.iconOnly)
+                                .font(.title3.weight(.semibold))
+                                .frame(width: 44, height: 44)
+                        }
+                        .buttonStyle(.glass)
+                        .buttonBorderShape(.circle)
+                        .popoverTip(MapLongPressTip())
+                    }
+                    Spacer()
+                }
+                .padding(.top, 8)
+                .padding(.trailing, 16)
+
                 HStack {
                     Spacer()
-                    Button {
-                        showSettings = true
-                    } label: {
-                        Image(systemName: "gearshape.fill")
-                            .font(.system(size: 16, weight: .semibold))
-                            .frame(width: 42, height: 42)
-                    }
-                    .buttonStyle(.glass)
-                    .buttonBorderShape(.circle)
-                    .clipShape(Circle())
-                    .shadow(color: .black.opacity(0.12), radius: 10, y: 3)
-                }
-                Spacer()
-            }
-            .padding(.top, 8)
-            .padding(.trailing, 16)
-
-            HStack {
-                Spacer()
-                RecenterButton {
-                    withAnimation {
-                        cameraPosition = .userLocation(fallback: .automatic)
+                    RecenterButton {
+                        withAnimation {
+                            cameraPosition = .userLocation(fallback: .automatic)
+                        }
                     }
                 }
+                .padding(.trailing, 16)
+                .padding(.bottom, 140)
             }
-            .padding(.trailing, 16)
-            .padding(.bottom, 140)
         }
         .alert("Nom du favori", isPresented: $showAddFavorite) {
             TextField("Nom", text: $newFavoriteName)
@@ -128,8 +141,8 @@ struct ContentView: View {
             BottomSheet(
                 searchQuery: $searchQuery,
                 isFocused: $searchFocused,
-                searchResults: searchResults,
-                onSelectResult: selectSearchResult,
+                searchSuggestions: searchCompleter.results,
+                onSelectSuggestion: selectSearchSuggestion,
                 itineraryStops: $itineraryStops,
                 itinerarySpeed: $itinerarySpeed,
                 itineraryProfile: $itineraryProfile,
@@ -162,14 +175,22 @@ struct ContentView: View {
                 simulationState: engine.status?.state,
                 onPauseRoute: { engine.pauseRoute() },
                 onResumeRoute: { engine.resumeRoute() },
-                onStopRoute: { engine.stopRoute() }
+                onStopRoute: { engine.stopRoute() },
+                isEngineConnected: engine.state == .connected,
+                onConnect: { showSettings = true }
             )
             .presentationDetents([.height(120), .medium, .large], selection: $sheetDetent)
             .presentationDragIndicator(.visible)
             .presentationBackgroundInteraction(.enabled)
             .interactiveDismissDisabled()
         }
-        .sheet(isPresented: $showSettings) {
+        // fullScreenCover instead of a second concurrent .sheet: two sheets
+        // presented at once on the same hierarchy is fragile on iOS 26 (drag
+        // indicator / presentationDetents conflicts) — see §3.11 of
+        // docs/UI_UX_BASELINE.md. The persistent bottom sheet stays a sheet
+        // (that pattern itself is correct), settings becomes a full-screen
+        // cover instead of stacking on top of it.
+        .fullScreenCover(isPresented: $showSettings) {
             SettingsSheet(
                 engineAddress: $engineAddress,
                 engine: engine,
@@ -178,11 +199,6 @@ struct ContentView: View {
                 onRetryDiscovery: startDiscovery,
                 liveActivityEnabled: $liveActivityEnabled
             )
-        }
-        .alert("Action impossible", isPresented: $showConnectionError) {
-            Button("OK", role: .cancel) {}
-        } message: {
-            Text(engine.lastError ?? "Le moteur n'est pas connecté. Vérifiez les réglages, votre itinéraire reste enregistré.")
         }
         .onAppear {
             location.requestPermission()
@@ -196,7 +212,10 @@ struct ContentView: View {
             }
         }
         .onChange(of: searchQuery) { newValue in
-            performSearch(newValue)
+            if let coordinate = location.lastLocation?.coordinate {
+                searchCompleter.updateRegion(center: coordinate)
+            }
+            searchCompleter.queryFragment = newValue
         }
         .onChange(of: searchFocused) { focused in
             // Plans expands its sheet the moment you start typing, so results
@@ -251,40 +270,21 @@ struct ContentView: View {
         discovery.start()
     }
 
-    private func performSearch(_ query: String) {
-        searchTask?.cancel()
-        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else {
-            searchResults = []
-            return
-        }
-        searchTask = Task {
-            try? await Task.sleep(nanoseconds: 350_000_000)
-            guard !Task.isCancelled else { return }
-
-            let request = MKLocalSearch.Request()
-            request.naturalLanguageQuery = trimmed
-            if let coordinate = location.lastLocation?.coordinate {
-                request.region = MKCoordinateRegion(center: coordinate, latitudinalMeters: 50_000, longitudinalMeters: 50_000)
-            }
-
-            let search = MKLocalSearch(request: request)
-            let items = (try? await search.start().mapItems) ?? []
-            guard !Task.isCancelled else { return }
-            await MainActor.run { searchResults = items }
-        }
-    }
-
-    /// Picking a search result opens the same action menu as a long-press on
-    /// the map (Téléporter / Itinéraire / Étape / Favori) instead of silently
-    /// committing to an itinerary stop — the user decides what to do with
-    /// the place once it's found.
-    private func selectSearchResult(_ item: MKMapItem) {
-        guard let coordinate = item.placemark.location?.coordinate else { return }
-        searchResults = []
+    /// Picking a suggestion resolves it to a placemark (one `MKLocalSearch`
+    /// call, only now — not on every keystroke) and opens the same action
+    /// menu as a long-press on the map (Téléporter / Itinéraire / Étape /
+    /// Favori) instead of silently committing to an itinerary stop — the
+    /// user decides what to do with the place once it's found.
+    private func selectSearchSuggestion(_ completion: MKLocalSearchCompletion) {
         searchQuery = ""
         searchFocused = false
-        selectedPlace = SelectedPlace(coordinate: coordinate, title: item.name ?? "Lieu", subtitle: item.placemark.title)
+        Task {
+            guard let item = await searchCompleter.resolve(completion),
+                  let coordinate = item.placemark.location?.coordinate else { return }
+            await MainActor.run {
+                selectedPlace = SelectedPlace(coordinate: coordinate, title: item.name ?? "Lieu", subtitle: item.placemark.title)
+            }
+        }
     }
 
     /// Mirrors tauri-app's handlePlaySequence: each leg's start is the
@@ -316,14 +316,12 @@ struct ContentView: View {
     }
 
     /// Centralizes the "is the engine actually usable" check before any
-    /// pilot action — surfaces a visible alert instead of the action
-    /// silently no-oping (the original bug report).
+    /// pilot action. The persistent connection banner in BottomSheet already
+    /// tells the user the engine is offline at all times — no need for a
+    /// modal alert on top of every blocked action (see §3.9 of
+    /// docs/UI_UX_BASELINE.md), so a blocked action is a silent no-op here.
     private func requireConnection() -> Bool {
-        guard engine.state == .connected else {
-            showConnectionError = true
-            return false
-        }
-        return true
+        engine.state == .connected
     }
 
     private func saveLastItinerary() {
@@ -438,17 +436,25 @@ struct ContentView: View {
         startReporting()
     }
 
+    /// Task-based instead of `Timer.scheduledTimer`: a Timer keeps firing
+    /// (and keeps a strong RunLoop reference alive) regardless of the view's
+    /// lifecycle, whereas this Task is owned by `reportTask` and is
+    /// cancelled explicitly in `stopReporting()` — see §3.22 of
+    /// docs/UI_UX_BASELINE.md.
     private func startReporting() {
-        reportTimer?.invalidate()
-        reportTimer = Timer.scheduledTimer(withTimeInterval: 10, repeats: true) { _ in
-            guard let loc = location.lastLocation else { return }
-            engine.sendRealLocation(lat: loc.coordinate.latitude, lon: loc.coordinate.longitude)
+        reportTask?.cancel()
+        reportTask = Task {
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(10))
+                guard !Task.isCancelled, let loc = location.lastLocation else { continue }
+                engine.sendRealLocation(lat: loc.coordinate.latitude, lon: loc.coordinate.longitude)
+            }
         }
     }
 
     private func stopReporting() {
-        reportTimer?.invalidate()
-        reportTimer = nil
+        reportTask?.cancel()
+        reportTask = nil
     }
 }
 
