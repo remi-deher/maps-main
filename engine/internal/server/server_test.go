@@ -317,7 +317,10 @@ func TestOptionalAuthentication(t *testing.T) {
 
 	// WS Dial without token -> fails (401 response)
 	wsURL := "ws" + strings.TrimPrefix(ts.URL, "http") + "/ws"
-	_, _, err = websocket.DefaultDialer.Dial(wsURL, nil)
+	_, unauthResp, err := websocket.DefaultDialer.Dial(wsURL, nil)
+	if unauthResp != nil {
+		_ = unauthResp.Body.Close()
+	}
 	if err == nil {
 		t.Fatal("expected unauthenticated WS dial to fail")
 	}
@@ -347,7 +350,7 @@ func TestActionMetrics(t *testing.T) {
 
 	// Send an unrecognized action -> error metric should be recorded
 	_ = c.WriteJSON(api.Envelope{Type: "SOME_FUTURE_ACTION_THIS_SERVER_DOESNT_KNOW"})
-	
+
 	// Send a valid get status action -> success metric should be recorded
 	_ = c.WriteJSON(api.Envelope{Type: api.ActionGetStatus})
 	_ = readEnvelopeOfType(t, c, api.EventStatus)
