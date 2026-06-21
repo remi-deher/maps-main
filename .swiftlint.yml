@@ -1,0 +1,26 @@
+included:
+  - ios-app/Sources
+  - ios-app/Widgets
+
+disabled_rules:
+  - todo
+
+opt_in_rules:
+  - empty_count
+  - redundant_type_annotation
+
+line_length:
+  warning: 160
+  error: 200
+
+function_body_length:
+  warning: 80
+  error: 120
+
+type_body_length:
+  warning: 400
+  error: 600
+
+file_length:
+  warning: 500
+  error: 800

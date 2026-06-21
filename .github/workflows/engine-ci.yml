@@ -59,6 +59,22 @@ jobs:
         if: runner.os == 'Linux'
         run: go test -race ./...
 
+      - name: coverage threshold
+        if: runner.os == 'Linux'
+        shell: bash
+        env:
+          # Current baseline is ~16.7% — set just under it so this catches a
+          # regression, not so high it blocks merges before coverage is built up.
+          MIN_COVERAGE: '15'
+        run: |
+          go test -coverprofile=coverage.out ./...
+          total=$(go tool cover -func=coverage.out | tail -n1 | awk '{print $3}' | tr -d '%')
+          echo "total coverage: ${total}% (minimum: ${MIN_COVERAGE}%)"
+          awk -v t="$total" -v m="$MIN_COVERAGE" 'BEGIN { exit (t+0 < m+0) }' || {
+            echo "::error::coverage ${total}% is below the ${MIN_COVERAGE}% minimum"
+            exit 1
+          }
+
   docker:
     name: validate docker build
     runs-on: ubuntu-latest
