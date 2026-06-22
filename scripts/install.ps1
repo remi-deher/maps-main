@@ -6,15 +6,20 @@
 #
 # Usage:
 #   irm https://raw.githubusercontent.com/remi-deher/maps-main/main/scripts/install.ps1 | iex
-#   .\install.ps1 -Variant headless|desktop [-Service] [-Dest DIR]
-param(
-    [ValidateSet("headless", "desktop")]
-    [string]$Variant,
-    [switch]$Service,
-    [string]$Dest
-)
-
+#   .\install.ps1   (download the file first to get prompts the same way)
+#
+# Non-interactive: set env vars before running, e.g.
+#   $env:GPSMOCK_VARIANT = "headless"; $env:GPSMOCK_SERVICE = "1"; irm ... | iex
+#
+# Note: deliberately no param() block — `irm | iex` runs the script in the
+# current scope rather than as a separate process, where a typed param()
+# (especially with [ValidateSet]) fails to bind and throws a
+# ValidateSetFailure before a single line of the script runs.
 $ErrorActionPreference = "Stop"
+
+$Variant = $env:GPSMOCK_VARIANT
+$Service = $env:GPSMOCK_SERVICE -eq "1"
+$Dest = $env:GPSMOCK_DEST
 
 $Repo = "remi-deher/maps-main"
 $ApiUrl = "https://api.github.com/repos/$Repo/releases/latest"
