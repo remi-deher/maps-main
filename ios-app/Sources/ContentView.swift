@@ -175,6 +175,18 @@ struct ContentView: View {
                 onResumeRoute: { session.engine.resumeRoute() },
                 onStopRoute: { session.engine.stopRoute() },
                 onOpenSettings: { showSettings = true },
+                connectionState: session.engine.state,
+                driftMeters: session.engine.status?.lastRealLocation?.drift,
+                onConnect: {
+                    // Connect straight away when we already know where the
+                    // engine is; otherwise send the user to Réglages to enter
+                    // (or scan) an address first.
+                    if engineAddress.isEmpty {
+                        showSettings = true
+                    } else {
+                        toggleConnection()
+                    }
+                },
                 sheetDetent: sheetDetent,
                 collapsedHeight: collapsedSheetHeight,
                 onCollapsedHeightChange: { newHeight in
