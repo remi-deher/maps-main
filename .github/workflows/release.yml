@@ -43,6 +43,60 @@ jobs:
           name: gpsmock-engine-${{ matrix.goos }}-${{ matrix.goarch }}
           path: dist/*
 
+  bundle-windows-engine:
+    name: bundle Windows engine with embedded Python
+    needs: build-engine
+    runs-on: windows-latest
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: gpsmock-engine-windows-amd64
+          path: bundle
+
+      # The pymobiledevice driver shells out to `python -m pymobiledevice3`
+      # (engine/internal/platform/binary.go). Most users on Windows don't have
+      # Python on PATH at all, and even those who do rarely have the module
+      # installed — see the "No module named pymobiledevice3" report this
+      # bundle exists to avoid. python.org's embeddable distribution lets us
+      # ship a private interpreter with pymobiledevice3 pre-installed, with no
+      # system Python and no installer required from the user.
+      - name: Download Python embeddable distribution
+        shell: pwsh
+        run: |
+          Invoke-WebRequest -Uri "https://www.python.org/ftp/python/3.12.8/python-3.12.8-embed-amd64.zip" -OutFile pyembed.zip
+          Expand-Archive -Path pyembed.zip -DestinationPath bundle/resources/python-embed
+
+      - name: Enable site-packages and install pip
+        shell: pwsh
+        working-directory: bundle/resources/python-embed
+        run: |
+          (Get-Content python312._pth) -replace '#import site', 'import site' | Set-Content python312._pth
+          Invoke-WebRequest -Uri "https://bootstrap.pypa.io/get-pip.py" -OutFile get-pip.py
+          ./python.exe get-pip.py --no-warn-script-location
+
+      - name: Install pymobiledevice3
+        shell: pwsh
+        working-directory: bundle/resources/python-embed
+        run: |
+          # setuptools/wheel first: the embeddable distribution ships without
+          # them, and at least one transitive dep falls back to a from-source
+          # build on some platforms/Python versions even when a wheel exists
+          # for this one (verified locally: sslpsk-pmd3 has a win_amd64 wheel,
+          # no compiler needed here — unlike linux/arm64 in docker/Dockerfile).
+          ./python.exe -m pip install --no-cache-dir --upgrade setuptools wheel
+          ./python.exe -m pip install --no-cache-dir pymobiledevice3
+          Remove-Item get-pip.py
+
+      - name: Zip portable bundle
+        shell: pwsh
+        working-directory: bundle
+        run: Compress-Archive -Path * -DestinationPath ../gpsmock-engine-windows-amd64-portable.zip
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: gpsmock-engine-windows-amd64-portable
+          path: gpsmock-engine-windows-amd64-portable.zip
+
   build-tauri:
     name: build desktop app (${{ matrix.platform }})
     strategy:
@@ -217,7 +271,7 @@ jobs:
 
   release:
     name: publish GitHub release
-    needs: [build-engine, build-tauri, build-ios, docker]
+    needs: [build-engine, bundle-windows-engine, build-tauri, build-ios, docker]
     runs-on: ubuntu-latest
     permissions:
       contents: write

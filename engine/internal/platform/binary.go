@@ -52,7 +52,11 @@ func goIosFallbacks() []string {
 // Pmd3Command resolves how to invoke pymobiledevice3. It returns the executable
 // and the base args, e.g. ("python", ["-m","pymobiledevice3"]). Lookup order:
 //  1. an explicit Python path from cfg ("python" key),
-//  2. the system PATH (python / py on Windows, python3 / python elsewhere).
+//  2. the system PATH (python / py on Windows, python3 / python elsewhere),
+//  3. a "resources/python-embed" folder next to the binary — the Windows
+//     release zip bundles python.org's embeddable distribution there with
+//     pymobiledevice3 pre-installed (see release.yml), so the Windows .exe
+//     works standalone without the user installing Python themselves.
 func Pmd3Command(explicit map[string]string) (string, []string, error) {
 	base := []string{"-m", "pymobiledevice3"}
 	if p := explicit["python"]; p != "" {
@@ -66,7 +70,22 @@ func Pmd3Command(explicit map[string]string) (string, []string, error) {
 			return p, base, nil
 		}
 	}
+	for _, c := range pmd3Fallbacks() {
+		if fileExists(c) {
+			if abs, err := filepath.Abs(c); err == nil {
+				return abs, base, nil
+			}
+			return c, base, nil
+		}
+	}
 	return "", nil, fmt.Errorf("python not found (set BinaryPaths[\"python\"] or add python to PATH); needed by the pymobiledevice driver")
+}
+
+func pmd3Fallbacks() []string {
+	if runtime.GOOS == "windows" {
+		return []string{filepath.Join("resources", "python-embed", "python.exe")}
+	}
+	return []string{filepath.Join("resources", "python-embed", "bin", "python3")}
 }
 
 func pythonCandidates() []string {

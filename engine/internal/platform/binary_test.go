@@ -22,6 +22,28 @@ func TestPythonCandidates(t *testing.T) {
 	}
 }
 
+func TestPmd3Fallbacks(t *testing.T) {
+	falls := pmd3Fallbacks()
+	if len(falls) == 0 {
+		t.Errorf("expected at least one fallback path")
+	}
+
+	if runtime.GOOS == "windows" {
+		expectedSuffix := "python.exe"
+		for _, f := range falls {
+			if len(f) < len(expectedSuffix) || f[len(f)-len(expectedSuffix):] != expectedSuffix {
+				t.Errorf("expected fallback path to end with python.exe, got %s", f)
+			}
+		}
+	} else {
+		for _, f := range falls {
+			if len(f) >= 4 && f[len(f)-4:] == ".exe" {
+				t.Errorf("expected non-windows fallback to not end with .exe, got %s", f)
+			}
+		}
+	}
+}
+
 func TestGoIosFallbacks(t *testing.T) {
 	falls := goIosFallbacks()
 	if len(falls) == 0 {
