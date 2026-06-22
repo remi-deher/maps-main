@@ -29,8 +29,9 @@ Basé sur `docs/UI_UX_BASELINE.md` §4. Statut vérifié par inspection du code.
 | 11 | Sortir la `List` itinéraire du `ScrollView` | ✅ | 0 `scrollDisabled` |
 | 12 | Annotation simulée custom + `symbolEffect` | 🟡 | `symbolEffect` 1 hit — vérifier le marqueur position |
 | 13 | `mapControls` (boussole / échelle / pitch) | ✅ | 3 hits |
-| 14 | App Intents favoris (Siri/Raccourcis/Spotlight) | ⬜ | aucun `AppIntent` dans `Sources/` |
-| 4b | Live Activity interactive (App Intents Pause/Stop) | ⬜ | aucun `AppIntent` → activité non interactive |
+| 14a | App Shortcuts contrôle simulation (Pause/Reprise/Stop/Relance) | ✅ | `SimulationIntents.swift` + `EngineClient.shared` ; Siri/Spotlight/Raccourcis. iOS Build CI vert (`559e1e8`) |
+| 14b | App Intents favoris (AppEntity/EntityQuery) | ⬜ | différé : nécessite un `AppEntity` favoris + requête, plus lourd |
+| 4b | Live Activity interactive (boutons widget) | ⬜ | différé : l'intent doit vivre dans la cible widget (≠ `EngineClient` app) → cross-target + probable App Group + QA Xcode |
 | 15 | `TipKit` long-press carte | ✅ | `MapLongPressTip.swift`, 4 hits |
 | 16 | `Task.sleep` au lieu de `Timer` | ⬜ | 1 `Timer.scheduledTimer` restant |
 | 17 | Slider vitesse + icônes Picker profil | 🟡 | à vérifier dans les panels |
@@ -95,6 +96,7 @@ Chaque étape = commit(s) isolé(s), CI verte sur push, ce tracker mis à jour.
 - 2026-06-22 — **A1 accessibilité iOS** : audit montre l'a11y déjà quasi complète (Label/Text/accessibilityLabel partout). Corrigé : `trailingButton` 32→44pt, loupe + poignée de réorganisation `accessibilityHidden`. Items #3, #4a ✅. (commit `1b48216`)
 - 2026-06-22 — **A2 quick wins iOS** : vérifiés déjà faits (Timer→Task = commentaire seul ; Slider vitesse ; filtre niveau LogsView ; icônes Picker profil). Aucun code requis.
 - 2026-06-22 — **B0 première vérif web** : Sidebar 1283 l./4 onglets (B1 confirmé) ; 1 seule `@media` → non responsive (B2) ; parité iOS OK (B3 ✅) ; 45 `onClick` sur `<div>` + 3 aria-label (B5 a11y, vrai trou). Reste à rédiger l'audit complet `UI_UX_BASELINE_WEB.md`.
+- 2026-06-22 — **iOS A4 App Shortcuts** (`559e1e8`) : Pause/Reprise/Stop/Relance via Siri/Spotlight/Raccourcis (`SimulationIntents.swift`, `EngineClient.shared`). iOS Build CI **vert** (compile OK). Favoris-AppEntity (#14b) + Live Activity interactif (#4b) différés (cross-target/AppEntity/QA Xcode). Prochain : localisation #9.
 - 2026-06-22 — **B1 décompo Sidebar terminée** : `Sidebar.tsx` 1283 → 101 l. ; 4 onglets extraits (`tabs/ControlTab`, `FavoritesTab`, `SequencesTab`, `SettingsTab`) + `lib/parse.ts`. Commits `43f8541`, `1a5cd1a`, `6213ff1`, `5f64cd0`. tsc/build/vitest verts. **Web = 100 % fait.**
 - 2026-06-22 — **Web a11y/responsive terminés** : Sidebar favoris/historique `<div>`→`<button>` + zone GPX clavier (`d3038b6`, B5 ✅) ; responsive ≤480px + cibles 44px (`eb3ed87`, B2 ✅). Reste B1 (décompo Sidebar) = pur refactor différé, à QA dans l'app.
 - 2026-06-22 — **Web bloc 1–3 (a11y + robustesse)** : `lang=fr` + `:focus-visible` + `prefers-reduced-motion` (`64508cb`) ; SearchBox résultats→boutons/listbox + MapContainer aria (`4cad58a`) ; SearchBox `AbortController`/erreur + header UA retiré ; audit 3.3 corrigé (OSRM = server-side, CSP = phase serveur). Reste web : décompo Sidebar (B1) + divs Sidebar a11y, responsive (B2), favicon/empty-states.

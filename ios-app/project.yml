@@ -5,6 +5,7 @@ options:
   deploymentTarget:
     iOS: "26.0"
   createIntermediateGroups: true
+  developmentLanguage: fr
 
 settings:
   base:
@@ -25,6 +26,7 @@ targets:
     info:
       path: Sources/Info.plist
       properties:
+        CFBundleDevelopmentRegion: fr
         UILaunchScreen: {}
         UISupportedInterfaceOrientations:
           - UIInterfaceOrientationPortrait
@@ -56,6 +58,10 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.remi2.gpsmock.companion
         INFOPLIST_FILE: Sources/Info.plist
         GENERATE_INFOPLIST_FILE: NO
+        # Extract Swift string literals into Localizable.xcstrings at build,
+        # so the app has a real String Catalog (source = fr) ready for
+        # translations instead of hard-coded strings (§3.10 baseline).
+        SWIFT_EMIT_LOC_STRINGS: "YES"
     dependencies:
       - target: GpsMockWidgets
         embed: true
