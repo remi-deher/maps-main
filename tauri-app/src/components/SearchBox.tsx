@@ -93,22 +93,29 @@ export const SearchBox: React.FC<SearchBoxProps> = ({ onSelectLocation }) => {
           onFocus={() => query.length >= 3 && setShowDropdown(true)}
         />
         {query && (
-          <button className="clear-search-btn" onClick={handleClear}>
+          <button className="clear-search-btn" onClick={handleClear} aria-label="Effacer la recherche">
             <X size={16} />
           </button>
         )}
       </div>
 
       {showDropdown && (results.length > 0 || loading) && (
-        <div className="search-results-dropdown">
+        <div className="search-results-dropdown" role="listbox" aria-label="Résultats de recherche">
           {loading ? (
             <div className="search-dropdown-loading">Recherche en cours...</div>
           ) : (
             results.map((res) => (
-              <div key={res.place_id} className="search-result-item" onClick={() => handleSelect(res)}>
+              <button
+                type="button"
+                key={res.place_id}
+                className="search-result-item"
+                role="option"
+                aria-selected={false}
+                onClick={() => handleSelect(res)}
+              >
                 <MapPin size={14} className="result-marker-icon" />
                 <span className="result-text">{res.display_name}</span>
-              </div>
+              </button>
             ))
           )}
         </div>

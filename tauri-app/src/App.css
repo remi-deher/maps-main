@@ -814,6 +814,15 @@ select:focus {
   cursor: pointer;
   border-bottom: 1px solid rgba(255, 255, 255, 0.05);
   transition: background 0.2s ease;
+  /* button reset so a native <button> keeps the original row look */
+  width: 100%;
+  text-align: left;
+  background: none;
+  border-left: none;
+  border-right: none;
+  border-top: none;
+  color: inherit;
+  font: inherit;
 }
 
 .search-result-item:hover {

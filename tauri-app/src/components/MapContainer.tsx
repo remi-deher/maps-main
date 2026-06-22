@@ -196,23 +196,30 @@ export const InteractiveMap: React.FC = () => {
         className="map-recenter-btn"
         onClick={() => window.dispatchEvent(new CustomEvent("recenter-map"))}
         title="Centrer sur ma position"
+        aria-label="Centrer sur ma position"
       >
         <Crosshair size={18} />
       </button>
 
       {/* Floating Map Style Selector */}
-      <div className="map-style-control">
-        <button className={`map-style-btn ${mapStyle === "dark" ? "active" : ""}`} onClick={() => setMapStyle("dark")}>
+      <div className="map-style-control" role="group" aria-label="Style de carte">
+        <button
+          className={`map-style-btn ${mapStyle === "dark" ? "active" : ""}`}
+          aria-pressed={mapStyle === "dark"}
+          onClick={() => setMapStyle("dark")}
+        >
           Sombre
         </button>
         <button
           className={`map-style-btn ${mapStyle === "standard" ? "active" : ""}`}
+          aria-pressed={mapStyle === "standard"}
           onClick={() => setMapStyle("standard")}
         >
           Plan
         </button>
         <button
           className={`map-style-btn ${mapStyle === "satellite" ? "active" : ""}`}
+          aria-pressed={mapStyle === "satellite"}
           onClick={() => setMapStyle("satellite")}
         >
           Sat
