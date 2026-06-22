@@ -1,6 +1,14 @@
 // Package pmd3 implements the Driver interface on top of pymobiledevice3, run as
 // a Python subprocess (python -m pymobiledevice3 ...). It manages the RSD tunnel
 // daemon and injects/clears the GPS position via the developer dvt commands.
+//
+// pymobiledevice3's iOS 17+ model: `remote tunneld` runs a daemon (creating the
+// TUN interface, which needs admin/root) and exposes the active tunnels over a
+// local REST API (default 127.0.0.1:49151) as JSON keyed by UDID. We poll that
+// API for the device's RSD address+port rather than parsing stdout — the daemon
+// only logs, it does not print a "--rsd <addr> <port>" line (that's the separate
+// `remote start-tunnel` command). The dvt simulate-location commands then take
+// the address+port via `--rsd <addr> <port>`.
 package pmd3
 
 import (
@@ -9,8 +17,8 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"net/http"
 	"os/exec"
-	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -21,9 +29,6 @@ import (
 	"github.com/remi-deher/maps-main/engine/internal/platform"
 )
 
-// rsdRe matches the tunneld line, e.g. "Created tunnel --rsd fde6::1 54321".
-var rsdRe = regexp.MustCompile(`--rsd\s+([\w:.%]+)\s+(\d+)`)
-
 // execCommand/execCommandContext indirect os/exec's package functions so
 // tests can substitute a fake child process for the real python interpreter
 // (see pmd3_test.go's fakeExecCommand) instead of spawning it for real.
@@ -32,7 +37,16 @@ var (
 	execCommandContext = exec.CommandContext
 )
 
-const defaultTunnelStartTimeout = 60 * time.Second
+const (
+	defaultTunnelStartTimeout = 60 * time.Second
+	// Default tunneld REST API endpoint (pymobiledevice3's TUNNELD_DEFAULT_*).
+	defaultTunneldURL = "http://127.0.0.1:49151/"
+	// How often to poll the tunneld API while the daemon brings the tunnel up.
+	tunnelPollInterval = 1 * time.Second
+)
+
+// tunneldClient is the short-timeout HTTP client used to poll the tunneld API.
+var tunneldClient = &http.Client{Timeout: 3 * time.Second}
 
 // Driver is the pymobiledevice3-backed implementation.
 type Driver struct {
@@ -41,11 +55,13 @@ type Driver struct {
 	binPaths           map[string]string // explicit overrides, for lazy resolution
 	manual             string            // optional "host:port" RSD endpoint (WiFi transport)
 	tunnelStartTimeout time.Duration
+	tunneldURL         string // tunneld REST API base ("" => defaultTunneldURL); overridable in tests
 
 	mu        sync.Mutex
 	tunnel    driver.TunnelInfo
 	tunnelOn  bool
 	tunnelCmd *exec.Cmd
+	udid      string // device UDID backing the current tunnel (from tunneld API)
 }
 
 // New builds a pmd3 Driver. Like the go-ios driver, it does NOT fail when
@@ -80,8 +96,9 @@ func init() { driver.Register(domain.DriverPmd3, New) }
 
 func (d *Driver) ID() domain.DriverID { return domain.DriverPmd3 }
 
-// StartTunnel mounts the developer image then runs `remote tunneld`, blocking
-// until the RSD address is parsed. With a manual address it targets it directly.
+// StartTunnel mounts the developer image, runs the `remote tunneld` daemon, and
+// polls its REST API until the device tunnel is up. With a manual address it
+// targets that endpoint directly without a local daemon.
 func (d *Driver) StartTunnel(ctx context.Context) (driver.TunnelInfo, error) {
 	if d.tunnelStartTimeout <= 0 {
 		d.tunnelStartTimeout = defaultTunnelStartTimeout
@@ -122,10 +139,9 @@ func (d *Driver) StartTunnel(ctx context.Context) (driver.TunnelInfo, error) {
 		return driver.TunnelInfo{}, fmt.Errorf("pmd3 remote tunneld: %w", err)
 	}
 
-	// Bounded ring buffer of recent tunneld output. Every line used to be
-	// silently dropped unless it matched the RSD regex, so a real failure
-	// (missing WinTun driver, "administrator privileges required", pairing
-	// errors, ...) never reached the caller — only a generic timeout did.
+	// Bounded ring buffer of recent tunneld output, so a real failure (missing
+	// WinTun driver, "administrator privileges required", pairing errors, ...)
+	// surfaces in the error instead of a bare timeout.
 	const maxTailLines = 20
 	var tailMu sync.Mutex
 	var tail []string
@@ -145,59 +161,75 @@ func (d *Driver) StartTunnel(ctx context.Context) (driver.TunnelInfo, error) {
 
 	exited := make(chan error, 1)
 	go func() { err := cmd.Wait(); _ = pw.Close(); exited <- err }()
-
-	found := make(chan driver.TunnelInfo, 1)
 	go func() {
 		sc := bufio.NewScanner(pr)
 		for sc.Scan() {
-			line := sc.Text()
-			appendTail(line)
-			if m := rsdRe.FindStringSubmatch(line); m != nil {
-				port, _ := strconv.Atoi(m[2])
-				ti := driver.TunnelInfo{
-					Address: m[1],
-					Port:    port,
-					Type:    driver.Classify(m[1]),
-					Since:   time.Now(),
-				}
-				select {
-				case found <- ti:
-				default:
-				}
-			}
+			appendTail(sc.Text())
 		}
 	}()
 
-	select {
-	case ti := <-found:
-		d.mu.Lock()
-		d.tunnel, d.tunnelOn, d.tunnelCmd = ti, true, cmd
-		d.mu.Unlock()
-		return ti, nil
-	case err := <-exited:
-		// The process died before printing an RSD line — surface its output
-		// immediately instead of burning the rest of the timeout for nothing.
-		if out := tailSnapshot(); out != "" {
-			return driver.TunnelInfo{}, fmt.Errorf("pmd3: remote tunneld exited (%v):\n%s", err, out)
+	ticker := time.NewTicker(tunnelPollInterval)
+	defer ticker.Stop()
+	deadline := time.After(d.tunnelStartTimeout)
+
+	for {
+		// Probe immediately (fast path if the daemon already has the tunnel),
+		// then again on every tick until one of the exit conditions fires.
+		if ti, udid, ok := d.queryTunneld(ctx); ok {
+			d.mu.Lock()
+			d.tunnel, d.tunnelOn, d.tunnelCmd, d.udid = ti, true, cmd, udid
+			d.mu.Unlock()
+			return ti, nil
 		}
-		return driver.TunnelInfo{}, fmt.Errorf("pmd3: remote tunneld exited before an RSD address was detected: %w", err)
-	case <-time.After(d.tunnelStartTimeout):
-		_ = cmd.Process.Kill()
-		if out := tailSnapshot(); out != "" {
-			return driver.TunnelInfo{}, fmt.Errorf("pmd3: RSD address not detected within %s, last output:\n%s", d.tunnelStartTimeout, out)
+
+		select {
+		case err := <-exited:
+			if out := tailSnapshot(); out != "" {
+				return driver.TunnelInfo{}, fmt.Errorf("pmd3: remote tunneld exited (%v):\n%s", err, out)
+			}
+			return driver.TunnelInfo{}, fmt.Errorf("pmd3: remote tunneld exited before a tunnel was established: %w", err)
+		case <-deadline:
+			_ = cmd.Process.Kill()
+			if out := tailSnapshot(); out != "" {
+				return driver.TunnelInfo{}, fmt.Errorf("pmd3: tunnel not established within %s, last output:\n%s", d.tunnelStartTimeout, out)
+			}
+			return driver.TunnelInfo{}, fmt.Errorf("pmd3: tunnel not established within %s", d.tunnelStartTimeout)
+		case <-ctx.Done():
+			_ = cmd.Process.Kill()
+			return driver.TunnelInfo{}, ctx.Err()
+		case <-ticker.C:
 		}
-		return driver.TunnelInfo{}, fmt.Errorf("pmd3: RSD address not detected within %s", d.tunnelStartTimeout)
-	case <-ctx.Done():
-		_ = cmd.Process.Kill()
-		return driver.TunnelInfo{}, ctx.Err()
 	}
+}
+
+// queryTunneld asks the running daemon's REST API for the current device tunnel
+// and returns the first entry with a usable RSD address+port.
+func (d *Driver) queryTunneld(ctx context.Context) (driver.TunnelInfo, string, bool) {
+	url := d.tunneldURL
+	if url == "" {
+		url = defaultTunneldURL
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return driver.TunnelInfo{}, "", false
+	}
+	resp, err := tunneldClient.Do(req)
+	if err != nil {
+		return driver.TunnelInfo{}, "", false
+	}
+	defer func() { _ = resp.Body.Close() }()
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return driver.TunnelInfo{}, "", false
+	}
+	return parseTunneld(body)
 }
 
 // StopTunnel terminates the tunneld child process.
 func (d *Driver) StopTunnel(context.Context) error {
 	d.mu.Lock()
 	cmd, on := d.tunnelCmd, d.tunnelOn
-	d.tunnelOn, d.tunnelCmd, d.tunnel = false, nil, driver.TunnelInfo{}
+	d.tunnelOn, d.tunnelCmd, d.tunnel, d.udid = false, nil, driver.TunnelInfo{}, ""
 	d.mu.Unlock()
 	if on && cmd != nil && cmd.Process != nil {
 		return cmd.Process.Kill()

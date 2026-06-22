@@ -10,6 +10,8 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"testing"
 	"time"
@@ -48,11 +50,8 @@ func TestHelperProcess(t *testing.T) {
 	}
 
 	switch scenario {
-	case "rsd-ok":
-		fmt.Println("Created tunnel --rsd fde6:1234::1 54321")
-		time.Sleep(10 * time.Second)
-	case "rsd-never":
-		time.Sleep(10 * time.Second)
+	case "tunnel-daemon":
+		time.Sleep(10 * time.Second) // `remote tunneld` runs until killed
 	case "list-ok":
 		fmt.Println(`[{"Identifier":"udid-1","DeviceName":"iPhone","ConnectionType":"USB"}]`)
 	case "cmd-fail":
@@ -65,9 +64,20 @@ func TestHelperProcess(t *testing.T) {
 	}
 }
 
-func TestStartTunnelParsesRSDAddressAndKeepsProcessRunning(t *testing.T) {
-	withFakeExec(t, "rsd-ok")
-	d := &Driver{py: "fake-python", tunnelStartTimeout: 5 * time.Second}
+// tunneldServer spins up a fake tunneld REST API returning the given JSON body.
+func tunneldServer(t *testing.T, body string) string {
+	t.Helper()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(body))
+	}))
+	t.Cleanup(srv.Close)
+	return srv.URL + "/"
+}
+
+func TestStartTunnelDiscoversViaTunneldAPIAndKeepsProcessRunning(t *testing.T) {
+	withFakeExec(t, "tunnel-daemon")
+	url := tunneldServer(t, `{"udid-1":[{"tunnel-address":"fde6:1234::1","tunnel-port":54321,"interface":"utun6"}]}`)
+	d := &Driver{py: "fake-python", tunnelStartTimeout: 5 * time.Second, tunneldURL: url}
 
 	ti, err := d.StartTunnel(context.Background())
 	if err != nil {
@@ -75,6 +85,9 @@ func TestStartTunnelParsesRSDAddressAndKeepsProcessRunning(t *testing.T) {
 	}
 	if ti.Address != "fde6:1234::1" || ti.Port != 54321 {
 		t.Errorf("StartTunnel = %+v, want fde6:1234::1:54321", ti)
+	}
+	if d.udid != "udid-1" {
+		t.Errorf("udid after start = %q, want udid-1", d.udid)
 	}
 
 	if err := d.StopTunnel(context.Background()); err != nil {
@@ -85,18 +98,20 @@ func TestStartTunnelParsesRSDAddressAndKeepsProcessRunning(t *testing.T) {
 	}
 }
 
-func TestStartTunnelTimesOutWhenRSDNeverAppears(t *testing.T) {
-	withFakeExec(t, "rsd-never")
-	d := &Driver{py: "fake-python", tunnelStartTimeout: 200 * time.Millisecond}
+func TestStartTunnelTimesOutWhenNoTunnelAppears(t *testing.T) {
+	withFakeExec(t, "tunnel-daemon")
+	url := tunneldServer(t, `{}`) // daemon up, but no tunnel ever registered
+	d := &Driver{py: "fake-python", tunnelStartTimeout: 200 * time.Millisecond, tunneldURL: url}
 
 	if _, err := d.StartTunnel(context.Background()); err == nil {
-		t.Fatal("expected a timeout error when the RSD line never appears")
+		t.Fatal("expected a timeout error when no tunnel ever appears")
 	}
 }
 
 func TestStartTunnelRespectsContextCancellation(t *testing.T) {
-	withFakeExec(t, "rsd-never")
-	d := &Driver{py: "fake-python", tunnelStartTimeout: 5 * time.Second}
+	withFakeExec(t, "tunnel-daemon")
+	url := tunneldServer(t, `{}`)
+	d := &Driver{py: "fake-python", tunnelStartTimeout: 5 * time.Second, tunneldURL: url}
 
 	ctx, cancel := context.WithCancel(context.Background())
 	go func() {
@@ -105,7 +120,7 @@ func TestStartTunnelRespectsContextCancellation(t *testing.T) {
 	}()
 
 	if _, err := d.StartTunnel(ctx); err == nil {
-		t.Fatal("expected an error when ctx is cancelled before the RSD line appears")
+		t.Fatal("expected an error when ctx is cancelled before the tunnel appears")
 	}
 }
 
