@@ -86,6 +86,11 @@ struct EngineStatus: Codable, Equatable {
 /// for free.
 @Observable
 final class EngineClient: NSObject, URLSessionWebSocketDelegate {
+    /// The live client, so App Intents (Siri / Shortcuts / Spotlight) can reach
+    /// the active connection without a view. The app keeps one instance alive
+    /// (ContentView @State), so this weak reference stays valid while running.
+    static weak var shared: EngineClient?
+
     var state: EngineConnectionState = .disconnected
     var lastError: String?
     var status: EngineStatus?
@@ -120,6 +125,7 @@ final class EngineClient: NSObject, URLSessionWebSocketDelegate {
     override init() {
         super.init()
         session = URLSession(configuration: .default, delegate: self, delegateQueue: nil)
+        EngineClient.shared = self
     }
 
     func connect(to urlString: String) {
