@@ -95,6 +95,19 @@ final class EngineClient: NSObject, ObservableObject, URLSessionWebSocketDelegat
     private var task: URLSessionWebSocketTask?
     private var urlString: String = ""
 
+    /// Background keep-alive cadence, mirrored from the app's @AppStorage so
+    /// the location-callback path (which runs while suspended, where SwiftUI
+    /// state isn't readable) can throttle RELANCE without reaching back into
+    /// the view. Kept in sync by ContentView's onChange/onAppear.
+    var keepAliveEnabled = true
+    var keepAliveInterval: Double = 5
+    private var lastRelanceAt = Date.distantPast
+    private var lastRealLocationAt = Date.distantPast
+    /// Anti-drift report cadence — matches the foreground startReporting() loop
+    /// (10s) so the continuous background location stream is collapsed back to
+    /// the same rate instead of flooding the socket on every GPS tick.
+    private let realLocationMinInterval: TimeInterval = 10
+
     // Generation counter: every connect() bumps it. Closures capture the
     // generation they belong to and bail out if it's stale, instead of
     // scheduling their own independent reconnect — the self-sustaining
@@ -111,6 +124,29 @@ final class EngineClient: NSObject, ObservableObject, URLSessionWebSocketDelegat
         self.urlString = urlString
         generation += 1
         startSocket(generation: generation)
+    }
+
+    /// Reopens the socket if it has dropped while keeping the same target —
+    /// called from the location callback on each background wake so a
+    /// connection that died during suspension is rebuilt without waiting for a
+    /// user action. A no-op while already connected/connecting or before any
+    /// address has been set.
+    func ensureConnected() {
+        guard !urlString.isEmpty, state == .disconnected else { return }
+        connect(to: urlString)
+    }
+
+    /// Re-asserts the last injected position, but no more than once per
+    /// `keepAliveInterval` — the location callback can fire far more often
+    /// than the keep-alive cadence (every `distanceFilter` metres of real
+    /// movement), so this is where the cadence is actually enforced in the
+    /// background, replacing the suspended `Task.sleep` loop.
+    func relanceIfDue() {
+        guard keepAliveEnabled, state == .connected else { return }
+        let now = Date()
+        guard now.timeIntervalSince(lastRelanceAt) >= keepAliveInterval else { return }
+        lastRelanceAt = now
+        relance()
     }
 
     func disconnect() {
@@ -215,6 +251,16 @@ final class EngineClient: NSObject, ObservableObject, URLSessionWebSocketDelegat
 
     func sendRealLocation(lat: Double, lon: Double) {
         sendEnvelope(type: "REAL_LOCATION", data: ["latitude": lat, "longitude": lon])
+    }
+
+    /// Throttled REAL_LOCATION for the high-frequency background location
+    /// stream — coalesces the ~1 Hz callbacks down to `realLocationMinInterval`.
+    func sendRealLocationIfDue(lat: Double, lon: Double) {
+        guard state == .connected else { return }
+        let now = Date()
+        guard now.timeIntervalSince(lastRealLocationAt) >= realLocationMinInterval else { return }
+        lastRealLocationAt = now
+        sendRealLocation(lat: lat, lon: lon)
     }
 
     func setLocation(lat: Double, lon: Double, name: String = "Point iPhone") {

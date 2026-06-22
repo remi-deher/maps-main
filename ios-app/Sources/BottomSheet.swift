@@ -4,9 +4,10 @@ import MapKit
 /// Persistent draggable bottom sheet (à la Plans): collapsed it only shows
 /// the search field, dragging the slider up reveals search results, the
 /// itinerary being built, or favorites — instead of floating cards over the
-/// map. Settings now live in their own floating gear button (ContentView),
-/// not bundled into this header — the search field here is search-only,
-/// matching Plans' detached, single-purpose search bar.
+/// map. The search capsule carries one contextual trailing control (gear ⇄ ✕,
+/// see `trailingButton`), exactly like Plans' account/cancel button — a gear
+/// that opens Réglages at rest, a cancel affordance once there's a search or a
+/// selected place to back out of.
 struct BottomSheet: View {
     @Binding var searchQuery: String
     var isFocused: FocusState<Bool>.Binding
@@ -39,8 +40,7 @@ struct BottomSheet: View {
     var onResumeRoute: () -> Void
     var onStopRoute: () -> Void
 
-    let isEngineConnected: Bool
-    var onConnect: () -> Void
+    var onOpenSettings: () -> Void
 
     private var isSearching: Bool {
         !searchQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
@@ -52,15 +52,6 @@ struct BottomSheet: View {
 
             ScrollView {
                 VStack(spacing: 12) {
-                    // Inline, persistent indicator instead of a modal alert —
-                    // a routine "engine not connected" state shouldn't
-                    // interrupt with a dialog every time a pilot action is
-                    // attempted (HIG: alerts are for important, infrequent
-                    // information). See §3.9 of docs/UI_UX_BASELINE.md.
-                    if !isEngineConnected {
-                        connectionBanner
-                    }
-
                     // Persistent like Plans' "navigation active" banner — visible
                     // regardless of what else is on screen, since pausing/
                     // stopping a running simulation is a system-level action.
@@ -129,10 +120,26 @@ struct BottomSheet: View {
         .padding(.top, 8)
     }
 
-    /// A single, self-contained glass capsule — search only, no settings
-    /// button riding along, with margin on every side instead of bleeding
-    /// edge-to-edge. No manual shadow: the glass material already carries
-    /// its own elevation (§3.1 of docs/UI_UX_BASELINE.md).
+    /// What the trailing button in the search capsule does right now. Plans
+    /// puts a single contextual control at the trailing edge of its search
+    /// field: an account/settings button at rest that morphs into a cancel
+    /// affordance the moment there's something to back out of.
+    private enum TrailingAction {
+        case settings    // nothing in progress → open Réglages (the gear)
+        case cancelPlace // a place card is showing → dismiss it
+        case cancelSearch // typing / focused → clear the query and unfocus
+    }
+
+    private var trailingAction: TrailingAction {
+        if selectedPlace != nil { return .cancelPlace }
+        if isFocused.wrappedValue || !searchQuery.isEmpty { return .cancelSearch }
+        return .settings
+    }
+
+    /// A single, self-contained glass capsule — search field plus the one
+    /// contextual trailing control, with margin on every side instead of
+    /// bleeding edge-to-edge. No manual shadow: the glass material already
+    /// carries its own elevation (§3.1 of docs/UI_UX_BASELINE.md).
     private var header: some View {
         HStack(spacing: 8) {
             Image(systemName: "magnifyingglass")
@@ -142,16 +149,7 @@ struct BottomSheet: View {
                 .focused(isFocused)
                 .submitLabel(.search)
 
-            if !searchQuery.isEmpty {
-                Button {
-                    searchQuery = ""
-                } label: {
-                    Label("Effacer la recherche", systemImage: "xmark.circle.fill")
-                        .labelStyle(.iconOnly)
-                        .foregroundStyle(.secondary)
-                        .frame(width: 28, height: 28)
-                }
-            }
+            trailingButton
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 10)
@@ -159,22 +157,32 @@ struct BottomSheet: View {
         .padding(.horizontal, 16)
     }
 
-    private var connectionBanner: some View {
-        HStack(spacing: 10) {
-            Image(systemName: "wifi.exclamationmark")
-                .foregroundStyle(.orange)
-            Text("Moteur non connecté")
-                .font(.subheadline.weight(.medium))
-            Spacer()
-            Button("Connecter", action: onConnect)
-                .buttonStyle(.glass)
-                .frame(minHeight: 44)
+    /// The gear ⇄ ✕ control. The symbol swaps in place (`.replace`) so it
+    /// reads as one button changing role, not two buttons appearing and
+    /// disappearing — matching how Plans' trailing control morphs.
+    private var trailingButton: some View {
+        let action = trailingAction
+        return Button {
+            switch action {
+            case .settings:
+                onOpenSettings()
+            case .cancelPlace:
+                onPlaceDismiss()
+            case .cancelSearch:
+                searchQuery = ""
+                isFocused.wrappedValue = false
+            }
+        } label: {
+            Image(systemName: action == .settings ? "gearshape.fill" : "xmark.circle.fill")
+                .font(action == .settings ? .body.weight(.semibold) : .title3)
+                .foregroundStyle(.secondary)
+                .frame(width: 32, height: 32)
+                .contentShape(Circle())
+                .contentTransition(.symbolEffect(.replace))
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 10)
-        .adaptiveGlassEffect(in: RoundedRectangle(cornerRadius: 20, style: .continuous))
-        .padding(.horizontal, 16)
-        .accessibilityElement(children: .combine)
+        .buttonStyle(.plain)
+        .accessibilityLabel(action == .settings ? "Réglages" : "Annuler")
+        .animation(.snappy(duration: 0.2), value: action)
     }
 
     private var simulationControlBar: some View {

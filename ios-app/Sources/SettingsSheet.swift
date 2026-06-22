@@ -2,6 +2,7 @@ import SwiftUI
 import UniformTypeIdentifiers
 import CoreLocation
 import MapKit
+import UIKit
 
 /// Connection settings, moved out of the main map screen behind a gear icon
 /// so the primary UI stays just the map + omnibar.
@@ -18,6 +19,15 @@ struct SettingsSheet: View {
     @Binding var notificationsEnabled: Bool
     var patrolCenter: CLLocationCoordinate2D?
     var visibleRegion: MKCoordinateRegion?
+    var locationAuthorization: CLAuthorizationStatus
+
+    // Persisted defaults reused across the app (ContentView reads the same
+    // keys via @AppStorage) — editing them here updates everywhere.
+    @AppStorage("defaultSpeed") private var defaultSpeed: Double = 30
+    @AppStorage("defaultProfile") private var defaultProfile: String = "driving"
+    @AppStorage("locationAccuracyMode") private var locationAccuracyMode: String = "balanced"
+
+    @Environment(\.openURL) private var openURL
 
     @State private var selectedDriver = "go-ios"
     @State private var selectedTransport = "auto"
@@ -123,6 +133,23 @@ struct SettingsSheet: View {
                         .foregroundStyle(.secondary)
                 }
 
+                Section("Itinéraire par défaut") {
+                    Picker("Profil", selection: $defaultProfile) {
+                        Text("Voiture").tag("driving")
+                        Text("À pied").tag("walking")
+                    }
+                    Stepper(value: $defaultSpeed, in: 1...250, step: 5) {
+                        HStack {
+                            Text("Vitesse")
+                            Spacer()
+                            Text("\(Int(defaultSpeed)) km/h").foregroundStyle(.secondary)
+                        }
+                    }
+                    Text("Valeurs utilisées par défaut pour une téléportation avec itinéraire ou un nouvel itinéraire.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
                 Section("Live Activity") {
                     Toggle("Écran verrouillé / Dynamic Island", isOn: $liveActivityEnabled)
                     Text("Affiche l'état de la simulation en cours sans ouvrir l'application.")
@@ -139,6 +166,19 @@ struct SettingsSheet: View {
                     }
                     Text("Relance périodiquement la dernière position injectée pendant que l'app est en arrière-plan, "
                          + "pour qu'elle ne se perde pas. Nécessite l'autorisation de localisation « Toujours ».")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
+                Section("Localisation et batterie") {
+                    Picker("Précision", selection: $locationAccuracyMode) {
+                        Text("Maximale").tag("high")
+                        Text("Équilibrée").tag("balanced")
+                        Text("Économie").tag("low")
+                    }
+                    Text("« Maximale » garde la liaison active même téléphone immobile en veille, au prix de la batterie. "
+                         + "« Équilibrée » et « Économie » préservent la batterie mais le maintien en arrière-plan ne se "
+                         + "réveille alors qu'en cas de mouvement (ou via le réveil périodique de secours).")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
@@ -226,6 +266,40 @@ struct SettingsSheet: View {
                     }
                 }
 
+                Section("À propos") {
+                    HStack {
+                        Text("Version")
+                        Spacer()
+                        Text(appVersion).foregroundStyle(.secondary)
+                    }
+                    HStack {
+                        Text("Moteur")
+                        Spacer()
+                        Text(engineAddress.isEmpty ? "—" : engineAddress)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                    }
+                    HStack {
+                        Text("Localisation « Toujours »")
+                        Spacer()
+                        Label(authorizationLabel, systemImage: authorizationIsAlways ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
+                            .labelStyle(.titleAndIcon)
+                            .foregroundStyle(authorizationIsAlways ? .green : .orange)
+                            .font(.subheadline)
+                    }
+                    if !authorizationIsAlways {
+                        Button("Ouvrir les Réglages iOS") {
+                            if let url = URL(string: UIApplication.openSettingsURLString) {
+                                openURL(url)
+                            }
+                        }
+                        Text("Le maintien en arrière-plan nécessite l'autorisation « Toujours ». Activez-la dans les Réglages iOS.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+
                 Section {
                     Text("La position réelle est envoyée toutes les 10s pour le bouclier anti-dérive du moteur.")
                         .font(.caption)
@@ -263,6 +337,27 @@ struct SettingsSheet: View {
                     Button("Terminé") { dismiss() }
                 }
             }
+        }
+    }
+
+    private var appVersion: String {
+        let info = Bundle.main.infoDictionary
+        let version = info?["CFBundleShortVersionString"] as? String ?? "?"
+        let build = info?["CFBundleVersion"] as? String ?? "?"
+        return "\(version) (\(build))"
+    }
+
+    private var authorizationIsAlways: Bool {
+        locationAuthorization == .authorizedAlways
+    }
+
+    private var authorizationLabel: String {
+        switch locationAuthorization {
+        case .authorizedAlways: return "Accordée"
+        case .authorizedWhenInUse: return "Pendant l'usage"
+        case .denied, .restricted: return "Refusée"
+        case .notDetermined: return "À demander"
+        @unknown default: return "Inconnue"
         }
     }
 

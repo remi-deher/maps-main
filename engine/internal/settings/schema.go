@@ -36,6 +36,15 @@ type Settings struct {
 	ServerName       string   `json:"serverName,omitempty"`
 	ClusterSyncCerts bool     `json:"clusterSyncCerts"` // sync the Lockdown pairing-record folder across the cluster (opt-in)
 
+	// Cluster heartbeat/failover tuning (seconds) — were env-only, now editable
+	// from the web interface. Zero means "use the built-in default".
+	ClusterHeartbeatSeconds   int `json:"clusterHeartbeatSeconds,omitempty"`
+	ClusterMasterDeadSeconds  int `json:"clusterMasterDeadSeconds,omitempty"`
+	ClusterPeerTimeoutSeconds int `json:"clusterPeerTimeoutSeconds,omitempty"`
+
+	// Routing
+	OsrmBaseURL string `json:"osrmBaseUrl,omitempty"` // OSRM routing server; empty = built-in default
+
 	// Misc / iOS prefs
 	LogLevel             string `json:"logLevel"`
 	NotificationsEnabled bool   `json:"notificationsEnabled"`
@@ -51,21 +60,24 @@ type Settings struct {
 // Default returns the baseline configuration used on first run.
 func Default() Settings {
 	return Settings{
-		CompanionPort:        8080,
-		ConnectionMode:       "both",
-		OperationMode:        domain.ModeHybrid,
-		EveilMode:            true,
-		EveilInterval:        5,
-		PreferredDriver:      domain.DriverPmd3,
-		UsbDriver:            domain.DriverPmd3,
-		WifiDriver:           domain.DriverPmd3,
-		FallbackEnabled:      true,
-		ClusterMode:          "off",
-		LogLevel:             "info",
-		NotificationsEnabled: true,
-		DynamicIslandEnabled: true,
-		JitterEnabled:        true,
-		Favorites:            []domain.Favorite{},
-		RecentHistory:        []domain.HistoryEntry{},
+		CompanionPort:             8080,
+		ConnectionMode:            "both",
+		OperationMode:             domain.ModeHybrid,
+		EveilMode:                 true,
+		EveilInterval:             5,
+		PreferredDriver:           domain.DriverPmd3,
+		UsbDriver:                 domain.DriverPmd3,
+		WifiDriver:                domain.DriverPmd3,
+		FallbackEnabled:           true,
+		ClusterMode:               "off",
+		ClusterHeartbeatSeconds:   10,
+		ClusterMasterDeadSeconds:  30,
+		ClusterPeerTimeoutSeconds: 3,
+		LogLevel:                  "info",
+		NotificationsEnabled:      true,
+		DynamicIslandEnabled:      true,
+		JitterEnabled:             true,
+		Favorites:                 []domain.Favorite{},
+		RecentHistory:             []domain.HistoryEntry{},
 	}
 }

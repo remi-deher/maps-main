@@ -13,6 +13,7 @@ import (
 	"log"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strings"
 	"syscall"
 	"time"
@@ -24,8 +25,29 @@ import (
 	_ "github.com/remi-deher/maps-main/engine/internal/driver/pmd3"
 )
 
+// defaultDataDir returns ~/.gpsmock (or the equivalent on Windows/macOS) so
+// the settings database has a sane home when GPSMOCK_DATA_DIR isn't set.
+func defaultDataDir() string {
+	if home, err := os.UserHomeDir(); err == nil && home != "" {
+		return filepath.Join(home, ".gpsmock")
+	}
+	return "."
+}
+
 func main() {
-	def := settings.Default()
+	dataDir := envOr("GPSMOCK_DATA_DIR", defaultDataDir())
+	if err := os.MkdirAll(dataDir, 0o755); err != nil {
+		log.Fatalf("settings: cannot create data dir %q: %v", dataDir, err)
+	}
+	store, err := settings.OpenStore(filepath.Join(dataDir, "gpsmock.db"))
+	if err != nil {
+		log.Fatalf("settings store: %v", err)
+	}
+	def, err := store.Load()
+	if err != nil {
+		log.Printf("settings: %v (using defaults)", err)
+		def = settings.Default()
+	}
 
 	driverFlag := flag.String("driver", envOr("GPSMOCK_DRIVER", string(def.PreferredDriver)), "tunnel driver: pymobiledevice | go-ios")
 	transportFlag := flag.String("transport", envOr("GPSMOCK_TRANSPORT", "auto"), "transport: auto | usb | wifi")
@@ -69,6 +91,8 @@ func main() {
 		shutdownTimeout:    *shutdownTimeout,
 		actionTimeout:      *actionTimeout,
 		telemetryInterval:  *telemetryInterval,
+		settingsCfg:        def,
+		store:              store,
 	}
 
 	// Windows service mode: when launched by the SCM, run under the service

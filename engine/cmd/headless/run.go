@@ -41,6 +41,12 @@ type runConfig struct {
 	shutdownTimeout    time.Duration
 	actionTimeout      time.Duration
 	telemetryInterval  time.Duration
+
+	// settingsCfg is the configuration loaded from the settings store (or
+	// settings.Default() if nothing was persisted yet); store is the open
+	// handle used to persist further changes made via SaveSettings.
+	settingsCfg settings.Settings
+	store       *settings.Store
 }
 
 // runEngine builds the driver, engine and server, starts everything, and blocks
@@ -53,6 +59,9 @@ func runEngine(ctx context.Context, cfg runConfig) error {
 		} else {
 			log.Printf("cannot open log file %q: %v", cfg.logFile, err)
 		}
+	}
+	if cfg.store != nil {
+		defer cfg.store.Close()
 	}
 	log.SetFlags(log.LstdFlags)
 	log.Printf("gps-mock engine (v3) — headless")
@@ -80,8 +89,11 @@ func runEngine(ctx context.Context, cfg runConfig) error {
 	}
 	log.Printf("driver: %s (transport=%s)", drv.ID(), transport)
 
-	eng := engine.New(drv, settings.Default())
+	eng := engine.New(drv, cfg.settingsCfg)
 	eng.SetDriverConfigBase(dcfg)
+	if cfg.store != nil {
+		eng.SetStore(cfg.store)
+	}
 
 	_, portStr, _ := net.SplitHostPort(cfg.addr)
 	selfPort, _ := strconv.Atoi(portStr)

@@ -48,6 +48,9 @@ targets:
         NSSupportsLiveActivities: true
         UIBackgroundModes:
           - location
+          - fetch
+        BGTaskSchedulerPermittedIdentifiers:
+          - com.remi2.gpsmock.companion.keepalive
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.remi2.gpsmock.companion

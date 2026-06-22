@@ -84,9 +84,9 @@ extension ContentView {
     }
 
     /// Centralizes the "is the engine actually usable" check before any
-    /// pilot action. The persistent connection banner in BottomSheet already
-    /// tells the user the engine is offline at all times — no need for a
-    /// modal alert on top of every blocked action (see §3.9 of
+    /// pilot action. Connection status now lives only in Réglages (the "État"
+    /// row) to keep the search sheet as clean as Plans' — no inline banner and
+    /// no modal alert on top of every blocked action (see §3.9 of
     /// docs/UI_UX_BASELINE.md), so a blocked action is a silent no-op here.
     func requireConnection() -> Bool {
         engine.state == .connected
@@ -209,15 +209,33 @@ extension ContentView {
         if engine.state == .connected || engine.state == .connecting {
             stopReporting()
             stopKeepAlive()
+            location.onLocationUpdate = nil
             engine.disconnect()
             return
         }
         engine.connect(to: "ws://\(engineAddress)/ws")
         startReporting()
+        bindBackgroundKeepAlive()
         if keepAliveEnabled {
             location.requestAlwaysPermission()
             location.enableBackgroundUpdates(true)
             startKeepAlive()
+        }
+    }
+
+    /// Routes every CoreLocation delivery through the engine. This is the path
+    /// that survives suspension (the `Task.sleep` loops in startReporting/
+    /// startKeepAlive don't): on each callback it rebuilds a dropped socket,
+    /// reports the real position for the anti-drift shield, and re-asserts the
+    /// spoof at the keep-alive cadence. Engine is captured weakly — it owns no
+    /// reference back, so there's no cycle, and a torn-down engine just stops
+    /// the callback.
+    func bindBackgroundKeepAlive() {
+        location.onLocationUpdate = { [weak engine] loc in
+            guard let engine else { return }
+            engine.ensureConnected()
+            engine.sendRealLocationIfDue(lat: loc.coordinate.latitude, lon: loc.coordinate.longitude)
+            engine.relanceIfDue()
         }
     }
 
@@ -231,6 +249,7 @@ extension ContentView {
         }
         engine.connect(to: "ws://\(engineAddress)/ws")
         startReporting()
+        bindBackgroundKeepAlive()
     }
 
     /// Periodically re-sends RELANCE so the engine re-asserts the last
@@ -245,7 +264,9 @@ extension ContentView {
             while !Task.isCancelled {
                 try? await Task.sleep(for: .seconds(max(keepAliveInterval, 1)))
                 guard !Task.isCancelled, engine.state == .connected else { continue }
-                engine.relance()
+                // Same throttled path as the background location callback, so
+                // foreground + background never double-fire RELANCE.
+                engine.relanceIfDue()
             }
         }
     }
@@ -266,7 +287,7 @@ extension ContentView {
             while !Task.isCancelled {
                 try? await Task.sleep(for: .seconds(10))
                 guard !Task.isCancelled, let loc = location.lastLocation else { continue }
-                engine.sendRealLocation(lat: loc.coordinate.latitude, lon: loc.coordinate.longitude)
+                engine.sendRealLocationIfDue(lat: loc.coordinate.latitude, lon: loc.coordinate.longitude)
             }
         }
     }

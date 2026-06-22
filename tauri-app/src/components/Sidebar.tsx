@@ -112,6 +112,12 @@ export const Sidebar: React.FC = () => {
   const [eveilInterval, setEveilInterval] = useState("15");
   const [jitterEnabled, setJitterEnabled] = useState(true);
 
+  // Routing + cluster tuning (formerly env-only, now web-managed)
+  const [osrmBaseUrl, setOsrmBaseUrl] = useState("");
+  const [clusterHeartbeat, setClusterHeartbeat] = useState("10");
+  const [clusterMasterDead, setClusterMasterDead] = useState("30");
+  const [clusterPeerTimeout, setClusterPeerTimeout] = useState("3");
+
   // GPX Upload state
   const [gpxContent, setGpxContent] = useState("");
   const [gpxFileName, setGpxFileName] = useState("");
@@ -205,6 +211,17 @@ export const Sidebar: React.FC = () => {
       window.removeEventListener("draw-mode-disabled", handleModeDisabled);
     };
   }, []);
+
+  // Prefill the routing/cluster fields with the engine's live values whenever a
+  // fresh status arrives, so the form shows what's actually running rather than
+  // hard-coded placeholders.
+  React.useEffect(() => {
+    if (!status) return;
+    if (status.osrmBaseUrl !== undefined) setOsrmBaseUrl(status.osrmBaseUrl);
+    if (status.clusterHeartbeatSeconds) setClusterHeartbeat(String(status.clusterHeartbeatSeconds));
+    if (status.clusterMasterDeadSeconds) setClusterMasterDead(String(status.clusterMasterDeadSeconds));
+    if (status.clusterPeerTimeoutSeconds) setClusterPeerTimeout(String(status.clusterPeerTimeoutSeconds));
+  }, [status?.osrmBaseUrl, status?.clusterHeartbeatSeconds, status?.clusterMasterDeadSeconds, status?.clusterPeerTimeoutSeconds]);
 
   const toggleDrawMode = () => {
     const newMode = !isDrawing;
@@ -379,6 +396,10 @@ export const Sidebar: React.FC = () => {
       isEveilMode,
       eveilInterval: parseInt(eveilInterval),
       jitterEnabled,
+      osrmBaseUrl: osrmBaseUrl.trim(),
+      clusterHeartbeatSeconds: parseInt(clusterHeartbeat) || 0,
+      clusterMasterDeadSeconds: parseInt(clusterMasterDead) || 0,
+      clusterPeerTimeoutSeconds: parseInt(clusterPeerTimeout) || 0,
     } as any);
     showToast("Réglages envoyés au moteur.");
   };
@@ -1170,6 +1191,59 @@ export const Sidebar: React.FC = () => {
                     />
                   </div>
                 )}
+
+                <div className="form-group">
+                  <label className="form-label">Serveur de routage (OSRM)</label>
+                  <input
+                    type="text"
+                    value={osrmBaseUrl}
+                    placeholder="http://router.project-osrm.org"
+                    onChange={(e) => setOsrmBaseUrl(e.target.value)}
+                  />
+                  <small className="form-hint">
+                    Serveur OSRM utilisé pour calculer les itinéraires. Laissez vide pour
+                    l'instance publique par défaut, ou indiquez votre serveur auto-hébergé
+                    (confidentialité, hors-ligne, limites de débit).
+                  </small>
+                </div>
+
+                <details className="form-group" style={{ marginTop: "8px" }}>
+                  <summary className="form-label" style={{ cursor: "pointer" }}>
+                    Cluster — réglages avancés
+                  </summary>
+                  <div style={{ marginTop: "8px" }}>
+                    <label className="form-label">Battement de cœur (s)</label>
+                    <input
+                      type="number"
+                      min={1}
+                      value={clusterHeartbeat}
+                      onChange={(e) => setClusterHeartbeat(e.target.value)}
+                    />
+                    <label className="form-label" style={{ marginTop: "8px" }}>
+                      Délai avant bascule maître (s)
+                    </label>
+                    <input
+                      type="number"
+                      min={1}
+                      value={clusterMasterDead}
+                      onChange={(e) => setClusterMasterDead(e.target.value)}
+                    />
+                    <label className="form-label" style={{ marginTop: "8px" }}>
+                      Timeout requête pair (s)
+                    </label>
+                    <input
+                      type="number"
+                      min={1}
+                      value={clusterPeerTimeout}
+                      onChange={(e) => setClusterPeerTimeout(e.target.value)}
+                    />
+                    <small className="form-hint">
+                      Cadence de surveillance et seuil de reprise en haute disponibilité.
+                      Les valeurs par défaut conviennent à un réseau local ; augmentez-les
+                      pour un lien distant à forte latence.
+                    </small>
+                  </div>
+                </details>
 
                 <button className="btn" onClick={handleSaveSettings} style={{ marginTop: "10px" }} disabled={!canSend}>
                   <Save size={14} /> Enregistrer

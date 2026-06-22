@@ -77,4 +77,11 @@ type Status struct {
 
 	EnvInfo EnvInfo      `json:"envInfo"`
 	Cluster *ClusterInfo `json:"cluster,omitempty"`
+
+	// Web-managed config that used to be env-only, broadcast so the UI can show
+	// and edit the live values.
+	OsrmBaseURL               string `json:"osrmBaseUrl,omitempty"`
+	ClusterHeartbeatSeconds   int    `json:"clusterHeartbeatSeconds,omitempty"`
+	ClusterMasterDeadSeconds  int    `json:"clusterMasterDeadSeconds,omitempty"`
+	ClusterPeerTimeoutSeconds int    `json:"clusterPeerTimeoutSeconds,omitempty"`
 }

@@ -27,6 +27,10 @@ export interface Settings {
   wifiDriver?: string;
   fallbackEnabled?: boolean;
   clusterMode?: "off" | "manual" | "auto";
+  clusterHeartbeatSeconds?: number;
+  clusterMasterDeadSeconds?: number;
+  clusterPeerTimeoutSeconds?: number;
+  osrmBaseUrl?: string;
   logLevel?: string;
   notificationsEnabled?: boolean;
   dynamicIslandEnabled?: boolean;
@@ -100,6 +104,10 @@ export interface Status {
   navigation: Navigation;
   lastInjectedLocation?: { lat: number; lon: number; name?: string; timestamp?: number } | null;
   lastRealLocation?: { lat: number; lon: number; drift?: number; timestamp?: number } | null;
+  osrmBaseUrl?: string;
+  clusterHeartbeatSeconds?: number;
+  clusterMasterDeadSeconds?: number;
+  clusterPeerTimeoutSeconds?: number;
 }
 
 export interface NetworkInterfaceInfo {

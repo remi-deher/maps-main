@@ -19,6 +19,10 @@ struct ContentView: View {
     @AppStorage("keepAliveEnabled") var keepAliveEnabled = true
     @AppStorage("keepAliveInterval") var keepAliveInterval: Double = 5
     @AppStorage("notificationsEnabled") var notificationsEnabled = true
+    // Reused defaults, edited in Réglages (SettingsSheet binds the same keys).
+    @AppStorage("defaultSpeed") var defaultSpeed: Double = 30
+    @AppStorage("defaultProfile") var defaultProfile: String = "driving"
+    @AppStorage("locationAccuracyMode") var locationAccuracyMode: String = "balanced"
 
     @State var reportTask: Task<Void, Never>?
     @State var keepAliveTask: Task<Void, Never>?
@@ -80,31 +84,18 @@ struct ContentView: View {
                 MapPitchToggle()
             }
 
-            // Both floating controls are glass siblings, so they share one
-            // lensing pass and can morph together instead of each posing as
-            // its own independent glass layer (swiftui-liquid-glass skill).
+            // The settings gear now lives inside the search capsule's trailing
+            // edge (BottomSheet.trailingButton), Plans-style — so the only
+            // floating control left over the map is recenter.
             GlassEffectContainer(spacing: 16) {
                 VStack(alignment: .trailing, spacing: 10) {
-                    HStack {
-                        Spacer()
-                        Button {
-                            showSettings = true
-                        } label: {
-                            Label("Réglages", systemImage: "gearshape.fill")
-                                .labelStyle(.iconOnly)
-                                .font(.title3.weight(.semibold))
-                                .frame(width: 44, height: 44)
-                        }
-                        .buttonStyle(.glass)
-                        .buttonBorderShape(.circle)
-                    }
                     // TipView instead of .popoverTip: a popover's source view
                     // would have to be the map itself, but the map fills the
                     // whole screen (.ignoresSafeArea() below) — TipKit then
                     // has no real anchor rect to avoid and can render its
-                    // bubble right over this gear button or the search bar,
-                    // swallowing their first tap. A TipView has a fixed,
-                    // bounded frame instead, so it can't cover anything else.
+                    // bubble right over the search bar, swallowing its first
+                    // tap. A TipView has a fixed, bounded frame instead, so it
+                    // can't cover anything else.
                     TipView(MapLongPressTip(), arrowEdge: .top)
                         .frame(maxWidth: 280)
                     Spacer()
@@ -166,7 +157,7 @@ struct ContentView: View {
                 },
                 onPlaceRoute: {
                     guard let place = selectedPlace, requireConnection() else { return }
-                    engine.playRoute(endLat: place.coordinate.latitude, endLon: place.coordinate.longitude, speed: 30, profile: "driving")
+                    engine.playRoute(endLat: place.coordinate.latitude, endLon: place.coordinate.longitude, speed: defaultSpeed, profile: defaultProfile)
                     selectedPlace = nil
                 },
                 onPlaceAddStop: {
@@ -180,44 +171,73 @@ struct ContentView: View {
                 onPauseRoute: { engine.pauseRoute() },
                 onResumeRoute: { engine.resumeRoute() },
                 onStopRoute: { engine.stopRoute() },
-                isEngineConnected: engine.state == .connected,
-                onConnect: { showSettings = true }
+                onOpenSettings: { showSettings = true }
             )
             .presentationDetents([.height(120), .medium, .large], selection: $sheetDetent)
             .presentationDragIndicator(.visible)
             .presentationBackgroundInteraction(.enabled)
             .interactiveDismissDisabled()
-        }
-        // fullScreenCover instead of a second concurrent .sheet: two sheets
-        // presented at once on the same hierarchy is fragile on iOS 26 (drag
-        // indicator / presentationDetents conflicts) — see §3.11 of
-        // docs/UI_UX_BASELINE.md. The persistent bottom sheet stays a sheet
-        // (that pattern itself is correct), settings becomes a full-screen
-        // cover instead of stacking on top of it.
-        .fullScreenCover(isPresented: $showSettings) {
-            SettingsSheet(
-                engineAddress: $engineAddress,
-                engine: engine,
-                discovery: discovery,
-                onToggleConnection: toggleConnection,
-                onRetryDiscovery: startDiscovery,
-                onApplyPort: reconnect,
-                liveActivityEnabled: $liveActivityEnabled,
-                keepAliveEnabled: $keepAliveEnabled,
-                keepAliveInterval: $keepAliveInterval,
-                notificationsEnabled: $notificationsEnabled,
-                patrolCenter: spoofedCoordinate ?? location.lastLocation?.coordinate,
-                visibleRegion: visibleRegion
-            )
+            // Settings are presented FROM the bottom sheet, not from
+            // ContentView. The bottom sheet is permanently presented via
+            // `.sheet(isPresented: .constant(true))`, and a single view
+            // controller can only present one modal at a time — attaching the
+            // settings presentation to ContentView (as a .sheet or
+            // .fullScreenCover) put it on the same presenter that the bottom
+            // sheet already occupies, so it silently never appeared and the
+            // gear button looked dead. Presented here, it stacks as a child of
+            // the already-presented sheet (parent → child), which is fully
+            // supported on iOS 26. SettingsSheet uses no presentationDetents,
+            // so there's no drag-indicator / detent conflict (§3.11 of
+            // docs/UI_UX_BASELINE.md).
+            .sheet(isPresented: $showSettings) {
+                SettingsSheet(
+                    engineAddress: $engineAddress,
+                    engine: engine,
+                    discovery: discovery,
+                    onToggleConnection: toggleConnection,
+                    onRetryDiscovery: startDiscovery,
+                    onApplyPort: reconnect,
+                    liveActivityEnabled: $liveActivityEnabled,
+                    keepAliveEnabled: $keepAliveEnabled,
+                    keepAliveInterval: $keepAliveInterval,
+                    notificationsEnabled: $notificationsEnabled,
+                    patrolCenter: spoofedCoordinate ?? location.lastLocation?.coordinate,
+                    visibleRegion: visibleRegion,
+                    locationAuthorization: location.authorizationStatus
+                )
+            }
         }
         .onAppear {
             location.requestPermission()
+            location.setAccuracyMode(locationAccuracyMode)
             if notificationsEnabled { NotificationManager.shared.requestPermission() }
+            // Seed the itinerary builder with the user's default speed/profile.
+            itinerarySpeed = defaultSpeed
+            itineraryProfile = defaultProfile
+            // Mirror the persisted keep-alive cadence into the engine so the
+            // background location callback can throttle RELANCE without reading
+            // SwiftUI state (unavailable while suspended).
+            engine.keepAliveEnabled = keepAliveEnabled
+            engine.keepAliveInterval = keepAliveInterval
             startDiscovery()
         }
+        .onChange(of: locationAccuracyMode) { mode in
+            location.setAccuracyMode(mode)
+        }
         .onChange(of: keepAliveEnabled) { enabled in
+            engine.keepAliveEnabled = enabled
             location.enableBackgroundUpdates(enabled)
-            if enabled && engine.state == .connected { startKeepAlive() } else { stopKeepAlive() }
+            if enabled {
+                // Turning keep-alive on after connecting needs the Always grant
+                // too, otherwise background callbacks never fire.
+                location.requestAlwaysPermission()
+                if engine.state == .connected { startKeepAlive() }
+            } else {
+                stopKeepAlive()
+            }
+        }
+        .onChange(of: keepAliveInterval) { interval in
+            engine.keepAliveInterval = interval
         }
         .onChange(of: notificationsEnabled) { enabled in
             if enabled { NotificationManager.shared.requestPermission() }

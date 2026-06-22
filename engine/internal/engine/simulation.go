@@ -17,10 +17,14 @@ import (
 	"github.com/remi-deher/maps-main/engine/internal/domain"
 )
 
-// osrmBaseURL is the OSRM routing server used for PlayRoute/PlaySequence
-// previews. Defaults to the public demo instance; overridable via env for
-// anyone self-hosting OSRM (rate limits / privacy / offline use).
-var osrmBaseURL = strings.TrimSuffix(envOr("GPSMOCK_OSRM_BASE_URL", "http://router.project-osrm.org"), "/")
+// defaultOsrmBaseURL is the OSRM routing server used for PlayRoute/
+// PlaySequence previews when no value has been set from the web interface.
+// Seeded from env for anyone self-hosting OSRM (rate limits / privacy /
+// offline use); the live value is now stored per-engine (Engine.osrmBaseURL)
+// and editable at runtime via SaveSettings.
+func defaultOsrmBaseURL() string {
+	return strings.TrimSuffix(envOr("GPSMOCK_OSRM_BASE_URL", "http://router.project-osrm.org"), "/")
+}
 
 func envOr(key, fallback string) string {
 	if v := os.Getenv(key); v != "" {
@@ -38,13 +42,16 @@ type osrmResponse struct {
 	} `json:"routes"`
 }
 
-// fetchOSRMRoute queries the OSRM routing API (see osrmBaseURL).
-func fetchOSRMRoute(start, end domain.LatLon, profile string) ([]domain.LatLon, error) {
+// fetchOSRMRoute queries the OSRM routing API at baseURL.
+func fetchOSRMRoute(baseURL string, start, end domain.LatLon, profile string) ([]domain.LatLon, error) {
 	if profile == "" {
 		profile = "driving"
 	}
+	if baseURL == "" {
+		baseURL = defaultOsrmBaseURL()
+	}
 	url := fmt.Sprintf("%s/route/v1/%s/%f,%f;%f,%f?overview=full&geometries=geojson",
-		osrmBaseURL, profile, start.Lon, start.Lat, end.Lon, end.Lat)
+		baseURL, profile, start.Lon, start.Lat, end.Lon, end.Lat)
 
 	client := &http.Client{Timeout: 5 * time.Second}
 	resp, err := client.Get(url)

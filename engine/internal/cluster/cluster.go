@@ -33,15 +33,60 @@ import (
 // when discovering cluster peers automatically.
 const ServiceType = "_gpsmock._tcp"
 
-// Heartbeat/failover tuning. Overridable via env for operators who need a
-// faster/slower cluster than the LAN-tuned defaults (e.g. a high-latency WAN
-// link between nodes, or a deliberately twitchy test setup) — read once at
-// package init, not meant to change at runtime.
+// Heartbeat/failover tuning. Seeded from env for backward compatibility, but
+// now also adjustable at runtime from the web interface (SaveSettings →
+// SetTuning) so operators aren't forced to restart with env vars set. Guarded
+// by tuningMu and read through the accessors below; the heartbeat loop resets
+// its ticker each iteration so a change takes effect within one beat.
 var (
+	tuningMu           sync.RWMutex
 	heartbeatInterval  = envDurationOr("GPSMOCK_CLUSTER_HEARTBEAT_INTERVAL", 10*time.Second)
 	masterDeadAfter    = envDurationOr("GPSMOCK_CLUSTER_MASTER_DEAD_AFTER", 30*time.Second)
 	peerRequestTimeout = envDurationOr("GPSMOCK_CLUSTER_PEER_REQUEST_TIMEOUT", 3*time.Second)
 )
+
+func getHeartbeatInterval() time.Duration {
+	tuningMu.RLock()
+	defer tuningMu.RUnlock()
+	return heartbeatInterval
+}
+
+func getMasterDeadAfter() time.Duration {
+	tuningMu.RLock()
+	defer tuningMu.RUnlock()
+	return masterDeadAfter
+}
+
+func getPeerRequestTimeout() time.Duration {
+	tuningMu.RLock()
+	defer tuningMu.RUnlock()
+	return peerRequestTimeout
+}
+
+// GetTuning returns the current heartbeat/failover durations — used to seed the
+// status broadcast so the web UI can show the live values.
+func GetTuning() (heartbeat, masterDead, peerTimeout time.Duration) {
+	tuningMu.RLock()
+	defer tuningMu.RUnlock()
+	return heartbeatInterval, masterDeadAfter, peerRequestTimeout
+}
+
+// SetTuning updates the durations at runtime. A non-positive value leaves that
+// field unchanged, so callers can update just one knob. Safe to call while the
+// cluster loop is running.
+func SetTuning(heartbeat, masterDead, peerTimeout time.Duration) {
+	tuningMu.Lock()
+	defer tuningMu.Unlock()
+	if heartbeat > 0 {
+		heartbeatInterval = heartbeat
+	}
+	if masterDead > 0 {
+		masterDeadAfter = masterDead
+	}
+	if peerTimeout > 0 {
+		peerRequestTimeout = peerTimeout
+	}
+}
 
 // envDurationOr parses key as a Go duration string (e.g. "10s"); on a
 // missing or unparseable value it falls back to fallback rather than failing
@@ -149,7 +194,7 @@ func New(mode string, nodes []string, serverName string, selfPort int, tunnelAct
 		selfPort:     selfPort,
 		peers:        map[string]*Peer{},
 		tunnelActive: tunnelActive,
-		client:       &http.Client{Timeout: peerRequestTimeout},
+		client:       &http.Client{Timeout: getPeerRequestTimeout()},
 		selfAddrs:    localAddrs(),
 		syncCerts:    syncCerts,
 		certMtimes:   map[string]time.Time{},
@@ -296,7 +341,7 @@ func (m *Manager) UpdateConfig(ctx context.Context, mode string, nodes []string,
 }
 
 func (m *Manager) heartbeatLoop(ctx context.Context) {
-	ticker := time.NewTicker(heartbeatInterval)
+	ticker := time.NewTicker(getHeartbeatInterval())
 	defer ticker.Stop()
 	for {
 		select {
@@ -306,6 +351,9 @@ func (m *Manager) heartbeatLoop(ctx context.Context) {
 			m.checkPeers(ctx)
 			m.checkMasterHealth()
 			m.runCertSync(ctx)
+			// Re-arm with the current interval so a runtime change from the
+			// web UI (SetTuning) takes effect within one beat.
+			ticker.Reset(getHeartbeatInterval())
 		}
 	}
 }
@@ -387,8 +435,9 @@ func (m *Manager) checkMasterHealth() {
 	mode, role, master, lastSeen := m.mode, m.role, m.currentMaster, m.lastMasterSeen
 	m.mu.RUnlock()
 
-	if mode == "auto" && role == "slave" && master != "" && time.Since(lastSeen) > masterDeadAfter {
-		slog.Warn("cluster: master unreachable, taking over", "master", master, "deadAfter", masterDeadAfter)
+	deadAfter := getMasterDeadAfter()
+	if mode == "auto" && role == "slave" && master != "" && time.Since(lastSeen) > deadAfter {
+		slog.Warn("cluster: master unreachable, taking over", "master", master, "deadAfter", deadAfter)
 		m.Takeover(context.Background())
 	}
 }

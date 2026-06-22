@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"runtime"
+	"strings"
 	"sync"
 	"time"
 
@@ -50,6 +51,82 @@ type Engine struct {
 	// clusterMgr is optional: set via SetClusterManager when cluster mode is
 	// enabled, nil otherwise (Status() then omits the Cluster field).
 	clusterMgr *cluster.Manager
+
+	// osrmBaseURL is the routing server used for PlayRoute/PlaySequence,
+	// editable at runtime from the web interface (SaveSettings). Empty means
+	// fall back to defaultOsrmBaseURL().
+	osrmBaseURL string
+
+	// store persists settings to disk (SQLite) so they survive a restart
+	// instead of resetting to settings.Default() every time. Nil disables
+	// persistence (e.g. in tests).
+	store *settings.Store
+}
+
+// SetStore attaches the settings persistence store. Call once at startup,
+// before any mutating action runs.
+func (e *Engine) SetStore(store *settings.Store) {
+	e.mu.Lock()
+	e.store = store
+	e.mu.Unlock()
+}
+
+// exportSettingsLocked builds a full Settings snapshot from the live status,
+// for persistence. Caller must hold e.mu (read or write lock).
+func (e *Engine) exportSettingsLocked() settings.Settings {
+	cfg := settings.Default()
+	cfg.UsbDriver = e.st.UsbDriver
+	cfg.WifiDriver = e.st.WifiDriver
+	cfg.FallbackEnabled = e.st.FallbackEnabled
+	cfg.NotificationsEnabled = e.st.NotificationsEnabled
+	cfg.DynamicIslandEnabled = e.st.DynamicIslandEnabled
+	cfg.JitterEnabled = e.st.JitterEnabled
+	cfg.Favorites = e.st.Favorites
+	cfg.RecentHistory = e.st.RecentHistory
+	cfg.OsrmBaseURL = e.osrmBaseURL
+	cfg.ClusterHeartbeatSeconds = e.st.ClusterHeartbeatSeconds
+	cfg.ClusterMasterDeadSeconds = e.st.ClusterMasterDeadSeconds
+	cfg.ClusterPeerTimeoutSeconds = e.st.ClusterPeerTimeoutSeconds
+	if e.clusterMgr != nil {
+		cs := e.clusterMgr.Status()
+		cfg.ClusterMode = cs.Mode
+		cfg.ClusterSyncCerts = e.clusterMgr.SyncCertsEnabled()
+		var nodes []string
+		for _, p := range cs.Peers {
+			if !p.Discovered {
+				nodes = append(nodes, fmt.Sprintf("%s:%d", p.Address, p.Port))
+			}
+		}
+		cfg.ClusterNodes = nodes
+	}
+	return cfg
+}
+
+// persist saves the current settings snapshot to disk. No-op if no store is
+// attached. Must NOT be called while holding e.mu.
+func (e *Engine) persist() {
+	e.mu.RLock()
+	store := e.store
+	if store == nil {
+		e.mu.RUnlock()
+		return
+	}
+	cfg := e.exportSettingsLocked()
+	e.mu.RUnlock()
+	if err := store.Save(cfg); err != nil {
+		e.Log("error", "settings", fmt.Sprintf("Échec de la sauvegarde des réglages : %v", err))
+	}
+}
+
+// osrmURL returns the routing base URL, falling back to the env/default when
+// unset. Read under e.mu since SaveSettings can change it at runtime.
+func (e *Engine) osrmURL() string {
+	e.mu.RLock()
+	defer e.mu.RUnlock()
+	if e.osrmBaseURL == "" {
+		return defaultOsrmBaseURL()
+	}
+	return e.osrmBaseURL
 }
 
 // SetClusterManager attaches the HA cluster manager so Status() reports its
@@ -176,21 +253,43 @@ func (e *Engine) GetLogs() []api.LogEntryPayload {
 
 // New builds an Engine seeded from settings.
 func New(drv driver.Driver, cfg settings.Settings) *Engine {
+	// Seed cluster tuning from persisted settings (falling back to the env/
+	// built-in defaults the cluster package already holds) so the live values
+	// and the broadcast status agree from the first STATUS.
+	if cfg.ClusterHeartbeatSeconds > 0 || cfg.ClusterMasterDeadSeconds > 0 || cfg.ClusterPeerTimeoutSeconds > 0 {
+		cluster.SetTuning(
+			time.Duration(cfg.ClusterHeartbeatSeconds)*time.Second,
+			time.Duration(cfg.ClusterMasterDeadSeconds)*time.Second,
+			time.Duration(cfg.ClusterPeerTimeoutSeconds)*time.Second,
+		)
+	}
+	hb, dead, peer := cluster.GetTuning()
+
+	osrm := cfg.OsrmBaseURL
+	if osrm == "" {
+		osrm = defaultOsrmBaseURL()
+	}
+
 	return &Engine{
-		drv:  drv,
-		emit: func(string, any) {}, // no-op until the server wires OnEvent
+		drv:         drv,
+		emit:        func(string, any) {}, // no-op until the server wires OnEvent
+		osrmBaseURL: osrm,
 		st: api.Status{
-			State:                "idle",
-			ConnectionType:       domain.ConnUnknown,
-			UsbDriver:            cfg.UsbDriver,
-			WifiDriver:           cfg.WifiDriver,
-			FallbackEnabled:      cfg.FallbackEnabled,
-			NotificationsEnabled: cfg.NotificationsEnabled,
-			DynamicIslandEnabled: cfg.DynamicIslandEnabled,
-			JitterEnabled:        cfg.JitterEnabled,
-			Favorites:            cfg.Favorites,
-			RecentHistory:        cfg.RecentHistory,
-			Navigation:           domain.Navigation{},
+			State:                     "idle",
+			ConnectionType:            domain.ConnUnknown,
+			UsbDriver:                 cfg.UsbDriver,
+			WifiDriver:                cfg.WifiDriver,
+			FallbackEnabled:           cfg.FallbackEnabled,
+			NotificationsEnabled:      cfg.NotificationsEnabled,
+			DynamicIslandEnabled:      cfg.DynamicIslandEnabled,
+			JitterEnabled:             cfg.JitterEnabled,
+			Favorites:                 cfg.Favorites,
+			RecentHistory:             cfg.RecentHistory,
+			Navigation:                domain.Navigation{},
+			OsrmBaseURL:               osrm,
+			ClusterHeartbeatSeconds:   int(hb / time.Second),
+			ClusterMasterDeadSeconds:  int(dead / time.Second),
+			ClusterPeerTimeoutSeconds: int(peer / time.Second),
 			EnvInfo: api.EnvInfo{
 				OS:       runtime.GOOS,
 				IsDocker: isDocker(),
@@ -491,7 +590,7 @@ func (e *Engine) PlayRoute(ctx context.Context, endLat, lon float64, speed float
 	e.mu.RUnlock()
 
 	end := domain.LatLon{Lat: endLat, Lon: lon}
-	rawPoints, err := fetchOSRMRoute(start, end, profile)
+	rawPoints, err := fetchOSRMRoute(e.osrmURL(), start, end, profile)
 	if err != nil {
 		rawPoints = []domain.LatLon{start, end}
 	}
@@ -519,7 +618,7 @@ func (e *Engine) PlaySequence(ctx context.Context, legs []domain.RouteLeg, loopi
 			if leg.Type == domain.LegWalk {
 				profile = "foot"
 			}
-			rawPoints, err := fetchOSRMRoute(leg.Start, leg.End, profile)
+			rawPoints, err := fetchOSRMRoute(e.osrmURL(), leg.Start, leg.End, profile)
 			if err != nil {
 				rawPoints = []domain.LatLon{leg.Start, leg.End}
 			}
@@ -622,6 +721,7 @@ func (e *Engine) AddFavorite(ctx context.Context, lat, lon float64, name string)
 		Timestamp: time.Now().UnixMilli(),
 	})
 	e.emitStatusLocked()
+	e.persist()
 	return nil
 }
 
@@ -637,6 +737,7 @@ func (e *Engine) RemoveFavorite(ctx context.Context, lat, lon float64) error {
 	}
 	e.st.Favorites = updated
 	e.emitStatusLocked()
+	e.persist()
 	return nil
 }
 
@@ -647,6 +748,7 @@ func (e *Engine) RenameFavorite(ctx context.Context, lat, lon float64, newName s
 		e.st.Favorites[idx].Name = newName
 	}
 	e.emitStatusLocked()
+	e.persist()
 	return nil
 }
 
@@ -656,6 +758,7 @@ func (e *Engine) ClearHistory(ctx context.Context) error {
 	e.mu.Lock()
 	e.st.RecentHistory = nil
 	e.emitStatusLocked()
+	e.persist()
 	e.Log("info", "admin", "Historique vidé")
 	return nil
 }
@@ -663,7 +766,6 @@ func (e *Engine) ClearHistory(ctx context.Context) error {
 // SaveSettings saves and applies configuration settings
 func (e *Engine) SaveSettings(ctx context.Context, payload api.SaveSettingsPayload) error {
 	e.mu.Lock()
-	defer e.mu.Unlock()
 	if val, ok := payload["companionPort"]; ok {
 		if port, ok := val.(float64); ok {
 			e.st.RSDPort = int(port)
@@ -699,6 +801,41 @@ func (e *Engine) SaveSettings(ctx context.Context, payload api.SaveSettingsPaylo
 			e.st.JitterEnabled = jitter
 		}
 	}
+	if val, ok := payload["osrmBaseUrl"]; ok {
+		if url, ok := val.(string); ok {
+			url = strings.TrimSuffix(strings.TrimSpace(url), "/")
+			e.osrmBaseURL = url
+			if url == "" {
+				e.st.OsrmBaseURL = defaultOsrmBaseURL()
+			} else {
+				e.st.OsrmBaseURL = url
+			}
+		}
+	}
+
+	// Cluster heartbeat/failover tuning — apply live (cluster.SetTuning) and
+	// mirror into the status so the UI reflects the running values. JSON
+	// numbers decode as float64; a zero/negative value leaves that knob alone.
+	var hbSec, deadSec, peerSec int
+	if val, ok := payload["clusterHeartbeatSeconds"].(float64); ok && val > 0 {
+		hbSec = int(val)
+		e.st.ClusterHeartbeatSeconds = hbSec
+	}
+	if val, ok := payload["clusterMasterDeadSeconds"].(float64); ok && val > 0 {
+		deadSec = int(val)
+		e.st.ClusterMasterDeadSeconds = deadSec
+	}
+	if val, ok := payload["clusterPeerTimeoutSeconds"].(float64); ok && val > 0 {
+		peerSec = int(val)
+		e.st.ClusterPeerTimeoutSeconds = peerSec
+	}
+	if hbSec > 0 || deadSec > 0 || peerSec > 0 {
+		cluster.SetTuning(
+			time.Duration(hbSec)*time.Second,
+			time.Duration(deadSec)*time.Second,
+			time.Duration(peerSec)*time.Second,
+		)
+	}
 
 	mgr := e.clusterMgr
 	clusterMode, hasMode := payload["clusterMode"].(string)
@@ -729,7 +866,8 @@ func (e *Engine) SaveSettings(ctx context.Context, payload api.SaveSettingsPaylo
 		go mgr.UpdateConfig(ctx, mode, nodeAddrs, syncCerts)
 	}
 
-	e.emit(api.EventStatus, e.st)
+	e.emitStatusLocked()
+	e.persist()
 	return nil
 }
 

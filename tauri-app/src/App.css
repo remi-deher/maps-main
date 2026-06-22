@@ -346,6 +346,14 @@ body {
   color: #94a3b8;
 }
 
+.form-hint {
+  display: block;
+  margin-top: 4px;
+  font-size: 0.72rem;
+  line-height: 1.35;
+  color: #6b7280;
+}
+
 input[type="text"],
 input[type="number"],
 select {
