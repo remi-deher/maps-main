@@ -1098,3 +1098,23 @@ select:focus-visible,
     scroll-behavior: auto !important;
   }
 }
+
+/* --- Petits écrans (téléphones) : récupérer l'espace + cibles tactiles (§3.5) --- */
+@media (max-width: 480px) {
+  .sidebar {
+    width: calc(100vw - 16px);
+    height: calc(100vh - 16px);
+    margin: 8px;
+  }
+
+  .sidebar.collapsed {
+    transform: translateX(calc(-100% - 16px));
+  }
+
+  /* Cibles tactiles ≥ 44 px sur mobile */
+  .btn,
+  .tab-btn,
+  .icon-btn {
+    min-height: 44px;
+  }
+}
