@@ -19,8 +19,10 @@ irm https://raw.githubusercontent.com/remi-deher/maps-main/main/scripts/install.
 Demande : (1) moteur **headless + UI web** ou application **desktop**
 complète, puis pour le headless, propose d'enchaîner avec l'installation en
 service système (voir ci-dessous). Options non-interactives :
-`--variant headless|desktop --service` (bash) / `-Variant ... -Service`
-(PowerShell).
+`--variant headless|desktop --service` (bash) / variables d'env
+`$env:GPSMOCK_VARIANT = "headless"; $env:GPSMOCK_SERVICE = "1"` (PowerShell —
+pas de paramètres `-Variant`/`-Service` car `irm | iex` ne supporte pas les
+blocs `param()` typés).
 
 ## Installation en service système (par OS)
 
