@@ -154,7 +154,12 @@ struct ContentView: View {
                     },
                     onRoute: {
                         guard let place = selectedPlace, requireConnection() else { return }
-                        session.engine.playRoute(endLat: place.coordinate.latitude, endLon: place.coordinate.longitude, speed: defaultSpeed, profile: defaultProfile)
+                        session.engine.playRoute(
+                            endLat: place.coordinate.latitude,
+                            endLon: place.coordinate.longitude,
+                            speed: defaultSpeed,
+                            profile: defaultProfile
+                        )
                         selectedPlace = nil
                     },
                     onAddStop: {
