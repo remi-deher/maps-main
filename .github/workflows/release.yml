@@ -162,6 +162,10 @@ jobs:
       # skipped and the docker.io image line resolves to empty — so the release
       # still succeeds (pushing to ghcr.io only) instead of failing.
       DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+      # Don't upload the build-record (.dockerbuild) artifact: the release job's
+      # download-artifact pulls *all* artifacts and chokes on it ("not a valid
+      # zip file"), which fails the publish step even though every build passed.
+      DOCKER_BUILD_RECORD_UPLOAD: 'false'
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
 
