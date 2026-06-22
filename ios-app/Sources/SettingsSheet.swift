@@ -41,12 +41,6 @@ struct SettingsSheet: View {
     @State var portInput = ""
     @State var portError: String?
 
-    @State var showGpxImporter = false
-    @State var gpxContent = ""
-    @State var gpxFileName = ""
-    @State var gpxSpeed: Double = 25
-    @State var gpxError: String?
-
     @State var showQrScanner = false
 
     @Environment(\.dismiss) var dismiss

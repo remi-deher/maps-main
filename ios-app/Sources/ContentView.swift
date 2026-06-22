@@ -2,6 +2,7 @@ import SwiftUI
 import CoreLocation
 import MapKit
 import TipKit
+import UniformTypeIdentifiers
 
 struct ContentView: View {
     // Empty by default — an arbitrary placeholder IP used to read as a false
@@ -45,6 +46,14 @@ struct ContentView: View {
     @State var patrolMode = false
     @State var patrolType = "circle"
     @State var patrolRadius: Double = 200
+
+    // GPX import, promoted out of Réglages › Outils into the sheet: pick a
+    // track, then a GpxPanel shows the file + a speed slider before launching.
+    @State var showGpxImporter = false
+    @State var gpxContent = ""
+    @State var gpxFileName = ""
+    @State var gpxSpeed: Double = 25
+    @State var gpxError: String?
 
     @State var sheetDetent: PresentationDetent = .height(BottomSheet.collapsedHeight)
     @State var collapsedSheetHeight: CGFloat = BottomSheet.collapsedHeight
@@ -208,6 +217,25 @@ struct ContentView: View {
                     onCancel: { patrolMode = false },
                     onStop: { session.engine.updatePatrolZone(type: patrolType, center: nil, radius: nil, bounds: nil, active: false) }
                 ),
+                gpx: GpxImport(
+                    isLoaded: !gpxContent.isEmpty,
+                    fileName: gpxFileName,
+                    errorMessage: gpxError,
+                    speed: $gpxSpeed,
+                    onPick: {
+                        gpxError = nil
+                        showGpxImporter = true
+                    },
+                    onLaunch: {
+                        session.engine.playCustomGpx(gpxContent: gpxContent, speed: gpxSpeed)
+                        gpxContent = ""
+                        gpxFileName = ""
+                    },
+                    onCancel: {
+                        gpxContent = ""
+                        gpxFileName = ""
+                    }
+                ),
                 simulationState: session.engine.status?.state,
                 onPauseRoute: { session.engine.pauseRoute() },
                 onResumeRoute: { session.engine.resumeRoute() },
@@ -239,6 +267,17 @@ struct ContentView: View {
             .presentationDragIndicator(.visible)
             .presentationBackgroundInteraction(.enabled)
             .interactiveDismissDisabled()
+            // Presented FROM the bottom sheet (the topmost presenter) for the
+            // same reason settings is — a .fileImporter on ContentView would
+            // collide with the already-presented bottom sheet (§3.11).
+            .fileImporter(isPresented: $showGpxImporter, allowedContentTypes: [.gpx, .xml]) { result in
+                switch result {
+                case .success(let url):
+                    loadGpx(from: url)
+                case .failure(let error):
+                    gpxError = error.localizedDescription
+                }
+            }
             // Settings are presented FROM the bottom sheet, not from
             // ContentView. The bottom sheet is permanently presented via
             // `.sheet(isPresented: .constant(true))`, and a single view

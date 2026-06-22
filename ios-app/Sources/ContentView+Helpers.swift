@@ -188,6 +188,26 @@ extension ContentView {
         }
     }
 
+    /// Reads a picked .gpx file into `gpxContent` so the sheet can show the
+    /// GpxPanel (file + speed + launch). Moved out of SettingsSheet so GPX
+    /// import lives with the other "start a simulation" actions. Expands the
+    /// sheet so the just-loaded panel is actually visible.
+    func loadGpx(from url: URL) {
+        gpxError = nil
+        guard url.startAccessingSecurityScopedResource() else {
+            gpxError = "Accès au fichier refusé."
+            return
+        }
+        defer { url.stopAccessingSecurityScopedResource() }
+        guard let text = try? String(contentsOf: url, encoding: .utf8), text.contains("<trkpt") else {
+            gpxError = "Fichier GPX invalide ou vide."
+            return
+        }
+        gpxContent = text
+        gpxFileName = url.lastPathComponent
+        withAnimation { sheetDetent = .medium }
+    }
+
     func toggleConnection() {
         session.toggleConnection(engineAddress: engineAddress, keepAliveEnabled: keepAliveEnabled)
     }

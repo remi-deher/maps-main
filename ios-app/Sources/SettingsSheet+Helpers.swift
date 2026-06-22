@@ -65,21 +65,6 @@ extension SettingsSheet {
         onApplyPort()
     }
 
-    func loadGpx(from url: URL) {
-        gpxError = nil
-        guard url.startAccessingSecurityScopedResource() else {
-            gpxError = "Accès au fichier refusé."
-            return
-        }
-        defer { url.stopAccessingSecurityScopedResource() }
-        guard let text = try? String(contentsOf: url, encoding: .utf8), text.contains("<trkpt") else {
-            gpxError = "Fichier GPX invalide ou vide."
-            return
-        }
-        gpxContent = text
-        gpxFileName = url.lastPathComponent
-    }
-
     @ViewBuilder
     var discoveryRow: some View {
         switch discovery.state {

@@ -180,35 +180,11 @@ extension SettingsSheet {
         .navigationBarTitleDisplayMode(.inline)
     }
 
-    /// Occasional, one-off operations: importing a GPX track to play back,
-    /// engine admin actions, and the engine log viewer.
+    /// Occasional, one-off operations: engine admin actions and the engine log
+    /// viewer. (GPX import moved to the bottom sheet — see GpxPanel.)
     @ViewBuilder
     var toolsScreen: some View {
         List {
-            Section("Importation GPX") {
-                Button {
-                    showGpxImporter = true
-                } label: {
-                    Label(gpxFileName.isEmpty ? "Choisir un fichier .gpx" : gpxFileName, systemImage: "doc.badge.plus")
-                }
-                if let gpxError {
-                    Text(gpxError).font(.caption).foregroundStyle(.red)
-                }
-                if !gpxContent.isEmpty {
-                    Stepper(value: $gpxSpeed, in: 1...250, step: 5) {
-                        HStack {
-                            Text("Vitesse de simulation")
-                            Spacer()
-                            Text("\(Int(gpxSpeed)) km/h").foregroundStyle(.secondary)
-                        }
-                    }
-                    Button("Lancer la simulation GPX") {
-                        engine.playCustomGpx(gpxContent: gpxContent, speed: gpxSpeed)
-                        dismiss()
-                    }
-                }
-            }
-
             Section("Administration") {
                 Button("Relancer la dernière position") {
                     engine.relance()
@@ -232,14 +208,6 @@ extension SettingsSheet {
         }
         .navigationTitle("Outils")
         .navigationBarTitleDisplayMode(.inline)
-        .fileImporter(isPresented: $showGpxImporter, allowedContentTypes: [.gpx, .xml]) { result in
-            switch result {
-            case .success(let url):
-                loadGpx(from: url)
-            case .failure(let error):
-                gpxError = error.localizedDescription
-            }
-        }
     }
 
     /// App version, the engine it talks to, and the always-on location grant

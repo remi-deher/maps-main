@@ -1,40 +1,6 @@
 import SwiftUI
 import MapKit
 
-/// The five actions the place card (PlaceCard) can trigger, grouped into one
-/// value instead of five separate closure parameters on BottomSheet's
-/// initializer — ContentView builds this once from `selectedPlace`'s
-/// handlers, keeping the call site readable.
-struct PlaceActions {
-    var onTeleport: () -> Void
-    var onRoute: () -> Void
-    var onAddStop: () -> Void
-    var onFavorite: () -> Void
-    var onDismiss: () -> Void
-}
-
-/// Patrol-zone state and actions, grouped into one value so they don't balloon
-/// BottomSheet's initializer. ContentView owns the underlying state and drives
-/// the live map preview; the sheet just renders the setup panel, the active
-/// banner, and the entry button. Promoting this out of Réglages lets the zone
-/// be framed against the map instead of configured blind in a settings form.
-struct PatrolControls {
-    /// True while the user is defining a zone (the setup panel is showing).
-    var isSettingUp: Bool
-    /// True while a patrol is running (the persistent active banner shows).
-    var isActive: Bool
-    var type: Binding<String>
-    var radius: Binding<Double>
-    /// Enter setup mode from the sheet's empty state.
-    var onBegin: () -> Void
-    /// Commit the defined zone and start patrolling.
-    var onStart: () -> Void
-    /// Leave setup mode without starting.
-    var onCancel: () -> Void
-    /// Stop a running patrol.
-    var onStop: () -> Void
-}
-
 /// Reports the search capsule's actual rendered height up to ContentView, so
 /// the collapsed detent can hug exactly the search bar — Plans-style — rather
 /// than guessing a fixed height that leaves a strip of empty sheet background
@@ -77,6 +43,8 @@ struct BottomSheet: View {
     var placeActions: PlaceActions
 
     var patrol: PatrolControls
+
+    var gpx: GpxImport
 
     let simulationState: String?
     var onPauseRoute: () -> Void
@@ -234,6 +202,15 @@ struct BottomSheet: View {
                     onLaunch: patrol.onStart,
                     onCancel: patrol.onCancel
                 )
+            } else if gpx.isLoaded {
+                // A picked GPX track takes over the sheet until launched or
+                // discarded, same as the patrol setup panel.
+                GpxPanel(
+                    fileName: gpx.fileName,
+                    speed: gpx.speed,
+                    onLaunch: gpx.onLaunch,
+                    onCancel: gpx.onCancel
+                )
             } else if let place = selectedPlace {
                 // Selecting a place (search result or map long-press) takes
                 // over the sheet's content — this used to float over the
@@ -290,6 +267,24 @@ struct BottomSheet: View {
                         }
                         .buttonStyle(.glass)
                         .padding(.horizontal, 16)
+                    }
+                    // GPX import entry, promoted out of Réglages › Outils —
+                    // starting a simulation from a track is a peer of the
+                    // other "start something" actions, not an admin tool.
+                    Button(action: gpx.onPick) {
+                        HStack {
+                            Image(systemName: "doc.badge.plus")
+                            Text("Importer un GPX")
+                        }
+                        .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.glass)
+                    .padding(.horizontal, 16)
+                    if let gpxError = gpx.errorMessage {
+                        Text(gpxError)
+                            .font(.caption)
+                            .foregroundStyle(.red)
+                            .padding(.horizontal, 16)
                     }
                     if favorites.isEmpty {
                         ContentUnavailableView(
