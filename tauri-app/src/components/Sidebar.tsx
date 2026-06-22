@@ -704,17 +704,23 @@ export const Sidebar: React.FC = () => {
                   {status?.favorites && status.favorites.length > 0 ? (
                     status.favorites.map((fav, i) => (
                       <div className="list-item" key={i}>
-                        <div
+                        <button
+                          type="button"
                           className="list-item-info"
                           onClick={() => setLocation(fav.lat, fav.lon, fav.name)}
+                          aria-label={`Téléporter vers ${fav.name}`}
                         >
                           <span className="list-item-name">{fav.name}</span>
                           <span className="list-item-coords">
                             {fav.lat.toFixed(5)}, {fav.lon.toFixed(5)}
                           </span>
-                        </div>
+                        </button>
                         <div className="list-item-actions">
-                          <button className="icon-btn" onClick={() => removeFavorite(fav.lat, fav.lon)}>
+                          <button
+                            className="icon-btn"
+                            onClick={() => removeFavorite(fav.lat, fav.lon)}
+                            aria-label={`Supprimer le favori ${fav.name}`}
+                          >
                             <Trash size={14} />
                           </button>
                         </div>
@@ -736,15 +742,17 @@ export const Sidebar: React.FC = () => {
                   {status?.recentHistory && status.recentHistory.length > 0 ? (
                     status.recentHistory.map((item, i) => (
                       <div className="list-item" key={i}>
-                        <div
+                        <button
+                          type="button"
                           className="list-item-info"
                           onClick={() => setLocation(item.lat, item.lon, item.name)}
+                          aria-label={`Téléporter vers ${item.name || "Lieu Injecté"}`}
                         >
                           <span className="list-item-name">{item.name || "Lieu Injecté"}</span>
                           <span className="list-item-coords">
                             {item.lat.toFixed(5)}, {item.lon.toFixed(5)}
                           </span>
-                        </div>
+                        </button>
                       </div>
                     ))
                   ) : (
@@ -836,7 +844,16 @@ export const Sidebar: React.FC = () => {
                 </h3>
                 <div
                   className={`gpx-dropzone ${isDragOver ? "drag-over" : ""}`}
+                  role="button"
+                  tabIndex={0}
+                  aria-label="Importer un fichier GPX : cliquez pour parcourir ou glissez-déposez"
                   onClick={() => document.getElementById("gpx-file-input")?.click()}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault();
+                      document.getElementById("gpx-file-input")?.click();
+                    }
+                  }}
                   onDragOver={handleDragOver}
                   onDragLeave={handleDragLeave}
                   onDrop={handleDrop}

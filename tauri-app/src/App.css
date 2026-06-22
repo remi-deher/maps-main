@@ -534,6 +534,13 @@ select:focus {
   gap: 2px;
   cursor: pointer;
   flex: 1;
+  /* button reset so a native <button> keeps the original look */
+  text-align: left;
+  background: none;
+  border: none;
+  color: inherit;
+  font: inherit;
+  padding: 0;
 }
 
 .list-item-name {
