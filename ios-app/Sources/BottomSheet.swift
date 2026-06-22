@@ -42,79 +42,93 @@ struct BottomSheet: View {
 
     var onOpenSettings: () -> Void
 
+    /// The sheet's current detent — used to keep the collapsed state to
+    /// *just* the search capsule, like Plans. Everything else (favorites,
+    /// results, itinerary, place card...) only appears once the sheet is
+    /// actually dragged/expanded open.
+    var sheetDetent: PresentationDetent
+
     private var isSearching: Bool {
         !searchQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
+
+    private var isCollapsed: Bool {
+        sheetDetent == .height(BottomSheet.collapsedHeight)
+    }
+
+    static let collapsedHeight: CGFloat = 120
 
     var body: some View {
         VStack(spacing: 14) {
             header
 
-            ScrollView {
-                VStack(spacing: 12) {
-                    // Persistent like Plans' "navigation active" banner — visible
-                    // regardless of what else is on screen, since pausing/
-                    // stopping a running simulation is a system-level action.
-                    if simulationState == "moving" || simulationState == "paused" {
-                        simulationControlBar
-                    }
-
-                    if let place = selectedPlace {
-                        // Selecting a place (search result or map long-press)
-                        // takes over the sheet's content — this used to float
-                        // over the map, where the sheet itself could end up
-                        // covering it; living inside the sheet, it never can.
-                        PlaceCard(
-                            place: place,
-                            onTeleport: onPlaceTeleport,
-                            onRoute: onPlaceRoute,
-                            onAddStop: onPlaceAddStop,
-                            onFavorite: onPlaceFavorite,
-                            onDismiss: onPlaceDismiss
-                        )
-                    } else {
-                        // Favorites stay visible like Plans' "Maison"/"Travail" row,
-                        // regardless of what's below — they're quick-access, not content.
-                        if !isSearching && !favorites.isEmpty {
-                            FavoriteChips(favorites: favorites, onSelect: onSelectFavorite, onDelete: onDeleteFavorite)
+            if !isCollapsed {
+                ScrollView {
+                    VStack(spacing: 12) {
+                        // Persistent like Plans' "navigation active" banner — visible
+                        // regardless of what else is on screen, since pausing/
+                        // stopping a running simulation is a system-level action.
+                        if simulationState == "moving" || simulationState == "paused" {
+                            simulationControlBar
                         }
 
-                        if isSearching {
-                            searchResultsSection
-                        } else if !itineraryStops.isEmpty {
-                            ItineraryPanel(
-                                stops: $itineraryStops,
-                                speed: $itinerarySpeed,
-                                profile: $itineraryProfile,
-                                legEstimates: legEstimates,
-                                onAddStop: onAddStop,
-                                onLaunch: onLaunchItinerary,
-                                onCancel: { itineraryStops = [] }
+                        if let place = selectedPlace {
+                            // Selecting a place (search result or map long-press)
+                            // takes over the sheet's content — this used to float
+                            // over the map, where the sheet itself could end up
+                            // covering it; living inside the sheet, it never can.
+                            PlaceCard(
+                                place: place,
+                                onTeleport: onPlaceTeleport,
+                                onRoute: onPlaceRoute,
+                                onAddStop: onPlaceAddStop,
+                                onFavorite: onPlaceFavorite,
+                                onDismiss: onPlaceDismiss
                             )
                         } else {
-                            if hasSavedItinerary {
-                                Button(action: onLoadLastItinerary) {
-                                    HStack {
-                                        Image(systemName: "arrow.uturn.backward.circle.fill")
-                                        Text("Charger le dernier itinéraire")
-                                    }
-                                    .frame(maxWidth: .infinity)
-                                }
-                                .buttonStyle(.glass)
-                                .padding(.horizontal, 16)
+                            // Favorites stay visible like Plans' "Maison"/"Travail" row,
+                            // regardless of what's below — they're quick-access, not content.
+                            if !isSearching && !favorites.isEmpty {
+                                FavoriteChips(favorites: favorites, onSelect: onSelectFavorite, onDelete: onDeleteFavorite)
                             }
-                            if favorites.isEmpty {
-                                ContentUnavailableView(
-                                    "Aucun itinéraire",
-                                    systemImage: "map",
-                                    description: Text("Recherchez une adresse ou touchez la carte pour commencer.")
+
+                            if isSearching {
+                                searchResultsSection
+                            } else if !itineraryStops.isEmpty {
+                                ItineraryPanel(
+                                    stops: $itineraryStops,
+                                    speed: $itinerarySpeed,
+                                    profile: $itineraryProfile,
+                                    legEstimates: legEstimates,
+                                    onAddStop: onAddStop,
+                                    onLaunch: onLaunchItinerary,
+                                    onCancel: { itineraryStops = [] }
                                 )
-                                .padding(.top, 8)
+                            } else {
+                                if hasSavedItinerary {
+                                    Button(action: onLoadLastItinerary) {
+                                        HStack {
+                                            Image(systemName: "arrow.uturn.backward.circle.fill")
+                                            Text("Charger le dernier itinéraire")
+                                        }
+                                        .frame(maxWidth: .infinity)
+                                    }
+                                    .buttonStyle(.glass)
+                                    .padding(.horizontal, 16)
+                                }
+                                if favorites.isEmpty {
+                                    ContentUnavailableView(
+                                        "Aucun itinéraire",
+                                        systemImage: "map",
+                                        description: Text("Recherchez une adresse ou touchez la carte pour commencer.")
+                                    )
+                                    .padding(.top, 8)
+                                }
                             }
                         }
                     }
+                    .padding(.bottom, 24)
                 }
-                .padding(.bottom, 24)
             }
         }
         .padding(.top, 8)

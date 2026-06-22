@@ -44,7 +44,7 @@ struct ContentView: View {
     @State var legEstimates: [UUID: LegEstimate] = [:]
     @State var estimatesTask: Task<Void, Never>?
 
-    @State var sheetDetent: PresentationDetent = .height(120)
+    @State var sheetDetent: PresentationDetent = .height(BottomSheet.collapsedHeight)
     @State var showSettings = false
     @State var hasSavedItinerary = UserDefaults.standard.data(forKey: lastItineraryKey) != nil
 
@@ -171,9 +171,10 @@ struct ContentView: View {
                 onPauseRoute: { engine.pauseRoute() },
                 onResumeRoute: { engine.resumeRoute() },
                 onStopRoute: { engine.stopRoute() },
-                onOpenSettings: { showSettings = true }
+                onOpenSettings: { showSettings = true },
+                sheetDetent: sheetDetent
             )
-            .presentationDetents([.height(120), .medium, .large], selection: $sheetDetent)
+            .presentationDetents([.height(BottomSheet.collapsedHeight), .medium, .large], selection: $sheetDetent)
             .presentationDragIndicator(.visible)
             .presentationBackgroundInteraction(.enabled)
             .interactiveDismissDisabled()
