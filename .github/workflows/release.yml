@@ -156,6 +156,12 @@ jobs:
     permissions:
       contents: read
       packages: write
+    env:
+      # Surfaced as an env var so steps below can gate on its presence: when the
+      # DOCKERHUB_USERNAME secret isn't configured, the Docker Hub login is
+      # skipped and the docker.io image line resolves to empty — so the release
+      # still succeeds (pushing to ghcr.io only) instead of failing.
+      DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
 
@@ -172,11 +178,22 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Log in to Docker Hub
+        if: env.DOCKERHUB_USERNAME != ''
+        uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee # v4
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
       - name: Extract metadata (tags, labels)
         id: meta
         uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051 # v5
         with:
-          images: ghcr.io/${{ github.repository }}/gpsmock-engine
+          # Push to ghcr.io always; add the Docker Hub image only when the
+          # secret is set (empty lines are ignored by metadata-action).
+          images: |
+            ghcr.io/${{ github.repository }}/gpsmock-engine
+            ${{ env.DOCKERHUB_USERNAME != '' && format('docker.io/{0}/gpsmock-engine', env.DOCKERHUB_USERNAME) || '' }}
           tags: |
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
