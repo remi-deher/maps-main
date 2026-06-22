@@ -339,7 +339,11 @@ struct SettingsSheet: View {
             }
         }
     }
+}
 
+// Computed properties and actions split into an extension so the struct's
+// own body stays under SwiftLint's type_body_length limit.
+extension SettingsSheet {
     private var appVersion: String {
         let info = Bundle.main.infoDictionary
         let version = info?["CFBundleShortVersionString"] as? String ?? "?"
