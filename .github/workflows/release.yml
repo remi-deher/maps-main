@@ -44,14 +44,33 @@ jobs:
           path: dist/*
 
   bundle-windows-engine:
-    name: bundle Windows engine with embedded Python
+    name: bundle Windows engine with both iOS drivers
     needs: build-engine
     runs-on: windows-latest
     steps:
+      # checkout BEFORE download-artifact: actions/checkout cleans the workspace
+      # by default, which would wipe the downloaded bundle/ if done after.
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+
+      - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6
+        with:
+          go-version-file: engine/go.mod
+
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           name: gpsmock-engine-windows-amd64
           path: bundle
+
+      # go-ios driver: a single static binary, no runtime deps. Bundling it as
+      # resources/ios.exe (the name platform.ResolveGoIos looks for first) makes
+      # the go-ios driver work with zero setup — the lightweight, Python-free
+      # alternative to pymobiledevice. Same version as docker/Dockerfile.
+      - name: Build and bundle go-ios driver
+        shell: pwsh
+        run: |
+          $env:GOBIN = "$pwd\bundle\resources"
+          go install github.com/danielpaulus/go-ios@v1.2.0
+          Rename-Item "$env:GOBIN\go-ios.exe" ios.exe
 
       # The pymobiledevice driver shells out to `python -m pymobiledevice3`
       # (engine/internal/platform/binary.go). Most users on Windows don't have
