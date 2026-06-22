@@ -3,6 +3,7 @@ name: Swift Lint
 on:
   workflow_dispatch:
   push:
+    branches: [v3-rewrite, main]
     paths:
       - 'ios-app/**'
       - '.swiftlint.yml'
@@ -12,6 +13,10 @@ on:
       - 'ios-app/**'
       - '.swiftlint.yml'
       - '.github/workflows/swift-lint.yml'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: read

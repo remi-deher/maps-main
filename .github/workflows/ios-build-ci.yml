@@ -3,6 +3,7 @@ name: iOS Companion Build CI
 on:
   workflow_dispatch:
   push:
+    branches: [v3-rewrite, main]
     paths:
       - 'ios-app/**'
       - '.github/workflows/ios-build-ci.yml'
@@ -10,6 +11,10 @@ on:
     paths:
       - 'ios-app/**'
       - '.github/workflows/ios-build-ci.yml'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: read

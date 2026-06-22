@@ -12,6 +12,10 @@ on:
       - 'tauri-app/**'
       - '.github/workflows/tauri-ui-ci.yml'
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
 

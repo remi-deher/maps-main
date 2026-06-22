@@ -21,6 +21,10 @@ on:
       - 'ios-app/Sources/EngineClient.swift'
       - 'tauri-app/src/context/websocket.tsx'
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
 
