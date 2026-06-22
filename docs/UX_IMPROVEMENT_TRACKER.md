@@ -70,10 +70,12 @@ web est désormais un produit à part entière (headless+web servi au navigateur
 
 | # | Item | Statut | Note |
 |---|---|---|---|
-| C1 | Page d'état / first-run dans l'UI web (driver, device, tunnel) | ⬜ | aujourd'hui implicite |
-| C2 | Remonter `LOG`/`LOGS` proprement dans l'UI (toasts/bandeau) | ⬜ | au-delà de la console |
-| C3 | Messages d'erreur actionnables (généraliser le fix tunnel pmd3) | 🟡 | fait pour pmd3 ; étendre |
+| C1 | Page d'état / first-run dans l'UI web (driver, device, tunnel) | ✅ | audit corrigé : `ControlTab` a déjà « État système » (moteur/tunnel/injection/dérive) + « Périphérique » (nom/driver/transport) avec message clair si aucun device — pas un vrai trou, juste mal étiqueté « implicite » à l'origine |
+| C2 | Remonter `LOG`/`LOGS` proprement dans l'UI (toasts/bandeau) | ✅ | le client web demandait `GET_LOGS` mais n'avait aucun handler ; ajouté `logs` au contexte WS + `LogBanner.tsx` (bandeaux warn/error auto-expirables, visibles quel que soit l'onglet actif) (`c470099`) |
+| C3 | Messages d'erreur actionnables (généraliser le fix tunnel pmd3) | ✅ | go-ios avait le même angle mort que pmd3 avant son fix (sortie tunnel ignorée sauf ligne RSD) ; appliqué le même tampon des 20 dernières lignes + cas de sortie anticipée (`78a1c87`) |
 | C4 | Observabilité (`/metrics`, health) | ✅ | déjà en place |
+
+**Serveur : terminé** (C1–C4). Section C close.
 
 ---
 
@@ -103,4 +105,7 @@ Chaque étape = commit(s) isolé(s), CI verte sur push, ce tracker mis à jour.
 - 2026-06-22 — **Web a11y/responsive terminés** : Sidebar favoris/historique `<div>`→`<button>` + zone GPX clavier (`d3038b6`, B5 ✅) ; responsive ≤480px + cibles 44px (`eb3ed87`, B2 ✅). Reste B1 (décompo Sidebar) = pur refactor différé, à QA dans l'app.
 - 2026-06-22 — **Web bloc 1–3 (a11y + robustesse)** : `lang=fr` + `:focus-visible` + `prefers-reduced-motion` (`64508cb`) ; SearchBox résultats→boutons/listbox + MapContainer aria (`4cad58a`) ; SearchBox `AbortController`/erreur + header UA retiré ; audit 3.3 corrigé (OSRM = server-side, CSP = phase serveur). Reste web : décompo Sidebar (B1) + divs Sidebar a11y, responsive (B2), favicon/empty-states.
 - 2026-06-22 — **iOS A3 localisation #9** (`e710455`) : `Localizable.xcstrings` (source fr), `developmentLanguage: fr`, `CFBundleDevelopmentRegion: fr`, `SWIFT_EMIT_LOC_STRINGS: YES`. iOS Build CI **vert**. **iOS = 100 % fait** (App Intents #14a + localisation #9 ; #14b/#4b différés, polish restant non bloquant). Prochain : section C — UX serveur (C1 first-run, C2 logs en toasts, C3 erreurs actionnables).
+- 2026-06-22 — **Serveur C2** (`c470099`) : `LogBanner.tsx` + `logs` dans le contexte WS — les `LOG`/`LOGS` du moteur (déjà consommés côté iOS) atteignent enfin l'UI web (bandeaux warn/error). tsc/build/vitest verts.
+- 2026-06-22 — **Serveur C3** (`78a1c87`) : généralisé le fix tampon-20-lignes de pmd3 au driver go-ios (`StartTunnel`) — même angle mort, sortie ignorée hors ligne RSD. `go build`/`go vet`/`go test ./...` verts.
+- 2026-06-22 — **Serveur C1 réévalué** : relecture du code montre que `ControlTab` couvre déjà l'essentiel (état moteur/tunnel/dérive + driver/transport/device) ; corrigé le faux trou plutôt que de construire un écran first-run non testable visuellement ici (pas de QA Tauri/navigateur disponible dans cet environnement). **Section C = 100 % fait. Chantier UX transverse (iOS + web + serveur) clos.**
 - 2026-06-22 — **B0 audit web rédigé** (`docs/UI_UX_BASELINE_WEB.md`) : 12 écarts sourcés (3 critiques : `lang="en"`, `<div onClick>`, dépendances réseau/CSP+OSRM http), roadmap 10 items. Découvertes en plus : `lang="en"` vs app FR ; OSRM en `http://` (mixed-content) ; UA Nominatim ignoré en navigateur ; pas de `prefers-reduced-motion`/`prefers-color-scheme`. Ordre conseillé : a11y+robustesse navigateur (1–3) → décompo+responsive (4–5) → polish.
