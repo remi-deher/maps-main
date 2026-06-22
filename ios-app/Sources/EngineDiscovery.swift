@@ -1,12 +1,14 @@
 import Foundation
 import Network
+import Observation
 
 /// Browses for the engine advertising itself as `_gpsmock._tcp` on the LAN
 /// (see engine/cmd/headless/run.go, advertiseMdns) so the user never has to
 /// type an IP:port by hand. Falls back gracefully — manual entry in
 /// ContentView still works if discovery finds nothing or local-network
 /// permission is denied.
-final class EngineDiscovery: ObservableObject {
+@Observable
+final class EngineDiscovery {
     enum State: Equatable {
         case idle
         case searching
@@ -14,7 +16,7 @@ final class EngineDiscovery: ObservableObject {
         case notFound
     }
 
-    @Published var state: State = .idle
+    var state: State = .idle
 
     private var browser: NWBrowser?
     private var resolveConnection: NWConnection?

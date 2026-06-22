@@ -1,12 +1,13 @@
 import CoreLocation
-import Combine
+import Observation
 
 /// Wraps CLLocationManager and republishes the device's real position so
 /// EngineClient can forward it to the moteur as REAL_LOCATION — the data the
 /// anti-drift shield needs to confirm the spoof actually "took" on-device.
-final class LocationManager: NSObject, ObservableObject, CLLocationManagerDelegate {
-    @Published var authorizationStatus: CLAuthorizationStatus = .notDetermined
-    @Published var lastLocation: CLLocation?
+@Observable
+final class LocationManager: NSObject, CLLocationManagerDelegate {
+    var authorizationStatus: CLAuthorizationStatus = .notDetermined
+    var lastLocation: CLLocation?
 
     /// Called on every CoreLocation delivery — including the brief execution
     /// windows iOS grants a backgrounded app holding Always auth + the

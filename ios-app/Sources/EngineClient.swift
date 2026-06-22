@@ -1,5 +1,6 @@
 import Foundation
 import CoreLocation
+import Observation
 
 enum EngineConnectionState: String {
     case disconnected = "Déconnecté"
@@ -83,11 +84,12 @@ struct EngineStatus: Codable, Equatable {
 /// the engine is the single source of truth, so every connected client
 /// (desktop, iOS, headless) sees the same STATUS broadcasts and stays in sync
 /// for free.
-final class EngineClient: NSObject, ObservableObject, URLSessionWebSocketDelegate {
-    @Published var state: EngineConnectionState = .disconnected
-    @Published var lastError: String?
-    @Published var status: EngineStatus?
-    @Published var logs: [LogEntryPayload] = []
+@Observable
+final class EngineClient: NSObject, URLSessionWebSocketDelegate {
+    var state: EngineConnectionState = .disconnected
+    var lastError: String?
+    var status: EngineStatus?
+    var logs: [LogEntryPayload] = []
 
     private let maxLogEntries = 200
 

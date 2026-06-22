@@ -1,5 +1,6 @@
 import ActivityKit
 import Foundation
+import Observation
 
 /// Starts/updates/ends the Lock Screen + Dynamic Island Live Activity that
 /// mirrors the engine's simulation state — entirely client-side (no push
@@ -7,7 +8,8 @@ import Foundation
 /// a user-facing toggle (SettingsSheet) since some users may not want a
 /// Lock Screen widget revealing that a simulation is running.
 @MainActor
-final class LiveActivityManager: ObservableObject {
+@Observable
+final class LiveActivityManager {
     private var activity: Activity<SimulationActivityAttributes>?
 
     /// Call whenever engine.status changes. No-ops if disabled or the

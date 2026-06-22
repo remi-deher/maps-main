@@ -7,8 +7,8 @@ import SwiftUI
 /// the machine running the engine, or a Mac + Console.app for the client
 /// side, required.
 struct LogsView: View {
-    @ObservedObject var engine: EngineClient
-    @ObservedObject private var appLogger = AppLogger.shared
+    var engine: EngineClient
+    private var appLogger = AppLogger.shared
 
     @State private var query = ""
     @State private var levelFilter: LevelFilter = .all

@@ -1,4 +1,5 @@
 import MapKit
+import Observation
 
 /// Wraps `MKLocalSearchCompleter` for instant address suggestions as the
 /// user types — Plans shows completions within a keystroke or two, whereas
@@ -7,8 +8,9 @@ import MapKit
 /// an `MKMapItem` (one `MKLocalSearch`) only once the user picks one. See
 /// §3.8 of docs/UI_UX_BASELINE.md.
 @MainActor
-final class SearchCompleter: NSObject, ObservableObject, MKLocalSearchCompleterDelegate {
-    @Published var results: [MKLocalSearchCompletion] = []
+@Observable
+final class SearchCompleter: NSObject, MKLocalSearchCompleterDelegate {
+    var results: [MKLocalSearchCompletion] = []
 
     private let completer: MKLocalSearchCompleter
 

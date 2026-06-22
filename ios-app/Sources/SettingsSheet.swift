@@ -8,8 +8,8 @@ import UIKit
 /// so the primary UI stays just the map + omnibar.
 struct SettingsSheet: View {
     @Binding var engineAddress: String
-    @ObservedObject var engine: EngineClient
-    @ObservedObject var discovery: EngineDiscovery
+    var engine: EngineClient
+    var discovery: EngineDiscovery
     var onToggleConnection: () -> Void
     var onRetryDiscovery: () -> Void
     var onApplyPort: () -> Void

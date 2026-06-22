@@ -8,10 +8,10 @@ struct ContentView: View {
     // "already configured" state before Bonjour discovery had a chance to
     // run. See §3.24 of docs/UI_UX_BASELINE.md.
     @AppStorage("engineAddress") var engineAddress: String = ""
-    @StateObject var location = LocationManager()
-    @StateObject var engine = EngineClient()
-    @StateObject var discovery = EngineDiscovery()
-    @StateObject var liveActivity = LiveActivityManager()
+    @State var location = LocationManager()
+    @State var engine = EngineClient()
+    @State var discovery = EngineDiscovery()
+    @State var liveActivity = LiveActivityManager()
     @AppStorage("liveActivityEnabled") var liveActivityEnabled = true
     // Mirrors the engine's EveilMode/EveilInterval defaults (settings/schema.go)
     // — keeping them in sync means the iOS keep-alive cadence matches what the
@@ -35,7 +35,7 @@ struct ContentView: View {
     @State var visibleRegion: MKCoordinateRegion?
 
     @State var searchQuery = ""
-    @StateObject var searchCompleter = SearchCompleter()
+    @State var searchCompleter = SearchCompleter()
     @FocusState var searchFocused: Bool
 
     @State var itineraryStops: [RouteStop] = []
@@ -150,23 +150,25 @@ struct ContentView: View {
                 hasSavedItinerary: hasSavedItinerary,
                 onLoadLastItinerary: loadLastItinerary,
                 selectedPlace: selectedPlace,
-                onPlaceTeleport: {
-                    guard let place = selectedPlace, requireConnection() else { return }
-                    engine.setLocation(lat: place.coordinate.latitude, lon: place.coordinate.longitude)
-                    selectedPlace = nil
-                },
-                onPlaceRoute: {
-                    guard let place = selectedPlace, requireConnection() else { return }
-                    engine.playRoute(endLat: place.coordinate.latitude, endLon: place.coordinate.longitude, speed: defaultSpeed, profile: defaultProfile)
-                    selectedPlace = nil
-                },
-                onPlaceAddStop: {
-                    guard let place = selectedPlace else { return }
-                    itineraryStops.append(RouteStop(coordinate: place.coordinate, name: place.title))
-                    selectedPlace = nil
-                },
-                onPlaceFavorite: { showAddFavorite = true },
-                onPlaceDismiss: { selectedPlace = nil },
+                placeActions: PlaceActions(
+                    onTeleport: {
+                        guard let place = selectedPlace, requireConnection() else { return }
+                        engine.setLocation(lat: place.coordinate.latitude, lon: place.coordinate.longitude)
+                        selectedPlace = nil
+                    },
+                    onRoute: {
+                        guard let place = selectedPlace, requireConnection() else { return }
+                        engine.playRoute(endLat: place.coordinate.latitude, endLon: place.coordinate.longitude, speed: defaultSpeed, profile: defaultProfile)
+                        selectedPlace = nil
+                    },
+                    onAddStop: {
+                        guard let place = selectedPlace else { return }
+                        itineraryStops.append(RouteStop(coordinate: place.coordinate, name: place.title))
+                        selectedPlace = nil
+                    },
+                    onFavorite: { showAddFavorite = true },
+                    onDismiss: { selectedPlace = nil }
+                ),
                 simulationState: engine.status?.state,
                 onPauseRoute: { engine.pauseRoute() },
                 onResumeRoute: { engine.resumeRoute() },

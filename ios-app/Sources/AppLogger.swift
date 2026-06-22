@@ -1,5 +1,6 @@
 import Foundation
 import os
+import Observation
 
 struct AppLogEntry: Identifiable, Equatable {
     let id = UUID()
@@ -15,13 +16,14 @@ struct AppLogEntry: Identifiable, Equatable {
 /// issue from the phone doesn't require a Mac + Console.app. Also forwards
 /// to os.Logger so entries still show up in Console.app/sysdiagnose when one
 /// is available.
-final class AppLogger: ObservableObject {
+@Observable
+final class AppLogger {
     static let shared = AppLogger()
 
     private let osLog = Logger(subsystem: "com.remi2.gpsmock.companion", category: "app")
     private let maxEntries = 200
 
-    @Published private(set) var entries: [AppLogEntry] = []
+    private(set) var entries: [AppLogEntry] = []
 
     private init() {}
 
