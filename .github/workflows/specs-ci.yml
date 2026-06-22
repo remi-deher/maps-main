@@ -8,10 +8,18 @@ on:
       - 'spec/**'
       - 'redocly.yaml'
       - '.github/workflows/specs-ci.yml'
+      # Protocol type declarations in each implementation — so the conformance
+      # job runs when a client adds/renames a message type, not just on spec edits.
+      - 'engine/internal/api/messages.go'
+      - 'ios-app/Sources/EngineClient.swift'
+      - 'tauri-app/src/context/websocket.tsx'
   pull_request:
     paths:
       - 'spec/**'
       - '.github/workflows/specs-ci.yml'
+      - 'engine/internal/api/messages.go'
+      - 'ios-app/Sources/EngineClient.swift'
+      - 'tauri-app/src/context/websocket.tsx'
 
 permissions:
   contents: read
@@ -31,3 +39,12 @@ jobs:
 
       - name: Validate AsyncAPI
         run: npx --yes @asyncapi/cli@latest validate spec/asyncapi.yaml
+
+  conformance:
+    name: protocol conformance (spec ↔ implementations)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+
+      - name: Check spec matches engine / iOS / tauri message types
+        run: python3 spec/check_conformance.py

@@ -42,6 +42,10 @@ channels:
       SEQUENCE_SYNC: { $ref: "#/components/messages/SEQUENCE_SYNC" }
       PATROL_UPDATE: { $ref: "#/components/messages/PATROL_UPDATE" }
       RELANCE: { $ref: "#/components/messages/EMPTY" }
+      CLEAR_HISTORY: { $ref: "#/components/messages/EMPTY" }
+      GET_LOGS: { $ref: "#/components/messages/EMPTY" }
+      GET_DEVICE_INFO: { $ref: "#/components/messages/EMPTY" }
+      SWITCH_DRIVER: { $ref: "#/components/messages/SWITCH_DRIVER" }
       # ── Outbound (engine -> client) ──
       STATUS: { $ref: "#/components/messages/STATUS" }
       STATUS_UPDATE: { $ref: "#/components/messages/STATUS_UPDATE" }
@@ -51,6 +55,9 @@ channels:
       TELEMETRY: { $ref: "#/components/messages/TELEMETRY" }
       SEQUENCE_PREVIEW_UPDATED: { $ref: "#/components/messages/SEQUENCE_PREVIEW_UPDATED" }
       ROUTE_FINISHED: { $ref: "#/components/messages/ROUTE_FINISHED" }
+      LOG: { $ref: "#/components/messages/LOG" }
+      LOGS: { $ref: "#/components/messages/LOGS" }
+      DEVICE_INFO: { $ref: "#/components/messages/DEVICE_INFO" }
 
 operations:
   sendAction:
@@ -125,6 +132,14 @@ components:
       payload: { $ref: "#/components/schemas/Envelope_SequenceSync" }
     ROUTE_FINISHED:
       payload: { $ref: "#/components/schemas/Envelope_RouteFinished" }
+    SWITCH_DRIVER:
+      payload: { $ref: "#/components/schemas/Envelope_SwitchDriver" }
+    LOG:
+      payload: { $ref: "#/components/schemas/Envelope_Log" }
+    LOGS:
+      payload: { $ref: "#/components/schemas/Envelope_Logs" }
+    DEVICE_INFO:
+      payload: { $ref: "#/components/schemas/Envelope_DeviceInfo" }
 
   schemas:
     Envelope_Empty:
@@ -373,3 +388,57 @@ components:
             sw: { $ref: "#/components/schemas/LatLon" }
         active: { type: boolean }
       required: [type, active]
+
+    LogEntry:
+      type: object
+      properties:
+        timestamp: { type: integer }
+        level: { type: string, enum: [info, warn, error] }
+        source: { type: string }
+        message: { type: string }
+      required: [timestamp, level, source, message]
+
+    Envelope_SwitchDriver:
+      type: object
+      properties:
+        type: { const: SWITCH_DRIVER }
+        data:
+          type: object
+          properties:
+            driverId: { type: string }
+            transport: { type: string, enum: [auto, usb, wifi] }
+          required: [driverId]
+      required: [type, data]
+
+    Envelope_Log:
+      type: object
+      properties:
+        type: { const: LOG }
+        data: { $ref: "#/components/schemas/LogEntry" }
+      required: [type, data]
+
+    Envelope_Logs:
+      type: object
+      properties:
+        type: { const: LOGS }
+        data:
+          type: array
+          items: { $ref: "#/components/schemas/LogEntry" }
+      required: [type, data]
+
+    Envelope_DeviceInfo:
+      type: object
+      properties:
+        type: { const: DEVICE_INFO }
+        data:
+          type: object
+          properties:
+            udid: { type: string }
+            name: { type: string }
+            productType: { type: string }
+            productVersion: { type: string }
+            serialNumber: { type: string }
+            wifiAddress: { type: string }
+            tunnelAddress: { type: string }
+            error: { type: string }
+      required: [type, data]
