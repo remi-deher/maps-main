@@ -13,6 +13,8 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -47,6 +49,15 @@ func TestHelperProcess(t *testing.T) {
 		if a == "auto-mount" {
 			return
 		}
+	}
+
+	// echo-args records the CLI args (everything after the bin name) to a file
+	// so a test can assert the exact command the driver built.
+	if scenario == "echo-args" {
+		if f := os.Getenv("FAKE_ARGS_FILE"); f != "" {
+			_ = os.WriteFile(f, []byte(strings.Join(args[1:], " ")), 0o644)
+		}
+		return
 	}
 
 	switch scenario {
@@ -167,6 +178,59 @@ func TestSetLocationSurfacesCommandFailure(t *testing.T) {
 
 	if err := d.SetLocation(context.Background(), 48.8566, 2.3522); err == nil {
 		t.Error("expected an error when the underlying simulate-location command fails")
+	}
+}
+
+// echoArgs runs op against a driver wired to the echo-args fake and returns the
+// exact CLI args the driver built (everything after the bin name).
+func echoArgs(t *testing.T, d *Driver, op func() error) string {
+	t.Helper()
+	argsFile := filepath.Join(t.TempDir(), "args.txt")
+	t.Setenv("FAKE_ARGS_FILE", argsFile)
+	withFakeExec(t, "echo-args")
+	if err := op(); err != nil {
+		t.Fatalf("op: %v", err)
+	}
+	b, err := os.ReadFile(argsFile)
+	if err != nil {
+		t.Fatalf("read args file: %v", err)
+	}
+	return string(b)
+}
+
+func TestSetLocationBuildsCorrectCommand(t *testing.T) {
+	d := &Driver{py: "fake-python", base: []string{}}
+	d.mu.Lock()
+	d.tunnel.Address, d.tunnel.Port, d.tunnelOn = "fde6:1234::1", 54321, true
+	d.mu.Unlock()
+
+	got := echoArgs(t, d, func() error {
+		return d.SetLocation(context.Background(), 48.8566, 2.3522)
+	})
+	for _, want := range []string{
+		"developer dvt simulate-location set",
+		"--rsd fde6:1234::1 54321",
+		"-- 48.8566 2.3522",
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("simulate-location args %q missing %q", got, want)
+		}
+	}
+}
+
+func TestClearLocationBuildsClearCommand(t *testing.T) {
+	d := &Driver{py: "fake-python", base: []string{}}
+	d.mu.Lock()
+	d.tunnel.Address, d.tunnel.Port, d.tunnelOn = "fde6:1234::1", 54321, true
+	d.mu.Unlock()
+
+	got := echoArgs(t, d, func() error {
+		return d.ClearLocation(context.Background())
+	})
+	for _, want := range []string{"developer dvt simulate-location clear", "--rsd fde6:1234::1 54321"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("simulate-location clear args %q missing %q", got, want)
+		}
 	}
 }
 
