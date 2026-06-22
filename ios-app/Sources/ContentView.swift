@@ -40,6 +40,7 @@ struct ContentView: View {
     @State var itineraryProfile: String = "driving"
 
     @State var sheetDetent: PresentationDetent = .height(BottomSheet.collapsedHeight)
+    @State var collapsedSheetHeight: CGFloat = BottomSheet.collapsedHeight
     @State var showSettings = false
     @State var hasSavedItinerary = UserDefaults.standard.data(forKey: lastItineraryKey) != nil
 
@@ -169,9 +170,17 @@ struct ContentView: View {
                 onResumeRoute: { session.engine.resumeRoute() },
                 onStopRoute: { session.engine.stopRoute() },
                 onOpenSettings: { showSettings = true },
-                sheetDetent: sheetDetent
+                sheetDetent: sheetDetent,
+                collapsedHeight: collapsedSheetHeight,
+                onCollapsedHeightChange: { newHeight in
+                    let wasCollapsed = sheetDetent == .height(collapsedSheetHeight)
+                    collapsedSheetHeight = newHeight
+                    if wasCollapsed {
+                        sheetDetent = .height(newHeight)
+                    }
+                }
             )
-            .presentationDetents([.height(BottomSheet.collapsedHeight), .medium, .large], selection: $sheetDetent)
+            .presentationDetents([.height(collapsedSheetHeight), .medium, .large], selection: $sheetDetent)
             .presentationDragIndicator(.visible)
             .presentationBackgroundInteraction(.enabled)
             .interactiveDismissDisabled()

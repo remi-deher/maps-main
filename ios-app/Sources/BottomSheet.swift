@@ -13,6 +13,17 @@ struct PlaceActions {
     var onDismiss: () -> Void
 }
 
+/// Reports the search capsule's actual rendered height up to ContentView, so
+/// the collapsed detent can hug exactly the search bar — Plans-style — rather
+/// than guessing a fixed height that leaves a strip of empty sheet background
+/// below the capsule (or worse, clips it) on different dynamic-type sizes.
+private struct HeaderHeightKey: PreferenceKey {
+    static var defaultValue: CGFloat = BottomSheet.collapsedHeight
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = nextValue()
+    }
+}
+
 /// Persistent draggable bottom sheet (à la Plans): collapsed it only shows
 /// the search field, dragging the slider up reveals search results, the
 /// itinerary being built, or favorites — instead of floating cards over the
@@ -56,19 +67,33 @@ struct BottomSheet: View {
     /// actually dragged/expanded open.
     var sheetDetent: PresentationDetent
 
+    /// The collapsed detent's height, measured live from the header's actual
+    /// rendered size (see `HeaderHeightKey`) and reported up via
+    /// `onCollapsedHeightChange` so ContentView can keep its
+    /// `.presentationDetents` / `sheetDetent` in sync.
+    var collapsedHeight: CGFloat
+    var onCollapsedHeightChange: (CGFloat) -> Void
+
     private var isSearching: Bool {
         !searchQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
     private var isCollapsed: Bool {
-        sheetDetent == .height(BottomSheet.collapsedHeight)
+        sheetDetent == .height(collapsedHeight)
     }
 
+    /// Fallback used only until the header's first layout pass reports its
+    /// real height — never the value actually rendered against.
     static let collapsedHeight: CGFloat = 120
 
     var body: some View {
         VStack(spacing: 14) {
             header
+                .background(
+                    GeometryReader { proxy in
+                        Color.clear.preference(key: HeaderHeightKey.self, value: proxy.size.height)
+                    }
+                )
 
             if !isCollapsed {
                 ScrollView {
@@ -78,6 +103,12 @@ struct BottomSheet: View {
             }
         }
         .padding(.top, 8)
+        .onPreferenceChange(HeaderHeightKey.self) { measured in
+            let height = measured + 8
+            if abs(height - collapsedHeight) > 0.5 {
+                onCollapsedHeightChange(height)
+            }
+        }
     }
 
     /// The sheet's expanded content — exactly one of the place card, search
