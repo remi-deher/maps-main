@@ -54,21 +54,23 @@ historique, legs de séquence). C'est le principal trou d'accessibilité web.
 et ajouter `aria-label` aux boutons icône-seule.
 
 ### 3.3 [CRITIQUE] Dépendances réseau externes → CSP + offline (produit headless+web)
-Le frontend appelle, depuis le navigateur :
+Appels **depuis le navigateur** (vérifié : un seul `fetch()` direct, + ressources statiques) :
 - Google Fonts (`App.css`), Leaflet CSS via **unpkg** (`index.html`) ;
 - tuiles : `tile.openstreetmap.org`, `basemaps.cartocdn.com`, `server.arcgisonline.com` ;
-- géocodage **Nominatim** (`SearchBox.tsx`) ; routage **OSRM** (`Sidebar.tsx`).
+- géocodage **Nominatim** (`SearchBox.tsx`).
+
+Note : **OSRM est appelé côté moteur** (server-side) ; le champ « Serveur OSRM »
+de l'onglet Réglages ne fait que configurer l'URL utilisée par le moteur — donc
+**pas de mixed-content navigateur** (le `http://…` dans le placeholder est sans effet sur la page).
 
 Conséquences pour le moteur qui sert l'UI :
-- la **CSP** du moteur doit autoriser tous ces hôtes (sinon UI cassée en navigateur) ;
-- **`http://router.project-osrm.org`** (non-https) → **mixed-content bloqué** si
-  la page est un jour servie en https ;
-- Nominatim reçoit un header `User-Agent` custom **ignoré par le navigateur** →
-  risque de blocage (la politique Nominatim exige un UA identifiable) ;
-- **aucun fonctionnement hors-ligne** (polices/tuiles/CDN).
-**Action** : définir/serveur une CSP explicite, passer OSRM en https,
-envisager d'auto-héberger Leaflet/police, et acheminer géocodage/routage via le
-moteur (proxy) pour un UA correct et une CSP réduite.
+- la **CSP** du moteur doit autoriser ces hôtes (polices, unpkg, tuiles, Nominatim),
+  sinon UI cassée en navigateur → **tâche serveur** (phase C) ;
+- ✅ corrigé côté web : header `User-Agent` Nominatim (interdit/ignoré en navigateur) **retiré**,
+  `AbortController` + état d'erreur ajoutés (`SearchBox.tsx`) ;
+- **aucun fonctionnement hors-ligne** (polices/tuiles/CDN) — auto-héberger
+  Leaflet/police plus tard si besoin.
+**Action restante** : CSP explicite servie par le moteur (phase serveur C).
 
 ### 3.4 [MAJEUR] `Sidebar.tsx` — god-component de 1283 lignes
 Connexion, télémétrie, favoris, séquences, patrouille, GPX, réglages : tout est

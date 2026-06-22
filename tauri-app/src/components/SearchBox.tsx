@@ -17,6 +17,7 @@ export const SearchBox: React.FC<SearchBoxProps> = ({ onSelectLocation }) => {
   const [results, setResults] = useState<NominatimResult[]>([]);
   const [loading, setLoading] = useState(false);
   const [showDropdown, setShowDropdown] = useState(false);
+  const [searchError, setSearchError] = useState<string | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
   // Handle clicking outside dropdown to close it
@@ -34,33 +35,42 @@ export const SearchBox: React.FC<SearchBoxProps> = ({ onSelectLocation }) => {
   useEffect(() => {
     if (!query.trim() || query.length < 3) {
       setResults([]);
+      setSearchError(null);
       return;
     }
 
+    // Abort an in-flight request when the query changes or the component
+    // unmounts, so stale responses can't overwrite newer results.
+    const controller = new AbortController();
     const delayDebounce = setTimeout(async () => {
       setLoading(true);
+      setSearchError(null);
       try {
+        // No User-Agent header: it's a forbidden header in browsers (silently
+        // dropped); the Origin/Referer already identifies the app to Nominatim.
         const response = await fetch(
           `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(
             query
           )}&limit=5`,
-          {
-            headers: {
-              "User-Agent": "GPS-Mock-v3-Tauri-App",
-            },
-          }
+          { signal: controller.signal }
         );
         const data = await response.json();
         setResults(data);
         setShowDropdown(true);
       } catch (error) {
+        if ((error as Error).name === "AbortError") return;
         console.error("Geocoding error:", error);
+        setSearchError("Recherche indisponible (réseau).");
+        setShowDropdown(true);
       } finally {
         setLoading(false);
       }
     }, 600);
 
-    return () => clearTimeout(delayDebounce);
+    return () => {
+      clearTimeout(delayDebounce);
+      controller.abort();
+    };
   }, [query]);
 
   const handleSelect = (res: NominatimResult) => {
@@ -79,6 +89,7 @@ export const SearchBox: React.FC<SearchBoxProps> = ({ onSelectLocation }) => {
     setQuery("");
     setResults([]);
     setShowDropdown(false);
+    setSearchError(null);
   };
 
   return (
@@ -99,10 +110,12 @@ export const SearchBox: React.FC<SearchBoxProps> = ({ onSelectLocation }) => {
         )}
       </div>
 
-      {showDropdown && (results.length > 0 || loading) && (
+      {showDropdown && (results.length > 0 || loading || searchError) && (
         <div className="search-results-dropdown" role="listbox" aria-label="Résultats de recherche">
           {loading ? (
             <div className="search-dropdown-loading">Recherche en cours...</div>
+          ) : searchError ? (
+            <div className="search-dropdown-loading" role="alert">{searchError}</div>
           ) : (
             results.map((res) => (
               <button

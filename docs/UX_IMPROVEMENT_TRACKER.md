@@ -57,7 +57,7 @@ web est désormais un produit à part entière (headless+web servi au navigateur
 | B2 | Layout responsive (navigateur mobile/tablette) | ⬜ | **vérifié** : 1 seule `@media` dans tout le CSS → non responsive |
 | B3 | Audit de parité avec iOS | ✅ | **vérifié** : patrouille, GPX, statut connexion présents côté web |
 | B4 | États vides / erreurs / chargement cohérents | 🔎 | à auditer après B0 |
-| B5 | Accessibilité web (aria, focus, contrastes) | ⬜ | **vérifié** : 45 `onClick` sur `<div>` (non focusables), 3 `aria-label` pour 40 `<button>` |
+| B5 | Accessibilité web (aria, focus, contrastes) | 🟡 | `lang=fr`, `:focus-visible` global, `prefers-reduced-motion` faits ; SearchBox (résultats=boutons, listbox) + MapContainer (aria-label/aria-pressed) faits ; reste les `<div onClick>` du `Sidebar` (à traiter pendant la décompo B1) |
 
 ---
 
@@ -93,4 +93,5 @@ Chaque étape = commit(s) isolé(s), CI verte sur push, ce tracker mis à jour.
 - 2026-06-22 — **A1 accessibilité iOS** : audit montre l'a11y déjà quasi complète (Label/Text/accessibilityLabel partout). Corrigé : `trailingButton` 32→44pt, loupe + poignée de réorganisation `accessibilityHidden`. Items #3, #4a ✅. (commit `1b48216`)
 - 2026-06-22 — **A2 quick wins iOS** : vérifiés déjà faits (Timer→Task = commentaire seul ; Slider vitesse ; filtre niveau LogsView ; icônes Picker profil). Aucun code requis.
 - 2026-06-22 — **B0 première vérif web** : Sidebar 1283 l./4 onglets (B1 confirmé) ; 1 seule `@media` → non responsive (B2) ; parité iOS OK (B3 ✅) ; 45 `onClick` sur `<div>` + 3 aria-label (B5 a11y, vrai trou). Reste à rédiger l'audit complet `UI_UX_BASELINE_WEB.md`.
+- 2026-06-22 — **Web bloc 1–3 (a11y + robustesse)** : `lang=fr` + `:focus-visible` + `prefers-reduced-motion` (`64508cb`) ; SearchBox résultats→boutons/listbox + MapContainer aria (`4cad58a`) ; SearchBox `AbortController`/erreur + header UA retiré ; audit 3.3 corrigé (OSRM = server-side, CSP = phase serveur). Reste web : décompo Sidebar (B1) + divs Sidebar a11y, responsive (B2), favicon/empty-states.
 - 2026-06-22 — **B0 audit web rédigé** (`docs/UI_UX_BASELINE_WEB.md`) : 12 écarts sourcés (3 critiques : `lang="en"`, `<div onClick>`, dépendances réseau/CSP+OSRM http), roadmap 10 items. Découvertes en plus : `lang="en"` vs app FR ; OSRM en `http://` (mixed-content) ; UA Nominatim ignoré en navigateur ; pas de `prefers-reduced-motion`/`prefers-color-scheme`. Ordre conseillé : a11y+robustesse navigateur (1–3) → décompo+responsive (4–5) → polish.
