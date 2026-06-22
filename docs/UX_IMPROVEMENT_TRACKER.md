@@ -1,0 +1,92 @@
+# Suivi des améliorations UI/UX — GPS-Mock
+
+Artefact de suivi vivant pour le chantier UI/UX transverse (iOS, web/desktop,
+serveur). **Source de vérité** : on coche ici au fur et à mesure, statut fondé
+sur le code vérifié (pas supposé). Mettre à jour à chaque commit.
+
+Légende statut : ✅ fait · 🟡 partiel/à vérifier · ⬜ à faire · 🔎 audit requis
+
+Dernière vérification du code : 2026-06-22 (commit de base `ce4bad0`).
+
+---
+
+## A. Client iOS (`ios-app/`)
+
+Basé sur `docs/UI_UX_BASELINE.md` §4. Statut vérifié par inspection du code.
+
+| # | Item | Statut | Preuve / note |
+|---|---|---|---|
+| 1 | Aucune `.shadow()` sur glass | ✅ | 0 fichier avec `.shadow(` |
+| 2 | `GlassEffectContainer` autour des overlays | 🟡 | présent (`AdaptiveGlass.swift`) — auditer la couverture des clusters |
+| 3 | Hit-targets ≥ 44 pt | 🟡 | à auditer bouton par bouton |
+| 4a | `accessibilityLabel` sur boutons icône-seule | ⬜ | **1 seule occurrence** dans tout `Sources/` → gros trou VoiceOver |
+| 5 | `AccentColor`, plus de `.indigo` codé en dur | ✅ | `.indigo` 0 hit, `accentColor` 18 hits, asset présent |
+| 6 | Dynamic Type sémantique + `@ScaledMetric` | 🟡 | aucune `.font(.system(size:))` magique (bon) ; `@ScaledMetric` 0 → frames non scalés |
+| 7 | `MKLocalSearchCompleter` (suggestions live) | ✅ | `SearchCompleter.swift`, 6 hits |
+| 8 | Bandeau inline au lieu d'alerte « déconnecté » | ✅ | `statusBanner` présent ; 1 `.alert(` restant à vérifier (légitime ?) |
+| 9 | String Catalog `.xcstrings` + localisation | ⬜ | aucun `.xcstrings` → strings codés en dur |
+| 10 | Décomposer les sheets simultanées | ✅ | `SettingsSheet` en `NavigationStack` |
+| 11 | Sortir la `List` itinéraire du `ScrollView` | ✅ | 0 `scrollDisabled` |
+| 12 | Annotation simulée custom + `symbolEffect` | 🟡 | `symbolEffect` 1 hit — vérifier le marqueur position |
+| 13 | `mapControls` (boussole / échelle / pitch) | ✅ | 3 hits |
+| 14 | App Intents favoris (Siri/Raccourcis/Spotlight) | ⬜ | aucun `AppIntent` dans `Sources/` |
+| 4b | Live Activity interactive (App Intents Pause/Stop) | ⬜ | aucun `AppIntent` → activité non interactive |
+| 15 | `TipKit` long-press carte | ✅ | `MapLongPressTip.swift`, 4 hits |
+| 16 | `Task.sleep` au lieu de `Timer` | ⬜ | 1 `Timer.scheduledTimer` restant |
+| 17 | Slider vitesse + icônes Picker profil | 🟡 | à vérifier dans les panels |
+| 18 | LogsView : `searchable` + filtre niveau | 🟡 | `searchable` présent ; filtre par niveau à vérifier |
+| 19 | `reduceTransparency` fallback | ✅ | 3 hits |
+
+**Reste à faire iOS (priorisé)** :
+- **A1 — Accessibilité** (#4a, #3, #6) : labels sur tous les boutons icône, hit-targets ≥44pt, `@ScaledMetric`. *Impact a11y fort, risque faible.*
+- **A2 — Quick wins** (#16 `Timer`→`Task.sleep`, #17 slider/picker, #2/#12 audit).
+- **A3 — Localisation** (#9) : String Catalog `.xcstrings`.
+- **A4 — App Intents** (#14 favoris, #4b Live Activity interactive Pause/Stop).
+
+---
+
+## B. Client web / desktop (`tauri-app/`)
+
+⚠️ **Aucune analyse UX n'existe pour le web** (la baseline est 100 % iOS). Et le
+web est désormais un produit à part entière (headless+web servi au navigateur).
+
+| # | Item | Statut | Note |
+|---|---|---|---|
+| B0 | Rédiger `docs/UI_UX_BASELINE_WEB.md` (audit + roadmap) | ⬜ | livrable qui débloque le reste |
+| B1 | Décomposer `Sidebar.tsx` (**1283 lignes**, god-component) | ⬜ | connexion/favoris/GPX/patrouille/réglages mêlés |
+| B2 | Layout responsive (navigateur mobile/tablette) | 🔎 | conçu pour fenêtre Tauri desktop ; à tester |
+| B3 | Audit de parité avec iOS | 🔎 | patrouille-sur-carte, GPX, bandeau connexion : présents côté web ? |
+| B4 | États vides / erreurs / chargement cohérents | 🔎 | à auditer après B0 |
+| B5 | Accessibilité web (aria, focus, contrastes) | 🔎 | à auditer |
+
+---
+
+## C. Serveur / moteur (`engine/`)
+
+« UX opérateur » — surface accrue depuis l'UI web embarquée.
+
+| # | Item | Statut | Note |
+|---|---|---|---|
+| C1 | Page d'état / first-run dans l'UI web (driver, device, tunnel) | ⬜ | aujourd'hui implicite |
+| C2 | Remonter `LOG`/`LOGS` proprement dans l'UI (toasts/bandeau) | ⬜ | au-delà de la console |
+| C3 | Messages d'erreur actionnables (généraliser le fix tunnel pmd3) | 🟡 | fait pour pmd3 ; étendre |
+| C4 | Observabilité (`/metrics`, health) | ✅ | déjà en place |
+
+---
+
+## Ordre d'exécution retenu
+
+1. **A1 — Accessibilité iOS** (rapide, fort impact, faible risque) ← *on commence ici*
+2. **A2 — Quick wins iOS**
+3. **A3 — Localisation iOS** (String Catalog)
+4. **A4 — App Intents iOS**
+5. **B0 — Audit UX web** (doc), puis **B1–B5**
+6. **C1–C3 — UX serveur** (first-run web, remontée d'erreurs)
+
+Chaque étape = commit(s) isolé(s), CI verte sur push, ce tracker mis à jour.
+
+---
+
+## Journal
+
+- 2026-06-22 — Création du tracker ; vérification de l'état réel iOS (base `ce4bad0`).
