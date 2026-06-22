@@ -13,6 +13,11 @@ struct EngineMapView: View {
     var routePreview: [CLLocationCoordinate2D]
     var itineraryStops: [RouteStop]
     var patrolZone: PatrolZone?
+    /// Dashed live preview drawn while the user is defining a circle patrol in
+    /// the sheet — lets them see the zone grow on the map as they drag the
+    /// radius, instead of committing blind. Only circles preview: a rectangle
+    /// zone is the visible region, which is already what's on screen.
+    var patrolPreview: (center: CLLocationCoordinate2D, radius: Double)?
     @Binding var cameraPosition: MapCameraPosition
     var onLongPress: (CLLocationCoordinate2D) -> Void
     var onRegionChange: (MKCoordinateRegion) -> Void = { _ in }
@@ -49,6 +54,11 @@ struct EngineMapView: View {
                 }
                 if let zone = patrolZone, zone.active {
                     patrolOverlay(for: zone)
+                }
+                if let preview = patrolPreview {
+                    MapCircle(center: preview.center, radius: preview.radius)
+                        .foregroundStyle(Color.accentColor.opacity(0.12))
+                        .stroke(Color.accentColor, style: StrokeStyle(lineWidth: 2, dash: [8, 6]))
                 }
             }
             .onMapCameraChange { context in

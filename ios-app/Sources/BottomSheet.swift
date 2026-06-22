@@ -13,6 +13,28 @@ struct PlaceActions {
     var onDismiss: () -> Void
 }
 
+/// Patrol-zone state and actions, grouped into one value so they don't balloon
+/// BottomSheet's initializer. ContentView owns the underlying state and drives
+/// the live map preview; the sheet just renders the setup panel, the active
+/// banner, and the entry button. Promoting this out of Réglages lets the zone
+/// be framed against the map instead of configured blind in a settings form.
+struct PatrolControls {
+    /// True while the user is defining a zone (the setup panel is showing).
+    var isSettingUp: Bool
+    /// True while a patrol is running (the persistent active banner shows).
+    var isActive: Bool
+    var type: Binding<String>
+    var radius: Binding<Double>
+    /// Enter setup mode from the sheet's empty state.
+    var onBegin: () -> Void
+    /// Commit the defined zone and start patrolling.
+    var onStart: () -> Void
+    /// Leave setup mode without starting.
+    var onCancel: () -> Void
+    /// Stop a running patrol.
+    var onStop: () -> Void
+}
+
 /// Reports the search capsule's actual rendered height up to ContentView, so
 /// the collapsed detent can hug exactly the search bar — Plans-style — rather
 /// than guessing a fixed height that leaves a strip of empty sheet background
@@ -53,6 +75,8 @@ struct BottomSheet: View {
 
     let selectedPlace: SelectedPlace?
     var placeActions: PlaceActions
+
+    var patrol: PatrolControls
 
     let simulationState: String?
     var onPauseRoute: () -> Void
@@ -195,7 +219,22 @@ struct BottomSheet: View {
                 simulationControlBar
             }
 
-            if let place = selectedPlace {
+            // Persistent like the simulation bar — a running patrol is a
+            // system-level mode you can stop from anywhere in the sheet.
+            if patrol.isActive {
+                patrolActiveBar
+            }
+
+            if patrol.isSettingUp {
+                // Defining a zone takes over the sheet like the place card —
+                // the live dashed preview is drawn on the map underneath.
+                PatrolPanel(
+                    type: patrol.type,
+                    radius: patrol.radius,
+                    onLaunch: patrol.onStart,
+                    onCancel: patrol.onCancel
+                )
+            } else if let place = selectedPlace {
                 // Selecting a place (search result or map long-press) takes
                 // over the sheet's content — this used to float over the
                 // map, where the sheet itself could end up covering it;
@@ -233,6 +272,19 @@ struct BottomSheet: View {
                             HStack {
                                 Image(systemName: "arrow.uturn.backward.circle.fill")
                                 Text("Charger le dernier itinéraire")
+                            }
+                            .frame(maxWidth: .infinity)
+                        }
+                        .buttonStyle(.glass)
+                        .padding(.horizontal, 16)
+                    }
+                    // Patrol entry, promoted out of Réglages so it's reachable
+                    // from the map's resting state instead of buried in a form.
+                    if !patrol.isActive {
+                        Button(action: patrol.onBegin) {
+                            HStack {
+                                Image(systemName: "shield.lefthalf.filled")
+                                Text("Lancer une patrouille")
                             }
                             .frame(maxWidth: .infinity)
                         }
@@ -342,6 +394,28 @@ struct BottomSheet: View {
             }
             Button(action: onStopRoute) {
                 Label("Arrêter", systemImage: "stop.fill")
+                    .labelStyle(.iconOnly)
+                    .foregroundStyle(.red)
+                    .frame(width: 44, height: 44)
+            }
+            .buttonStyle(.glass)
+            .buttonBorderShape(.circle)
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 10)
+        .adaptiveGlassEffect(in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .padding(.horizontal, 16)
+    }
+
+    private var patrolActiveBar: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "shield.lefthalf.filled")
+                .foregroundStyle(Color.accentColor)
+            Text("Patrouille active")
+                .font(.subheadline.weight(.medium))
+            Spacer()
+            Button(action: patrol.onStop) {
+                Label("Arrêter la patrouille", systemImage: "stop.fill")
                     .labelStyle(.iconOnly)
                     .foregroundStyle(.red)
                     .frame(width: 44, height: 44)

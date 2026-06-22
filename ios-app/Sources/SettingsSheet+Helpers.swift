@@ -65,37 +65,6 @@ extension SettingsSheet {
         onApplyPort()
     }
 
-    /// Starts a circle patrol centered on the current spoofed/real position
-    /// (mirroring tauri-app's `center: currentPos`), or a rectangle patrol
-    /// using the map's current visible bounds — iOS has no free-draw mode,
-    /// so "what's currently on screen" stands in for tauri's never-actually-
-    /// wired rectangle drawing (it only ever sends a circle's center+radius
-    /// regardless of the selected type).
-    func startPatrol() {
-        patrolError = nil
-        if patrolType == "rectangle" {
-            guard let region = visibleRegion else {
-                patrolError = "Zone de carte indisponible."
-                return
-            }
-            let southWest = CLLocationCoordinate2D(
-                latitude: region.center.latitude - region.span.latitudeDelta / 2,
-                longitude: region.center.longitude - region.span.longitudeDelta / 2
-            )
-            let northEast = CLLocationCoordinate2D(
-                latitude: region.center.latitude + region.span.latitudeDelta / 2,
-                longitude: region.center.longitude + region.span.longitudeDelta / 2
-            )
-            engine.updatePatrolZone(type: "rectangle", center: nil, radius: nil, bounds: (southWest: southWest, northEast: northEast), active: true)
-        } else {
-            guard let center = patrolCenter else {
-                patrolError = "Position de départ indisponible."
-                return
-            }
-            engine.updatePatrolZone(type: "circle", center: center, radius: patrolRadius, bounds: nil, active: true)
-        }
-    }
-
     func loadGpx(from url: URL) {
         gpxError = nil
         guard url.startAccessingSecurityScopedResource() else {

@@ -39,6 +39,13 @@ struct ContentView: View {
     @State var itinerarySpeed: Double = 30
     @State var itineraryProfile: String = "driving"
 
+    // Patrol-zone setup, promoted out of Réglages: `patrolMode` shows the
+    // setup panel in the sheet and draws a live dashed preview on the map;
+    // type/radius are the zone being defined (moved here from SettingsSheet).
+    @State var patrolMode = false
+    @State var patrolType = "circle"
+    @State var patrolRadius: Double = 200
+
     @State var sheetDetent: PresentationDetent = .height(BottomSheet.collapsedHeight)
     @State var collapsedSheetHeight: CGFloat = BottomSheet.collapsedHeight
     @State var showSettings = false
@@ -55,6 +62,20 @@ struct ContentView: View {
         }
     }
 
+    /// Where a circle patrol is centered: the current spoofed position if any,
+    /// otherwise the device's real location (mirrors tauri-app's `currentPos`).
+    var patrolCenter: CLLocationCoordinate2D? {
+        spoofedCoordinate ?? session.location.lastLocation?.coordinate
+    }
+
+    /// The live dashed circle drawn on the map while defining a circle patrol —
+    /// nil for rectangle (its zone is the visible region, already on screen) or
+    /// when not setting up.
+    private var patrolPreview: (center: CLLocationCoordinate2D, radius: Double)? {
+        guard patrolMode, patrolType == "circle", let center = patrolCenter else { return nil }
+        return (center: center, radius: patrolRadius)
+    }
+
     var body: some View {
         ZStack(alignment: .bottom) {
             EngineMapView(
@@ -62,6 +83,7 @@ struct ContentView: View {
                 routePreview: routePreview,
                 itineraryStops: itineraryStops,
                 patrolZone: session.engine.status?.patrolZone,
+                patrolPreview: patrolPreview,
                 cameraPosition: $cameraPosition,
                 onLongPress: { coordinate in
                     searchFocused = false
@@ -170,6 +192,22 @@ struct ContentView: View {
                     onFavorite: { showAddFavorite = true },
                     onDismiss: { selectedPlace = nil }
                 ),
+                patrol: PatrolControls(
+                    isSettingUp: patrolMode,
+                    isActive: session.engine.status?.patrolZone?.active == true,
+                    type: $patrolType,
+                    radius: $patrolRadius,
+                    onBegin: {
+                        patrolMode = true
+                        withAnimation { sheetDetent = .medium }
+                    },
+                    onStart: {
+                        startPatrol()
+                        patrolMode = false
+                    },
+                    onCancel: { patrolMode = false },
+                    onStop: { session.engine.updatePatrolZone(type: patrolType, center: nil, radius: nil, bounds: nil, active: false) }
+                ),
                 simulationState: session.engine.status?.state,
                 onPauseRoute: { session.engine.pauseRoute() },
                 onResumeRoute: { session.engine.resumeRoute() },
@@ -225,8 +263,6 @@ struct ContentView: View {
                     keepAliveEnabled: $keepAliveEnabled,
                     keepAliveInterval: $keepAliveInterval,
                     notificationsEnabled: $notificationsEnabled,
-                    patrolCenter: spoofedCoordinate ?? session.location.lastLocation?.coordinate,
-                    visibleRegion: visibleRegion,
                     locationAuthorization: session.location.authorizationStatus
                 )
             }

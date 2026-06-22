@@ -25,8 +25,6 @@ struct SettingsSheet: View {
     @Binding var keepAliveEnabled: Bool
     @Binding var keepAliveInterval: Double
     @Binding var notificationsEnabled: Bool
-    var patrolCenter: CLLocationCoordinate2D?
-    var visibleRegion: MKCoordinateRegion?
     var locationAuthorization: CLAuthorizationStatus
 
     // Persisted defaults reused across the app (ContentView reads the same
@@ -42,10 +40,6 @@ struct SettingsSheet: View {
     @State var jitterEnabled = true
     @State var portInput = ""
     @State var portError: String?
-
-    @State var patrolType = "circle"
-    @State var patrolRadius: Double = 200
-    @State var patrolError: String?
 
     @State var showGpxImporter = false
     @State var gpxContent = ""

@@ -164,6 +164,30 @@ extension ContentView {
         return MKCoordinateRegion(center: center, span: span)
     }
 
+    /// Starts a circle patrol centered on the current spoofed/real position, or
+    /// a rectangle patrol using the map's current visible bounds — moved out of
+    /// SettingsSheet so the zone is defined against the map (with the live
+    /// dashed preview) instead of blind in a settings form. A missing center or
+    /// region is a silent no-op (center almost always resolves via the real
+    /// location fallback in `patrolCenter`).
+    func startPatrol() {
+        if patrolType == "rectangle" {
+            guard let region = visibleRegion else { return }
+            let southWest = CLLocationCoordinate2D(
+                latitude: region.center.latitude - region.span.latitudeDelta / 2,
+                longitude: region.center.longitude - region.span.longitudeDelta / 2
+            )
+            let northEast = CLLocationCoordinate2D(
+                latitude: region.center.latitude + region.span.latitudeDelta / 2,
+                longitude: region.center.longitude + region.span.longitudeDelta / 2
+            )
+            session.engine.updatePatrolZone(type: "rectangle", center: nil, radius: nil, bounds: (southWest: southWest, northEast: northEast), active: true)
+        } else {
+            guard let center = patrolCenter else { return }
+            session.engine.updatePatrolZone(type: "circle", center: center, radius: patrolRadius, bounds: nil, active: true)
+        }
+    }
+
     func toggleConnection() {
         session.toggleConnection(engineAddress: engineAddress, keepAliveEnabled: keepAliveEnabled)
     }

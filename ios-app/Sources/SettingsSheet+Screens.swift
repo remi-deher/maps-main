@@ -95,7 +95,8 @@ extension SettingsSheet {
     }
 
     /// Simulation tuning that isn't tied to a specific run: default speed/profile
-    /// for new routes, GPS jitter, and the patrol zone.
+    /// for new routes and GPS jitter. (The patrol zone moved to a map-driven
+    /// mode in the bottom sheet — see PatrolPanel.)
     @ViewBuilder
     var simulationScreen: some View {
         List {
@@ -124,37 +125,6 @@ extension SettingsSheet {
                 Text("Valeurs utilisées par défaut pour une téléportation avec itinéraire ou un nouvel itinéraire.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
-            }
-
-            Section("Zone de patrouille") {
-                Picker("Type de zone", selection: $patrolType) {
-                    Text("Cercle (autour de la position)").tag("circle")
-                    Text("Rectangle (zone visible à l'écran)").tag("rectangle")
-                }
-                if patrolType == "circle" {
-                    HStack {
-                        Text("Rayon")
-                        Spacer()
-                        Text("\(Int(patrolRadius)) m").foregroundStyle(.secondary)
-                    }
-                    Slider(value: $patrolRadius, in: 50...2000, step: 50)
-                } else {
-                    Text("Utilise la zone actuellement visible sur la carte comme rectangle de patrouille.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-                if let patrolError {
-                    Text(patrolError).font(.caption).foregroundStyle(.red)
-                }
-                if engine.status?.patrolZone?.active == true {
-                    Button("Arrêter la patrouille", role: .destructive) {
-                        engine.updatePatrolZone(type: patrolType, center: nil, radius: nil, bounds: nil, active: false)
-                    }
-                } else {
-                    Button("Lancer la patrouille") {
-                        startPatrol()
-                    }
-                }
             }
         }
         .navigationTitle("Simulation")
