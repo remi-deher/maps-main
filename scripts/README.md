@@ -1,5 +1,29 @@
 # Scripts — installation & gestion du moteur headless
 
+## Bootstrapper (recommandé)
+
+Un seul script léger qui demande la variante à installer puis télécharge
+**toujours la dernière release GitHub** (jamais une version figée dans le
+script) — rien n'est embarqué, donc le bootstrapper reste minuscule.
+
+```bash
+# Linux / macOS
+curl -fsSL https://raw.githubusercontent.com/remi-deher/maps-main/main/scripts/install.sh | bash
+```
+
+```powershell
+# Windows
+irm https://raw.githubusercontent.com/remi-deher/maps-main/main/scripts/install.ps1 | iex
+```
+
+Demande : (1) moteur **headless + UI web** ou application **desktop**
+complète, puis pour le headless, propose d'enchaîner avec l'installation en
+service système (voir ci-dessous). Options non-interactives :
+`--variant headless|desktop --service` (bash) / `-Variant ... -Service`
+(PowerShell).
+
+## Installation en service système (par OS)
+
 Installe et pilote le moteur `headless` en **service système**.
 
 | OS | Script | Mécanisme |
