@@ -78,6 +78,41 @@ jobs:
           name: gpsmock-engine-windows-amd64-portable
           path: gpsmock-engine-windows-amd64-portable.zip
 
+  installer-windows-engine:
+    name: build Windows installer (Inno Setup)
+    needs: bundle-windows-engine
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: gpsmock-engine-windows-amd64-portable
+
+      - name: Unpack portable bundle
+        shell: pwsh
+        run: Expand-Archive -Path gpsmock-engine-windows-amd64-portable.zip -DestinationPath bundle
+
+      - name: Compile installer
+        shell: pwsh
+        run: |
+          # Version from the release tag (v0.2.0 -> 0.2.0); 0.0.0 off-tag.
+          $ver = "${{ github.ref_name }}"
+          if ($ver -match '^v\d') { $ver = $ver.Substring(1) } else { $ver = "0.0.0" }
+
+          $iscc = "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
+          if (-not (Test-Path $iscc)) {
+            choco install innosetup --no-progress -y
+          }
+          & $iscc "/DAppVersion=$ver" "/DBundleDir=$pwd\bundle" "/O$pwd\setup-out" installer\windows\gpsmock.iss
+          if ($LASTEXITCODE -ne 0) { throw "ISCC failed with exit code $LASTEXITCODE" }
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: gpsmock-engine-windows-amd64-setup
+          path: setup-out/gpsmock-engine-setup.exe
+          if-no-files-found: error
+
   build-tauri:
     name: build desktop app (${{ matrix.platform }})
     strategy:
@@ -112,6 +147,19 @@ jobs:
       - name: Install frontend dependencies
         working-directory: tauri-app
         run: npm ci
+
+      - name: Set app version from tag
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: pwsh
+        run: |
+          # The bundled installers read their version from tauri.conf.json,
+          # which is otherwise pinned at 0.0.x regardless of the release tag.
+          $ver = "${{ github.ref_name }}".Substring(1)
+          $conf = "tauri-app/src-tauri/tauri.conf.json"
+          $json = Get-Content $conf -Raw | ConvertFrom-Json
+          $json.version = $ver
+          $json | ConvertTo-Json -Depth 100 | Set-Content $conf -Encoding utf8
+          Write-Host "tauri.conf.json version set to $ver"
 
       - name: Build Go sidecar
         shell: pwsh
@@ -252,7 +300,7 @@ jobs:
 
   release:
     name: publish GitHub release
-    needs: [build-engine, bundle-windows-engine, build-tauri, build-ios, docker]
+    needs: [build-engine, bundle-windows-engine, installer-windows-engine, build-tauri, build-ios, docker]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -267,3 +315,27 @@ jobs:
         with:
           files: dist/**/*
           generate_release_notes: true
+          body: |
+            ## Quel fichier télécharger ?
+
+            ### Application de bureau (interface + moteur intégré)
+            | Plateforme | Fichier |
+            |---|---|
+            | Windows | `*_x64-setup.exe` (installeur) ou `*_x64_en-US.msi` |
+            | macOS | `*_aarch64.dmg` |
+            | Linux | `*_amd64.AppImage`, `*_amd64.deb` ou `*.x86_64.rpm` |
+
+            Les deux pilotes iOS (go-ios et pymobiledevice) sont intégrés — aucune installation de Python requise. go-ios est le pilote par défaut.
+
+            ### Moteur seul (serveur / headless / automatisation)
+            | Cas | Fichier |
+            |---|---|
+            | Windows, prêt à l'emploi | **`gpsmock-engine-setup.exe`** (installeur) ou `gpsmock-engine-windows-amd64-portable.zip` (portable, pilotes inclus) |
+            | Windows, binaire nu | `gpsmock-engine-windows-amd64.exe` (sans pilote) |
+            | Linux / macOS | `gpsmock-engine-<os>-<arch>` |
+            | Conteneur | `docker pull ghcr.io/${{ github.repository }}/gpsmock-engine:${{ github.ref_name }}` |
+
+            ### Application compagnon iOS
+            `GpsMockCompanion-unsigned.ipa` — non signé, à ré-signer à l'installation (AltStore, etc.).
+
+            ---
