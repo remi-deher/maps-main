@@ -201,7 +201,7 @@ func TestSetLocationSurfacesCommandFailure(t *testing.T) {
 
 // echoArgs runs op against a driver wired to the echo-args fake and returns the
 // exact CLI args the driver built (everything after the bin name).
-func echoArgs(t *testing.T, d *Driver, op func() error) string {
+func echoArgs(t *testing.T, op func() error) string {
 	t.Helper()
 	argsFile := filepath.Join(t.TempDir(), "args.txt")
 	t.Setenv("FAKE_ARGS_FILE", argsFile)
@@ -222,7 +222,7 @@ func TestSetLocationBuildsCorrectCommand(t *testing.T) {
 	d.tunnel.Address, d.tunnel.Port, d.tunnelOn = "fde6:1234::1", 54321, true
 	d.mu.Unlock()
 
-	got := echoArgs(t, d, func() error {
+	got := echoArgs(t, func() error {
 		return d.SetLocation(context.Background(), 48.8566, 2.3522)
 	})
 	for _, want := range []string{
@@ -244,7 +244,7 @@ func TestClearLocationBuildsResetCommand(t *testing.T) {
 	d.tunnel.Address, d.tunnel.Port, d.tunnelOn = "fde6:1234::1", 54321, true
 	d.mu.Unlock()
 
-	got := echoArgs(t, d, func() error {
+	got := echoArgs(t, func() error {
 		return d.ClearLocation(context.Background())
 	})
 	for _, want := range []string{"resetlocation", "--address=fde6:1234::1", "--rsd-port=54321"} {
