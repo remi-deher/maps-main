@@ -36,21 +36,34 @@ func withFakeExec(t *testing.T, scenario string) {
 // assertion in this file would run. Skips immediately under a normal `go
 // test` invocation (GO_WANT_HELPER_PROCESS unset).
 func TestHelperProcess(t *testing.T) {
-	_, scenario, ok := exectest.HelperArgs()
+	args, scenario, ok := exectest.HelperArgs()
 	if !ok {
 		return
 	}
 	defer os.Exit(0)
 
 	// args[0] is the "name" passed to exec.Command (d.bin); args[1:] are the
-	// real go-ios CLI args (tunnel/start, list, info, setlocation...).
+	// real go-ios CLI args (tunnel start, tunnel ls, list, info, setlocation...).
+	sub := ""
+	if len(args) >= 3 {
+		sub = args[1] + " " + args[2] // e.g. "tunnel start", "tunnel ls"
+	}
 
 	switch scenario {
-	case "rsd-ok":
-		fmt.Println("RSD address: fde6:1234::1:54321")
-		time.Sleep(10 * time.Second) // simulate the long-running tunnel daemon
-	case "rsd-never":
-		time.Sleep(10 * time.Second) // never prints the RSD line
+	case "tunnel-ok":
+		switch sub {
+		case "tunnel start":
+			time.Sleep(10 * time.Second) // long-running daemon
+		case "tunnel ls":
+			fmt.Println(`[{"address":"fde6:1234::1","rsdPort":54321,"udid":"udid-1","userspaceTun":false,"userspaceTunPort":0}]`)
+		}
+	case "tunnel-never":
+		switch sub {
+		case "tunnel start":
+			time.Sleep(10 * time.Second) // daemon up, but no device tunnel ever appears
+		case "tunnel ls":
+			fmt.Println(`[]`)
+		}
 	case "list-ok":
 		fmt.Println(`{"deviceList":["udid-1","udid-2"]}`)
 	case "list-empty":
@@ -67,8 +80,8 @@ func TestHelperProcess(t *testing.T) {
 	}
 }
 
-func TestStartTunnelParsesRSDAddressAndKeepsProcessRunning(t *testing.T) {
-	withFakeExec(t, "rsd-ok")
+func TestStartTunnelDiscoversTunnelViaListAndKeepsProcessRunning(t *testing.T) {
+	withFakeExec(t, "tunnel-ok")
 	d := &Driver{bin: "fake-ios", tunnelStartTimeout: 5 * time.Second}
 
 	ti, err := d.StartTunnel(context.Background())
@@ -81,6 +94,9 @@ func TestStartTunnelParsesRSDAddressAndKeepsProcessRunning(t *testing.T) {
 	if got, ok := d.Tunnel(); !ok || got.Address != "fde6:1234::1" {
 		t.Errorf("Tunnel() after start = %+v, %v", got, ok)
 	}
+	if d.udid != "udid-1" {
+		t.Errorf("udid after start = %q, want udid-1", d.udid)
+	}
 
 	// Clean up the still-running fake tunnel process.
 	if err := d.StopTunnel(context.Background()); err != nil {
@@ -91,18 +107,18 @@ func TestStartTunnelParsesRSDAddressAndKeepsProcessRunning(t *testing.T) {
 	}
 }
 
-func TestStartTunnelTimesOutWhenRSDNeverAppears(t *testing.T) {
-	withFakeExec(t, "rsd-never")
+func TestStartTunnelTimesOutWhenNoTunnelAppears(t *testing.T) {
+	withFakeExec(t, "tunnel-never")
 	d := &Driver{bin: "fake-ios", tunnelStartTimeout: 200 * time.Millisecond}
 
 	_, err := d.StartTunnel(context.Background())
 	if err == nil {
-		t.Fatal("expected a timeout error when the RSD line never appears")
+		t.Fatal("expected a timeout error when no device tunnel ever appears")
 	}
 }
 
 func TestStartTunnelRespectsContextCancellation(t *testing.T) {
-	withFakeExec(t, "rsd-never")
+	withFakeExec(t, "tunnel-never")
 	d := &Driver{bin: "fake-ios", tunnelStartTimeout: 5 * time.Second}
 
 	ctx, cancel := context.WithCancel(context.Background())

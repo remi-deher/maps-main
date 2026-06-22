@@ -56,6 +56,10 @@ cd engine
 # binaire go-ios attendu sur le PATH ("ios"/"go-ios"), ou pointé explicitement :
 go run ./cmd/headless -driver go-ios -transport usb \
   -goios-bin "C:\chemin\vers\ios.exe"
+# go-ios >= 1.x : le moteur lance `ios tunnel start` (daemon, admin/root requis)
+# et récupère le tunnel via `ios tunnel ls`. Sur Windows, place `wintun.dll`
+# (x64, depuis https://www.wintun.net) à côté de `ios.exe` — sinon le tunnel
+# ne démarre pas. Sur Linux/macOS, lance le moteur en root (sudo).
 
 # pymobiledevice3 en USB (nécessite python + pymobiledevice3 installés)
 go run ./cmd/headless -driver pymobiledevice -transport usb

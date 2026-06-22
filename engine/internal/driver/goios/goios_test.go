@@ -62,16 +62,48 @@ func TestStringField(t *testing.T) {
 	}
 }
 
-func TestFtoaAndRsd(t *testing.T) {
+func TestFtoa(t *testing.T) {
 	if got := ftoa(48.8566); got != "48.8566" {
 		t.Errorf("ftoa(48.8566) = %q, want 48.8566", got)
 	}
 	if got := ftoa(-2.0); got != "-2" {
 		t.Errorf("ftoa(-2.0) = %q, want -2", got)
 	}
-	ti := driver.TunnelInfo{Address: "::1", Port: 54321}
-	if got := rsd(ti); got != "::1:54321" {
-		t.Errorf("rsd(...) = %q, want ::1:54321", got)
+}
+
+func TestParseTunnelList(t *testing.T) {
+	cases := []struct {
+		name      string
+		in        string
+		wantAddr  string
+		wantPort  int
+		wantUDID  string
+		wantEmpty bool
+	}{
+		{
+			name:     "single tunnel with leading log line",
+			in:       "{\"time\":\"...\",\"msg\":\"no udid\"}\n[{\"address\":\"fdd7:4d14:2781::1\",\"rsdPort\":65032,\"udid\":\"u-1\",\"userspaceTun\":false}]",
+			wantAddr: "fdd7:4d14:2781::1", wantPort: 65032, wantUDID: "u-1",
+		},
+		{name: "empty array", in: `[]`, wantEmpty: true},
+		{name: "not json", in: `garbage`, wantEmpty: true},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			got := parseTunnelList([]byte(c.in))
+			if c.wantEmpty {
+				if len(got) != 0 {
+					t.Fatalf("got %d entries, want 0", len(got))
+				}
+				return
+			}
+			if len(got) != 1 {
+				t.Fatalf("got %d entries, want 1", len(got))
+			}
+			if got[0].Address != c.wantAddr || got[0].RsdPort != c.wantPort || got[0].UDID != c.wantUDID {
+				t.Errorf("entry = %+v, want addr=%s port=%d udid=%s", got[0], c.wantAddr, c.wantPort, c.wantUDID)
+			}
+		})
 	}
 }
 
