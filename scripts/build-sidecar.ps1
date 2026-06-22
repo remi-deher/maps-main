@@ -33,4 +33,5 @@ Write-Host "Sidecar binary created successfully at: $outputPath"
 # with no system install. resource_dir paths are passed explicitly by the Rust
 # side (see bundled_driver_envs in src-tauri/src/lib.rs).
 $resourcesDir = Join-Path (Resolve-Path (Join-Path $PSScriptRoot "../tauri-app/src-tauri")) "resources"
-& (Join-Path $PSScriptRoot "bundle-drivers.ps1") -TargetDir $resourcesDir
+# The desktop app ships the full experience: both drivers, Python included.
+& (Join-Path $PSScriptRoot "bundle-drivers.ps1") -TargetDir $resourcesDir -IncludePython

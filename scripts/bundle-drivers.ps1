@@ -6,8 +6,13 @@
 # Shared by the Tauri sidecar bundle (scripts/build-sidecar.ps1) and the
 # standalone Windows portable zip (.github/workflows/release.yml) so the two
 # stay in sync. Requires Go on PATH; the Python steps run on Windows only.
+#
+# go-ios (the default driver) is always bundled — it's a single static binary
+# and enough for an autonomous setup. python-embed + pymobiledevice3 is the
+# heavy, optional driver (~110 MB of wheels); pass -IncludePython to add it.
 param(
-    [Parameter(Mandatory = $true)][string]$TargetDir
+    [Parameter(Mandatory = $true)][string]$TargetDir,
+    [switch]$IncludePython
 )
 
 $ErrorActionPreference = "Stop"
@@ -31,10 +36,10 @@ if ($LASTEXITCODE -ne 0) { throw "go install go-ios failed" }
 $goiosExt = if ($onWindows) { ".exe" } else { "" }
 Move-Item -Force "$TargetDir/go-ios$goiosExt" "$TargetDir/ios$goiosExt"
 
-# --- python-embed + pymobiledevice3 (Windows only) ---
+# --- python-embed + pymobiledevice3 (Windows only, opt-in) ---
 # The embeddable distribution is Windows-only; elsewhere go-ios is the default
 # and a user wanting pymobiledevice can rely on a system python3.
-if ($onWindows) {
+if ($onWindows -and $IncludePython) {
     $pyDir = Join-Path $TargetDir "python-embed"
     Write-Host "Setting up python-embed ($PythonVersion) + pymobiledevice3 in $pyDir"
     New-Item -ItemType Directory -Force -Path $pyDir | Out-Null
