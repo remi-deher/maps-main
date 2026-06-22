@@ -26,14 +26,8 @@ func ResolveGoIos(explicit map[string]string) (string, error) {
 			return p, nil
 		}
 	}
-	for _, c := range goIosFallbacks() {
-		if fileExists(c) {
-			abs, err := filepath.Abs(c)
-			if err == nil {
-				return abs, nil
-			}
-			return c, nil
-		}
+	if p, ok := findResource(goIosFallbacks()); ok {
+		return p, nil
 	}
 	return "", fmt.Errorf("go-ios binary not found (set BinaryPaths[\"go-ios\"] or add it to PATH)")
 }
@@ -70,15 +64,43 @@ func Pmd3Command(explicit map[string]string) (string, []string, error) {
 			return p, base, nil
 		}
 	}
-	for _, c := range pmd3Fallbacks() {
-		if fileExists(c) {
-			if abs, err := filepath.Abs(c); err == nil {
-				return abs, base, nil
-			}
-			return c, base, nil
-		}
+	if p, ok := findResource(pmd3Fallbacks()); ok {
+		return p, base, nil
 	}
 	return "", nil, fmt.Errorf("python not found (set BinaryPaths[\"python\"] or add python to PATH); needed by the pymobiledevice driver")
+}
+
+// findResource looks for the first of rels (paths relative to a resource root)
+// that exists under any resource root, returning its absolute path. Roots are
+// the current working directory and the directory of the running executable —
+// the latter matters when the engine is launched as a Tauri sidecar, where the
+// CWD is whatever spawned the app, not the folder the bundled resources sit in.
+func findResource(rels []string) (string, bool) {
+	for _, root := range resourceRoots() {
+		for _, rel := range rels {
+			c := filepath.Join(root, rel)
+			if fileExists(c) {
+				if abs, err := filepath.Abs(c); err == nil {
+					return abs, true
+				}
+				return c, true
+			}
+		}
+	}
+	return "", false
+}
+
+// resourceRoots returns the directories searched for bundled resources: the
+// current working directory first (portable zip run in place), then the
+// executable's own directory (Tauri sidecar, or an exe launched from elsewhere).
+func resourceRoots() []string {
+	roots := []string{"."}
+	if exe, err := os.Executable(); err == nil {
+		if dir := filepath.Dir(exe); dir != "" && dir != "." {
+			roots = append(roots, dir)
+		}
+	}
+	return roots
 }
 
 func pmd3Fallbacks() []string {
