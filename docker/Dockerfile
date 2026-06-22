@@ -38,15 +38,24 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Create a non-root system user and group for security
 RUN groupadd -g 10001 gpsmock && useradd -u 10001 -g gpsmock -m -s /sbin/nologin gpsmock
 
-# Conditional installation of Python 3 + pymobiledevice3 using a clean venv
+# Conditional installation of Python 3 + pymobiledevice3 using a clean venv.
+# gcc/python3-dev/libssl-dev are build-only: on linux/arm64 pip has no prebuilt
+# wheel for sslpsk-pmd3 (a pymobiledevice3 dep) and compiles it from source, so
+# a C toolchain + Python/OpenSSL headers must be present. They're purged again
+# afterwards (the compiled .so links only against the runtime libssl3) so the
+# final image stays slim.
 RUN if [ "$WITH_PYMOBILEDEVICE" = "1" ]; then \
       apt-get update && apt-get install -y --no-install-recommends \
         python3 \
         python3-pip \
         python3-venv \
+        gcc \
+        python3-dev \
+        libssl-dev \
       && python3 -m venv /opt/venv \
-      && /opt/venv/bin/pip install --upgrade pip setuptools \
+      && /opt/venv/bin/pip install --upgrade pip setuptools wheel \
       && /opt/venv/bin/pip install --no-cache-dir pymobiledevice3 \
+      && apt-get purge -y --auto-remove gcc python3-dev libssl-dev \
       && rm -rf /var/lib/apt/lists/* ; \
     fi
 
