@@ -1,3 +1,13 @@
+# --- frontend ---
+# Build the web UI so the engine can serve it at / (browser = headless+web
+# product). Pure Vite/React build, no Rust/Tauri toolchain needed.
+FROM node:22-bookworm-slim AS frontend
+WORKDIR /app
+COPY tauri-app/package.json tauri-app/package-lock.json ./
+RUN npm ci
+COPY tauri-app/ ./
+RUN npm run build
+
 # --- build ---
 FROM golang:1.26-bookworm AS build
 WORKDIR /src
@@ -6,9 +16,13 @@ WORKDIR /src
 COPY engine/go.mod engine/go.sum ./engine/
 RUN cd engine && go mod download
 
-# Copy the rest of the Go engine source code and build it
+# Copy the rest of the Go engine source code
 COPY engine/ ./engine/
-RUN cd engine && CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" \
+
+# Embed the compiled web UI, then build with -tags webui so the engine serves
+# it at / (see internal/webui). The dist/ payload comes from the frontend stage.
+COPY --from=frontend /app/dist ./engine/internal/webui/embedded
+RUN cd engine && CGO_ENABLED=0 go build -tags webui -trimpath -ldflags="-s -w" \
     -o /out/gpsmock-engine ./cmd/headless
 
 # Build arguments to customize driver installation

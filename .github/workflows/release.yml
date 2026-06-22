@@ -10,8 +10,32 @@ permissions:
   contents: read
 
 jobs:
+  # Build the web UI once and share it; every engine build embeds it (-tags
+  # webui) so each shipped engine serves the browser UI at / (headless+web).
+  build-webui:
+    name: build web UI
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: tauri-app/package-lock.json
+      - name: Build frontend
+        working-directory: tauri-app
+        run: |
+          npm ci
+          npm run build
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: webui-dist
+          path: tauri-app/dist
+          if-no-files-found: error
+
   build-engine:
     name: build engine ${{ matrix.goos }}/${{ matrix.goarch }}
+    needs: build-webui
     runs-on: ubuntu-latest
     strategy:
       matrix:
@@ -28,6 +52,11 @@ jobs:
         with:
           go-version-file: engine/go.mod
 
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: webui-dist
+          path: engine/internal/webui/embedded
+
       - name: Build
         working-directory: engine
         env:
@@ -36,7 +65,7 @@ jobs:
           CGO_ENABLED: '0'
         run: |
           out="gpsmock-engine-${{ matrix.goos }}-${{ matrix.goarch }}${{ matrix.ext }}"
-          go build -trimpath -ldflags="-s -w" -o "../dist/${out}" ./cmd/headless
+          go build -tags webui -trimpath -ldflags="-s -w" -o "../dist/${out}" ./cmd/headless
 
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
@@ -45,6 +74,7 @@ jobs:
 
   portable-windows-engine:
     name: build self-contained Windows portable .exe
+    needs: build-webui
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
@@ -62,7 +92,12 @@ jobs:
           New-Item -ItemType Directory -Force -Path engine/internal/platform/embedded | Out-Null
           Compress-Archive -Path drivers/* -DestinationPath engine/internal/platform/embedded/drivers.zip -Force
 
-      - name: Build portable engine (drivers embedded)
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: webui-dist
+          path: engine/internal/webui/embedded
+
+      - name: Build portable engine (drivers + web UI embedded)
         shell: pwsh
         working-directory: engine
         run: |
@@ -70,7 +105,7 @@ jobs:
           if ($ver -match '^v\d') { $ver = $ver.Substring(1) } else { $ver = "0.0.0" }
           $ldflags = "-s -w -X github.com/remi-deher/maps-main/engine/internal/platform.driversVersion=$ver"
           $env:CGO_ENABLED = "0"
-          go build -tags embed_drivers -trimpath -ldflags="$ldflags" -o ../gpsmock-engine-portable.exe ./cmd/headless
+          go build -tags "embed_drivers webui" -trimpath -ldflags="$ldflags" -o ../gpsmock-engine-portable.exe ./cmd/headless
           if ($LASTEXITCODE -ne 0) { throw "go build (portable) failed" }
 
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7

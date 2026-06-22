@@ -4,7 +4,9 @@ docs
 legacy
 scripts
 spec
-tauri-app
+# tauri-app is needed for the web UI build (docker/Dockerfile frontend stage);
+# its heavy build outputs are excluded specifically below.
+tauri-app/src-tauri/target
 **/node_modules
 **/dist
 **/bin
