@@ -12,6 +12,7 @@ import (
 	"os/exec"
 	"regexp"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -99,13 +100,38 @@ func (d *Driver) StartTunnel(ctx context.Context) (driver.TunnelInfo, error) {
 	if err := cmd.Start(); err != nil {
 		return driver.TunnelInfo{}, fmt.Errorf("pmd3 remote tunneld: %w", err)
 	}
-	go func() { _ = cmd.Wait(); _ = pw.Close() }()
+
+	// Bounded ring buffer of recent tunneld output. Every line used to be
+	// silently dropped unless it matched the RSD regex, so a real failure
+	// (missing WinTun driver, "administrator privileges required", pairing
+	// errors, ...) never reached the caller — only a generic timeout did.
+	const maxTailLines = 20
+	var tailMu sync.Mutex
+	var tail []string
+	appendTail := func(line string) {
+		tailMu.Lock()
+		tail = append(tail, line)
+		if len(tail) > maxTailLines {
+			tail = tail[len(tail)-maxTailLines:]
+		}
+		tailMu.Unlock()
+	}
+	tailSnapshot := func() string {
+		tailMu.Lock()
+		defer tailMu.Unlock()
+		return strings.Join(tail, "\n")
+	}
+
+	exited := make(chan error, 1)
+	go func() { err := cmd.Wait(); _ = pw.Close(); exited <- err }()
 
 	found := make(chan driver.TunnelInfo, 1)
 	go func() {
 		sc := bufio.NewScanner(pr)
 		for sc.Scan() {
-			if m := rsdRe.FindStringSubmatch(sc.Text()); m != nil {
+			line := sc.Text()
+			appendTail(line)
+			if m := rsdRe.FindStringSubmatch(line); m != nil {
 				port, _ := strconv.Atoi(m[2])
 				ti := driver.TunnelInfo{
 					Address: m[1],
@@ -127,8 +153,18 @@ func (d *Driver) StartTunnel(ctx context.Context) (driver.TunnelInfo, error) {
 		d.tunnel, d.tunnelOn, d.tunnelCmd = ti, true, cmd
 		d.mu.Unlock()
 		return ti, nil
+	case err := <-exited:
+		// The process died before printing an RSD line — surface its output
+		// immediately instead of burning the rest of the timeout for nothing.
+		if out := tailSnapshot(); out != "" {
+			return driver.TunnelInfo{}, fmt.Errorf("pmd3: remote tunneld exited (%v):\n%s", err, out)
+		}
+		return driver.TunnelInfo{}, fmt.Errorf("pmd3: remote tunneld exited before an RSD address was detected: %w", err)
 	case <-time.After(d.tunnelStartTimeout):
 		_ = cmd.Process.Kill()
+		if out := tailSnapshot(); out != "" {
+			return driver.TunnelInfo{}, fmt.Errorf("pmd3: RSD address not detected within %s, last output:\n%s", d.tunnelStartTimeout, out)
+		}
 		return driver.TunnelInfo{}, fmt.Errorf("pmd3: RSD address not detected within %s", d.tunnelStartTimeout)
 	case <-ctx.Done():
 		_ = cmd.Process.Kill()
