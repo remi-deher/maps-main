@@ -37,7 +37,8 @@ const defaultTunnelStartTimeout = 45 * time.Second
 
 // Driver is the go-ios backed implementation.
 type Driver struct {
-	bin                string
+	bin                string            // cached resolved CLI path ("" until resolved)
+	binPaths           map[string]string // explicit overrides, for lazy resolution
 	lockdownArgs       []string
 	manual             string // optional "host:port" RSD endpoint (WiFi transport)
 	tunnelStartTimeout time.Duration
@@ -48,12 +49,12 @@ type Driver struct {
 	tunnelCmd *exec.Cmd
 }
 
-// New builds a go-ios Driver, resolving the CLI path from cfg/PATH/fallbacks.
+// New builds a go-ios Driver. It does NOT fail when the CLI can't be found:
+// the engine must still boot (serve the API/UI) so the user can see status and
+// pick a driver — a missing binary only matters once an operation actually
+// needs it, where binPath() surfaces a clear error.
 func New(cfg driver.Config) (driver.Driver, error) {
-	bin, err := platform.ResolveGoIos(cfg.BinaryPaths)
-	if err != nil {
-		return nil, err
-	}
+	bin, _ := platform.ResolveGoIos(cfg.BinaryPaths)
 	var lock []string
 	if dir := platform.LockdownDir(); dir != "" {
 		lock = []string{"--pair-record-path=" + dir}
@@ -62,7 +63,16 @@ func New(cfg driver.Config) (driver.Driver, error) {
 	if timeout <= 0 {
 		timeout = defaultTunnelStartTimeout
 	}
-	return &Driver{bin: bin, lockdownArgs: lock, manual: cfg.ManualAddress, tunnelStartTimeout: timeout}, nil
+	return &Driver{bin: bin, binPaths: cfg.BinaryPaths, lockdownArgs: lock, manual: cfg.ManualAddress, tunnelStartTimeout: timeout}, nil
+}
+
+// binPath returns the go-ios CLI path, resolving it lazily if New couldn't
+// (e.g. the binary was installed after boot, or is only needed now).
+func (d *Driver) binPath() (string, error) {
+	if d.bin != "" {
+		return d.bin, nil
+	}
+	return platform.ResolveGoIos(d.binPaths)
 }
 
 func init() { driver.Register(domain.DriverGoIos, New) }
@@ -95,8 +105,12 @@ func (d *Driver) StartTunnel(ctx context.Context) (driver.TunnelInfo, error) {
 		return ti, nil
 	}
 
+	bin, err := d.binPath()
+	if err != nil {
+		return driver.TunnelInfo{}, err
+	}
 	args := append([]string{"tunnel", "start"}, d.lockdownArgs...)
-	cmd := execCommand(d.bin, args...)
+	cmd := execCommand(bin, args...)
 
 	// Merge stdout+stderr: go-ios may print the RSD line on either stream.
 	pr, pw := io.Pipe()
@@ -195,7 +209,11 @@ func (d *Driver) CheckHealth(context.Context) bool {
 
 // ListDevices runs `ios list` and returns the discovered UDIDs.
 func (d *Driver) ListDevices(ctx context.Context) ([]driver.Device, error) {
-	out, err := execCommandContext(ctx, d.bin, "list").Output()
+	bin, err := d.binPath()
+	if err != nil {
+		return nil, err
+	}
+	out, err := execCommandContext(ctx, bin, "list").Output()
 	if err != nil {
 		return nil, fmt.Errorf("go-ios list: %w", err)
 	}
@@ -215,7 +233,11 @@ func (d *Driver) DeviceDetails(ctx context.Context) (driver.DeviceDetails, error
 	}
 	udid := devices[0].UDID
 
-	out, err := execCommandContext(ctx, d.bin, "info", "--udid="+udid).Output()
+	bin, err := d.binPath()
+	if err != nil {
+		return driver.DeviceDetails{}, err
+	}
+	out, err := execCommandContext(ctx, bin, "info", "--udid="+udid).Output()
 	if err != nil {
 		return driver.DeviceDetails{}, fmt.Errorf("go-ios info: %w", err)
 	}
@@ -252,7 +274,11 @@ func (d *Driver) Tunnel() (driver.TunnelInfo, bool) {
 }
 
 func (d *Driver) run(ctx context.Context, args ...string) error {
-	out, err := execCommandContext(ctx, d.bin, args...).CombinedOutput()
+	bin, err := d.binPath()
+	if err != nil {
+		return err
+	}
+	out, err := execCommandContext(ctx, bin, args...).CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("go-ios %v: %w: %s", args, err, string(out))
 	}

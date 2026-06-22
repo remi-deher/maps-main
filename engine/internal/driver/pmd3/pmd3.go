@@ -36,9 +36,10 @@ const defaultTunnelStartTimeout = 60 * time.Second
 
 // Driver is the pymobiledevice3-backed implementation.
 type Driver struct {
-	py                 string   // python executable
-	base               []string // base args, e.g. ["-m","pymobiledevice3"]
-	manual             string   // optional "host:port" RSD endpoint (WiFi transport)
+	py                 string            // cached python executable ("" until resolved)
+	base               []string          // base args, e.g. ["-m","pymobiledevice3"]
+	binPaths           map[string]string // explicit overrides, for lazy resolution
+	manual             string            // optional "host:port" RSD endpoint (WiFi transport)
 	tunnelStartTimeout time.Duration
 
 	mu        sync.Mutex
@@ -47,17 +48,32 @@ type Driver struct {
 	tunnelCmd *exec.Cmd
 }
 
-// New builds a pmd3 Driver, resolving the Python interpreter from cfg/PATH.
+// New builds a pmd3 Driver. Like the go-ios driver, it does NOT fail when
+// Python can't be found: the engine must still boot so the user can see status
+// and switch drivers — a missing interpreter only matters once an operation
+// needs it, where pyCommand() surfaces a clear error.
 func New(cfg driver.Config) (driver.Driver, error) {
-	py, base, err := platform.Pmd3Command(cfg.BinaryPaths)
-	if err != nil {
-		return nil, err
-	}
+	py, _, _ := platform.Pmd3Command(cfg.BinaryPaths)
 	timeout := cfg.TunnelStartTimeout
 	if timeout <= 0 {
 		timeout = defaultTunnelStartTimeout
 	}
-	return &Driver{py: py, base: base, manual: cfg.ManualAddress, tunnelStartTimeout: timeout}, nil
+	return &Driver{
+		py:                 py,
+		base:               []string{"-m", "pymobiledevice3"},
+		binPaths:           cfg.BinaryPaths,
+		manual:             cfg.ManualAddress,
+		tunnelStartTimeout: timeout,
+	}, nil
+}
+
+// pyCommand returns the Python executable, resolving it lazily if New couldn't.
+func (d *Driver) pyCommand() (string, error) {
+	if d.py != "" {
+		return d.py, nil
+	}
+	py, _, err := platform.Pmd3Command(d.binPaths)
+	return py, err
 }
 
 func init() { driver.Register(domain.DriverPmd3, New) }
@@ -90,10 +106,15 @@ func (d *Driver) StartTunnel(ctx context.Context) (driver.TunnelInfo, error) {
 		return ti, nil
 	}
 
-	// Best-effort: mount the Developer Disk Image (ignore failures).
-	_ = execCommandContext(ctx, d.py, d.args("mounter", "auto-mount")...).Run()
+	py, err := d.pyCommand()
+	if err != nil {
+		return driver.TunnelInfo{}, err
+	}
 
-	cmd := execCommand(d.py, d.args("remote", "tunneld")...)
+	// Best-effort: mount the Developer Disk Image (ignore failures).
+	_ = execCommandContext(ctx, py, d.args("mounter", "auto-mount")...).Run()
+
+	cmd := execCommand(py, d.args("remote", "tunneld")...)
 	pr, pw := io.Pipe()
 	cmd.Stdout = pw
 	cmd.Stderr = pw
@@ -220,7 +241,11 @@ func (d *Driver) CheckHealth(context.Context) bool {
 
 // ListDevices runs `usbmux list` and returns the discovered devices.
 func (d *Driver) ListDevices(ctx context.Context) ([]driver.Device, error) {
-	out, err := execCommandContext(ctx, d.py, d.args("usbmux", "list")...).Output()
+	py, err := d.pyCommand()
+	if err != nil {
+		return nil, err
+	}
+	out, err := execCommandContext(ctx, py, d.args("usbmux", "list")...).Output()
 	if err != nil {
 		return nil, fmt.Errorf("pmd3 usbmux list: %w", err)
 	}
@@ -239,8 +264,12 @@ func (d *Driver) args(extra ...string) []string {
 }
 
 func (d *Driver) run(ctx context.Context, extra ...string) error {
+	py, err := d.pyCommand()
+	if err != nil {
+		return err
+	}
 	args := d.args(extra...)
-	out, err := execCommandContext(ctx, d.py, args...).CombinedOutput()
+	out, err := execCommandContext(ctx, py, args...).CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("pmd3 %v: %w: %s", extra, err, string(out))
 	}

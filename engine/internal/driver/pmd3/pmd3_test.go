@@ -9,6 +9,21 @@ import (
 	"github.com/remi-deher/maps-main/engine/internal/driver"
 )
 
+func TestNewBootsWithoutPythonAndDefersError(t *testing.T) {
+	// Like the go-ios driver: New must not fail when Python is absent, so the
+	// engine still boots; the error only surfaces when an operation needs it.
+	d, err := New(driver.Config{BinaryPaths: map[string]string{"python": "definitely-not-a-real-python"}})
+	if err != nil {
+		t.Fatalf("New must not fail when python is absent: %v", err)
+	}
+	if d == nil {
+		t.Fatal("expected a driver instance")
+	}
+	if _, err := d.ListDevices(context.Background()); err == nil {
+		t.Error("ListDevices should surface the missing-python error at use time")
+	}
+}
+
 func TestParseDeviceList(t *testing.T) {
 	cases := []struct {
 		name string

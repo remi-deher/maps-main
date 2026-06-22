@@ -99,6 +99,22 @@ func TestTunnelReflectsState(t *testing.T) {
 	}
 }
 
+func TestNewBootsWithoutBinaryAndDefersError(t *testing.T) {
+	// The engine must boot even when go-ios is absent, so the API/UI come up
+	// and the user can see status / switch drivers; the error only surfaces
+	// when an operation actually needs the binary.
+	d, err := New(driver.Config{BinaryPaths: map[string]string{"go-ios": "definitely-not-a-real-binary"}})
+	if err != nil {
+		t.Fatalf("New must not fail when go-ios is absent: %v", err)
+	}
+	if d == nil {
+		t.Fatal("expected a driver instance")
+	}
+	if _, err := d.ListDevices(context.Background()); err == nil {
+		t.Error("ListDevices should surface the missing-binary error at use time")
+	}
+}
+
 func TestSetClearLocationWithoutTunnelFail(t *testing.T) {
 	d := &Driver{}
 	ctx := context.Background()
