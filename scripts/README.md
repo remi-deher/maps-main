@@ -6,8 +6,9 @@ Installe et pilote le moteur `headless` en **service système**.
 | --- | --- | --- |
 | Linux | [`linux/gpsmock-ctl.sh`](linux/gpsmock-ctl.sh) | service **systemd** (`gpsmock.service`) |
 | Windows | [`windows/gpsmock-ctl.ps1`](windows/gpsmock-ctl.ps1) | **service Windows** (SCM) |
+| macOS | [`macos/gpsmock-ctl.sh`](macos/gpsmock-ctl.sh) | **daemon launchd** (`com.remi2.gpsmock`) |
 
-Les deux exposent les mêmes verbes : `install`, `uninstall`, `start`, `stop`,
+Les trois exposent les mêmes verbes : `install`, `uninstall`, `start`, `stop`,
 `restart`, `status`, `logs`, `config`.
 
 ## Linux (systemd)
@@ -47,9 +48,30 @@ Ouvrir un **PowerShell Administrateur** :
 Reconfiguration : relancer `install` avec les nouveaux paramètres (recrée le
 service). Le binaire et les logs vivent sous `%ProgramData%\gpsmock\`.
 
+## macOS (launchd)
+
+```bash
+# Installer + démarrer (root requis). Build le binaire si Go est présent.
+sudo scripts/macos/gpsmock-ctl.sh install --driver go-ios --transport usb --addr :8080
+
+# Gérer
+sudo scripts/macos/gpsmock-ctl.sh start|stop|restart
+scripts/macos/gpsmock-ctl.sh status
+scripts/macos/gpsmock-ctl.sh logs        # tail -f /var/log/gpsmock/engine.log
+scripts/macos/gpsmock-ctl.sh config      # affiche /etc/gpsmock/gpsmock.env
+
+sudo scripts/macos/gpsmock-ctl.sh uninstall
+```
+
+Reconfiguration : relancer `install` avec les nouveaux paramètres (recrée le
+plist `/Library/LaunchDaemons/com.remi2.gpsmock.plist`). Le binaire vit en
+`/usr/local/bin/gpsmock-engine`, les logs en `/var/log/gpsmock/engine.log`.
+Tourne en tant que daemon système (`system/` domain), pas en LaunchAgent par
+session — il démarre donc avant toute connexion utilisateur.
+
 ## Configuration
 
-| Flag (install) | Variable d'env (Linux) | Défaut |
+| Flag (install) | Variable d'env (Linux/macOS) | Défaut |
 | --- | --- | --- |
 | `--driver` / `-Driver` | `GPSMOCK_DRIVER` | `pymobiledevice` |
 | `--transport` / `-Transport` | `GPSMOCK_TRANSPORT` | `auto` |
