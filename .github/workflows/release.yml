@@ -43,53 +43,45 @@ jobs:
           name: gpsmock-engine-${{ matrix.goos }}-${{ matrix.goarch }}
           path: dist/*
 
-  bundle-windows-engine:
-    name: bundle Windows engine (lean + full)
-    needs: build-engine
+  portable-windows-engine:
+    name: build self-contained Windows portable .exe
     runs-on: windows-latest
     steps:
-      # checkout BEFORE download-artifact: actions/checkout cleans the workspace
-      # by default, which would wipe the downloaded engine binary if done after.
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
 
       - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6
         with:
           go-version-file: engine/go.mod
 
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
-        with:
-          name: gpsmock-engine-windows-amd64
-          path: engine-bin
-
-      # Two portable bundles share the same engine .exe:
-      #   lean — go-ios only (the default driver), ~30 MB: the autonomous setup
-      #   full — go-ios + python-embed + pymobiledevice3, ~120 MB
-      - name: Assemble lean bundle (go-ios only)
+      # Assemble both drivers, zip them, and place the zip where go:embed
+      # expects it (internal/platform/embedded/drivers.zip) for the tagged build.
+      - name: Assemble embedded driver payload
         shell: pwsh
         run: |
-          New-Item -ItemType Directory -Force -Path bundle-lean | Out-Null
-          Copy-Item engine-bin/* bundle-lean/
-          ./scripts/bundle-drivers.ps1 -TargetDir "$pwd/bundle-lean/resources"
-          Compress-Archive -Path bundle-lean/* -DestinationPath gpsmock-engine-windows-amd64-portable.zip
+          ./scripts/bundle-drivers.ps1 -TargetDir "$pwd/drivers" -IncludePython
+          New-Item -ItemType Directory -Force -Path engine/internal/platform/embedded | Out-Null
+          Compress-Archive -Path drivers/* -DestinationPath engine/internal/platform/embedded/drivers.zip -Force
 
-      - name: Assemble full bundle (both drivers)
+      - name: Build portable engine (drivers embedded)
         shell: pwsh
+        working-directory: engine
         run: |
-          New-Item -ItemType Directory -Force -Path bundle-full | Out-Null
-          Copy-Item engine-bin/* bundle-full/
-          ./scripts/bundle-drivers.ps1 -TargetDir "$pwd/bundle-full/resources" -IncludePython
-          Compress-Archive -Path bundle-full/* -DestinationPath gpsmock-engine-windows-amd64-portable-full.zip
+          $ver = "${{ github.ref_name }}"
+          if ($ver -match '^v\d') { $ver = $ver.Substring(1) } else { $ver = "0.0.0" }
+          $ldflags = "-s -w -X github.com/remi-deher/maps-main/engine/internal/platform.driversVersion=$ver"
+          $env:CGO_ENABLED = "0"
+          go build -tags embed_drivers -trimpath -ldflags="$ldflags" -o ../gpsmock-engine-portable.exe ./cmd/headless
+          if ($LASTEXITCODE -ne 0) { throw "go build (portable) failed" }
 
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: gpsmock-engine-windows-amd64-portable
-          path: |
-            gpsmock-engine-windows-amd64-portable.zip
-            gpsmock-engine-windows-amd64-portable-full.zip
+          path: gpsmock-engine-portable.exe
+          if-no-files-found: error
 
   installer-windows-engine:
     name: build Windows installer (Inno Setup)
-    needs: bundle-windows-engine
+    needs: portable-windows-engine
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
@@ -98,13 +90,7 @@ jobs:
         with:
           name: gpsmock-engine-windows-amd64-portable
 
-      - name: Unpack portable bundles
-        shell: pwsh
-        run: |
-          Expand-Archive -Path gpsmock-engine-windows-amd64-portable.zip -DestinationPath bundle-lean
-          Expand-Archive -Path gpsmock-engine-windows-amd64-portable-full.zip -DestinationPath bundle-full
-
-      - name: Compile installers (lean + full)
+      - name: Compile installer
         shell: pwsh
         run: |
           # Version from the release tag (v0.2.0 -> 0.2.0); 0.0.0 off-tag.
@@ -115,21 +101,13 @@ jobs:
           if (-not (Test-Path $iscc)) {
             choco install innosetup --no-progress -y
           }
-
-          # Lean (go-ios only) -> gpsmock-engine-setup.exe
-          & $iscc "/DAppVersion=$ver" "/DBundleDir=$pwd\bundle-lean" "/Fgpsmock-engine-setup" "/O$pwd\setup-out" installer\windows\gpsmock.iss
-          if ($LASTEXITCODE -ne 0) { throw "ISCC (lean) failed with exit code $LASTEXITCODE" }
-
-          # Full (both drivers) -> gpsmock-engine-setup-full.exe
-          & $iscc "/DAppVersion=$ver" "/DBundleDir=$pwd\bundle-full" "/Fgpsmock-engine-setup-full" "/O$pwd\setup-out" installer\windows\gpsmock.iss
-          if ($LASTEXITCODE -ne 0) { throw "ISCC (full) failed with exit code $LASTEXITCODE" }
+          & $iscc "/DAppVersion=$ver" "/DPortableExe=$pwd\gpsmock-engine-portable.exe" "/O$pwd\setup-out" installer\windows\gpsmock.iss
+          if ($LASTEXITCODE -ne 0) { throw "ISCC failed with exit code $LASTEXITCODE" }
 
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: gpsmock-engine-windows-amd64-setup
-          path: |
-            setup-out/gpsmock-engine-setup.exe
-            setup-out/gpsmock-engine-setup-full.exe
+          path: setup-out/gpsmock-engine-setup.exe
           if-no-files-found: error
 
   build-tauri:
@@ -319,7 +297,7 @@ jobs:
 
   release:
     name: publish GitHub release
-    needs: [build-engine, bundle-windows-engine, installer-windows-engine, build-tauri, build-ios, docker]
+    needs: [build-engine, portable-windows-engine, installer-windows-engine, build-tauri, build-ios, docker]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -349,13 +327,11 @@ jobs:
             ### Moteur seul (serveur / headless / automatisation)
             | Cas | Fichier |
             |---|---|
-            | **Windows, recommandé (léger ~30 Mo)** | `gpsmock-engine-setup.exe` (installeur) ou `gpsmock-engine-windows-amd64-portable.zip` — pilote **go-ios** intégré, sans Python |
-            | Windows, avec pymobiledevice | `gpsmock-engine-setup-full.exe` ou `gpsmock-engine-windows-amd64-portable-full.zip` — les deux pilotes, Python inclus (~120 Mo) |
-            | Windows, binaire nu | `gpsmock-engine-windows-amd64.exe` (sans pilote) |
+            | **Windows, portable (recommandé)** | `gpsmock-engine-portable.exe` — un seul fichier, rien à décompresser ; go-ios + pymobiledevice intégrés (extraits au 1er lancement) |
+            | Windows, installé | `gpsmock-engine-setup.exe` — installeur (menu Démarrer + désinstalleur), mêmes pilotes |
+            | Windows, binaire nu | `gpsmock-engine-windows-amd64.exe` (sans pilote, pour configuration avancée) |
             | Linux / macOS | `gpsmock-engine-<os>-<arch>` |
             | Conteneur | `docker pull ghcr.io/${{ github.repository }}/gpsmock-engine:${{ github.ref_name }}` |
-
-            Les variantes *lean* (go-ios seul) suffisent dans la plupart des cas ; prenez *full* uniquement si vous avez besoin du pilote pymobiledevice sans installer Python.
 
             ### Application compagnon iOS
             `GpsMockCompanion-unsigned.ipa` — non signé, à ré-signer à l'installation (AltStore, etc.).
