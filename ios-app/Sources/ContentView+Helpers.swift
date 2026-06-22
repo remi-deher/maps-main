@@ -79,7 +79,7 @@ extension ContentView {
             ])
             previousCoordinate = stop.coordinate
         }
-        engine.playSequence(legs: legs, looping: false)
+        session.engine.playSequence(legs: legs, looping: false)
         itineraryStops = []
     }
 
@@ -89,7 +89,7 @@ extension ContentView {
     /// no modal alert on top of every blocked action (see §3.9 of
     /// docs/UI_UX_BASELINE.md), so a blocked action is a silent no-op here.
     func requireConnection() -> Bool {
-        engine.state == .connected
+        session.engine.state == .connected
     }
 
     func saveLastItinerary() {
@@ -115,7 +115,7 @@ extension ContentView {
 
     func selectFavorite(_ fav: Favorite) {
         let coordinate = CLLocationCoordinate2D(latitude: fav.lat, longitude: fav.lon)
-        engine.setLocation(lat: fav.lat, lon: fav.lon, name: fav.name ?? "Favori")
+        session.engine.setLocation(lat: fav.lat, lon: fav.lon, name: fav.name ?? "Favori")
         focus(on: coordinate)
     }
 
@@ -131,7 +131,7 @@ extension ContentView {
     func fitItinerary(_ stops: [RouteStop]) {
         guard !stops.isEmpty else { return }
         var coordinates = stops.map(\.coordinate)
-        if let real = location.lastLocation?.coordinate {
+        if let real = session.location.lastLocation?.coordinate {
             coordinates.append(real)
         }
         withAnimation {
@@ -164,79 +164,8 @@ extension ContentView {
         return MKCoordinateRegion(center: center, span: span)
     }
 
-    /// Recomputes per-leg distance/ETA via OSRM, keyed by destination stop id
-    /// — mirrors the duration Plans shows under each leg of a trip, but uses
-    /// the same router the engine itself uses to actually drive the
-    /// simulation (engine/internal/engine/simulation.go), instead of
-    /// MapKit/Apple Maps routing which can disagree on which road it picks.
-    /// Falls back to MKDirections per-leg if OSRM is unreachable (offline
-    /// demo server, no network) so estimates degrade rather than vanish.
-    func recomputeLegEstimates(_ stops: [RouteStop]) {
-        estimatesTask?.cancel()
-        guard stops.count > 1 else {
-            legEstimates = [:]
-            return
-        }
-        let profile = itineraryProfile
-        estimatesTask = Task {
-            var results: [UUID: LegEstimate] = [:]
-            for index in 1..<stops.count {
-                guard !Task.isCancelled else { return }
-                let origin = stops[index - 1]
-                let destination = stops[index]
-                if let route = await OSRMClient.fetchRoute(from: origin.coordinate, to: destination.coordinate, profile: profile) {
-                    results[destination.id] = LegEstimate(distanceMeters: route.distanceMeters, travelTime: route.durationSeconds)
-                } else if let fallback = await fetchMapKitEstimate(from: origin.coordinate, to: destination.coordinate, profile: profile) {
-                    results[destination.id] = fallback
-                }
-            }
-            guard !Task.isCancelled else { return }
-            await MainActor.run { legEstimates = results }
-        }
-    }
-
-    func fetchMapKitEstimate(from origin: CLLocationCoordinate2D, to destination: CLLocationCoordinate2D, profile: String) async -> LegEstimate? {
-        let request = MKDirections.Request()
-        request.source = MKMapItem(placemark: MKPlacemark(coordinate: origin))
-        request.destination = MKMapItem(placemark: MKPlacemark(coordinate: destination))
-        request.transportType = profile == "walking" ? .walking : .automobile
-        guard let route = try? await MKDirections(request: request).calculate().routes.first else { return nil }
-        AppLogger.shared.warn("OSRM indisponible, repli MKDirections pour l'estimation d'étape")
-        return LegEstimate(distanceMeters: route.distance, travelTime: route.expectedTravelTime)
-    }
-
     func toggleConnection() {
-        if engine.state == .connected || engine.state == .connecting {
-            stopReporting()
-            stopKeepAlive()
-            location.onLocationUpdate = nil
-            engine.disconnect()
-            return
-        }
-        engine.connect(to: "ws://\(engineAddress)/ws")
-        startReporting()
-        bindBackgroundKeepAlive()
-        if keepAliveEnabled {
-            location.requestAlwaysPermission()
-            location.enableBackgroundUpdates(true)
-            startKeepAlive()
-        }
-    }
-
-    /// Routes every CoreLocation delivery through the engine. This is the path
-    /// that survives suspension (the `Task.sleep` loops in startReporting/
-    /// startKeepAlive don't): on each callback it rebuilds a dropped socket,
-    /// reports the real position for the anti-drift shield, and re-asserts the
-    /// spoof at the keep-alive cadence. Engine is captured weakly — it owns no
-    /// reference back, so there's no cycle, and a torn-down engine just stops
-    /// the callback.
-    func bindBackgroundKeepAlive() {
-        location.onLocationUpdate = { [weak engine] loc in
-            guard let engine else { return }
-            engine.ensureConnected()
-            engine.sendRealLocationIfDue(lat: loc.coordinate.latitude, lon: loc.coordinate.longitude)
-            engine.relanceIfDue()
-        }
+        session.toggleConnection(engineAddress: engineAddress, keepAliveEnabled: keepAliveEnabled)
     }
 
     /// Drops the current connection and reopens it against the (possibly
@@ -244,56 +173,6 @@ extension ContentView {
     /// settings, mirroring tauri-app's "Appliquer" button for its engine
     /// port field (Sidebar.tsx's handleApplyEnginePort).
     func reconnect() {
-        if engine.state == .connected || engine.state == .connecting {
-            engine.disconnect()
-        }
-        engine.connect(to: "ws://\(engineAddress)/ws")
-        startReporting()
-        bindBackgroundKeepAlive()
-    }
-
-    /// Periodically re-sends RELANCE so the engine re-asserts the last
-    /// injected position — the "maintien" the legacy background task
-    /// (services/background.ts) achieved by posting to /api/relance on every
-    /// background location tick. Runs independently of REAL_LOCATION
-    /// reporting so it keeps the spoof alive even if the device's own GPS
-    /// briefly drifts or the anti-drift shield hasn't re-injected yet.
-    func startKeepAlive() {
-        keepAliveTask?.cancel()
-        keepAliveTask = Task {
-            while !Task.isCancelled {
-                try? await Task.sleep(for: .seconds(max(keepAliveInterval, 1)))
-                guard !Task.isCancelled, engine.state == .connected else { continue }
-                // Same throttled path as the background location callback, so
-                // foreground + background never double-fire RELANCE.
-                engine.relanceIfDue()
-            }
-        }
-    }
-
-    func stopKeepAlive() {
-        keepAliveTask?.cancel()
-        keepAliveTask = nil
-    }
-
-    /// Task-based instead of `Timer.scheduledTimer`: a Timer keeps firing
-    /// (and keeps a strong RunLoop reference alive) regardless of the view's
-    /// lifecycle, whereas this Task is owned by `reportTask` and is
-    /// cancelled explicitly in `stopReporting()` — see §3.22 of
-    /// docs/UI_UX_BASELINE.md.
-    func startReporting() {
-        reportTask?.cancel()
-        reportTask = Task {
-            while !Task.isCancelled {
-                try? await Task.sleep(for: .seconds(10))
-                guard !Task.isCancelled, let loc = location.lastLocation else { continue }
-                engine.sendRealLocationIfDue(lat: loc.coordinate.latitude, lon: loc.coordinate.longitude)
-            }
-        }
-    }
-
-    func stopReporting() {
-        reportTask?.cancel()
-        reportTask = nil
+        session.reconnect(engineAddress: engineAddress)
     }
 }

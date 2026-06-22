@@ -8,8 +8,7 @@ struct ContentView: View {
     // "already configured" state before Bonjour discovery had a chance to
     // run. See §3.24 of docs/UI_UX_BASELINE.md.
     @AppStorage("engineAddress") var engineAddress: String = ""
-    @State var location = LocationManager()
-    @State var engine = EngineClient()
+    @State var session = MapSessionModel()
     @State var discovery = EngineDiscovery()
     @State var liveActivity = LiveActivityManager()
     @AppStorage("liveActivityEnabled") var liveActivityEnabled = true
@@ -24,8 +23,6 @@ struct ContentView: View {
     @AppStorage("defaultProfile") var defaultProfile: String = "driving"
     @AppStorage("locationAccuracyMode") var locationAccuracyMode: String = "balanced"
 
-    @State var reportTask: Task<Void, Never>?
-    @State var keepAliveTask: Task<Void, Never>?
     @State var wasConnected = false
     @State var lastSimulationState: String?
     @State var selectedPlace: SelectedPlace?
@@ -41,20 +38,18 @@ struct ContentView: View {
     @State var itineraryStops: [RouteStop] = []
     @State var itinerarySpeed: Double = 30
     @State var itineraryProfile: String = "driving"
-    @State var legEstimates: [UUID: LegEstimate] = [:]
-    @State var estimatesTask: Task<Void, Never>?
 
     @State var sheetDetent: PresentationDetent = .height(BottomSheet.collapsedHeight)
     @State var showSettings = false
     @State var hasSavedItinerary = UserDefaults.standard.data(forKey: lastItineraryKey) != nil
 
     private var spoofedCoordinate: CLLocationCoordinate2D? {
-        guard let loc = engine.status?.lastInjectedLocation else { return nil }
+        guard let loc = session.engine.status?.lastInjectedLocation else { return nil }
         return CLLocationCoordinate2D(latitude: loc.lat, longitude: loc.lon)
     }
 
     private var routePreview: [CLLocationCoordinate2D] {
-        (engine.status?.currentSequencePreview ?? []).map {
+        (session.engine.status?.currentSequencePreview ?? []).map {
             CLLocationCoordinate2D(latitude: $0.lat, longitude: $0.lon)
         }
     }
@@ -65,7 +60,7 @@ struct ContentView: View {
                 spoofedLocation: spoofedCoordinate,
                 routePreview: routePreview,
                 itineraryStops: itineraryStops,
-                patrolZone: engine.status?.patrolZone,
+                patrolZone: session.engine.status?.patrolZone,
                 cameraPosition: $cameraPosition,
                 onLongPress: { coordinate in
                     searchFocused = false
@@ -119,7 +114,7 @@ struct ContentView: View {
             TextField("Nom", text: $newFavoriteName)
             Button("Enregistrer") {
                 if let place = selectedPlace, requireConnection() {
-                    engine.addFavorite(
+                    session.engine.addFavorite(
                         lat: place.coordinate.latitude,
                         lon: place.coordinate.longitude,
                         name: newFavoriteName.isEmpty ? "Favori" : newFavoriteName
@@ -141,24 +136,24 @@ struct ContentView: View {
                 itineraryStops: $itineraryStops,
                 itinerarySpeed: $itinerarySpeed,
                 itineraryProfile: $itineraryProfile,
-                legEstimates: legEstimates,
+                legEstimates: session.legEstimates,
                 onAddStop: { searchFocused = true },
                 onLaunchItinerary: launchItinerary,
-                favorites: engine.status?.favorites ?? [],
+                favorites: session.engine.status?.favorites ?? [],
                 onSelectFavorite: selectFavorite,
-                onDeleteFavorite: { fav in engine.removeFavorite(lat: fav.lat, lon: fav.lon) },
+                onDeleteFavorite: { fav in session.engine.removeFavorite(lat: fav.lat, lon: fav.lon) },
                 hasSavedItinerary: hasSavedItinerary,
                 onLoadLastItinerary: loadLastItinerary,
                 selectedPlace: selectedPlace,
                 placeActions: PlaceActions(
                     onTeleport: {
                         guard let place = selectedPlace, requireConnection() else { return }
-                        engine.setLocation(lat: place.coordinate.latitude, lon: place.coordinate.longitude)
+                        session.engine.setLocation(lat: place.coordinate.latitude, lon: place.coordinate.longitude)
                         selectedPlace = nil
                     },
                     onRoute: {
                         guard let place = selectedPlace, requireConnection() else { return }
-                        engine.playRoute(endLat: place.coordinate.latitude, endLon: place.coordinate.longitude, speed: defaultSpeed, profile: defaultProfile)
+                        session.engine.playRoute(endLat: place.coordinate.latitude, endLon: place.coordinate.longitude, speed: defaultSpeed, profile: defaultProfile)
                         selectedPlace = nil
                     },
                     onAddStop: {
@@ -169,10 +164,10 @@ struct ContentView: View {
                     onFavorite: { showAddFavorite = true },
                     onDismiss: { selectedPlace = nil }
                 ),
-                simulationState: engine.status?.state,
-                onPauseRoute: { engine.pauseRoute() },
-                onResumeRoute: { engine.resumeRoute() },
-                onStopRoute: { engine.stopRoute() },
+                simulationState: session.engine.status?.state,
+                onPauseRoute: { session.engine.pauseRoute() },
+                onResumeRoute: { session.engine.resumeRoute() },
+                onStopRoute: { session.engine.stopRoute() },
                 onOpenSettings: { showSettings = true },
                 sheetDetent: sheetDetent
             )
@@ -195,7 +190,7 @@ struct ContentView: View {
             .sheet(isPresented: $showSettings) {
                 SettingsSheet(
                     engineAddress: $engineAddress,
-                    engine: engine,
+                    engine: session.engine,
                     discovery: discovery,
                     onToggleConnection: toggleConnection,
                     onRetryDiscovery: startDiscovery,
@@ -204,15 +199,15 @@ struct ContentView: View {
                     keepAliveEnabled: $keepAliveEnabled,
                     keepAliveInterval: $keepAliveInterval,
                     notificationsEnabled: $notificationsEnabled,
-                    patrolCenter: spoofedCoordinate ?? location.lastLocation?.coordinate,
+                    patrolCenter: spoofedCoordinate ?? session.location.lastLocation?.coordinate,
                     visibleRegion: visibleRegion,
-                    locationAuthorization: location.authorizationStatus
+                    locationAuthorization: session.location.authorizationStatus
                 )
             }
         }
         .onAppear {
-            location.requestPermission()
-            location.setAccuracyMode(locationAccuracyMode)
+            session.location.requestPermission()
+            session.location.setAccuracyMode(locationAccuracyMode)
             if notificationsEnabled { NotificationManager.shared.requestPermission() }
             // Seed the itinerary builder with the user's default speed/profile.
             itinerarySpeed = defaultSpeed
@@ -220,32 +215,32 @@ struct ContentView: View {
             // Mirror the persisted keep-alive cadence into the engine so the
             // background location callback can throttle RELANCE without reading
             // SwiftUI state (unavailable while suspended).
-            engine.keepAliveEnabled = keepAliveEnabled
-            engine.keepAliveInterval = keepAliveInterval
+            session.engine.keepAliveEnabled = keepAliveEnabled
+            session.engine.keepAliveInterval = keepAliveInterval
             startDiscovery()
         }
         .onChange(of: locationAccuracyMode) { mode in
-            location.setAccuracyMode(mode)
+            session.location.setAccuracyMode(mode)
         }
         .onChange(of: keepAliveEnabled) { enabled in
-            engine.keepAliveEnabled = enabled
-            location.enableBackgroundUpdates(enabled)
+            session.engine.keepAliveEnabled = enabled
+            session.location.enableBackgroundUpdates(enabled)
             if enabled {
                 // Turning keep-alive on after connecting needs the Always grant
                 // too, otherwise background callbacks never fire.
-                location.requestAlwaysPermission()
-                if engine.state == .connected { startKeepAlive() }
+                session.location.requestAlwaysPermission()
+                if session.engine.state == .connected { session.startKeepAlive(interval: keepAliveInterval) }
             } else {
-                stopKeepAlive()
+                session.stopKeepAlive()
             }
         }
         .onChange(of: keepAliveInterval) { interval in
-            engine.keepAliveInterval = interval
+            session.engine.keepAliveInterval = interval
         }
         .onChange(of: notificationsEnabled) { enabled in
             if enabled { NotificationManager.shared.requestPermission() }
         }
-        .onChange(of: engine.state) { newState in
+        .onChange(of: session.engine.state) { newState in
             if newState == .connected {
                 wasConnected = true
             } else if wasConnected && (newState == .reconnecting || newState == .disconnected) {
@@ -253,23 +248,23 @@ struct ContentView: View {
                 if notificationsEnabled { NotificationManager.shared.notifyDisconnect() }
             }
         }
-        .onChange(of: engine.status?.state) { newState in
+        .onChange(of: session.engine.status?.state) { newState in
             let previous = lastSimulationState
             lastSimulationState = newState
             guard notificationsEnabled, let newState else { return }
             if newState == "ready" && (previous == "running" || previous == "moving") {
-                NotificationManager.shared.notifyArrival(locationName: engine.status?.lastInjectedLocation?.name)
+                NotificationManager.shared.notifyArrival(locationName: session.engine.status?.lastInjectedLocation?.name)
             }
         }
         .onChange(of: discovery.state) { newState in
             guard case .found(let host, let port) = newState else { return }
             engineAddress = "\(host):\(port)"
-            if engine.state != .connected && engine.state != .connecting {
+            if session.engine.state != .connected && session.engine.state != .connecting {
                 toggleConnection()
             }
         }
         .onChange(of: searchQuery) { newValue in
-            if let coordinate = location.lastLocation?.coordinate {
+            if let coordinate = session.location.lastLocation?.coordinate {
                 searchCompleter.updateRegion(center: coordinate)
             }
             searchCompleter.queryFragment = newValue
@@ -287,19 +282,19 @@ struct ContentView: View {
             // Plans-style: adding (or removing/reordering) a stop reframes
             // the camera to show the whole itinerary, not just the new point.
             fitItinerary(newStops)
-            recomputeLegEstimates(newStops)
+            session.recomputeLegEstimates(newStops, profile: itineraryProfile)
             if !newStops.isEmpty {
                 withAnimation { sheetDetent = .medium }
             }
         }
         .onChange(of: itineraryProfile) { _ in
-            recomputeLegEstimates(itineraryStops)
+            session.recomputeLegEstimates(itineraryStops, profile: itineraryProfile)
         }
-        .onChange(of: engine.status) { status in
+        .onChange(of: session.engine.status) { status in
             liveActivity.sync(state: status?.state, locationName: status?.lastInjectedLocation?.name, enabled: liveActivityEnabled)
         }
         .onChange(of: liveActivityEnabled) { enabled in
-            liveActivity.sync(state: engine.status?.state, locationName: engine.status?.lastInjectedLocation?.name, enabled: enabled)
+            liveActivity.sync(state: session.engine.status?.state, locationName: session.engine.status?.lastInjectedLocation?.name, enabled: enabled)
         }
         .onChange(of: selectedPlace) { place in
             // The place card now lives inside the bottom sheet (it used to
