@@ -123,6 +123,13 @@ export interface Telemetry {
   throughput: number;
 }
 
+export interface LogEntry {
+  timestamp: number;
+  level: "info" | "warn" | "error";
+  source: string;
+  message: string;
+}
+
 interface WebSocketContextType {
   isConnected: boolean;
   connectionStatus: "connecting" | "connected" | "reconnecting" | "disconnected";
@@ -138,6 +145,7 @@ interface WebSocketContextType {
   status: Status | null;
   telemetry: Telemetry | null;
   deviceDetails: DeviceDetails | null;
+  logs: LogEntry[];
   getDeviceInfo: () => void;
   sendMessage: (type: string, data?: any) => boolean;
   setLocation: (lat: number, lon: number, name?: string) => void;
@@ -180,6 +188,8 @@ export const WebSocketProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   const [status, setStatus] = useState<Status | null>(null);
   const [telemetry, setTelemetry] = useState<Telemetry | null>(null);
   const [deviceDetails, setDeviceDetails] = useState<DeviceDetails | null>(null);
+  const [logs, setLogs] = useState<LogEntry[]>([]);
+  const maxLogEntries = 200;
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectTimeoutRef = useRef<any>(null);
 
@@ -214,8 +224,9 @@ export const WebSocketProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       if (!isTauri) {
         setEngineStatus("running");
       }
-      // Request initial status
+      // Request initial status and log buffer
       ws.send(JSON.stringify({ type: "GET_STATUS" }));
+      ws.send(JSON.stringify({ type: "GET_LOGS" }));
     };
 
     ws.onmessage = (event) => {
@@ -233,6 +244,15 @@ export const WebSocketProvider: React.FC<{ children: React.ReactNode }> = ({ chi
             break;
           case "DEVICE_INFO":
             setDeviceDetails(data);
+            break;
+          case "LOG":
+            setLogs((prev) => {
+              const next = [...prev, data as LogEntry];
+              return next.length > maxLogEntries ? next.slice(next.length - maxLogEntries) : next;
+            });
+            break;
+          case "LOGS":
+            setLogs((Array.isArray(data) ? data : []) as LogEntry[]);
             break;
           case "LOCATION":
             // Can update location inside status if necessary
@@ -457,6 +477,7 @@ export const WebSocketProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         status,
         telemetry,
         deviceDetails,
+        logs,
         getDeviceInfo,
         sendMessage,
         setLocation,
