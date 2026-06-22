@@ -60,14 +60,19 @@ type Settings struct {
 // Default returns the baseline configuration used on first run.
 func Default() Settings {
 	return Settings{
-		CompanionPort:             8080,
-		ConnectionMode:            "both",
-		OperationMode:             domain.ModeHybrid,
-		EveilMode:                 true,
-		EveilInterval:             5,
-		PreferredDriver:           domain.DriverPmd3,
-		UsbDriver:                 domain.DriverPmd3,
-		WifiDriver:                domain.DriverPmd3,
+		CompanionPort:  8080,
+		ConnectionMode: "both",
+		OperationMode:  domain.ModeHybrid,
+		EveilMode:      true,
+		EveilInterval:  5,
+		// go-ios is the default: a single static binary with no runtime deps,
+		// bundled across all distributions (Docker compiles it, the Windows
+		// portable zip and the Tauri app ship it). pymobiledevice remains
+		// selectable but needs Python, so it's no longer the out-of-the-box
+		// default — see the v0.2.0 autonomous-bundle work.
+		PreferredDriver:           domain.DriverGoIos,
+		UsbDriver:                 domain.DriverGoIos,
+		WifiDriver:                domain.DriverGoIos,
 		FallbackEnabled:           true,
 		ClusterMode:               "off",
 		ClusterHeartbeatSeconds:   10,

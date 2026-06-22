@@ -1,0 +1,5 @@
+# Driver binaries are produced at build time by scripts/bundle-drivers.ps1
+# (go-ios as ios[.exe], the python-embed distribution) — never commit them.
+*
+!.gitignore
+!README.txt

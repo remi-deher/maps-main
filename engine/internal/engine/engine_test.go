@@ -71,8 +71,8 @@ func TestEngineInit(t *testing.T) {
 	if st.TunnelActive {
 		t.Errorf("expected tunnel not to be active initially")
 	}
-	if st.UsbDriver != domain.DriverPmd3 {
-		t.Errorf("expected usb driver %s, got %s", domain.DriverPmd3, st.UsbDriver)
+	if st.UsbDriver != domain.DriverGoIos {
+		t.Errorf("expected usb driver %s, got %s", domain.DriverGoIos, st.UsbDriver)
 	}
 }
 

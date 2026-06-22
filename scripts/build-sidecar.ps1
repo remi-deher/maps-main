@@ -27,3 +27,10 @@ go build -o $outputPath ./cmd/headless
 Pop-Location
 
 Write-Host "Sidecar binary created successfully at: $outputPath"
+
+# Bundle the iOS drivers as Tauri resources next to the sidecar so the engine
+# (which resolves resources/ relative to its executable) finds them at runtime
+# with no system install. resource_dir paths are passed explicitly by the Rust
+# side (see bundled_driver_envs in src-tauri/src/lib.rs).
+$resourcesDir = Join-Path (Resolve-Path (Join-Path $PSScriptRoot "../tauri-app/src-tauri")) "resources"
+& (Join-Path $PSScriptRoot "bundle-drivers.ps1") -TargetDir $resourcesDir

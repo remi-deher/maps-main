@@ -61,8 +61,8 @@ func TestStatusREST(t *testing.T) {
 	if st.State != "idle" {
 		t.Errorf("state = %q, want idle", st.State)
 	}
-	if st.UsbDriver != domain.DriverPmd3 {
-		t.Errorf("usbDriver = %q, want pymobiledevice", st.UsbDriver)
+	if st.UsbDriver != domain.DriverGoIos {
+		t.Errorf("usbDriver = %q, want go-ios", st.UsbDriver)
 	}
 }
 

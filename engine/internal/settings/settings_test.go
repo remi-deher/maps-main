@@ -13,16 +13,16 @@ func TestDefault(t *testing.T) {
 		t.Errorf("expected default companion port 8080, got %d", def.CompanionPort)
 	}
 
-	if def.PreferredDriver != domain.DriverPmd3 {
-		t.Errorf("expected preferred driver pmd3, got %s", def.PreferredDriver)
+	if def.PreferredDriver != domain.DriverGoIos {
+		t.Errorf("expected preferred driver go-ios, got %s", def.PreferredDriver)
 	}
 
-	if def.UsbDriver != domain.DriverPmd3 {
-		t.Errorf("expected usb driver pmd3, got %s", def.UsbDriver)
+	if def.UsbDriver != domain.DriverGoIos {
+		t.Errorf("expected usb driver go-ios, got %s", def.UsbDriver)
 	}
 
-	if def.WifiDriver != domain.DriverPmd3 {
-		t.Errorf("expected wifi driver pmd3, got %s", def.WifiDriver)
+	if def.WifiDriver != domain.DriverGoIos {
+		t.Errorf("expected wifi driver go-ios, got %s", def.WifiDriver)
 	}
 
 	if !def.EveilMode {

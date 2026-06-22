@@ -33,6 +33,9 @@
     ],
     "externalBin": [
       "binaries/gpsmock-engine"
+    ],
+    "resources": [
+      "resources/**/*"
     ]
   }
 }

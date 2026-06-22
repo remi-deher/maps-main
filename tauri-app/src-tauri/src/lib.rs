@@ -80,10 +80,16 @@ fn spawn_engine(app: &AppHandle, port: u16, mdns_interface: Option<&str>) -> Res
             args.push(iface.to_string());
         }
     }
-    let sidecar = shell
+    let mut sidecar = shell
         .sidecar("gpsmock-engine")
         .map_err(|err| format!("sidecar config not found: {err}"))?
         .args(args);
+
+    // Point the engine at the iOS-driver binaries bundled as app resources, so
+    // go-ios / pymobiledevice work with no system install or PATH setup.
+    for (key, value) in bundled_driver_envs(app) {
+        sidecar = sidecar.env(key, value);
+    }
 
     let (mut rx, child) = sidecar
         .spawn()
@@ -118,6 +124,40 @@ fn spawn_engine(app: &AppHandle, port: u16, mdns_interface: Option<&str>) -> Res
     });
 
     Ok(())
+}
+
+/// Resolves the iOS-driver binaries bundled as Tauri resources and returns the
+/// env vars pointing the engine sidecar at them. Only sets a var when the file
+/// is actually present, so a missing bundle falls back to the engine's own
+/// PATH / next-to-executable resolution rather than pointing at nothing.
+fn bundled_driver_envs(app: &AppHandle) -> Vec<(String, String)> {
+    let mut envs = Vec::new();
+    let Ok(res) = app.path().resource_dir() else {
+        return envs;
+    };
+    let base = res.join("resources");
+
+    let goios = base.join(if cfg!(windows) { "ios.exe" } else { "ios" });
+    if goios.is_file() {
+        envs.push((
+            "GPSMOCK_GOIOS_BIN".to_string(),
+            goios.to_string_lossy().into_owned(),
+        ));
+    }
+
+    let python = if cfg!(windows) {
+        base.join("python-embed").join("python.exe")
+    } else {
+        base.join("python-embed").join("bin").join("python3")
+    };
+    if python.is_file() {
+        envs.push((
+            "GPSMOCK_PYTHON_BIN".to_string(),
+            python.to_string_lossy().into_owned(),
+        ));
+    }
+
+    envs
 }
 
 #[tauri::command]
