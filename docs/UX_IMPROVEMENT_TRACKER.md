@@ -18,10 +18,10 @@ Basé sur `docs/UI_UX_BASELINE.md` §4. Statut vérifié par inspection du code.
 |---|---|---|---|
 | 1 | Aucune `.shadow()` sur glass | ✅ | 0 fichier avec `.shadow(` |
 | 2 | `GlassEffectContainer` autour des overlays | 🟡 | présent (`AdaptiveGlass.swift`) — auditer la couverture des clusters |
-| 3 | Hit-targets ≥ 44 pt | 🟡 | à auditer bouton par bouton |
-| 4a | `accessibilityLabel` sur boutons icône-seule | ⬜ | **1 seule occurrence** dans tout `Sources/` → gros trou VoiceOver |
+| 3 | Hit-targets ≥ 44 pt | ✅ | audit fait : seul `trailingButton` était à 32pt → porté à 44pt |
+| 4a | `accessibilityLabel` sur boutons icône-seule | ✅ | audit fait : les contrôles utilisent `Label`/`Text`/`accessibilityLabel` (déjà accessibles) ; les 2 images décoratives (loupe, poignée) passées en `accessibilityHidden` |
 | 5 | `AccentColor`, plus de `.indigo` codé en dur | ✅ | `.indigo` 0 hit, `accentColor` 18 hits, asset présent |
-| 6 | Dynamic Type sémantique + `@ScaledMetric` | 🟡 | aucune `.font(.system(size:))` magique (bon) ; `@ScaledMetric` 0 → frames non scalés |
+| 6 | Dynamic Type sémantique + `@ScaledMetric` | 🟡 | aucune `.font(.system(size:))` magique (bon) ; `@ScaledMetric` 0 → frames non scalés (polish) |
 | 7 | `MKLocalSearchCompleter` (suggestions live) | ✅ | `SearchCompleter.swift`, 6 hits |
 | 8 | Bandeau inline au lieu d'alerte « déconnecté » | ✅ | `statusBanner` présent ; 1 `.alert(` restant à vérifier (légitime ?) |
 | 9 | String Catalog `.xcstrings` + localisation | ⬜ | aucun `.xcstrings` → strings codés en dur |
@@ -38,7 +38,7 @@ Basé sur `docs/UI_UX_BASELINE.md` §4. Statut vérifié par inspection du code.
 | 19 | `reduceTransparency` fallback | ✅ | 3 hits |
 
 **Reste à faire iOS (priorisé)** :
-- **A1 — Accessibilité** (#4a, #3, #6) : labels sur tous les boutons icône, hit-targets ≥44pt, `@ScaledMetric`. *Impact a11y fort, risque faible.*
+- ~~**A1 — Accessibilité**~~ ✅ fait : l'audit a montré que les contrôles étaient déjà accessibles (Label/Text/accessibilityLabel) ; corrigé le seul hit-target 32pt → 44pt et masqué 2 images décoratives. `@ScaledMetric` (#6) laissé en polish.
 - **A2 — Quick wins** (#16 `Timer`→`Task.sleep`, #17 slider/picker, #2/#12 audit).
 - **A3 — Localisation** (#9) : String Catalog `.xcstrings`.
 - **A4 — App Intents** (#14 favoris, #4b Live Activity interactive Pause/Stop).
@@ -90,3 +90,4 @@ Chaque étape = commit(s) isolé(s), CI verte sur push, ce tracker mis à jour.
 ## Journal
 
 - 2026-06-22 — Création du tracker ; vérification de l'état réel iOS (base `ce4bad0`).
+- 2026-06-22 — **A1 accessibilité iOS** : audit montre l'a11y déjà quasi complète (Label/Text/accessibilityLabel partout). Corrigé : `trailingButton` 32→44pt, loupe + poignée de réorganisation `accessibilityHidden`. Items #3, #4a ✅.

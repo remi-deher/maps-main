@@ -323,6 +323,7 @@ struct BottomSheet: View {
         HStack(spacing: 8) {
             Image(systemName: "magnifyingglass")
                 .foregroundStyle(.secondary)
+                .accessibilityHidden(true)
 
             TextField("Rechercher une adresse", text: $searchQuery)
                 .focused(isFocused)
@@ -355,7 +356,7 @@ struct BottomSheet: View {
             Image(systemName: action == .settings ? "gearshape.fill" : "xmark.circle.fill")
                 .font(action == .settings ? .body.weight(.semibold) : .title3)
                 .foregroundStyle(.secondary)
-                .frame(width: 32, height: 32)
+                .frame(width: 44, height: 44) // ≥44pt hit-target (§3.3)
                 .contentShape(Circle())
                 .contentTransition(.symbolEffect(.replace))
         }

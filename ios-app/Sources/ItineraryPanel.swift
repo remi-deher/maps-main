@@ -170,6 +170,7 @@ struct ItineraryPanel: View {
             Image(systemName: "line.3.horizontal")
                 .foregroundStyle(.tertiary)
                 .frame(width: 44, height: 44)
+                .accessibilityHidden(true) // decorative reorder affordance
 
             Button(role: .destructive) {
                 stops.removeAll { $0.id == stop.id }
