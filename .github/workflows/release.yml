@@ -341,6 +341,10 @@ jobs:
         with:
           path: dist
           merge-multiple: true
+          # Only the shipping artifacts — exclude the internal webui-dist
+          # build artifact, whose raw frontend files (index.html, *.js, svgs)
+          # would otherwise pollute the release assets.
+          pattern: "{gpsmock-*,GpsMockCompanion-*}"
 
       - name: Publish release
         uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
