@@ -69,7 +69,7 @@ func TestHelperProcess(t *testing.T) {
 
 func TestStartTunnelParsesRSDAddressAndKeepsProcessRunning(t *testing.T) {
 	withFakeExec(t, "rsd-ok")
-	d := &Driver{tunnelStartTimeout: 5 * time.Second}
+	d := &Driver{bin: "fake-ios", tunnelStartTimeout: 5 * time.Second}
 
 	ti, err := d.StartTunnel(context.Background())
 	if err != nil {
@@ -93,7 +93,7 @@ func TestStartTunnelParsesRSDAddressAndKeepsProcessRunning(t *testing.T) {
 
 func TestStartTunnelTimesOutWhenRSDNeverAppears(t *testing.T) {
 	withFakeExec(t, "rsd-never")
-	d := &Driver{tunnelStartTimeout: 200 * time.Millisecond}
+	d := &Driver{bin: "fake-ios", tunnelStartTimeout: 200 * time.Millisecond}
 
 	_, err := d.StartTunnel(context.Background())
 	if err == nil {
@@ -103,7 +103,7 @@ func TestStartTunnelTimesOutWhenRSDNeverAppears(t *testing.T) {
 
 func TestStartTunnelRespectsContextCancellation(t *testing.T) {
 	withFakeExec(t, "rsd-never")
-	d := &Driver{tunnelStartTimeout: 5 * time.Second}
+	d := &Driver{bin: "fake-ios", tunnelStartTimeout: 5 * time.Second}
 
 	ctx, cancel := context.WithCancel(context.Background())
 	go func() {
