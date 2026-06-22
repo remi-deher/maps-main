@@ -18,6 +18,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/remi-deher/maps-main/engine/internal/platform"
 	"github.com/remi-deher/maps-main/engine/internal/settings"
 
 	// Register the driver backends.
@@ -67,6 +68,19 @@ func main() {
 	actionTimeout := flag.Duration("action-timeout", envDurationOr("GPSMOCK_ACTION_TIMEOUT", 60*time.Second), "how long a single WebSocket action may run before its context is cancelled")
 	telemetryInterval := flag.Duration("telemetry-interval", envDurationOr("GPSMOCK_TELEMETRY_INTERVAL", 5*time.Second), "how often the TELEMETRY event is sampled and broadcast")
 	flag.Parse()
+
+	// In the self-contained Windows portable build, extract the embedded
+	// drivers on first launch and use them unless the user pointed us
+	// elsewhere. A no-op (empty paths) in every other build.
+	if *goiosBin == "" || *pythonBin == "" {
+		bundledGoios, bundledPython := platform.BundledDriverPaths()
+		if *goiosBin == "" {
+			*goiosBin = bundledGoios
+		}
+		if *pythonBin == "" {
+			*pythonBin = bundledPython
+		}
+	}
 
 	var nodes []string
 	if *clusterNodes != "" {

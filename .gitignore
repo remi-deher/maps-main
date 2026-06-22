@@ -65,3 +65,6 @@ engine/headless.exe
 *.out
 go.work
 go.work.sum
+
+# go:embed driver payload for the Windows portable build (assembled in CI)
+engine/internal/platform/embedded/
