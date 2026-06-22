@@ -53,11 +53,11 @@ web est désormais un produit à part entière (headless+web servi au navigateur
 | # | Item | Statut | Note |
 |---|---|---|---|
 | B0 | Rédiger `docs/UI_UX_BASELINE_WEB.md` (audit + roadmap) | ⬜ | livrable qui débloque le reste |
-| B1 | Décomposer `Sidebar.tsx` (**1283 lignes**, god-component) | ⬜ | connexion/favoris/GPX/patrouille/réglages mêlés |
-| B2 | Layout responsive (navigateur mobile/tablette) | 🔎 | conçu pour fenêtre Tauri desktop ; à tester |
-| B3 | Audit de parité avec iOS | 🔎 | patrouille-sur-carte, GPX, bandeau connexion : présents côté web ? |
+| B1 | Décomposer `Sidebar.tsx` (**1283 lignes**, god-component) | ⬜ | **vérifié** : 4 onglets (control/favs/route/settings), tout mêlé |
+| B2 | Layout responsive (navigateur mobile/tablette) | ⬜ | **vérifié** : 1 seule `@media` dans tout le CSS → non responsive |
+| B3 | Audit de parité avec iOS | ✅ | **vérifié** : patrouille, GPX, statut connexion présents côté web |
 | B4 | États vides / erreurs / chargement cohérents | 🔎 | à auditer après B0 |
-| B5 | Accessibilité web (aria, focus, contrastes) | 🔎 | à auditer |
+| B5 | Accessibilité web (aria, focus, contrastes) | ⬜ | **vérifié** : 45 `onClick` sur `<div>` (non focusables), 3 `aria-label` pour 40 `<button>` |
 
 ---
 
@@ -90,4 +90,6 @@ Chaque étape = commit(s) isolé(s), CI verte sur push, ce tracker mis à jour.
 ## Journal
 
 - 2026-06-22 — Création du tracker ; vérification de l'état réel iOS (base `ce4bad0`).
-- 2026-06-22 — **A1 accessibilité iOS** : audit montre l'a11y déjà quasi complète (Label/Text/accessibilityLabel partout). Corrigé : `trailingButton` 32→44pt, loupe + poignée de réorganisation `accessibilityHidden`. Items #3, #4a ✅.
+- 2026-06-22 — **A1 accessibilité iOS** : audit montre l'a11y déjà quasi complète (Label/Text/accessibilityLabel partout). Corrigé : `trailingButton` 32→44pt, loupe + poignée de réorganisation `accessibilityHidden`. Items #3, #4a ✅. (commit `1b48216`)
+- 2026-06-22 — **A2 quick wins iOS** : vérifiés déjà faits (Timer→Task = commentaire seul ; Slider vitesse ; filtre niveau LogsView ; icônes Picker profil). Aucun code requis.
+- 2026-06-22 — **B0 première vérif web** : Sidebar 1283 l./4 onglets (B1 confirmé) ; 1 seule `@media` → non responsive (B2) ; parité iOS OK (B3 ✅) ; 45 `onClick` sur `<div>` + 3 aria-label (B5 a11y, vrai trou). Reste à rédiger l'audit complet `UI_UX_BASELINE_WEB.md`.
