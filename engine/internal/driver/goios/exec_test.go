@@ -217,7 +217,11 @@ func echoArgs(t *testing.T, op func() error) string {
 }
 
 func TestSetLocationBuildsCorrectCommand(t *testing.T) {
-	d := &Driver{bin: "fake-ios"}
+	// lockdownArgs set (as New() does whenever LockdownDir() finds a real
+	// pairing folder) to catch the regression where --pair-record-path was
+	// appended to setlocation: go-ios only recognizes that flag on `tunnel
+	// start` and rejects any other command using it as invalid usage.
+	d := &Driver{bin: "fake-ios", lockdownArgs: []string{"--pair-record-path=/some/dir"}}
 	d.mu.Lock()
 	d.tunnel.Address, d.tunnel.Port, d.tunnelOn = "fde6:1234::1", 54321, true
 	d.mu.Unlock()
@@ -236,10 +240,13 @@ func TestSetLocationBuildsCorrectCommand(t *testing.T) {
 			t.Errorf("setlocation args %q missing %q", got, want)
 		}
 	}
+	if strings.Contains(got, "pair-record-path") {
+		t.Errorf("setlocation args %q must not include --pair-record-path (only valid on tunnel start)", got)
+	}
 }
 
 func TestClearLocationBuildsResetCommand(t *testing.T) {
-	d := &Driver{bin: "fake-ios"}
+	d := &Driver{bin: "fake-ios", lockdownArgs: []string{"--pair-record-path=/some/dir"}}
 	d.mu.Lock()
 	d.tunnel.Address, d.tunnel.Port, d.tunnelOn = "fde6:1234::1", 54321, true
 	d.mu.Unlock()
@@ -251,6 +258,9 @@ func TestClearLocationBuildsResetCommand(t *testing.T) {
 		if !strings.Contains(got, want) {
 			t.Errorf("resetlocation args %q missing %q", got, want)
 		}
+	}
+	if strings.Contains(got, "pair-record-path") {
+		t.Errorf("resetlocation args %q must not include --pair-record-path (only valid on tunnel start)", got)
 	}
 }
 

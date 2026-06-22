@@ -232,20 +232,22 @@ func (d *Driver) StopTunnel(context.Context) error {
 
 // SetLocation injects a spoofed position via `ios setlocation`, targeting the
 // device tunnel explicitly by its RSD address+port (from `tunnel ls`).
+//
+// --address/--rsd-port are global go-ios flags, but --pair-record-path is only
+// recognized by `tunnel start` (see go-ios's docopt usage string) — appending
+// d.lockdownArgs here makes the CLI reject the command as invalid usage.
 func (d *Driver) SetLocation(ctx context.Context, lat, lon float64) error {
 	ti, ok := d.Tunnel()
 	if !ok {
 		return fmt.Errorf("go-ios: tunnel not started")
 	}
-	args := []string{
+	return d.run(ctx,
 		"setlocation",
-		"--address=" + ti.Address,
-		"--rsd-port=" + strconv.Itoa(ti.Port),
-		"--lat=" + ftoa(lat),
-		"--lon=" + ftoa(lon),
-	}
-	args = append(args, d.lockdownArgs...)
-	return d.run(ctx, args...)
+		"--address="+ti.Address,
+		"--rsd-port="+strconv.Itoa(ti.Port),
+		"--lat="+ftoa(lat),
+		"--lon="+ftoa(lon),
+	)
 }
 
 // ClearLocation removes any spoofed position (`ios resetlocation`).
@@ -254,13 +256,11 @@ func (d *Driver) ClearLocation(ctx context.Context) error {
 	if !ok {
 		return fmt.Errorf("go-ios: tunnel not started")
 	}
-	args := []string{
+	return d.run(ctx,
 		"resetlocation",
-		"--address=" + ti.Address,
-		"--rsd-port=" + strconv.Itoa(ti.Port),
-	}
-	args = append(args, d.lockdownArgs...)
-	return d.run(ctx, args...)
+		"--address="+ti.Address,
+		"--rsd-port="+strconv.Itoa(ti.Port),
+	)
 }
 
 // CheckHealth dials the RSD endpoint to confirm the tunnel is still reachable.
