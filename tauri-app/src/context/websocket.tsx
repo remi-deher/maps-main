@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import { isTauri, sameOriginWsUrl } from "../lib/runtime";
 
 const DEFAULT_PORT = 8080;
 
@@ -170,7 +171,9 @@ export const WebSocketProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   const [engineStatus, setEngineStatus] = useState<WebSocketContextType["engineStatus"]>("unknown");
   const [mdnsInterface, setMdnsInterfaceState] = useState<string | null>(null);
   const [networkInterfaces, setNetworkInterfaces] = useState<NetworkInterfaceInfo[]>([]);
-  const connectionUrl = `ws://localhost:${enginePort}/ws`;
+  // Tauri: the engine runs as a localhost sidecar on the configured port.
+  // Browser (engine's built-in web UI): same origin as the served page.
+  const connectionUrl = isTauri ? `ws://localhost:${enginePort}/ws` : sameOriginWsUrl("/ws");
   const [isConnected, setIsConnected] = useState(false);
   const [connectionStatus, setConnectionStatus] = useState<WebSocketContextType["connectionStatus"]>("connecting");
   const [lastError, setLastError] = useState<string | null>(null);
@@ -198,7 +201,7 @@ export const WebSocketProvider: React.FC<{ children: React.ReactNode }> = ({ chi
 
     console.log(`Connecting to GPS-Mock engine WebSocket on port ${enginePort}...`);
     setConnectionStatus((previous) => (previous === "disconnected" ? "reconnecting" : "connecting"));
-    const ws = new WebSocket(`ws://localhost:${enginePort}/ws`);
+    const ws = new WebSocket(connectionUrl);
     wsRef.current = ws;
 
     ws.onopen = () => {
@@ -206,6 +209,11 @@ export const WebSocketProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       setIsConnected(true);
       setConnectionStatus("connected");
       setLastError(null);
+      // In browser mode there's no sidecar lifecycle to listen to, so a live
+      // WebSocket is our proof the engine is up.
+      if (!isTauri) {
+        setEngineStatus("running");
+      }
       // Request initial status
       ws.send(JSON.stringify({ type: "GET_STATUS" }));
     };
@@ -278,6 +286,11 @@ export const WebSocketProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   // Resolve the actual engine port chosen by the Rust side (persisted config,
   // defaults to DEFAULT_PORT) before opening the first WebSocket connection.
   useEffect(() => {
+    // These commands manage the Tauri-spawned sidecar; in browser mode the
+    // engine is whatever served this page, so there's nothing to resolve.
+    if (!isTauri) {
+      return;
+    }
     invoke<number>("get_engine_port")
       .then((port) => setEnginePortState(port))
       .catch(() => {
@@ -296,6 +309,11 @@ export const WebSocketProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   }, []);
 
   useEffect(() => {
+    // Sidecar lifecycle events only exist under Tauri; browser mode derives
+    // engine status from the WebSocket connection instead.
+    if (!isTauri) {
+      return;
+    }
     const unlistenStatus = listen<string>("engine-status", (event) => {
       const payload = event.payload;
       if (payload === "starting") {
@@ -329,12 +347,20 @@ export const WebSocketProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   }, [enginePort]);
 
   const setEnginePort = async (port: number) => {
+    // Restarting the engine on a new port is a Tauri-sidecar concern; in
+    // browser mode the engine's port is fixed by however it was launched.
+    if (!isTauri) {
+      return;
+    }
     setEngineStatus("starting");
     await invoke("set_engine_port", { port });
     setEnginePortState(port);
   };
 
   const setMdnsInterface = async (interfaceName: string | null) => {
+    if (!isTauri) {
+      return;
+    }
     setEngineStatus("starting");
     await invoke("set_mdns_interface", { interface: interfaceName });
     setMdnsInterfaceState(interfaceName);
