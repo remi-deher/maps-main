@@ -68,3 +68,6 @@ go.work.sum
 
 # go:embed driver payload for the Windows portable build (assembled in CI)
 engine/internal/platform/embedded/
+
+# go:embed web UI payload (tauri-app/dist) for the -tags webui build, assembled in CI
+engine/internal/webui/embedded/

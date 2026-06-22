@@ -17,6 +17,7 @@ import (
 	"github.com/remi-deher/maps-main/engine/internal/api"
 	"github.com/remi-deher/maps-main/engine/internal/driver"
 	"github.com/remi-deher/maps-main/engine/internal/engine"
+	"github.com/remi-deher/maps-main/engine/internal/webui"
 )
 
 const (
@@ -86,6 +87,13 @@ func New(eng *engine.Engine, addr string, opts ...Option) *Server {
 	// mode starts "off" so it can be turned on at runtime via SaveSettings.
 	if mgr := eng.ClusterManager(); mgr != nil {
 		mgr.RegisterRoutes(mux)
+	}
+
+	// Built-in web UI at / (only in -tags webui builds; nil otherwise). The
+	// API/WS patterns above are more specific, so they take precedence over
+	// this catch-all in the Go 1.22+ ServeMux.
+	if h := webui.Handler(); h != nil {
+		mux.Handle("/", h)
 	}
 
 	s.http = &http.Server{Addr: addr, Handler: mux}
