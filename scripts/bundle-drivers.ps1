@@ -1,11 +1,12 @@
 # Populates a resources directory with the bundled iOS drivers so the engine
 # runs with no system install:
 #   <target>/ios[.exe]            go-ios (all desktop OSes; static, no deps)
+#   <target>/wintun.dll           TUN driver go-ios needs to start tunnels (Windows only)
 #   <target>/python-embed/        python.org embeddable + pymobiledevice3 (Windows only)
 #
 # Shared by the Tauri sidecar bundle (scripts/build-sidecar.ps1) and the
 # standalone Windows portable zip (.github/workflows/release.yml) so the two
-# stay in sync. Requires Go on PATH; the Python steps run on Windows only.
+# stay in sync. Requires Go on PATH; the Python/wintun steps run on Windows only.
 #
 # go-ios (the default driver) is always bundled — it's a single static binary
 # and enough for an autonomous setup. python-embed + pymobiledevice3 is the
@@ -19,6 +20,7 @@ $ErrorActionPreference = "Stop"
 
 $GoIosVersion = "v1.2.0"      # keep in sync with docker/Dockerfile
 $PythonVersion = "3.12.8"
+$WintunVersion = "0.14.1"
 
 New-Item -ItemType Directory -Force -Path $TargetDir | Out-Null
 $TargetDir = (Resolve-Path $TargetDir).Path
@@ -35,6 +37,19 @@ if ($LASTEXITCODE -ne 0) { throw "go install go-ios failed" }
 # platform.ResolveGoIos looks for "ios"/"ios.exe" first.
 $goiosExt = if ($onWindows) { ".exe" } else { "" }
 Move-Item -Force "$TargetDir/go-ios$goiosExt" "$TargetDir/ios$goiosExt"
+
+# --- wintun.dll (Windows only) — go-ios needs it next to ios.exe to bring up
+# the TUN interface for `ios tunnel start`; without it the tunnel never comes up.
+if ($onWindows) {
+    Write-Host "Fetching wintun.dll $WintunVersion into $TargetDir"
+    $wintunZip = Join-Path $env:TEMP "wintun-$WintunVersion.zip"
+    $wintunExtract = Join-Path $env:TEMP "wintun-$WintunVersion"
+    Invoke-WebRequest -Uri "https://www.wintun.net/builds/wintun-$WintunVersion.zip" -OutFile $wintunZip
+    Expand-Archive -Path $wintunZip -DestinationPath $wintunExtract -Force
+    Copy-Item -Force (Join-Path $wintunExtract "wintun/bin/amd64/wintun.dll") (Join-Path $TargetDir "wintun.dll")
+    Remove-Item -Force $wintunZip
+    Remove-Item -Recurse -Force $wintunExtract
+}
 
 # --- python-embed + pymobiledevice3 (Windows only, opt-in) ---
 # The embeddable distribution is Windows-only; elsewhere go-ios is the default

@@ -254,6 +254,43 @@ func TestClearLocationBuildsResetCommand(t *testing.T) {
 	}
 }
 
+// TestEndToEndTunnelLifecycle chains StartTunnel -> SetLocation -> ClearLocation
+// -> StopTunnel against the fake CLI, asserting the driver's state transitions
+// at each step (the closest thing to a mocked-device conformance check without
+// a real iPhone).
+func TestEndToEndTunnelLifecycle(t *testing.T) {
+	withFakeExec(t, "tunnel-ok")
+	d := &Driver{bin: "fake-ios", tunnelStartTimeout: 5 * time.Second}
+
+	ti, err := d.StartTunnel(context.Background())
+	if err != nil {
+		t.Fatalf("StartTunnel: %v", err)
+	}
+	if ti.Address != "fde6:1234::1" || ti.Port != 54321 {
+		t.Fatalf("StartTunnel = %+v, want fde6:1234::1:54321", ti)
+	}
+	if got, ok := d.Tunnel(); !ok || got != ti {
+		t.Fatalf("Tunnel() after start = %+v, %v, want %+v, true", got, ok, ti)
+	}
+
+	if err := d.SetLocation(context.Background(), 48.8566, 2.3522); err != nil {
+		t.Fatalf("SetLocation: %v", err)
+	}
+	if err := d.ClearLocation(context.Background()); err != nil {
+		t.Fatalf("ClearLocation: %v", err)
+	}
+
+	if err := d.StopTunnel(context.Background()); err != nil {
+		t.Fatalf("StopTunnel: %v", err)
+	}
+	if _, ok := d.Tunnel(); ok {
+		t.Error("expected no active tunnel after StopTunnel")
+	}
+	if err := d.SetLocation(context.Background(), 48.8566, 2.3522); err == nil {
+		t.Error("expected SetLocation to fail after StopTunnel (no tunnel)")
+	}
+}
+
 func TestCheckHealthDialsRealEndpoint(t *testing.T) {
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {

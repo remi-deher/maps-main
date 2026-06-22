@@ -60,9 +60,18 @@ func TestHelperProcess(t *testing.T) {
 		return
 	}
 
+	// args[0] is the python interpreter ("name" passed to exec.Command);
+	// args[1:] are the pymobiledevice3 CLI args. Only "remote tunneld" should
+	// block like the real long-running daemon — other commands (e.g.
+	// simulate-location, run under the same "tunnel-daemon" scenario in an
+	// end-to-end test) must return immediately.
+	isTunneld := len(args) >= 3 && args[1] == "remote" && args[2] == "tunneld"
+
 	switch scenario {
 	case "tunnel-daemon":
-		time.Sleep(10 * time.Second) // `remote tunneld` runs until killed
+		if isTunneld {
+			time.Sleep(10 * time.Second) // `remote tunneld` runs until killed
+		}
 	case "list-ok":
 		fmt.Println(`[{"Identifier":"udid-1","DeviceName":"iPhone","ConnectionType":"USB"}]`)
 	case "cmd-fail":
@@ -231,6 +240,47 @@ func TestClearLocationBuildsClearCommand(t *testing.T) {
 		if !strings.Contains(got, want) {
 			t.Errorf("simulate-location clear args %q missing %q", got, want)
 		}
+	}
+}
+
+// TestEndToEndTunnelLifecycle chains StartTunnel -> SetLocation -> ClearLocation
+// -> StopTunnel against the fake CLI + a mocked tunneld API, asserting the
+// driver's state transitions at each step (the closest thing to a
+// mocked-device conformance check without a real iPhone).
+func TestEndToEndTunnelLifecycle(t *testing.T) {
+	withFakeExec(t, "tunnel-daemon")
+	url := tunneldServer(t, `{"udid-1":[{"tunnel-address":"fde6:1234::1","tunnel-port":54321,"interface":"utun6"}]}`)
+	d := &Driver{py: "fake-python", tunnelStartTimeout: 5 * time.Second, tunneldURL: url}
+
+	ti, err := d.StartTunnel(context.Background())
+	if err != nil {
+		t.Fatalf("StartTunnel: %v", err)
+	}
+	if ti.Address != "fde6:1234::1" || ti.Port != 54321 {
+		t.Fatalf("StartTunnel = %+v, want fde6:1234::1:54321", ti)
+	}
+	if got, ok := d.Tunnel(); !ok || got != ti {
+		t.Fatalf("Tunnel() after start = %+v, %v, want %+v, true", got, ok, ti)
+	}
+	if d.udid != "udid-1" {
+		t.Fatalf("udid after start = %q, want udid-1", d.udid)
+	}
+
+	if err := d.SetLocation(context.Background(), 48.8566, 2.3522); err != nil {
+		t.Fatalf("SetLocation: %v", err)
+	}
+	if err := d.ClearLocation(context.Background()); err != nil {
+		t.Fatalf("ClearLocation: %v", err)
+	}
+
+	if err := d.StopTunnel(context.Background()); err != nil {
+		t.Fatalf("StopTunnel: %v", err)
+	}
+	if _, ok := d.Tunnel(); ok {
+		t.Error("expected no active tunnel after StopTunnel")
+	}
+	if err := d.SetLocation(context.Background(), 48.8566, 2.3522); err == nil {
+		t.Error("expected SetLocation to fail after StopTunnel (no tunnel)")
 	}
 }
 
