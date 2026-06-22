@@ -10,6 +10,10 @@ struct LogsView: View {
     var engine: EngineClient
     private var appLogger = AppLogger.shared
 
+    init(engine: EngineClient) {
+        self.engine = engine
+    }
+
     @State private var query = ""
     @State private var levelFilter: LevelFilter = .all
     @State private var source: LogSource = .engine
