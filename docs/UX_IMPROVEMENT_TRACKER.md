@@ -24,7 +24,7 @@ Basé sur `docs/UI_UX_BASELINE.md` §4. Statut vérifié par inspection du code.
 | 6 | Dynamic Type sémantique + `@ScaledMetric` | 🟡 | aucune `.font(.system(size:))` magique (bon) ; `@ScaledMetric` 0 → frames non scalés (polish) |
 | 7 | `MKLocalSearchCompleter` (suggestions live) | ✅ | `SearchCompleter.swift`, 6 hits |
 | 8 | Bandeau inline au lieu d'alerte « déconnecté » | ✅ | `statusBanner` présent ; 1 `.alert(` restant à vérifier (légitime ?) |
-| 9 | String Catalog `.xcstrings` + localisation | ⬜ | aucun `.xcstrings` → strings codés en dur |
+| 9 | String Catalog `.xcstrings` + localisation | ✅ | `Localizable.xcstrings` (source fr) + `developmentLanguage`/`CFBundleDevelopmentRegion`/`SWIFT_EMIT_LOC_STRINGS` ; iOS Build CI vert (`e710455`) |
 | 10 | Décomposer les sheets simultanées | ✅ | `SettingsSheet` en `NavigationStack` |
 | 11 | Sortir la `List` itinéraire du `ScrollView` | ✅ | 0 `scrollDisabled` |
 | 12 | Annotation simulée custom + `symbolEffect` | 🟡 | `symbolEffect` 1 hit — vérifier le marqueur position |
@@ -41,8 +41,10 @@ Basé sur `docs/UI_UX_BASELINE.md` §4. Statut vérifié par inspection du code.
 **Reste à faire iOS (priorisé)** :
 - ~~**A1 — Accessibilité**~~ ✅ fait : l'audit a montré que les contrôles étaient déjà accessibles (Label/Text/accessibilityLabel) ; corrigé le seul hit-target 32pt → 44pt et masqué 2 images décoratives. `@ScaledMetric` (#6) laissé en polish.
 - **A2 — Quick wins** (#16 `Timer`→`Task.sleep`, #17 slider/picker, #2/#12 audit).
-- **A3 — Localisation** (#9) : String Catalog `.xcstrings`.
-- **A4 — App Intents** (#14 favoris, #4b Live Activity interactive Pause/Stop).
+- ~~**A3 — Localisation** (#9)~~ ✅ fait : String Catalog `.xcstrings` (source fr) + `SWIFT_EMIT_LOC_STRINGS`. Infra prête, traductions à peupler via l'extracteur Xcode (pas de local Xcode disponible — CI seule).
+- ~~**A4 — App Intents**~~ ✅ fait pour Pause/Reprise/Stop/Relance (#14a). #14b (favoris AppEntity) et #4b (Live Activity interactive) différés.
+
+**iOS = 100 % fait** (hors #14b/#4b différés et polish #6/#2/#12/#17/#18).
 
 ---
 
@@ -100,4 +102,5 @@ Chaque étape = commit(s) isolé(s), CI verte sur push, ce tracker mis à jour.
 - 2026-06-22 — **B1 décompo Sidebar terminée** : `Sidebar.tsx` 1283 → 101 l. ; 4 onglets extraits (`tabs/ControlTab`, `FavoritesTab`, `SequencesTab`, `SettingsTab`) + `lib/parse.ts`. Commits `43f8541`, `1a5cd1a`, `6213ff1`, `5f64cd0`. tsc/build/vitest verts. **Web = 100 % fait.**
 - 2026-06-22 — **Web a11y/responsive terminés** : Sidebar favoris/historique `<div>`→`<button>` + zone GPX clavier (`d3038b6`, B5 ✅) ; responsive ≤480px + cibles 44px (`eb3ed87`, B2 ✅). Reste B1 (décompo Sidebar) = pur refactor différé, à QA dans l'app.
 - 2026-06-22 — **Web bloc 1–3 (a11y + robustesse)** : `lang=fr` + `:focus-visible` + `prefers-reduced-motion` (`64508cb`) ; SearchBox résultats→boutons/listbox + MapContainer aria (`4cad58a`) ; SearchBox `AbortController`/erreur + header UA retiré ; audit 3.3 corrigé (OSRM = server-side, CSP = phase serveur). Reste web : décompo Sidebar (B1) + divs Sidebar a11y, responsive (B2), favicon/empty-states.
+- 2026-06-22 — **iOS A3 localisation #9** (`e710455`) : `Localizable.xcstrings` (source fr), `developmentLanguage: fr`, `CFBundleDevelopmentRegion: fr`, `SWIFT_EMIT_LOC_STRINGS: YES`. iOS Build CI **vert**. **iOS = 100 % fait** (App Intents #14a + localisation #9 ; #14b/#4b différés, polish restant non bloquant). Prochain : section C — UX serveur (C1 first-run, C2 logs en toasts, C3 erreurs actionnables).
 - 2026-06-22 — **B0 audit web rédigé** (`docs/UI_UX_BASELINE_WEB.md`) : 12 écarts sourcés (3 critiques : `lang="en"`, `<div onClick>`, dépendances réseau/CSP+OSRM http), roadmap 10 items. Découvertes en plus : `lang="en"` vs app FR ; OSRM en `http://` (mixed-content) ; UA Nominatim ignoré en navigateur ; pas de `prefers-reduced-motion`/`prefers-color-scheme`. Ordre conseillé : a11y+robustesse navigateur (1–3) → décompo+responsive (4–5) → polish.
