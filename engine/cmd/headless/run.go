@@ -61,7 +61,7 @@ func runEngine(ctx context.Context, cfg runConfig) error {
 		}
 	}
 	if cfg.store != nil {
-		defer cfg.store.Close()
+		defer func() { _ = cfg.store.Close() }()
 	}
 	log.SetFlags(log.LstdFlags)
 	log.Printf("gps-mock engine (v3) — headless")
