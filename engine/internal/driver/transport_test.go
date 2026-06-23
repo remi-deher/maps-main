@@ -64,3 +64,29 @@ func TestParseManual(t *testing.T) {
 		}
 	})
 }
+
+func TestNewTunnelEndpoint(t *testing.T) {
+	endpoint, ok := NewTunnelEndpoint(" fde6:1234::1 ", 54321, " udid-1 ")
+	if !ok {
+		t.Fatal("expected a usable endpoint")
+	}
+	if endpoint.Info.Address != "fde6:1234::1" || endpoint.Info.Port != 54321 {
+		t.Errorf("endpoint = %+v, want fde6:1234::1:54321", endpoint.Info)
+	}
+	if endpoint.Info.Type != domain.ConnWiFi {
+		t.Errorf("Type = %q, want WiFi", endpoint.Info.Type)
+	}
+	if endpoint.Info.Since.IsZero() {
+		t.Error("expected Since to be set")
+	}
+	if endpoint.UDID != "udid-1" {
+		t.Errorf("UDID = %q, want udid-1", endpoint.UDID)
+	}
+
+	if _, ok := NewTunnelEndpoint("", 54321, "udid-1"); ok {
+		t.Error("empty address should not be usable")
+	}
+	if _, ok := NewTunnelEndpoint("fde6:1234::1", 0, "udid-1"); ok {
+		t.Error("zero port should not be usable")
+	}
+}

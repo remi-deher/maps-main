@@ -18,6 +18,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/remi-deher/maps-main/engine/internal/driver"
 	"github.com/remi-deher/maps-main/engine/internal/driver/exectest"
 )
 
@@ -106,8 +107,8 @@ func TestStartTunnelDiscoversViaTunneldAPIAndKeepsProcessRunning(t *testing.T) {
 	if ti.Address != "fde6:1234::1" || ti.Port != 54321 {
 		t.Errorf("StartTunnel = %+v, want fde6:1234::1:54321", ti)
 	}
-	if d.udid != "udid-1" {
-		t.Errorf("udid after start = %q, want udid-1", d.udid)
+	if got := d.mount.UDID(); got != "udid-1" {
+		t.Errorf("udid after start = %q, want udid-1", got)
 	}
 
 	if err := d.StopTunnel(context.Background()); err != nil {
@@ -169,9 +170,7 @@ func TestListDevicesCommandFailureIsAnError(t *testing.T) {
 func TestSetLocationRunsRealCommand(t *testing.T) {
 	withFakeExec(t, "cmd-ok")
 	d := &Driver{py: "fake-python", base: []string{}}
-	d.mu.Lock()
-	d.tunnel.Address, d.tunnel.Port, d.tunnelOn = "10.0.0.1", 1234, true
-	d.mu.Unlock()
+	d.mount.SetActive(driver.TunnelInfo{Address: "10.0.0.1", Port: 1234}, "")
 
 	if err := d.SetLocation(context.Background(), 48.8566, 2.3522); err != nil {
 		t.Errorf("SetLocation: %v", err)
@@ -181,9 +180,7 @@ func TestSetLocationRunsRealCommand(t *testing.T) {
 func TestSetLocationSurfacesCommandFailure(t *testing.T) {
 	withFakeExec(t, "cmd-fail")
 	d := &Driver{py: "fake-python", base: []string{}}
-	d.mu.Lock()
-	d.tunnel.Address, d.tunnel.Port, d.tunnelOn = "10.0.0.1", 1234, true
-	d.mu.Unlock()
+	d.mount.SetActive(driver.TunnelInfo{Address: "10.0.0.1", Port: 1234}, "")
 
 	if err := d.SetLocation(context.Background(), 48.8566, 2.3522); err == nil {
 		t.Error("expected an error when the underlying simulate-location command fails")
@@ -209,9 +206,7 @@ func echoArgs(t *testing.T, op func() error) string {
 
 func TestSetLocationBuildsCorrectCommand(t *testing.T) {
 	d := &Driver{py: "fake-python", base: []string{}}
-	d.mu.Lock()
-	d.tunnel.Address, d.tunnel.Port, d.tunnelOn = "fde6:1234::1", 54321, true
-	d.mu.Unlock()
+	d.mount.SetActive(driver.TunnelInfo{Address: "fde6:1234::1", Port: 54321}, "")
 
 	got := echoArgs(t, func() error {
 		return d.SetLocation(context.Background(), 48.8566, 2.3522)
@@ -229,9 +224,7 @@ func TestSetLocationBuildsCorrectCommand(t *testing.T) {
 
 func TestClearLocationBuildsClearCommand(t *testing.T) {
 	d := &Driver{py: "fake-python", base: []string{}}
-	d.mu.Lock()
-	d.tunnel.Address, d.tunnel.Port, d.tunnelOn = "fde6:1234::1", 54321, true
-	d.mu.Unlock()
+	d.mount.SetActive(driver.TunnelInfo{Address: "fde6:1234::1", Port: 54321}, "")
 
 	got := echoArgs(t, func() error {
 		return d.ClearLocation(context.Background())
@@ -262,8 +255,8 @@ func TestEndToEndTunnelLifecycle(t *testing.T) {
 	if got, ok := d.Tunnel(); !ok || got != ti {
 		t.Fatalf("Tunnel() after start = %+v, %v, want %+v, true", got, ok, ti)
 	}
-	if d.udid != "udid-1" {
-		t.Fatalf("udid after start = %q, want udid-1", d.udid)
+	if got := d.mount.UDID(); got != "udid-1" {
+		t.Fatalf("udid after start = %q, want udid-1", got)
 	}
 
 	if err := d.SetLocation(context.Background(), 48.8566, 2.3522); err != nil {
@@ -310,9 +303,7 @@ func TestCheckHealthDialsRealEndpoint(t *testing.T) {
 	}
 
 	d := &Driver{}
-	d.mu.Lock()
-	d.tunnel.Address, d.tunnel.Port, d.tunnelOn = host, portNum, true
-	d.mu.Unlock()
+	d.mount.SetActive(driver.TunnelInfo{Address: host, Port: portNum}, "")
 
 	if !d.CheckHealth(context.Background()) {
 		t.Error("expected CheckHealth to succeed against a real listening port")
@@ -335,9 +326,7 @@ func TestCheckHealthFailsAgainstClosedPort(t *testing.T) {
 	_ = ln.Close()
 
 	d := &Driver{}
-	d.mu.Lock()
-	d.tunnel.Address, d.tunnel.Port, d.tunnelOn = host, portNum, true
-	d.mu.Unlock()
+	d.mount.SetActive(driver.TunnelInfo{Address: host, Port: portNum}, "")
 
 	if d.CheckHealth(context.Background()) {
 		t.Error("expected CheckHealth to fail against a closed port")

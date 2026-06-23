@@ -126,10 +126,7 @@ func TestTunnelReflectsState(t *testing.T) {
 		t.Fatal("expected no tunnel before StartTunnel")
 	}
 
-	d.mu.Lock()
-	d.tunnel = driver.TunnelInfo{Address: "10.0.0.1", Port: 1234}
-	d.tunnelOn = true
-	d.mu.Unlock()
+	d.mount.SetActive(driver.TunnelInfo{Address: "10.0.0.1", Port: 1234}, "")
 
 	ti, ok := d.Tunnel()
 	if !ok || ti.Address != "10.0.0.1" {
