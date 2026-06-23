@@ -211,7 +211,11 @@ func (e *Engine) startRouteSimulation(ctx context.Context, points []domain.LatLo
 
 			// Inject location
 			if err := e.simSetLocation(ctx, p.Lat, p.Lon, "Route simulation"); err != nil {
-				e.Log("error", "simulation", fmt.Sprintf("Erreur d'injection de position : %v", err))
+				e.LogEvent("error", "simulation", "location", "set", fmt.Sprintf("Erreur d'injection de position : %v", err), map[string]string{
+					"lat":   fmt.Sprintf("%.6f", p.Lat),
+					"lon":   fmt.Sprintf("%.6f", p.Lon),
+					"error": err.Error(),
+				})
 			}
 
 			e.mu.Lock()
@@ -330,7 +334,11 @@ func (e *Engine) startPatrolSimulation(ctx context.Context, zone domain.PatrolZo
 
 			// Inject location
 			if err := e.simSetLocation(ctx, p.Lat, p.Lon, "Patrol Mode"); err != nil {
-				e.Log("error", "simulation", fmt.Sprintf("Erreur d'injection de position : %v", err))
+				e.LogEvent("error", "simulation", "location", "set", fmt.Sprintf("Erreur d'injection de position : %v", err), map[string]string{
+					"lat":   fmt.Sprintf("%.6f", p.Lat),
+					"lon":   fmt.Sprintf("%.6f", p.Lon),
+					"error": err.Error(),
+				})
 			}
 		}
 	}

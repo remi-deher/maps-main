@@ -116,5 +116,8 @@ func (e *Engine) SaveSettings(ctx context.Context, payload api.SaveSettingsPaylo
 
 	e.emitStatusLocked()
 	e.persist()
+	e.LogEvent("info", "admin", "settings", "save", "Réglages sauvegardés", map[string]string{
+		"keys": fmt.Sprintf("%d", len(payload)),
+	})
 	return nil
 }

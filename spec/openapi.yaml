@@ -4,7 +4,7 @@ info:
   version: 0.1.0
   description: >
     HTTP contract of the Go engine (v3). REST is intentionally minimal — just
-    status/health plus the two simplest location actions. Every other action
+    status/health, structured logs, plus the two simplest location actions. Every other action
     (routing, sequences, patrol, favorites, history, settings, driver switch,
     device info, admin actions...) is WebSocket-only; see asyncapi.yaml for
     those. This split mirrors the actual server implementation
@@ -28,6 +28,26 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Status" }
+
+  /api/logs:
+    get:
+      summary: Structured engine log buffer
+      operationId: getLogs
+      parameters:
+        - { name: level, in: query, schema: { type: string, enum: [info, warn, error] } }
+        - { name: source, in: query, schema: { type: string } }
+        - { name: category, in: query, schema: { type: string } }
+        - { name: action, in: query, schema: { type: string } }
+        - { name: q, in: query, schema: { type: string } }
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 1000 } }
+      responses:
+        "200":
+          description: Oldest-first structured logs after filtering
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/LogEntry" }
 
   /api/location/set:
     post:
@@ -217,6 +237,20 @@ components:
         udid: { type: string }
         name: { type: string }
         driver: { $ref: "#/components/schemas/DriverID" }
+
+    LogEntry:
+      type: object
+      properties:
+        timestamp: { type: integer }
+        level: { type: string, enum: [info, warn, error] }
+        source: { type: string }
+        category: { type: string }
+        action: { type: string }
+        message: { type: string }
+        fields:
+          type: object
+          additionalProperties: { type: string }
+      required: [timestamp, level, source, message]
 
     Status:
       type: object

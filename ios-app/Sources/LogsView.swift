@@ -44,6 +44,7 @@ struct LogsView: View {
         let level: String
         let message: String
         let detail: String
+        let fields: String
         let date: Date
     }
 
@@ -61,13 +62,19 @@ struct LogsView: View {
                     id: offset,
                     level: entry.level,
                     message: entry.message,
-                    detail: entry.source,
+                    detail: [entry.source, entry.category, entry.action]
+                        .compactMap { value in
+                            guard let value, !value.isEmpty else { return nil }
+                            return value
+                        }
+                        .joined(separator: " / "),
+                    fields: formatFields(entry.fields),
                     date: Date(timeIntervalSince1970: Double(entry.timestamp) / 1000)
                 )
             }
         case .app:
             return appLogger.entries.reversed().enumerated().map { offset, entry in
-                DisplayRow(id: offset, level: entry.level, message: entry.message, detail: "app", date: entry.timestamp)
+                DisplayRow(id: offset, level: entry.level, message: entry.message, detail: "app", fields: "", date: entry.timestamp)
             }
         }
     }
@@ -78,6 +85,7 @@ struct LogsView: View {
             guard !query.isEmpty else { return true }
             return row.message.localizedCaseInsensitiveContains(query)
                 || row.detail.localizedCaseInsensitiveContains(query)
+                || row.fields.localizedCaseInsensitiveContains(query)
         }
     }
 
@@ -123,6 +131,12 @@ struct LogsView: View {
                             }
                             .font(.caption2)
                             .foregroundStyle(.secondary)
+                            if !row.fields.isEmpty {
+                                Text(row.fields)
+                                    .font(.caption2.monospaced())
+                                    .foregroundStyle(.secondary)
+                                    .lineLimit(2)
+                            }
                         }
                     }
                 }
@@ -149,5 +163,13 @@ struct LogsView: View {
         case "warn": return .orange
         default: return .secondary
         }
+    }
+
+    private func formatFields(_ fields: [String: String]?) -> String {
+        guard let fields, !fields.isEmpty else { return "" }
+        return fields
+            .sorted { $0.key < $1.key }
+            .map { "\($0.key)=\($0.value)" }
+            .joined(separator: " ")
     }
 }

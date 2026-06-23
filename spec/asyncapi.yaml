@@ -263,7 +263,15 @@ components:
         type: { const: DEBUG_LOG }
         data:
           type: object
-          properties: { message: { type: string } }
+          properties:
+            message: { type: string }
+            level: { type: string, enum: [info, warn, error] }
+            source: { type: string }
+            category: { type: string }
+            action: { type: string }
+            fields:
+              type: object
+              additionalProperties: { type: string }
           required: [message]
       required: [type, data]
 
@@ -395,7 +403,12 @@ components:
         timestamp: { type: integer }
         level: { type: string, enum: [info, warn, error] }
         source: { type: string }
+        category: { type: string }
+        action: { type: string }
         message: { type: string }
+        fields:
+          type: object
+          additionalProperties: { type: string }
       required: [timestamp, level, source, message]
 
     Envelope_SwitchDriver:

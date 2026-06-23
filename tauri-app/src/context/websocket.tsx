@@ -127,7 +127,10 @@ export interface LogEntry {
   timestamp: number;
   level: "info" | "warn" | "error";
   source: string;
+  category?: string;
+  action?: string;
   message: string;
+  fields?: Record<string, string>;
 }
 
 interface WebSocketContextType {

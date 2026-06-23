@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -77,6 +78,7 @@ func New(eng *engine.Engine, addr string, opts ...Option) *Server {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/health", s.handleHealth)
 	mux.HandleFunc("GET /api/status", s.handleStatus)
+	mux.HandleFunc("GET /api/logs", s.handleLogs)
 	mux.HandleFunc("GET /metrics", s.handleMetrics)
 	mux.HandleFunc("POST /api/location/set", s.handleSet)
 	mux.HandleFunc("POST /api/location/clear", s.handleClear)
@@ -191,6 +193,22 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, s.eng.Status())
 }
 
+func (s *Server) handleLogs(w http.ResponseWriter, r *http.Request) {
+	if !s.checkAuth(w, r) {
+		return
+	}
+	query := r.URL.Query()
+	logs := filterLogs(s.eng.GetLogs(), logQuery{
+		level:    query.Get("level"),
+		source:   query.Get("source"),
+		category: query.Get("category"),
+		action:   query.Get("action"),
+		q:        query.Get("q"),
+		limit:    parseLogLimit(query.Get("limit")),
+	})
+	writeJSON(w, http.StatusOK, logs)
+}
+
 func (s *Server) handleSet(w http.ResponseWriter, r *http.Request) {
 	if !s.checkAuth(w, r) {
 		return
@@ -271,6 +289,8 @@ func (s *Server) readPump(c *client) {
 				Timestamp: time.Now().UnixMilli(),
 				Level:     "error",
 				Source:    "server",
+				Category:  "websocket",
+				Action:    "rate_limit",
 				Message:   "Rate limit exceeded (10 msg/s). Connection closed.",
 			})
 			return
@@ -408,7 +428,15 @@ func (s *Server) dispatch(c *client, env api.Envelope) {
 		c.send <- encode(api.EventLogs, s.eng.GetLogs())
 	case api.ActionDebugLog:
 		err = dispatchUnmarshal(env, "DEBUG_LOG", func(p api.DebugLogPayload) error {
-			s.eng.Log("info", "ios-client", p.Message)
+			level := p.Level
+			if level == "" {
+				level = "info"
+			}
+			source := p.Source
+			if source == "" {
+				source = "ios-client"
+			}
+			s.eng.LogEvent(level, source, p.Category, p.Action, p.Message, p.Fields)
 			return nil
 		})
 	case api.ActionSaveSettings:
@@ -441,6 +469,70 @@ func (s *Server) dispatch(c *client, env api.Envelope) {
 		slog.Warn("server: unrecognized WS action", "type", env.Type)
 		err = fmt.Errorf("unrecognized WS action: %s", env.Type)
 	}
+}
+
+type logQuery struct {
+	level    string
+	source   string
+	category string
+	action   string
+	q        string
+	limit    int
+}
+
+func parseLogLimit(raw string) int {
+	if raw == "" {
+		return 0
+	}
+	n, err := strconv.Atoi(raw)
+	if err != nil || n <= 0 {
+		return 0
+	}
+	if n > 1000 {
+		return 1000
+	}
+	return n
+}
+
+func filterLogs(logs []api.LogEntryPayload, q logQuery) []api.LogEntryPayload {
+	var out []api.LogEntryPayload
+	for _, entry := range logs {
+		if q.level != "" && !strings.EqualFold(entry.Level, q.level) {
+			continue
+		}
+		if q.source != "" && !strings.EqualFold(entry.Source, q.source) {
+			continue
+		}
+		if q.category != "" && !strings.EqualFold(entry.Category, q.category) {
+			continue
+		}
+		if q.action != "" && !strings.EqualFold(entry.Action, q.action) {
+			continue
+		}
+		if q.q != "" && !logEntryContains(entry, q.q) {
+			continue
+		}
+		out = append(out, entry)
+	}
+	if q.limit > 0 && len(out) > q.limit {
+		out = out[len(out)-q.limit:]
+	}
+	return out
+}
+
+func logEntryContains(entry api.LogEntryPayload, query string) bool {
+	needle := strings.ToLower(query)
+	for _, value := range []string{entry.Level, entry.Source, entry.Category, entry.Action, entry.Message} {
+		if strings.Contains(strings.ToLower(value), needle) {
+			return true
+		}
+	}
+	for key, value := range entry.Fields {
+		if strings.Contains(strings.ToLower(key), needle) || strings.Contains(strings.ToLower(value), needle) {
+			return true
+		}
+	}
+	return false
 }
 
 // ─── helpers ─────────────────────────────────────────────────────────────────

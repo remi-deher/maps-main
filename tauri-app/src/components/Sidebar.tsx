@@ -7,18 +7,22 @@ import {
   ChevronRight,
   Route,
   Smartphone,
+  ScrollText,
 } from "lucide-react";
 import { useWebSocket } from "../context/websocket";
 import { ControlTab } from "./tabs/ControlTab";
 import { FavoritesTab } from "./tabs/FavoritesTab";
 import { SequencesTab } from "./tabs/SequencesTab";
 import { SettingsTab } from "./tabs/SettingsTab";
+import { LogsTab } from "./tabs/LogsTab";
+
+type SidebarTab = "control" | "favs" | "route" | "logs" | "settings";
 
 export const Sidebar: React.FC = () => {
   const { isConnected, status } = useWebSocket();
 
   const [isOpen, setIsOpen] = useState(true);
-  const [activeTab, setActiveTab] = useState<"control" | "favs" | "route" | "settings">("control");
+  const [activeTab, setActiveTab] = useState<SidebarTab>("control");
   const [toast, setToast] = useState<string | null>(null);
 
   const showToast = (message: string) => {
@@ -68,6 +72,13 @@ export const Sidebar: React.FC = () => {
             <span>Séquences</span>
           </button>
           <button
+            className={`tab-btn ${activeTab === "logs" ? "active" : ""}`}
+            onClick={() => setActiveTab("logs")}
+          >
+            <ScrollText size={18} />
+            <span>Logs</span>
+          </button>
+          <button
             className={`tab-btn ${activeTab === "settings" ? "active" : ""}`}
             onClick={() => setActiveTab("settings")}
           >
@@ -86,7 +97,10 @@ export const Sidebar: React.FC = () => {
           {/* TAB 3: ROUTE & SEQUENCES BUILDER */}
           {activeTab === "route" && <SequencesTab showToast={showToast} />}
 
-          {/* TAB 4: SETTINGS */}
+          {/* TAB 4: LOGS */}
+          {activeTab === "logs" && <LogsTab />}
+
+          {/* TAB 5: SETTINGS */}
           {activeTab === "settings" && <SettingsTab showToast={showToast} />}
         </div>
       </div>
@@ -98,4 +112,3 @@ export const Sidebar: React.FC = () => {
     </>
   );
 };
-

@@ -113,7 +113,7 @@ func (e *Engine) persist() {
 	cfg := e.exportSettingsLocked()
 	e.mu.RUnlock()
 	if err := store.Save(cfg); err != nil {
-		e.Log("error", "settings", fmt.Sprintf("Échec de la sauvegarde des réglages : %v", err))
+		e.LogEvent("error", "settings", "settings", "persist", fmt.Sprintf("Échec de la sauvegarde des réglages : %v", err), nil)
 	}
 }
 
@@ -199,7 +199,10 @@ func (e *Engine) SwitchDriver(ctx context.Context, driverID, transport string) e
 
 	newDrv, err := driver.New(domain.DriverID(driverID), cfg)
 	if err != nil {
-		e.Log("error", "admin", fmt.Sprintf("Changement de pilote vers %q échoué : %v", driverID, err))
+		e.LogEvent("error", "admin", "driver", "switch", fmt.Sprintf("Changement de pilote vers %q échoué : %v", driverID, err), map[string]string{
+			"driver": driverID,
+			"error":  err.Error(),
+		})
 		return err
 	}
 
@@ -211,10 +214,13 @@ func (e *Engine) SwitchDriver(ctx context.Context, driverID, transport string) e
 	e.st.State = "idle"
 	e.st.DeviceInfo = nil
 	e.emitStatusLocked()
-	e.Log("info", "admin", fmt.Sprintf("Pilote changé pour %s (transport=%s), redémarrage du tunnel...", driverID, transport))
+	e.LogEvent("info", "admin", "driver", "switch", fmt.Sprintf("Pilote changé pour %s (transport=%s), redémarrage du tunnel...", driverID, transport), map[string]string{
+		"driver":    driverID,
+		"transport": transport,
+	})
 
 	if err := e.StartTunnel(ctx); err != nil {
-		e.Log("error", "tunnel", fmt.Sprintf("Tunnel non démarré après changement de pilote : %v", err))
+		e.LogEvent("error", "tunnel", "tunnel", "start", fmt.Sprintf("Tunnel non démarré après changement de pilote : %v", err), map[string]string{"error": err.Error()})
 		return err
 	}
 	return nil
@@ -226,7 +232,20 @@ const maxLogEntries = 200
 // level is "info" | "warn" | "error"; source identifies what produced it
 // (e.g. "simulation", "anti-drift", "ios-client" for client-relayed DEBUG_LOG).
 func (e *Engine) Log(level, source, message string) {
-	entry := api.LogEntryPayload{Timestamp: nowMs(), Level: level, Source: source, Message: message}
+	e.LogEvent(level, source, "", "", message, nil)
+}
+
+// LogEvent appends a structured entry to the in-memory buffer and broadcasts it.
+func (e *Engine) LogEvent(level, source, category, action, message string, fields map[string]string) {
+	entry := api.LogEntryPayload{
+		Timestamp: nowMs(),
+		Level:     normalizeLogLevel(level),
+		Source:    source,
+		Category:  category,
+		Action:    action,
+		Message:   message,
+		Fields:    fields,
+	}
 
 	e.logMu.Lock()
 	e.logs = append(e.logs, entry)
@@ -239,6 +258,15 @@ func (e *Engine) Log(level, source, message string) {
 	emit := e.emit
 	e.mu.RUnlock()
 	emit(api.EventLog, entry)
+}
+
+func normalizeLogLevel(level string) string {
+	switch level {
+	case "warn", "error":
+		return level
+	default:
+		return "info"
+	}
 }
 
 // GetLogs returns a snapshot of the current log buffer, oldest first.
@@ -329,12 +357,23 @@ func (e *Engine) emitStatusLocked() {
 // StartTunnel brings up the driver tunnel and updates the status.
 func (e *Engine) StartTunnel(ctx context.Context) error {
 	drv := e.driver()
+	e.LogEvent("info", "tunnel", "tunnel", "start", fmt.Sprintf("Démarrage du tunnel (%s)", drv.ID()), map[string]string{
+		"driver": string(drv.ID()),
+	})
 	ti, err := drv.StartTunnel(ctx)
 	if err != nil {
-		e.Log("error", "tunnel", fmt.Sprintf("Échec du démarrage du tunnel (%s) : %v", drv.ID(), err))
+		e.LogEvent("error", "tunnel", "tunnel", "start", fmt.Sprintf("Échec du démarrage du tunnel (%s) : %v", drv.ID(), err), map[string]string{
+			"driver": string(drv.ID()),
+			"error":  err.Error(),
+		})
 		return err
 	}
-	e.Log("info", "tunnel", fmt.Sprintf("Tunnel actif (%s) : %s:%d", drv.ID(), ti.Address, ti.Port))
+	e.LogEvent("info", "tunnel", "tunnel", "start", fmt.Sprintf("Tunnel actif (%s) : %s:%d", drv.ID(), ti.Address, ti.Port), map[string]string{
+		"driver":  string(drv.ID()),
+		"address": ti.Address,
+		"port":    fmt.Sprintf("%d", ti.Port),
+		"type":    string(ti.Type),
+	})
 	e.mu.Lock()
 	e.st.TunnelActive = true
 	e.st.RSDAddress = ti.Address
@@ -362,6 +401,13 @@ func (e *Engine) simSetLocation(ctx context.Context, lat, lon float64, name stri
 
 func (e *Engine) injectLocation(ctx context.Context, lat, lon float64, name string, recordHistory bool) error {
 	if err := e.driver().SetLocation(ctx, lat, lon); err != nil {
+		e.LogEvent("error", "engine", "location", "set", fmt.Sprintf("Échec de l'injection de position : %v", err), map[string]string{
+			"lat":           fmt.Sprintf("%.6f", lat),
+			"lon":           fmt.Sprintf("%.6f", lon),
+			"name":          name,
+			"recordHistory": fmt.Sprintf("%t", recordHistory),
+			"error":         err.Error(),
+		})
 		return err
 	}
 	now := nowMs()
@@ -376,6 +422,13 @@ func (e *Engine) injectLocation(ctx context.Context, lat, lon float64, name stri
 	emit(api.EventAck, api.AckPayload{Lat: lat, Lon: lon, Timestamp: now})
 	emit(api.EventLocation, api.LocationPayload{Lat: lat, Lon: lon, Name: name})
 	emit(api.EventStatus, st)
+	if recordHistory {
+		e.LogEvent("info", "engine", "location", "set", fmt.Sprintf("Position injectée : %.6f, %.6f", lat, lon), map[string]string{
+			"lat":  fmt.Sprintf("%.6f", lat),
+			"lon":  fmt.Sprintf("%.6f", lon),
+			"name": name,
+		})
+	}
 	return nil
 }
 
@@ -401,6 +454,7 @@ func (e *Engine) pushHistory(lat, lon float64, name string, now int64) {
 // ClearLocation removes any spoofed position and broadcasts ACK/STATUS.
 func (e *Engine) ClearLocation(ctx context.Context) error {
 	if err := e.driver().ClearLocation(ctx); err != nil {
+		e.LogEvent("error", "engine", "location", "clear", fmt.Sprintf("Échec de l'arrêt de la simulation GPS : %v", err), map[string]string{"error": err.Error()})
 		return err
 	}
 	e.mu.Lock()
@@ -414,6 +468,7 @@ func (e *Engine) ClearLocation(ctx context.Context) error {
 
 	emit(api.EventAck, api.AckPayload{Timestamp: nowMs()})
 	emit(api.EventStatus, st)
+	e.LogEvent("info", "engine", "location", "clear", "Simulation GPS arrêtée", nil)
 	return nil
 }
 
@@ -472,7 +527,11 @@ func (e *Engine) ReportRealLocation(ctx context.Context, lat, lon float64) {
 	emit(api.EventStatus, st)
 
 	if reinject {
-		e.Log("warn", "anti-drift", fmt.Sprintf("Dérive de %.0fm confirmée deux fois, ré-injection forcée", dist))
+		e.LogEvent("warn", "anti-drift", "location", "reinject", fmt.Sprintf("Dérive de %.0fm confirmée deux fois, ré-injection forcée", dist), map[string]string{
+			"distanceMeters": fmt.Sprintf("%.0f", dist),
+			"lat":            fmt.Sprintf("%.6f", reinjectTarget.Lat),
+			"lon":            fmt.Sprintf("%.6f", reinjectTarget.Lon),
+		})
 		_ = e.SetLocation(ctx, reinjectTarget.Lat, reinjectTarget.Lon, reinjectTarget.Name)
 	}
 }

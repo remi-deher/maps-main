@@ -66,6 +66,45 @@ func TestStatusREST(t *testing.T) {
 	}
 }
 
+func TestLogsRESTFiltersStructuredEntries(t *testing.T) {
+	eng := engine.New(&fakeDriver{}, settings.Default())
+	eng.LogEvent("info", "engine", "location", "set", "Position injectée", map[string]string{"driver": "pymobiledevice"})
+	eng.LogEvent("warn", "simulation", "route", "fallback", "OSRM indisponible", map[string]string{"driver": "go-ios"})
+	eng.LogEvent("error", "tunnel", "tunnel", "start", "Tunnel échoué", map[string]string{"driver": "go-ios"})
+
+	srv := New(eng, ":0")
+	srv.Start()
+	ts := httptest.NewServer(srv.Handler())
+	defer ts.Close()
+
+	resp, err := http.Get(ts.URL + "/api/logs?level=error&category=tunnel")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	var logs []api.LogEntryPayload
+	if err := json.NewDecoder(resp.Body).Decode(&logs); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(logs) != 1 || logs[0].Action != "start" {
+		t.Fatalf("unexpected filtered logs: %+v", logs)
+	}
+
+	resp2, err := http.Get(ts.URL + "/api/logs?q=go-ios&limit=1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = resp2.Body.Close() }()
+	logs = nil
+	if err := json.NewDecoder(resp2.Body).Decode(&logs); err != nil {
+		t.Fatalf("decode limited logs: %v", err)
+	}
+	if len(logs) != 1 || logs[0].Source != "tunnel" {
+		t.Fatalf("unexpected limited logs: %+v", logs)
+	}
+}
+
 func TestUnrecognizedActionDoesNotCrashOrHang(t *testing.T) {
 	ts := newTestServer(t)
 	defer ts.Close()

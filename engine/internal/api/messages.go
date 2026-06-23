@@ -113,7 +113,12 @@ type RealLocationPayload struct {
 
 // DebugLogPayload is the data for DEBUG_LOG.
 type DebugLogPayload struct {
-	Message string `json:"message"`
+	Message  string            `json:"message"`
+	Level    string            `json:"level,omitempty"`
+	Source   string            `json:"source,omitempty"`
+	Category string            `json:"category,omitempty"`
+	Action   string            `json:"action,omitempty"`
+	Fields   map[string]string `json:"fields,omitempty"`
 }
 
 // SequenceSyncPayload is the data for SEQUENCE_SYNC.
@@ -176,10 +181,13 @@ type SwitchDriverPayload struct {
 // initial snapshot a client requests via GET_LOGS) — gives a remote client
 // like the iOS app visibility into what's happening without terminal access.
 type LogEntryPayload struct {
-	Timestamp int64  `json:"timestamp"`
-	Level     string `json:"level"` // info | warn | error
-	Source    string `json:"source"`
-	Message   string `json:"message"`
+	Timestamp int64             `json:"timestamp"`
+	Level     string            `json:"level"` // info | warn | error
+	Source    string            `json:"source"`
+	Category  string            `json:"category,omitempty"`
+	Action    string            `json:"action,omitempty"`
+	Message   string            `json:"message"`
+	Fields    map[string]string `json:"fields,omitempty"`
 }
 
 // DeviceInfoPayload is the data for DEVICE_INFO (the response to

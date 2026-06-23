@@ -2,6 +2,7 @@ package engine
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"github.com/remi-deher/maps-main/engine/internal/domain"
@@ -34,6 +35,11 @@ func (e *Engine) AddFavorite(ctx context.Context, lat, lon float64, name string)
 	})
 	e.emitStatusLocked()
 	e.persist()
+	e.LogEvent("info", "admin", "favorites", "add", "Favori ajouté", map[string]string{
+		"lat":  fmt.Sprintf("%.6f", lat),
+		"lon":  fmt.Sprintf("%.6f", lon),
+		"name": name,
+	})
 	return nil
 }
 
@@ -50,6 +56,10 @@ func (e *Engine) RemoveFavorite(ctx context.Context, lat, lon float64) error {
 	e.st.Favorites = updated
 	e.emitStatusLocked()
 	e.persist()
+	e.LogEvent("info", "admin", "favorites", "remove", "Favori supprimé", map[string]string{
+		"lat": fmt.Sprintf("%.6f", lat),
+		"lon": fmt.Sprintf("%.6f", lon),
+	})
 	return nil
 }
 
@@ -61,6 +71,11 @@ func (e *Engine) RenameFavorite(ctx context.Context, lat, lon float64, newName s
 	}
 	e.emitStatusLocked()
 	e.persist()
+	e.LogEvent("info", "admin", "favorites", "rename", "Favori renommé", map[string]string{
+		"lat":  fmt.Sprintf("%.6f", lat),
+		"lon":  fmt.Sprintf("%.6f", lon),
+		"name": newName,
+	})
 	return nil
 }
 
@@ -71,6 +86,6 @@ func (e *Engine) ClearHistory(ctx context.Context) error {
 	e.st.RecentHistory = nil
 	e.emitStatusLocked()
 	e.persist()
-	e.Log("info", "admin", "Historique vidé")
+	e.LogEvent("info", "admin", "history", "clear", "Historique vidé", nil)
 	return nil
 }

@@ -43,7 +43,10 @@ struct LogEntryPayload: Codable, Equatable {
     let timestamp: Int64
     let level: String // info | warn | error
     let source: String
+    let category: String?
+    let action: String?
     let message: String
+    let fields: [String: String]?
 }
 
 struct PatrolBounds: Codable, Equatable {
