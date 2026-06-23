@@ -101,11 +101,15 @@ docker run --rm -p 8080:8080 ghcr.io/remi-deher/maps-main/gpsmock-engine:latest
 ---
 
 ## CI / CD
-- **Engine CI** – build multi‑OS, race detector, coverage.
-- **Tauri Build CI** – lint, test, bundle (exe, dmg, AppImage, deb, rpm).
-- **iOS Build CI** – génération d’IPA non signé.
-- **Security & Dependency Scan** – Govulncheck, npm audit, Trivy.
-- **Release** – déclenché sur `v*` tags, publie les binaires, bundles et l’image Docker.
+
+Les workflows d'intégration et de déploiement continus (GitHub Actions) sont hautement optimisés :
+- **Optimisation des performances** :
+  - **Mise en cache intelligente** : Utilisation de `swatinem/rust-cache` pour le build de l'application desktop Tauri (gain de 5 à 10 minutes) et cache Homebrew pour XcodeGen.
+  - **SwiftLint sur Linux** : Exécution de SwiftLint sur un runner `ubuntu-latest` léger via le conteneur Docker officiel de SwiftLint (économie de ressources et démarrage instantané).
+  - **Réutilisation de binaire iOS** : Si le répertoire `ios-app/` n'a pas été modifié depuis le tag précédent, le workflow de release télécharge et réutilise automatiquement le compagnon `.ipa` compilé précédemment au lieu de le recompiler sur macOS.
+- **Automatisation des Releases (Release Please)** :
+  - Le projet utilise **Release Please** de Google. À chaque fusion sur `main` respectant le format des *Conventional Commits* (ex: `feat: ...`, `fix: ...`), un brouillon de Pull Request de release est créé ou mis à jour avec le `CHANGELOG.md` et les montées de versions automatiques.
+  - Lors de la fusion de cette PR de release, le tag de version est automatiquement créé et déclenche le workflow de publication des binaires multi-plateformes et de l'image Docker.
 
 ---
 
