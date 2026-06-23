@@ -80,9 +80,6 @@ extension SettingsSheet {
                     Text("USB").tag("usb")
                     Text("Wi-Fi").tag("wifi")
                 }
-                Button("Appliquer et relancer le tunnel") {
-                    engine.switchDriver(driverId: selectedDriver, transport: selectedTransport)
-                }
             }
         }
         .navigationTitle("Connexion")

@@ -19,6 +19,12 @@ func (e *Engine) SaveSettings(ctx context.Context, payload api.SaveSettingsPaylo
 			e.st.RSDPort = int(port)
 		}
 	}
+	if val, ok := payload["preferredDriver"]; ok {
+		if drv, ok := val.(string); ok {
+			e.st.UsbDriver = domain.DriverID(drv)
+			e.st.WifiDriver = domain.DriverID(drv)
+		}
+	}
 	if val, ok := payload["usbDriver"]; ok {
 		if drv, ok := val.(string); ok {
 			e.st.UsbDriver = domain.DriverID(drv)

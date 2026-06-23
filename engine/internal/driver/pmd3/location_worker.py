@@ -26,30 +26,30 @@ def write(payload):
 
 
 async def run_simulation(dvt):
-    location = LocationSimulation(dvt)
-    write({"ok": True, "ready": True})
+    async with LocationSimulation(dvt) as location:
+        write({"ok": True, "ready": True})
 
-    for line in sys.stdin:
-        line = line.strip()
-        if not line:
-            continue
+        for line in sys.stdin:
+            line = line.strip()
+            if not line:
+                continue
 
-        try:
-            request = json.loads(line)
-            action = request.get("action")
-            if action == "set":
-                await maybe_await(location.set(float(request["lat"]), float(request["lon"])))
-                write({"ok": True})
-            elif action == "clear":
-                await maybe_await(location.clear())
-                write({"ok": True})
-            elif action == "stop":
-                write({"ok": True})
-                return
-            else:
-                write({"ok": False, "error": f"unknown action: {action}"})
-        except Exception as exc:
-            write({"ok": False, "error": str(exc)})
+            try:
+                request = json.loads(line)
+                action = request.get("action")
+                if action == "set":
+                    await maybe_await(location.set(float(request["lat"]), float(request["lon"])))
+                    write({"ok": True})
+                elif action == "clear":
+                    await maybe_await(location.clear())
+                    write({"ok": True})
+                elif action == "stop":
+                    write({"ok": True})
+                    return
+                else:
+                    write({"ok": False, "error": f"unknown action: {action}"})
+            except Exception as exc:
+                write({"ok": False, "error": str(exc)})
 
 
 async def main():

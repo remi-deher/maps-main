@@ -75,6 +75,20 @@ if [[ -z "${VARIANT}" ]]; then
 fi
 
 if [[ "${VARIANT}" == "headless" ]]; then
+  # Stop any running engine or drivers
+  echo "Arrêt des processus GPS-Mock en cours..."
+  if command -v pkill >/dev/null 2>&1; then
+    pkill -f "gpsmock-engine" || true
+    pkill -f "gpsmock.*ios" || true
+    pkill -f "gpsmock.*python" || true
+  else
+    killall gpsmock-engine 2>/dev/null || true
+    killall ios 2>/dev/null || true
+    killall python 2>/dev/null || true
+    killall python3 2>/dev/null || true
+  fi
+  sleep 0.5
+
   DEST_DIR="${DEST_DIR:-/usr/local/bin}"
   ASSET_NAME="gpsmock-engine-${OS}-${ARCH}"
   url="$(asset_url "${ASSET_NAME}")"

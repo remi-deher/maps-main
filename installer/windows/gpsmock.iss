@@ -77,3 +77,16 @@ begin
     Sleep(500);
   end;
 end;
+
+procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
+begin
+  if CurUninstallStep = usUninstall then
+  begin
+    // Stop the engine and its driver sub-processes before uninstalling.
+    KillProcess('gpsmock-engine.exe');
+    KillProcess('ios.exe');
+    KillProcess('python.exe');
+    KillProcess('python3.exe');
+    Sleep(500);
+  end;
+end;

@@ -90,6 +90,7 @@ struct SettingsSheet: View {
                 } else if let usbDriver = engine.status?.usbDriver {
                     selectedDriver = usbDriver
                 }
+
                 if let connectionType = engine.status?.connectionType {
                     let lowerType = connectionType.lowercased()
                     if lowerType == "usb" || lowerType == "wifi" {
@@ -97,6 +98,39 @@ struct SettingsSheet: View {
                     } else {
                         selectedTransport = "auto"
                     }
+                }
+            }
+            .onChange(of: engine.status) { _, status in
+                if let status {
+                    if let value = status.jitterEnabled {
+                        jitterEnabled = value
+                    }
+                    if let activeDriver = status.deviceInfo?.driver {
+                        selectedDriver = activeDriver
+                    } else if let usbDriver = status.usbDriver {
+                        selectedDriver = usbDriver
+                    }
+
+                    if let connectionType = status.connectionType {
+                        let lowerType = connectionType.lowercased()
+                        if lowerType == "usb" || lowerType == "wifi" {
+                            selectedTransport = lowerType
+                        } else {
+                            selectedTransport = "auto"
+                        }
+                    }
+                }
+            }
+            .onChange(of: selectedDriver) { _, newValue in
+                let current = engine.status?.deviceInfo?.driver ?? engine.status?.usbDriver ?? "go-ios"
+                if newValue != current {
+                    engine.switchDriver(driverId: newValue, transport: selectedTransport)
+                }
+            }
+            .onChange(of: selectedTransport) { _, newValue in
+                let currentType = engine.status?.connectionType?.lowercased() ?? "auto"
+                if newValue != currentType {
+                    engine.switchDriver(driverId: selectedDriver, transport: newValue)
                 }
             }
             .toolbar {

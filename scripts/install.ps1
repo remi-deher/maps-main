@@ -40,6 +40,19 @@ function Get-AssetUrl([string]$NamePattern) {
     return $null
 }
 
+function Stop-RunningProcesses {
+    Write-Host "Arrêt des processus GPS-Mock en cours..."
+    $procNames = @("gpsmock-engine", "gpsmock-engine-portable", "ios", "python", "python3")
+    foreach ($p in $procNames) {
+        $procs = Get-Process -Name $p -ErrorAction SilentlyContinue
+        if ($procs) {
+            Write-Host "Arrêt du processus $p..."
+            Stop-Process -Name $p -Force -ErrorAction SilentlyContinue
+        }
+    }
+    Start-Sleep -Milliseconds 500
+}
+
 if (-not $Variant) {
     Write-Host ""
     Write-Host "Quelle variante installer ?"
@@ -64,6 +77,8 @@ if ($Variant -eq "headless") {
     $destDir = if ($Dest) { $Dest } else { "$env:ProgramData\gpsmock" }
     New-Item -ItemType Directory -Force -Path $destDir | Out-Null
     $destExe = Join-Path $destDir "gpsmock-engine-portable.exe"
+
+    Stop-RunningProcesses
 
     Write-Host "Téléchargement de gpsmock-engine-portable.exe ($tag)..."
     Invoke-WebRequest -Uri $url -OutFile $destExe
