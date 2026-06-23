@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"runtime"
+	"strings"
 	"sync"
 	"time"
 
@@ -380,7 +381,14 @@ func (e *Engine) StartTunnel(ctx context.Context) error {
 	})
 	ti, err := drv.StartTunnel(ctx)
 	if err != nil {
-		e.LogEvent("error", "tunnel", "tunnel", "start", fmt.Sprintf("Échec du démarrage du tunnel (%s) : %v", drv.ID(), err), map[string]string{
+		msg := fmt.Sprintf("Échec du démarrage du tunnel (%s) : %v", drv.ID(), err)
+		// On Linux/macOS, creating the RSD IPv6 tunnel interface requires root.
+		// Detect permission errors and add a clear remediation hint so the user
+		// doesn't have to guess why the tunnel won't start.
+		if runtime.GOOS != "windows" && isPermissionError(err) {
+			msg += "\n→ Droits insuffisants pour créer le tunnel. Relancez le moteur avec sudo : sudo gpsmock-engine"
+		}
+		e.LogEvent("error", "tunnel", "tunnel", "start", msg, map[string]string{
 			"driver": string(drv.ID()),
 			"error":  err.Error(),
 		})
@@ -403,6 +411,19 @@ func (e *Engine) StartTunnel(ctx context.Context) error {
 	}
 	e.emitStatusLocked()
 	return nil
+}
+
+// isPermissionError reports whether err looks like an OS-level permission
+// denial (EACCES / EPERM or the strings "permission denied" / "operation not
+// permitted" that Go wraps them into).
+func isPermissionError(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "permission denied") ||
+		strings.Contains(msg, "operation not permitted") ||
+		strings.Contains(msg, "access denied")
 }
 
 // SetLocation injects a spoofed position and broadcasts ACK/LOCATION/STATUS.

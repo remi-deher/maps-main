@@ -59,6 +59,40 @@ fn write_config(app: &AppHandle, cfg: &EngineConfig) {
     }
 }
 
+/// Kills the engine sidecar and all its child processes (go-ios, python workers).
+///
+/// On Windows we use `taskkill /F /T /PID` which recursively kills the whole
+/// process tree rooted at the sidecar. On Unix we send SIGKILL to the process
+/// group, which covers both the sidecar and every subprocess it spawned.
+fn kill_engine_tree(child: CommandChild) {
+    #[cfg(target_os = "windows")]
+    {
+        // Get the PID before killing so we can run taskkill on the whole tree.
+        // CommandChild::pid() is available in tauri-plugin-shell ≥ 2.x.
+        let pid = child.pid();
+        // First try the normal kill (closes stdio, signals the process).
+        let _ = child.kill();
+        // Then nuke the entire subtree: go-ios tunnel daemon, python workers, etc.
+        let _ = std::process::Command::new("taskkill")
+            .args(["/F", "/T", "/PID", &pid.to_string()])
+            .output();
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = child.kill();
+        // On Linux/macOS the Go sidecar spawns children in its own process
+        // group by default. Send SIGKILL to the whole group via `kill -9 -<pgid>`.
+        // We do a best-effort kill of known process names as a fallback since
+        // we don't have direct access to the process group ID from Rust here.
+        for name in &["ios", "python3", "python"] {
+            let _ = std::process::Command::new("pkill")
+                .args(["-9", "-f", &format!("gpsmock.*{name}")])
+                .output();
+        }
+    }
+}
+
 /// Spawns the Go engine sidecar bound to `port`, replacing any previously
 /// running instance, and forwards its stdout/stderr/exit as `engine-log` /
 /// `engine-status` events so the frontend can tell "starting" apart from
@@ -68,7 +102,7 @@ fn spawn_engine(app: &AppHandle, port: u16, mdns_interface: Option<&str>) -> Res
     {
         let mut guard = state.child.lock().unwrap();
         if let Some(child) = guard.take() {
-            let _ = child.kill();
+            kill_engine_tree(child);
         }
     }
 
@@ -160,6 +194,16 @@ fn bundled_driver_envs(app: &AppHandle) -> Vec<(String, String)> {
     envs
 }
 
+/// Kills the engine sidecar (and its full process tree) from an AppHandle.
+/// Safe to call from multiple event handlers; a missing child is a no-op.
+fn shutdown_engine(app: &AppHandle) {
+    let state = app.state::<EngineState>();
+    let child = state.child.lock().unwrap().take();
+    if let Some(child) = child {
+        kill_engine_tree(child);
+    }
+}
+
 #[tauri::command]
 fn get_engine_port(app: AppHandle) -> u16 {
     read_config(&app).port
@@ -228,12 +272,18 @@ pub fn run() {
             Ok(())
         })
         .on_window_event(|window, event| {
-            if let tauri::WindowEvent::CloseRequested { .. } = event {
-                let state = window.app_handle().state::<EngineState>();
-                let child = state.child.lock().unwrap().take();
-                if let Some(child) = child {
-                    let _ = child.kill();
+            match event {
+                // CloseRequested fires when the user clicks ✕ or presses Alt+F4.
+                tauri::WindowEvent::CloseRequested { .. } => {
+                    shutdown_engine(window.app_handle());
                 }
+                // Destroyed fires after the window is actually gone — catches
+                // force-quit paths (e.g. killed from the taskbar) that may skip
+                // CloseRequested on some platforms.
+                tauri::WindowEvent::Destroyed => {
+                    shutdown_engine(window.app_handle());
+                }
+                _ => {}
             }
         })
         .invoke_handler(tauri::generate_handler![

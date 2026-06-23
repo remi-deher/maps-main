@@ -20,7 +20,7 @@
 #endif
 
 [Setup]
-AppId={{8E5D2B1A-7C4F-4E9A-9F2D-1B7A3C9E5D02}}
+AppId={{8E5D2B1A-7C4F-4E9A-9F2D-1B7A3C9E5D02}
 AppName={#AppName}
 AppVersion={#AppVersion}
 AppPublisher={#AppPublisher}
@@ -48,3 +48,32 @@ Name: "{group}\Uninstall {#AppName}"; Filename: "{uninstallexe}"
 
 [Run]
 Filename: "{app}\{#AppExeName}"; Description: "Lancer {#AppName} maintenant"; Flags: nowait postinstall skipifsilent
+
+[Code]
+// Kill all GPS-Mock background processes before copying new files.
+// These are headless daemons (go-ios tunnel, python workers) that must be
+// terminated before the installer can replace the engine executable.
+procedure KillProcess(ExeName: String);
+var
+  ResultCode: Integer;
+begin
+  // /F  force, /T  kill entire process tree (children included)
+  Exec('taskkill.exe', '/F /T /IM "' + ExeName + '"', '', SW_HIDE,
+       ewWaitUntilTerminated, ResultCode);
+  // ResultCode 0 = found & killed, 128 = not found — both are fine.
+  Sleep(300);
+end;
+
+procedure CurStepChanged(CurStep: TSetupStep);
+begin
+  if CurStep = ssInstall then
+  begin
+    // Stop the engine and its driver sub-processes before overwriting files.
+    KillProcess('gpsmock-engine.exe');
+    KillProcess('ios.exe');          // go-ios tunnel daemon
+    KillProcess('python.exe');       // pymobiledevice3 remote tunneld / location worker
+    KillProcess('python3.exe');      // same, Unix-named binary
+    // Brief pause to let file handles be released.
+    Sleep(500);
+  end;
+end;
