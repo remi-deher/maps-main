@@ -38,10 +38,12 @@ struct FavoriteChips: View {
     /// favorite's name, falling back to a plain star for everything else.
     private func icon(for favorite: Favorite) -> String {
         let name = (favorite.name ?? "").lowercased()
-        if name.contains("maison") || name.contains("domicile") || name.contains("home") {
+        let homeKeywords = ["maison", "domicile", "home"]
+        if homeKeywords.contains(where: name.contains) {
             return "house.fill"
         }
-        if name.contains("travail") || name.contains("bureau") || name.contains("work") {
+        let workKeywords = ["travail", "bureau", "work"]
+        if workKeywords.contains(where: name.contains) {
             return "briefcase.fill"
         }
         return "star.fill"
