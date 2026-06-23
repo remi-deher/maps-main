@@ -224,19 +224,56 @@ jobs:
         working-directory: ios-app
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        with:
+          fetch-depth: 0
+
+      - name: Check for changes in ios-app
+        id: check-changes
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          echo "Checking for previous tag..."
+          PREV_TAG=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || true)
+          echo "Previous tag found: '$PREV_TAG'"
+          
+          if [ -z "$PREV_TAG" ]; then
+            echo "No previous tag found. Rebuild is required."
+            echo "reused=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          
+          if git diff --quiet "$PREV_TAG" HEAD -- ios-app/; then
+            echo "No changes in ios-app/ since $PREV_TAG."
+            echo "Attempting to download GpsMockCompanion-unsigned.ipa from release $PREV_TAG..."
+            mkdir -p dist
+            if gh release download "$PREV_TAG" --pattern "GpsMockCompanion-unsigned.ipa" --dir dist; then
+              echo "Successfully downloaded previous ipa release asset."
+              echo "reused=true" >> "$GITHUB_OUTPUT"
+            else
+              echo "Failed to download release asset from $PREV_TAG. Falling back to build."
+              echo "reused=false" >> "$GITHUB_OUTPUT"
+            fi
+          else
+            echo "Changes detected in ios-app/ since $PREV_TAG. Rebuild is required."
+            echo "reused=false" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Select latest stable Xcode (need the iOS 26 SDK)
+        if: steps.check-changes.outputs.reused != 'true'
         uses: maxim-lobanov/setup-xcode@ed7a3b1fda3918c0306d1b724322adc0b8cc0a90 # v1
         with:
           xcode-version: latest-stable
 
       - name: Install XcodeGen
+        if: steps.check-changes.outputs.reused != 'true'
         run: brew install xcodegen
 
       - name: Generate Xcode project
+        if: steps.check-changes.outputs.reused != 'true'
         run: xcodegen generate
 
       - name: Build (unsigned)
+        if: steps.check-changes.outputs.reused != 'true'
         run: |
           xcodebuild build \
             -project GpsMockCompanion.xcodeproj \
@@ -250,6 +287,7 @@ jobs:
             DEVELOPMENT_TEAM=""
 
       - name: Package .ipa
+        if: steps.check-changes.outputs.reused != 'true'
         run: |
           set -e
           APP_PATH="build/Build/Products/Release-iphoneos/GpsMockCompanion.app"
