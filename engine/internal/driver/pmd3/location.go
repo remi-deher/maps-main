@@ -16,7 +16,19 @@ func (d *Driver) SetLocation(ctx context.Context, lat, lon float64) error {
 	if err != nil {
 		return err
 	}
-	return session.set(ctx, lat, lon)
+	if err := session.set(ctx, lat, lon); err != nil {
+		// The worker process may have died or lost connection. Invalidate the
+		// session so the next call opens a fresh DVT connection instead of
+		// hammering a dead process indefinitely.
+		d.locMu.Lock()
+		if d.location == session {
+			_ = session.stop(context.Background())
+			d.location = nil
+		}
+		d.locMu.Unlock()
+		return err
+	}
+	return nil
 }
 
 // ClearLocation removes any spoofed position and closes the persistent DVT

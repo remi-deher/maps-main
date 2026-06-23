@@ -76,6 +76,12 @@ func (e *Engine) exportSettingsLocked() settings.Settings {
 	cfg := settings.Default()
 	cfg.UsbDriver = e.st.UsbDriver
 	cfg.WifiDriver = e.st.WifiDriver
+	// PreferredDriver drives the --driver flag default on next startup.
+	// We use UsbDriver as the canonical "preferred" choice (SwitchDriver sets
+	// both when transport=auto, which is the common case).
+	if e.st.UsbDriver != "" {
+		cfg.PreferredDriver = e.st.UsbDriver
+	}
 	cfg.FallbackEnabled = e.st.FallbackEnabled
 	cfg.NotificationsEnabled = e.st.NotificationsEnabled
 	cfg.DynamicIslandEnabled = e.st.DynamicIslandEnabled

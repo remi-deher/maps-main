@@ -59,20 +59,16 @@ async def main():
     address = sys.argv[1]
     port = int(sys.argv[2])
 
-    rsd = RemoteServiceDiscoveryService((address, port))
-    await maybe_await(rsd.connect())
-
-    try:
+    # RemoteServiceDiscoveryService must be used as an async context manager in
+    # recent pymobiledevice3 versions — calling connect() manually raises
+    # "not connected — use `async with` or await connect()".
+    async with RemoteServiceDiscoveryService((address, port)) as rsd:
         if USE_LEGACY_DVT:
             with DvtSecureSocketProxyService(rsd) as dvt:
                 await run_simulation(dvt)
         else:
             async with DvtSecureSocketProxyService(rsd) as dvt:
                 await run_simulation(dvt)
-    finally:
-        close = getattr(rsd, "close", None)
-        if close is not None:
-            await maybe_await(close())
 
 
 if __name__ == "__main__":
