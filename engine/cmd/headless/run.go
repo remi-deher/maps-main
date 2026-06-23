@@ -46,7 +46,7 @@ type runConfig struct {
 	// settings.Default() if nothing was persisted yet); store is the open
 	// handle used to persist further changes made via SaveSettings.
 	settingsCfg settings.Settings
-	store       *settings.Store
+	store       settings.Store
 }
 
 // runEngine builds the driver, engine and server, starts everything, and blocks
@@ -61,7 +61,9 @@ func runEngine(ctx context.Context, cfg runConfig) error {
 		}
 	}
 	if cfg.store != nil {
-		defer func() { _ = cfg.store.Close() }()
+		if closer, ok := cfg.store.(interface{ Close() error }); ok {
+			defer func() { _ = closer.Close() }()
+		}
 	}
 	log.SetFlags(log.LstdFlags)
 	log.Printf("gps-mock engine (v3) — headless")

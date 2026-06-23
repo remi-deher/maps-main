@@ -8,16 +8,21 @@ import (
 	_ "modernc.org/sqlite" // pure-Go driver, no CGO required
 )
 
-// Store persists Settings to a local SQLite database so configuration
-// edited from the web/companion UI survives an engine restart instead of
-// resetting to Default() every time.
-type Store struct {
+// Store is the interface that groups Load and Save methods for configurations.
+type Store interface {
+	Load() (Settings, error)
+	Save(Settings) error
+}
+
+// sqlStore persists Settings to a local SQLite database so configuration
+// edited from the web/companion UI survives an engine restart.
+type sqlStore struct {
 	db *sql.DB
 }
 
 // OpenStore opens (creating if needed) the SQLite database at path and
 // ensures the settings table exists.
-func OpenStore(path string) (*Store, error) {
+func OpenStore(path string) (Store, error) {
 	db, err := sql.Open("sqlite", path)
 	if err != nil {
 		return nil, fmt.Errorf("open settings db: %w", err)
@@ -34,16 +39,16 @@ CREATE TABLE IF NOT EXISTS settings (
 		_ = db.Close()
 		return nil, fmt.Errorf("init settings db: %w", err)
 	}
-	return &Store{db: db}, nil
+	return &sqlStore{db: db}, nil
 }
 
 // Close releases the underlying database handle.
-func (s *Store) Close() error {
+func (s *sqlStore) Close() error {
 	return s.db.Close()
 }
 
 // Load returns the persisted settings, or Default() if nothing was saved yet.
-func (s *Store) Load() (Settings, error) {
+func (s *sqlStore) Load() (Settings, error) {
 	var data string
 	err := s.db.QueryRow(`SELECT data FROM settings WHERE id = 1`).Scan(&data)
 	if err == sql.ErrNoRows {
@@ -60,7 +65,7 @@ func (s *Store) Load() (Settings, error) {
 }
 
 // Save upserts the full settings snapshot.
-func (s *Store) Save(cfg Settings) error {
+func (s *sqlStore) Save(cfg Settings) error {
 	data, err := json.Marshal(cfg)
 	if err != nil {
 		return fmt.Errorf("encode settings: %w", err)

@@ -37,11 +37,8 @@ type Engine struct {
 	driftFailures   int
 	lastReinjection time.Time
 
-	// In-memory log buffer, broadcast in real time so a client without
-	// terminal access (the iOS app, piloting headless over the network) can
-	// still see what the engine is doing.
-	logMu sync.Mutex
-	logs  []api.LogEntryPayload
+	// logService manages the in-memory log buffer.
+	logService *LogService
 
 	// driverCfgBase holds the resolved binary paths/manual address from
 	// startup (cmd/headless), so SwitchDriver can rebuild a driver.Config at
@@ -60,12 +57,12 @@ type Engine struct {
 	// store persists settings to disk (SQLite) so they survive a restart
 	// instead of resetting to settings.Default() every time. Nil disables
 	// persistence (e.g. in tests).
-	store *settings.Store
+	store settings.Store
 }
 
 // SetStore attaches the settings persistence store. Call once at startup,
 // before any mutating action runs.
-func (e *Engine) SetStore(store *settings.Store) {
+func (e *Engine) SetStore(store settings.Store) {
 	e.mu.Lock()
 	e.store = store
 	e.mu.Unlock()
@@ -256,22 +253,7 @@ func (e *Engine) Log(level, source, message string) {
 
 // LogEvent appends a structured entry to the in-memory buffer and broadcasts it.
 func (e *Engine) LogEvent(level, source, category, action, message string, fields map[string]string) {
-	entry := api.LogEntryPayload{
-		Timestamp: nowMs(),
-		Level:     normalizeLogLevel(level),
-		Source:    source,
-		Category:  category,
-		Action:    action,
-		Message:   message,
-		Fields:    fields,
-	}
-
-	e.logMu.Lock()
-	e.logs = append(e.logs, entry)
-	if len(e.logs) > maxLogEntries {
-		e.logs = e.logs[len(e.logs)-maxLogEntries:]
-	}
-	e.logMu.Unlock()
+	entry := e.logService.Add(level, source, category, action, message, fields)
 
 	e.mu.RLock()
 	emit := e.emit
@@ -279,22 +261,9 @@ func (e *Engine) LogEvent(level, source, category, action, message string, field
 	emit(api.EventLog, entry)
 }
 
-func normalizeLogLevel(level string) string {
-	switch level {
-	case "warn", "error":
-		return level
-	default:
-		return "info"
-	}
-}
-
 // GetLogs returns a snapshot of the current log buffer, oldest first.
 func (e *Engine) GetLogs() []api.LogEntryPayload {
-	e.logMu.Lock()
-	defer e.logMu.Unlock()
-	out := make([]api.LogEntryPayload, len(e.logs))
-	copy(out, e.logs)
-	return out
+	return e.logService.Get()
 }
 
 // New builds an Engine seeded from settings.
@@ -320,6 +289,7 @@ func New(drv driver.Driver, cfg settings.Settings) *Engine {
 		drv:         drv,
 		emit:        func(string, any) {}, // no-op until the server wires OnEvent
 		osrmBaseURL: osrm,
+		logService:  NewLogService(maxLogEntries),
 		st: api.Status{
 			State:                     "idle",
 			ConnectionType:            domain.ConnUnknown,

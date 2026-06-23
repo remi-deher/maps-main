@@ -134,8 +134,23 @@ type PatrolUpdatePayload struct {
 }
 
 // SaveSettingsPayload is the data for SAVE_SETTINGS: a partial settings object.
-// Kept open (map) so the engine can apply only the provided keys.
-type SaveSettingsPayload map[string]any
+type SaveSettingsPayload struct {
+	CompanionPort             *int     `json:"companionPort,omitempty"`
+	PreferredDriver           *string  `json:"preferredDriver,omitempty"`
+	UsbDriver                 *string  `json:"usbDriver,omitempty"`
+	WifiDriver                *string  `json:"wifiDriver,omitempty"`
+	FallbackEnabled           *bool    `json:"fallbackEnabled,omitempty"`
+	NotificationsEnabled      *bool    `json:"notificationsEnabled,omitempty"`
+	DynamicIslandEnabled      *bool    `json:"dynamicIslandEnabled,omitempty"`
+	JitterEnabled             *bool    `json:"jitterEnabled,omitempty"`
+	OsrmBaseURL               *string  `json:"osrmBaseUrl,omitempty"`
+	ClusterHeartbeatSeconds   *int     `json:"clusterHeartbeatSeconds,omitempty"`
+	ClusterMasterDeadSeconds  *int     `json:"clusterMasterDeadSeconds,omitempty"`
+	ClusterPeerTimeoutSeconds *int     `json:"clusterPeerTimeoutSeconds,omitempty"`
+	ClusterMode               *string  `json:"clusterMode,omitempty"`
+	ClusterNodes              []string `json:"clusterNodes,omitempty"`
+	ClusterSyncCerts          *bool    `json:"clusterSyncCerts,omitempty"`
+}
 
 // ─── Outbound payloads ───────────────────────────────────────────────────────
 

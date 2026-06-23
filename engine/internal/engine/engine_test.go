@@ -2,6 +2,7 @@ package engine
 
 import (
 	"context"
+	"encoding/json"
 	"testing"
 	"time"
 
@@ -315,11 +316,15 @@ func TestPushHistoryDeduplicatesConsecutiveSamePosition(t *testing.T) {
 
 func TestSaveSettingsAppliesKnownFields(t *testing.T) {
 	eng := New(&mockDriver{id: domain.DriverPmd3}, settings.Default())
+	port := 9999
+	usbDriver := "go-ios"
+	fallback := true
+	notif := true
 	payload := api.SaveSettingsPayload{
-		"companionPort":        float64(9999),
-		"usbDriver":            "go-ios",
-		"fallbackEnabled":      true,
-		"notificationsEnabled": true,
+		CompanionPort:        &port,
+		UsbDriver:            &usbDriver,
+		FallbackEnabled:      &fallback,
+		NotificationsEnabled: &notif,
 	}
 	if err := eng.SaveSettings(context.Background(), payload); err != nil {
 		t.Fatalf("SaveSettings: %v", err)
@@ -343,14 +348,16 @@ func TestSaveSettingsAppliesJitterEnabled(t *testing.T) {
 		t.Fatalf("expected JitterEnabled to default to true")
 	}
 
-	if err := eng.SaveSettings(context.Background(), api.SaveSettingsPayload{"jitterEnabled": false}); err != nil {
+	jitterFalse := false
+	if err := eng.SaveSettings(context.Background(), api.SaveSettingsPayload{JitterEnabled: &jitterFalse}); err != nil {
 		t.Fatalf("SaveSettings: %v", err)
 	}
 	if eng.Status().JitterEnabled {
 		t.Errorf("expected JitterEnabled to be false after SaveSettings, got true")
 	}
 
-	if err := eng.SaveSettings(context.Background(), api.SaveSettingsPayload{"jitterEnabled": true}); err != nil {
+	jitterTrue := true
+	if err := eng.SaveSettings(context.Background(), api.SaveSettingsPayload{JitterEnabled: &jitterTrue}); err != nil {
 		t.Fatalf("SaveSettings: %v", err)
 	}
 	if !eng.Status().JitterEnabled {
@@ -358,23 +365,13 @@ func TestSaveSettingsAppliesJitterEnabled(t *testing.T) {
 	}
 }
 
-func TestSaveSettingsIgnoresWrongTypedValues(t *testing.T) {
-	eng := New(&mockDriver{id: domain.DriverPmd3}, settings.Default())
-	before := eng.Status()
-
-	// Wrong Go type for each key (string where bool/float expected, etc.) —
-	// every field must be left untouched rather than panicking or zeroing out.
-	payload := api.SaveSettingsPayload{
-		"companionPort":   "not-a-number",
-		"fallbackEnabled": "not-a-bool",
-		"jitterEnabled":   "not-a-bool",
-	}
-	if err := eng.SaveSettings(context.Background(), payload); err != nil {
-		t.Fatalf("SaveSettings: %v", err)
-	}
-	after := eng.Status()
-	if after.RSDPort != before.RSDPort || after.FallbackEnabled != before.FallbackEnabled || after.JitterEnabled != before.JitterEnabled {
-		t.Errorf("expected mistyped settings values to be ignored, before=%+v after=%+v", before, after)
+func TestSaveSettingsJSONMismatches(t *testing.T) {
+	// Test that the JSON decoder fails when unmarshaling invalid types
+	data := `{"companionPort": "not-a-number"}`
+	var payload api.SaveSettingsPayload
+	err := json.Unmarshal([]byte(data), &payload)
+	if err == nil {
+		t.Error("expected JSON unmarshaling to fail for invalid type")
 	}
 }
 

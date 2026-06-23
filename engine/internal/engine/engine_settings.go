@@ -14,73 +14,54 @@ import (
 // SaveSettings saves and applies configuration settings
 func (e *Engine) SaveSettings(ctx context.Context, payload api.SaveSettingsPayload) error {
 	e.mu.Lock()
-	if val, ok := payload["companionPort"]; ok {
-		if port, ok := val.(float64); ok {
-			e.st.RSDPort = int(port)
-		}
+	if payload.CompanionPort != nil {
+		e.st.RSDPort = *payload.CompanionPort
 	}
-	if val, ok := payload["preferredDriver"]; ok {
-		if drv, ok := val.(string); ok {
-			e.st.UsbDriver = domain.DriverID(drv)
-			e.st.WifiDriver = domain.DriverID(drv)
-		}
+	if payload.PreferredDriver != nil {
+		e.st.UsbDriver = domain.DriverID(*payload.PreferredDriver)
+		e.st.WifiDriver = domain.DriverID(*payload.PreferredDriver)
 	}
-	if val, ok := payload["usbDriver"]; ok {
-		if drv, ok := val.(string); ok {
-			e.st.UsbDriver = domain.DriverID(drv)
-		}
+	if payload.UsbDriver != nil {
+		e.st.UsbDriver = domain.DriverID(*payload.UsbDriver)
 	}
-	if val, ok := payload["wifiDriver"]; ok {
-		if drv, ok := val.(string); ok {
-			e.st.WifiDriver = domain.DriverID(drv)
-		}
+	if payload.WifiDriver != nil {
+		e.st.WifiDriver = domain.DriverID(*payload.WifiDriver)
 	}
-	if val, ok := payload["fallbackEnabled"]; ok {
-		if fallback, ok := val.(bool); ok {
-			e.st.FallbackEnabled = fallback
-		}
+	if payload.FallbackEnabled != nil {
+		e.st.FallbackEnabled = *payload.FallbackEnabled
 	}
-	if val, ok := payload["notificationsEnabled"]; ok {
-		if notif, ok := val.(bool); ok {
-			e.st.NotificationsEnabled = notif
-		}
+	if payload.NotificationsEnabled != nil {
+		e.st.NotificationsEnabled = *payload.NotificationsEnabled
 	}
-	if val, ok := payload["dynamicIslandEnabled"]; ok {
-		if island, ok := val.(bool); ok {
-			e.st.DynamicIslandEnabled = island
-		}
+	if payload.DynamicIslandEnabled != nil {
+		e.st.DynamicIslandEnabled = *payload.DynamicIslandEnabled
 	}
-	if val, ok := payload["jitterEnabled"]; ok {
-		if jitter, ok := val.(bool); ok {
-			e.st.JitterEnabled = jitter
-		}
+	if payload.JitterEnabled != nil {
+		e.st.JitterEnabled = *payload.JitterEnabled
 	}
-	if val, ok := payload["osrmBaseUrl"]; ok {
-		if url, ok := val.(string); ok {
-			url = strings.TrimSuffix(strings.TrimSpace(url), "/")
-			e.osrmBaseURL = url
-			if url == "" {
-				e.st.OsrmBaseURL = defaultOsrmBaseURL()
-			} else {
-				e.st.OsrmBaseURL = url
-			}
+	if payload.OsrmBaseURL != nil {
+		url := strings.TrimSuffix(strings.TrimSpace(*payload.OsrmBaseURL), "/")
+		e.osrmBaseURL = url
+		if url == "" {
+			e.st.OsrmBaseURL = defaultOsrmBaseURL()
+		} else {
+			e.st.OsrmBaseURL = url
 		}
 	}
 
 	// Cluster heartbeat/failover tuning — apply live (cluster.SetTuning) and
-	// mirror into the status so the UI reflects the running values. JSON
-	// numbers decode as float64; a zero/negative value leaves that knob alone.
+	// mirror into the status so the UI reflects the running values.
 	var hbSec, deadSec, peerSec int
-	if val, ok := payload["clusterHeartbeatSeconds"].(float64); ok && val > 0 {
-		hbSec = int(val)
+	if payload.ClusterHeartbeatSeconds != nil && *payload.ClusterHeartbeatSeconds > 0 {
+		hbSec = *payload.ClusterHeartbeatSeconds
 		e.st.ClusterHeartbeatSeconds = hbSec
 	}
-	if val, ok := payload["clusterMasterDeadSeconds"].(float64); ok && val > 0 {
-		deadSec = int(val)
+	if payload.ClusterMasterDeadSeconds != nil && *payload.ClusterMasterDeadSeconds > 0 {
+		deadSec = *payload.ClusterMasterDeadSeconds
 		e.st.ClusterMasterDeadSeconds = deadSec
 	}
-	if val, ok := payload["clusterPeerTimeoutSeconds"].(float64); ok && val > 0 {
-		peerSec = int(val)
+	if payload.ClusterPeerTimeoutSeconds != nil && *payload.ClusterPeerTimeoutSeconds > 0 {
+		peerSec = *payload.ClusterPeerTimeoutSeconds
 		e.st.ClusterPeerTimeoutSeconds = peerSec
 	}
 	if hbSec > 0 || deadSec > 0 || peerSec > 0 {
@@ -92,17 +73,10 @@ func (e *Engine) SaveSettings(ctx context.Context, payload api.SaveSettingsPaylo
 	}
 
 	mgr := e.clusterMgr
-	clusterMode, hasMode := payload["clusterMode"].(string)
-	rawNodes, hasNodes := payload["clusterNodes"].([]any)
-	syncCerts, hasSyncCerts := payload["clusterSyncCerts"].(bool)
-	if mgr != nil && (hasMode || hasNodes || hasSyncCerts) {
+	if mgr != nil && (payload.ClusterMode != nil || payload.ClusterNodes != nil || payload.ClusterSyncCerts != nil) {
 		var nodeAddrs []string
-		if hasNodes {
-			for _, n := range rawNodes {
-				if s, ok := n.(string); ok {
-					nodeAddrs = append(nodeAddrs, s)
-				}
-			}
+		if payload.ClusterNodes != nil {
+			nodeAddrs = payload.ClusterNodes
 		} else {
 			for _, p := range mgr.Status().Peers {
 				if !p.Discovered {
@@ -111,19 +85,18 @@ func (e *Engine) SaveSettings(ctx context.Context, payload api.SaveSettingsPaylo
 			}
 		}
 		mode := mgr.Status().Mode
-		if hasMode {
-			mode = clusterMode
+		if payload.ClusterMode != nil {
+			mode = *payload.ClusterMode
 		}
-		if !hasSyncCerts {
-			syncCerts = mgr.SyncCertsEnabled()
+		syncCerts := mgr.SyncCertsEnabled()
+		if payload.ClusterSyncCerts != nil {
+			syncCerts = *payload.ClusterSyncCerts
 		}
 		go mgr.UpdateConfig(ctx, mode, nodeAddrs, syncCerts)
 	}
 
 	e.emitStatusLocked()
 	e.persist()
-	e.LogEvent("info", "admin", "settings", "save", "Réglages sauvegardés", map[string]string{
-		"keys": fmt.Sprintf("%d", len(payload)),
-	})
+	e.LogEvent("info", "admin", "settings", "save", "Réglages sauvegardés", nil)
 	return nil
 }
