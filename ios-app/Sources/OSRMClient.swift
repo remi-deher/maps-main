@@ -14,10 +14,18 @@ struct OSRMRoute {
 /// own Apple Maps routing, which can pick a different road and disagree with
 /// what the simulation will actually drive.
 enum OSRMClient {
-    private static let baseURL = "https://router.project-osrm.org"
+    private static let baseURL = URL(string: "https://router.project-osrm.org")!
 
     internal static func profile(for transportProfile: String) -> String {
         transportProfile == "walking" ? "walking" : "driving"
+    }
+
+    private static func makeURL(path: String, queryItems: [URLQueryItem]) -> URL? {
+        var components = URLComponents(url: baseURL, resolvingAgainstBaseURL: false)
+        components?.scheme = "https"
+        components?.percentEncodedPath = path
+        components?.queryItems = queryItems
+        return components?.url
     }
 
     static func fetchRoute(
@@ -26,9 +34,13 @@ enum OSRMClient {
         profile transportProfile: String
     ) async -> OSRMRoute? {
         let profile = profile(for: transportProfile)
-        let urlString = "\(baseURL)/route/v1/\(profile)/\(start.longitude),\(start.latitude);\(end.longitude),\(end.latitude)"
-            + "?overview=full&geometries=geojson"
-        guard let url = URL(string: urlString) else {
+        guard let url = makeURL(
+            path: "/route/v1/\(profile)/\(start.longitude),\(start.latitude);\(end.longitude),\(end.latitude)",
+            queryItems: [
+                URLQueryItem(name: "overview", value: "full"),
+                URLQueryItem(name: "geometries", value: "geojson"),
+            ]
+        ) else {
             return nil
         }
         do {
@@ -48,7 +60,10 @@ enum OSRMClient {
     /// where the engine's OSRM-based simulation can actually drive to.
     static func snapToRoad(_ coordinate: CLLocationCoordinate2D, profile transportProfile: String) async -> CLLocationCoordinate2D? {
         let profile = profile(for: transportProfile)
-        guard let url = URL(string: "\(baseURL)/nearest/v1/\(profile)/\(coordinate.longitude),\(coordinate.latitude)?number=1") else {
+        guard let url = makeURL(
+            path: "/nearest/v1/\(profile)/\(coordinate.longitude),\(coordinate.latitude)",
+            queryItems: [URLQueryItem(name: "number", value: "1")]
+        ) else {
             return nil
         }
         do {

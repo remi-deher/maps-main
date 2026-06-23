@@ -257,14 +257,25 @@ func peerURL(host string, port int, path string) (string, bool) {
 // sanitizeFileName rejects path-traversal/separator tricks in a pairing-record
 // file name before it's joined onto a directory path, whether that name came
 // from a peer's sync payload or from a local os.ReadDir listing.
-// filepath.Base alone doesn't reject ".." (Base("..") == ".."), so it must be
-// checked explicitly.
 func sanitizeFileName(name string) (string, bool) {
-	base := filepath.Base(name)
-	if base == "" || base == "." || base == ".." || strings.ContainsAny(base, `/\`) {
+	if name == "" || name == "." || name == ".." || !filepath.IsLocal(name) || strings.ContainsAny(name, `/\`) {
 		return "", false
 	}
-	return base, true
+	return name, true
+}
+
+func lockdownFilePath(dir, name string) (string, bool) {
+	safeName, ok := sanitizeFileName(name)
+	if !ok {
+		return "", false
+	}
+	cleanDir := filepath.Clean(dir)
+	target := filepath.Clean(filepath.Join(cleanDir, safeName))
+	rel, err := filepath.Rel(cleanDir, target)
+	if err != nil || rel == "." || rel == ".." || strings.HasPrefix(rel, ".."+string(os.PathSeparator)) || filepath.IsAbs(rel) {
+		return "", false
+	}
+	return target, true
 }
 
 func localAddrs() map[string]bool {

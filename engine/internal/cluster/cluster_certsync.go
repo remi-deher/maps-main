@@ -10,7 +10,6 @@ import (
 	"net"
 	"net/http"
 	"os"
-	"path/filepath"
 	"strconv"
 )
 
@@ -117,7 +116,11 @@ func (m *Manager) pushChangedCerts(ctx context.Context) {
 			continue
 		}
 
-		content, err := os.ReadFile(filepath.Join(dir, name))
+		path, ok := lockdownFilePath(dir, name)
+		if !ok {
+			continue
+		}
+		content, err := os.ReadFile(path)
 		if err != nil {
 			continue
 		}
@@ -165,12 +168,12 @@ func (m *Manager) writeLocalPlist(name, contentB64 string) {
 		slog.Warn("cluster: pairing record has invalid base64 content", "name", name, "error", err)
 		return
 	}
-	safeName, ok := sanitizeFileName(name)
+	path, ok := lockdownFilePath(dir, name)
 	if !ok {
 		slog.Warn("cluster: rejecting pairing record with unsafe name", "name", name)
 		return
 	}
-	if err := os.WriteFile(filepath.Join(dir, safeName), content, 0o600); err != nil {
+	if err := os.WriteFile(path, content, 0o600); err != nil {
 		slog.Warn("cluster: writing pairing record failed", "name", name, "error", err)
 	}
 }

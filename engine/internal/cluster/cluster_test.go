@@ -9,7 +9,6 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strconv"
 	"testing"
 	"time"
@@ -295,50 +294,11 @@ func TestPeerURLBuildsExpectedURL(t *testing.T) {
 }
 
 func TestSanitizeFileNameRejectsTraversalAndSeparators(t *testing.T) {
-	cases := []string{"..", ".", ""}
+	cases := []string{"..", ".", "", "../../etc/passwd", "a/b", `a\b`}
 	for _, name := range cases {
 		if got, ok := sanitizeFileName(name); ok {
 			t.Errorf("sanitizeFileName(%q) = %q, ok=true, want ok=false", name, got)
 		}
-	}
-}
-
-// TestSanitizeFileNameReducesSlashPathsToTheirBaseName documents that a name
-// carrying directory components (e.g. a peer trying ../../etc/passwd) isn't
-// rejected outright — filepath.Base reduces it to its trailing component
-// first, and that reduced name is what gets validated and joined onto dir,
-// so it can never escape it. "/" is filepath's separator on every platform,
-// unlike "\" (Windows-only), so this case is portable; the backslash case is
-// covered separately per-OS below.
-func TestSanitizeFileNameReducesSlashPathsToTheirBaseName(t *testing.T) {
-	cases := map[string]string{
-		"../../etc/passwd": "passwd",
-		"a/b":              "b",
-	}
-	for name, want := range cases {
-		got, ok := sanitizeFileName(name)
-		if !ok || got != want {
-			t.Errorf("sanitizeFileName(%q) = %q, %v, want %q, true", name, got, ok, want)
-		}
-	}
-}
-
-// TestSanitizeFileNameHandlesBackslash documents that "\" is platform
-// dependent: filepath.Base treats it as a separator on Windows (reducing the
-// name to its trailing component, same as "/"), but as a plain character
-// elsewhere — where the leftover "\" then trips the explicit separator
-// check. Either outcome is safe; this just pins down which one happens
-// where.
-func TestSanitizeFileNameHandlesBackslash(t *testing.T) {
-	got, ok := sanitizeFileName(`a\b`)
-	if runtime.GOOS == "windows" {
-		if !ok || got != "b" {
-			t.Errorf(`sanitizeFileName("a\b") = %q, %v, want "b", true on windows`, got, ok)
-		}
-		return
-	}
-	if ok {
-		t.Errorf(`sanitizeFileName("a\b") = %q, ok=true, want ok=false on %s`, got, runtime.GOOS)
 	}
 }
 

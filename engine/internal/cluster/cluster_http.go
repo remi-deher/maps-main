@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"net/http"
 	"os"
-	"path/filepath"
 	"time"
 )
 
@@ -80,7 +79,11 @@ func (m *Manager) handlePlists(w http.ResponseWriter, r *http.Request) {
 					if entry.IsDir() {
 						continue
 					}
-					content, err := os.ReadFile(filepath.Join(dir, entry.Name()))
+					path, ok := lockdownFilePath(dir, entry.Name())
+					if !ok {
+						continue
+					}
+					content, err := os.ReadFile(path)
 					if err != nil {
 						continue
 					}
