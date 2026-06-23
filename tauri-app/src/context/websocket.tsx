@@ -54,6 +54,30 @@ export interface DeviceInfo {
   driver: string;
 }
 
+export interface PairingRecord {
+  udid: string;
+  deviceName: string;
+  modTime: number;
+}
+
+export interface DiagnosticsDevice {
+  UDID: string;
+  Name: string;
+  Source: string;
+}
+
+export interface Diagnostics {
+  goIosPath: string;
+  goIosError?: string;
+  pmd3Path: string;
+  pmd3Error?: string;
+  lockdownDir: string;
+  pairingRecords: PairingRecord[] | null;
+  usbDevices: DiagnosticsDevice[] | null;
+  usbDevicesError?: string;
+  error?: string;
+}
+
 export interface NavigationProgress {
   index: number;
   total: number;
@@ -165,6 +189,8 @@ interface WebSocketContextType {
   removeFavorite: (lat: number, lon: number) => void;
   renameFavorite: (lat: number, lon: number, newName: string) => void;
   updatePatrolZone: (zone: PatrolZone | null) => void;
+  diagnostics: Diagnostics | null;
+  getDiagnostics: () => void;
 }
 
 const WebSocketContext = createContext<WebSocketContextType | null>(null);
@@ -192,6 +218,7 @@ export const WebSocketProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   const [telemetry, setTelemetry] = useState<Telemetry | null>(null);
   const [deviceDetails, setDeviceDetails] = useState<DeviceDetails | null>(null);
   const [logs, setLogs] = useState<LogEntry[]>([]);
+  const [diagnostics, setDiagnostics] = useState<Diagnostics | null>(null);
   const maxLogEntries = 200;
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectTimeoutRef = useRef<any>(null);
@@ -253,6 +280,9 @@ export const WebSocketProvider: React.FC<{ children: React.ReactNode }> = ({ chi
               const next = [...prev, data as LogEntry];
               return next.length > maxLogEntries ? next.slice(next.length - maxLogEntries) : next;
             });
+            break;
+          case "DIAGNOSTICS":
+            setDiagnostics(data);
             break;
           case "LOGS":
             setLogs((Array.isArray(data) ? data : []) as LogEntry[]);
@@ -463,6 +493,11 @@ export const WebSocketProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     sendMessage("GET_DEVICE_INFO");
   };
 
+  const getDiagnostics = () => {
+    setDiagnostics(null);
+    sendMessage("GET_DIAGNOSTICS");
+  };
+
   return (
     <WebSocketContext.Provider
       value={{
@@ -497,6 +532,8 @@ export const WebSocketProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         removeFavorite,
         renameFavorite,
         updatePatrolZone,
+        diagnostics,
+        getDiagnostics,
       }}
     >
       {children}

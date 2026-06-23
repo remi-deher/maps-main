@@ -213,7 +213,18 @@ func (e *Engine) SwitchDriver(ctx context.Context, driverID, transport string) e
 	e.st.RSDPort = 0
 	e.st.State = "idle"
 	e.st.DeviceInfo = nil
+	driverIdVal := domain.DriverID(driverID)
+	if transport == "usb" {
+		e.st.UsbDriver = driverIdVal
+	} else if transport == "wifi" {
+		e.st.WifiDriver = driverIdVal
+	} else {
+		e.st.UsbDriver = driverIdVal
+		e.st.WifiDriver = driverIdVal
+	}
 	e.emitStatusLocked()
+	e.persist()
+
 	e.LogEvent("info", "admin", "driver", "switch", fmt.Sprintf("Pilote changé pour %s (transport=%s), redémarrage du tunnel...", driverID, transport), map[string]string{
 		"driver":    driverID,
 		"transport": transport,

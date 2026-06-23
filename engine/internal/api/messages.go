@@ -42,6 +42,7 @@ const (
 	ActionGetLogs        = "GET_LOGS"
 	ActionClearHistory   = "CLEAR_HISTORY"
 	ActionSwitchDriver   = "SWITCH_DRIVER"
+	ActionGetDiagnostics = "GET_DIAGNOSTICS"
 )
 
 // Outbound event types (engine -> client).
@@ -57,6 +58,7 @@ const (
 	EventDeviceInfo             = "DEVICE_INFO"
 	EventLog                    = "LOG"
 	EventLogs                   = "LOGS"
+	EventDiagnostics            = "DIAGNOSTICS"
 )
 
 // ─── Inbound payloads ────────────────────────────────────────────────────────

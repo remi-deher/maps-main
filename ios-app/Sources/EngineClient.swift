@@ -69,6 +69,12 @@ struct PatrolZone: Codable, Equatable {
     let active: Bool
 }
 
+struct DeviceInfo: Codable, Equatable {
+    let udid: String
+    let name: String
+    let driver: String
+}
+
 struct EngineStatus: Codable, Equatable {
     let state: String?
     let favorites: [Favorite]?
@@ -77,6 +83,10 @@ struct EngineStatus: Codable, Equatable {
     let currentSequencePreview: [RoutePoint]?
     let jitterEnabled: Bool?
     let patrolZone: PatrolZone?
+    let usbDriver: String?
+    let wifiDriver: String?
+    let connectionType: String?
+    let deviceInfo: DeviceInfo?
 }
 
 /// Talks the same {type, data} WebSocket envelope as the desktop app
@@ -103,6 +113,9 @@ final class EngineClient: NSObject, URLSessionWebSocketDelegate {
 
     private var session: URLSession!
     private var task: URLSessionWebSocketTask?
+    var pingLatency: Double?
+    private var lastPingSentAt: Date?
+    private var pingTimer: Timer?
     private var urlString: String = ""
 
     /// Background keep-alive cadence, mirrored from the app's @AppStorage so
@@ -162,9 +175,14 @@ final class EngineClient: NSObject, URLSessionWebSocketDelegate {
 
     func disconnect() {
         generation += 1 // invalidates any in-flight callbacks
+        pingTimer?.invalidate()
+        pingTimer = nil
         task?.cancel(with: .normalClosure, reason: nil)
         task = nil
-        DispatchQueue.main.async { self.state = .disconnected }
+        DispatchQueue.main.async {
+            self.state = .disconnected
+            self.pingLatency = nil
+        }
     }
 
     private func startSocket(generation: Int) {
@@ -197,9 +215,12 @@ final class EngineClient: NSObject, URLSessionWebSocketDelegate {
 
     private func handleDisconnect(error: Error, generation: Int) {
         AppLogger.shared.warn("Connexion moteur perdue: \(error.localizedDescription)")
+        pingTimer?.invalidate()
+        pingTimer = nil
         DispatchQueue.main.async {
             self.lastError = error.localizedDescription
             self.state = .reconnecting
+            self.pingLatency = nil
         }
         DispatchQueue.main.asyncAfter(deadline: .now() + 2) { [weak self] in
             guard let self, self.generation == generation else { return }
@@ -209,7 +230,14 @@ final class EngineClient: NSObject, URLSessionWebSocketDelegate {
 
     func urlSession(_ session: URLSession, webSocketTask: URLSessionWebSocketTask, didOpenWithProtocol protocol: String?) {
         AppLogger.shared.info("Connecté au moteur (\(self.urlString))")
-        DispatchQueue.main.async { self.state = .connected }
+        DispatchQueue.main.async {
+            self.state = .connected
+            self.pingTimer?.invalidate()
+            self.pingTimer = Timer.scheduledTimer(withTimeInterval: 5.0, repeats: true) { [weak self] _ in
+                self?.sendPing()
+            }
+            self.sendPing()
+        }
         sendEnvelope(type: "GET_STATUS", data: [:])
         sendEnvelope(type: "GET_LOGS", data: [:])
     }
@@ -237,21 +265,35 @@ final class EngineClient: NSObject, URLSessionWebSocketDelegate {
 
         switch type {
         case "STATUS", "STATUS_UPDATE":
-            if let decoded = try? JSONDecoder().decode(EngineStatus.self, from: payloadData) {
+            do {
+                let decoded = try JSONDecoder().decode(EngineStatus.self, from: payloadData)
                 DispatchQueue.main.async { self.status = decoded }
+            } catch {
+                AppLogger.shared.error("Échec du décodage de STATUS: \(error)")
+            }
+        case "PONG":
+            if let sentAt = lastPingSentAt {
+                let rtt = Date().timeIntervalSince(sentAt) * 1000 // ms
+                DispatchQueue.main.async { self.pingLatency = rtt }
             }
         case "LOG":
-            if let entry = try? JSONDecoder().decode(LogEntryPayload.self, from: payloadData) {
+            do {
+                let entry = try JSONDecoder().decode(LogEntryPayload.self, from: payloadData)
                 DispatchQueue.main.async {
                     self.logs.append(entry)
                     if self.logs.count > self.maxLogEntries {
                         self.logs.removeFirst(self.logs.count - self.maxLogEntries)
                     }
                 }
+            } catch {
+                AppLogger.shared.error("Échec du décodage de LOG: \(error)")
             }
         case "LOGS":
-            if let entries = try? JSONDecoder().decode([LogEntryPayload].self, from: payloadData) {
+            do {
+                let entries = try JSONDecoder().decode([LogEntryPayload].self, from: payloadData)
                 DispatchQueue.main.async { self.logs = entries }
+            } catch {
+                AppLogger.shared.error("Échec du décodage de LOGS: \(error)")
             }
         default:
             break
@@ -311,6 +353,12 @@ final class EngineClient: NSObject, URLSessionWebSocketDelegate {
 
     func relance() {
         sendEnvelope(type: "RELANCE", data: [:])
+    }
+
+    private func sendPing() {
+        guard state == .connected else { return }
+        lastPingSentAt = Date()
+        sendEnvelope(type: "HEARTBEAT", data: [:])
     }
 
     func switchDriver(driverId: String, transport: String) {

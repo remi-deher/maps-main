@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { Settings, RefreshCw, QrCode, Smartphone, Save } from "lucide-react";
+import { Settings, RefreshCw, QrCode, Smartphone, Save, Activity } from "lucide-react";
 import { QRCodeSVG } from "qrcode.react";
 import { useWebSocket } from "../../context/websocket";
 import { parseCoordinate } from "../../lib/parse";
@@ -25,6 +25,8 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({ showToast }) => {
     getDeviceInfo,
     saveSettings,
     sendMessage,
+    diagnostics,
+    getDiagnostics,
   } = useWebSocket();
 
   const [enginePortInput, setEnginePortInput] = useState(String(enginePort));
@@ -41,6 +43,7 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({ showToast }) => {
   const [clusterHeartbeat, setClusterHeartbeat] = useState("10");
   const [clusterMasterDead, setClusterMasterDead] = useState("30");
   const [clusterPeerTimeout, setClusterPeerTimeout] = useState("3");
+  const [hasInitialized, setHasInitialized] = useState(false);
 
   // Pick the interface the user restricted mDNS to, if any; otherwise the first
   // detected LAN interface — "localhost" would be useless in the QR code since
@@ -51,14 +54,38 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({ showToast }) => {
   const qrPairingAddress = qrPairingHost ? `${qrPairingHost}:${enginePort}` : null;
 
   // Prefill the routing/cluster fields with the engine's live values whenever a
-  // fresh status arrives.
+  // fresh status arrives. Also prefill the driver and transport fields once on startup.
   useEffect(() => {
     if (!status) return;
     if (status.osrmBaseUrl !== undefined) setOsrmBaseUrl(status.osrmBaseUrl);
     if (status.clusterHeartbeatSeconds) setClusterHeartbeat(String(status.clusterHeartbeatSeconds));
     if (status.clusterMasterDeadSeconds) setClusterMasterDead(String(status.clusterMasterDeadSeconds));
     if (status.clusterPeerTimeoutSeconds) setClusterPeerTimeout(String(status.clusterPeerTimeoutSeconds));
-  }, [status?.osrmBaseUrl, status?.clusterHeartbeatSeconds, status?.clusterMasterDeadSeconds, status?.clusterPeerTimeoutSeconds]);
+
+    if (!hasInitialized) {
+      if (status.deviceInfo?.driver) {
+        setPreferredDriver(status.deviceInfo.driver);
+      } else if (status.usbDriver) {
+        setPreferredDriver(status.usbDriver);
+      }
+
+      if (status.connectionType) {
+        const lowerType = status.connectionType.toLowerCase();
+        if (lowerType === "usb" || lowerType === "wifi") {
+          setPreferredTransport(lowerType);
+        } else {
+          setPreferredTransport("auto");
+        }
+      }
+      setHasInitialized(true);
+    }
+  }, [status, hasInitialized]);
+
+  useEffect(() => {
+    if (canSend) {
+      getDiagnostics();
+    }
+  }, [canSend]);
 
   const handleApplyEnginePort = async () => {
     const parsed = parseCoordinate(enginePortInput, 1, 65535);
@@ -299,6 +326,110 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({ showToast }) => {
         <button className="btn" onClick={handleSaveSettings} style={{ marginTop: "10px" }} disabled={!canSend}>
           <Save size={14} /> Enregistrer
         </button>
+      </div>
+
+      <div className="ui-card">
+        <h3 className="ui-card-title">
+          <Activity size={16} /> Outils de diagnostic
+        </h3>
+        <p style={{ fontSize: "0.8rem", color: "#94a3b8", margin: "0 0 12px 0" }}>
+          Informations de dépannage pour la détection USB et la communication avec l'appareil.
+        </p>
+
+        <button
+          className="btn btn-secondary"
+          onClick={getDiagnostics}
+          disabled={!canSend}
+          style={{ marginBottom: "16px" }}
+        >
+          <RefreshCw size={14} /> Rafraîchir les diagnostics
+        </button>
+
+        {diagnostics ? (
+          <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
+            <div>
+              <h4 style={{ fontSize: "0.85rem", color: "#cbd5e1", margin: "0 0 6px 0", fontWeight: "semibold" }}>
+                Chemins des pilotes (PC)
+              </h4>
+              <div className="info-grid">
+                <div className="info-item">
+                  <span className="info-label">go-ios (Natif)</span>
+                  <span className="info-value compact" style={{ color: diagnostics.goIosError ? "#f87171" : "#4ade80" }}>
+                    {diagnostics.goIosError ? "Non trouvé dans le PATH" : diagnostics.goIosPath || "Trouvé"}
+                  </span>
+                </div>
+                <div className="info-item">
+                  <span className="info-label">pymobiledevice3</span>
+                  <span className="info-value compact" style={{ color: diagnostics.pmd3Error ? "#f87171" : "#4ade80" }}>
+                    {diagnostics.pmd3Error ? "Non trouvé dans le PATH" : diagnostics.pmd3Path || "Trouvé"}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            <div>
+              <h4 style={{ fontSize: "0.85rem", color: "#cbd5e1", margin: "0 0 6px 0", fontWeight: "semibold" }}>
+                Périphériques USB détectés
+              </h4>
+              {diagnostics.usbDevices && diagnostics.usbDevices.length > 0 ? (
+                <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+                  {diagnostics.usbDevices.map((dev, i) => (
+                    <div key={i} className="info-grid" style={{ background: "rgba(30, 41, 59, 0.5)", padding: "8px", borderRadius: "6px" }}>
+                      <div className="info-item">
+                        <span className="info-label">Nom</span>
+                        <span className="info-value compact">{dev.Name || "Appareil iOS"}</span>
+                      </div>
+                      <div className="info-item">
+                        <span className="info-label">UDID</span>
+                        <span className="info-value compact" style={{ fontFamily: "monospace" }}>{dev.UDID}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p style={{ fontSize: "0.78rem", color: "#94a3b8", margin: 0 }}>
+                  {diagnostics.usbDevicesError ? `Erreur: ${diagnostics.usbDevicesError}` : "Aucun périphérique détecté en USB."}
+                </p>
+              )}
+            </div>
+
+            <div>
+              <h4 style={{ fontSize: "0.85rem", color: "#cbd5e1", margin: "0 0 6px 0", fontWeight: "semibold" }}>
+                Certificats d'appairage locaux (Lockdown)
+              </h4>
+              <p style={{ fontSize: "0.75rem", color: "#94a3b8", margin: "0 0 8px 0" }}>
+                Dossier : <code style={{ fontFamily: "monospace" }}>{diagnostics.lockdownDir || "Inconnu"}</code>
+              </p>
+              {diagnostics.pairingRecords && diagnostics.pairingRecords.length > 0 ? (
+                <div style={{ maxHeight: "150px", overflowY: "auto", display: "flex", flexDirection: "column", gap: "6px", border: "1px solid rgba(255, 255, 255, 0.05)", padding: "6px", borderRadius: "6px" }}>
+                  {diagnostics.pairingRecords.map((rec, i) => (
+                    <div key={i} style={{ display: "flex", flexDirection: "column", padding: "6px", background: "rgba(30, 41, 59, 0.3)", borderRadius: "4px" }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                        <span style={{ fontSize: "0.8rem", color: "#cbd5e1", fontWeight: "bold" }}>
+                          {rec.deviceName || "Nom inconnu"}
+                        </span>
+                        <span style={{ fontSize: "0.7rem", color: "#94a3b8" }}>
+                          {new Date(rec.modTime).toLocaleDateString()}
+                        </span>
+                      </div>
+                      <span style={{ fontSize: "0.7rem", color: "#64748b", fontFamily: "monospace" }}>
+                        {rec.udid}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p style={{ fontSize: "0.78rem", color: "#94a3b8", margin: 0 }}>
+                  Aucun certificat d'appairage trouvé dans le dossier Lockdown.
+                </p>
+              )}
+            </div>
+          </div>
+        ) : (
+          <p style={{ fontSize: "0.78rem", color: "#94a3b8", margin: 0 }}>
+            {canSend ? "Récupération des diagnostics en cours..." : "Moteur hors ligne."}
+          </p>
+        )}
       </div>
 
       {showQrCode && qrPairingAddress && (

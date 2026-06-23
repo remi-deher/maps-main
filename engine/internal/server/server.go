@@ -296,7 +296,8 @@ func (s *Server) readPump(c *client) {
 			return
 		}
 		var env api.Envelope
-		if json.Unmarshal(raw, &env) != nil {
+		if err := json.Unmarshal(raw, &env); err != nil {
+			slog.Error("WS read: failed to unmarshal envelope", "error", err, "raw", string(raw))
 			continue
 		}
 		s.dispatch(c, env)
@@ -336,6 +337,9 @@ func (s *Server) dispatch(c *client, env api.Envelope) {
 	defer func() {
 		if env.Type != api.ActionSwitchDriver {
 			s.trackAction(env.Type, err)
+		}
+		if err != nil {
+			slog.Error("WebSocket action failed", "type", env.Type, "error", err)
 		}
 	}()
 
@@ -422,6 +426,7 @@ func (s *Server) dispatch(c *client, env api.Envelope) {
 				s.trackAction(api.ActionSwitchDriver, execErr)
 			}(p.DriverID, p.Transport)
 		} else {
+			slog.Error("SWITCH_DRIVER payload unmarshal failed", "error", swErr)
 			s.trackAction(api.ActionSwitchDriver, swErr)
 		}
 	case api.ActionGetLogs:
@@ -465,6 +470,15 @@ func (s *Server) dispatch(c *client, env api.Envelope) {
 			WifiAddress:    info.WifiAddress,
 			TunnelAddress:  info.TunnelAddress,
 		})
+	case api.ActionGetDiagnostics:
+		var diag engine.Diagnostics
+		diag, err = s.eng.GetDiagnostics(ctx)
+		if err != nil {
+			slog.Error("GET_DIAGNOSTICS", "error", err)
+			c.send <- encode(api.EventDiagnostics, map[string]any{"error": err.Error()})
+			break
+		}
+		c.send <- encode(api.EventDiagnostics, diag)
 	default:
 		slog.Warn("server: unrecognized WS action", "type", env.Type)
 		err = fmt.Errorf("unrecognized WS action: %s", env.Type)

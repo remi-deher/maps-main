@@ -85,6 +85,19 @@ struct SettingsSheet: View {
                 if let port = engineAddress.split(separator: ":").last {
                     portInput = String(port)
                 }
+                if let activeDriver = engine.status?.deviceInfo?.driver {
+                    selectedDriver = activeDriver
+                } else if let usbDriver = engine.status?.usbDriver {
+                    selectedDriver = usbDriver
+                }
+                if let connectionType = engine.status?.connectionType {
+                    let lowerType = connectionType.lowercased()
+                    if lowerType == "usb" || lowerType == "wifi" {
+                        selectedTransport = lowerType
+                    } else {
+                        selectedTransport = "auto"
+                    }
+                }
             }
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {

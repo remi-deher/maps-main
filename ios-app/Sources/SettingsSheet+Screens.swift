@@ -204,6 +204,11 @@ extension SettingsSheet {
                         Text("\(engine.logs.count)").foregroundStyle(.secondary)
                     }
                 }
+                NavigationLink {
+                    DiagnosticsView(engine: engine, discovery: discovery)
+                } label: {
+                    Text("Outils de diagnostic")
+                }
             }
         }
         .navigationTitle("Outils")
