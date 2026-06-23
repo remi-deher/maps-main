@@ -3,19 +3,23 @@ package engine
 import (
 	"context"
 	"encoding/json"
+	"encoding/xml"
 	"fmt"
 	"math"
 	"math/rand"
 	"net/http"
 	"os"
-	"regexp"
-	"strconv"
 	"strings"
 	"time"
 
 	"github.com/remi-deher/maps-main/engine/internal/api"
 	"github.com/remi-deher/maps-main/engine/internal/domain"
 )
+
+// osrmHTTPClient is the HTTP client used for OSRM route requests. It is a
+// package-level variable so tests can swap in an httptest.Server transport
+// without touching real network endpoints.
+var osrmHTTPClient = &http.Client{Timeout: 10 * time.Second}
 
 // defaultOsrmBaseURL is the OSRM routing server used for PlayRoute/
 // PlaySequence previews when no value has been set from the web interface.
@@ -43,6 +47,7 @@ type osrmResponse struct {
 }
 
 // fetchOSRMRoute queries the OSRM routing API at baseURL.
+// It uses the package-level osrmHTTPClient so tests can inject an httptest transport.
 func fetchOSRMRoute(baseURL string, start, end domain.LatLon, profile string) ([]domain.LatLon, error) {
 	if profile == "" {
 		profile = "driving"
@@ -53,8 +58,7 @@ func fetchOSRMRoute(baseURL string, start, end domain.LatLon, profile string) ([
 	url := fmt.Sprintf("%s/route/v1/%s/%f,%f;%f,%f?overview=full&geometries=geojson",
 		baseURL, profile, start.Lon, start.Lat, end.Lon, end.Lat)
 
-	client := &http.Client{Timeout: 5 * time.Second}
-	resp, err := client.Get(url)
+	resp, err := osrmHTTPClient.Get(url)
 	if err != nil {
 		return nil, err
 	}
@@ -135,13 +139,15 @@ func interpolatePoints(rawPoints []domain.LatLon, speedKmh float64) []domain.Lat
 	return interpolated
 }
 
-// startRouteSimulation starts a loop updating coordinates along a generated route path
-func (e *Engine) startRouteSimulation(ctx context.Context, points []domain.LatLon, looping bool) {
+// startRouteSimulation starts a loop updating coordinates along a generated route path.
+// speed is the km/h value used during interpolation, passed through to NavigationProgress.
+func (e *Engine) startRouteSimulation(ctx context.Context, points []domain.LatLon, looping bool, speed float64) {
 	if len(points) == 0 {
 		return
 	}
 
-	// Broadcast sequence preview
+	// Broadcast sequence preview — must unlock before calling emit to avoid
+	// deadlock if the emit callback (hub broadcast) re-enters the engine.
 	e.mu.Lock()
 	e.st.CurrentSequencePreview = make([]domain.SequencePoint, len(points))
 	for i, p := range points {
@@ -153,8 +159,7 @@ func (e *Engine) startRouteSimulation(ctx context.Context, points []domain.LatLo
 		Index: 0,
 		Total: len(points),
 	}
-	e.emit(api.EventStatus, e.st)
-	e.mu.Unlock()
+	e.emitStatusLocked() // snapshots + unlocks e.mu before emitting
 
 	ticker := time.NewTicker(1 * time.Second)
 	defer ticker.Stop()
@@ -170,8 +175,7 @@ func (e *Engine) startRouteSimulation(ctx context.Context, points []domain.LatLo
 				Index: index,
 				Total: len(points),
 			}
-			e.emit(api.EventStatus, e.st)
-			e.mu.Unlock()
+			e.emitStatusLocked() // snapshots + unlocks e.mu before emitting
 			return
 		case <-ticker.C:
 			if e.isPaused() {
@@ -188,9 +192,10 @@ func (e *Engine) startRouteSimulation(ctx context.Context, points []domain.LatLo
 						Index: index,
 						Total: len(points),
 					}
-					e.emit(api.EventRouteFinished, api.RouteFinishedPayload{Timestamp: time.Now().UnixMilli()})
-					e.emit(api.EventStatus, e.st)
-					e.mu.Unlock()
+					// Snapshot emit+status under lock, then release before emitting.
+					emit, st := e.statusSnapshotLocked()
+					emit(api.EventRouteFinished, api.RouteFinishedPayload{Timestamp: time.Now().UnixMilli()})
+					emit(api.EventStatus, st)
 					return
 				}
 			}
@@ -224,11 +229,10 @@ func (e *Engine) startRouteSimulation(ctx context.Context, points []domain.LatLo
 				Total: len(points),
 				Lat:   p.Lat,
 				Lon:   p.Lon,
-				Speed: 15.0, // Mock speed
+				Speed: speed, // actual interpolated speed in km/h
 			}
 			e.st.Navigation.Status.Index = index
-			e.emit(api.EventStatus, e.st)
-			e.mu.Unlock()
+			e.emitStatusLocked() // snapshots + unlocks e.mu before emitting
 
 			index++
 		}
@@ -247,8 +251,7 @@ func (e *Engine) startPatrolSimulation(ctx context.Context, zone domain.PatrolZo
 		currentPos = domain.LatLon{Lat: e.st.LastInjectedLocation.Lat, Lon: e.st.LastInjectedLocation.Lon}
 	}
 	e.st.State = "moving"
-	e.emit(api.EventStatus, e.st)
-	e.mu.Unlock()
+	e.emitStatusLocked() // snapshots + unlocks e.mu before emitting
 
 	var targetPos domain.LatLon
 	hasTarget := false
@@ -258,8 +261,7 @@ func (e *Engine) startPatrolSimulation(ctx context.Context, zone domain.PatrolZo
 		case <-ctx.Done():
 			e.mu.Lock()
 			e.st.State = "ready"
-			e.emit(api.EventStatus, e.st)
-			e.mu.Unlock()
+			e.emitStatusLocked() // snapshots + unlocks e.mu before emitting
 			return
 		case <-ticker.C:
 			if e.isPaused() {
@@ -344,26 +346,36 @@ func (e *Engine) startPatrolSimulation(ctx context.Context, zone domain.PatrolZo
 	}
 }
 
-// Simple GPX coordinate extraction using regular expressions
+// gpxTrkpt is the XML struct for a GPX <trkpt> element.
+type gpxTrkpt struct {
+	Lat float64 `xml:"lat,attr"`
+	Lon float64 `xml:"lon,attr"`
+}
+
+// gpxDoc is a minimal GPX document structure for XML unmarshalling.
+// It handles the <gpx><trk><trkseg><trkpt> hierarchy and ignores every
+// other element, making it robust to namespaces and unknown tags.
+type gpxDoc struct {
+	Tracks []struct {
+		Segments []struct {
+			Points []gpxTrkpt `xml:"trkpt"`
+		} `xml:"trkseg"`
+	} `xml:"trk"`
+}
+
+// parseGPXCoordinates extracts track points from a GPX document using the
+// standard encoding/xml decoder. This correctly handles namespaces, multi-line
+// attributes, and any attribute ordering — unlike the previous regex approach.
 func parseGPXCoordinates(gpxContent string) []domain.LatLon {
+	var doc gpxDoc
+	if err := xml.Unmarshal([]byte(gpxContent), &doc); err != nil {
+		return nil
+	}
 	var points []domain.LatLon
-
-	// Support matching both single and double quotes for lat/lon in trkpt
-	latRegex := regexp.MustCompile(`lat=["'](-?\d+\.?\d*)["']`)
-	lonRegex := regexp.MustCompile(`lon=["'](-?\d+\.?\d*)["']`)
-
-	// Split by trkpt tags
-	trkptRegex := regexp.MustCompile(`<trkpt\s+[^>]*>`)
-	matches := trkptRegex.FindAllString(gpxContent, -1)
-
-	for _, match := range matches {
-		latMatch := latRegex.FindStringSubmatch(match)
-		lonMatch := lonRegex.FindStringSubmatch(match)
-		if len(latMatch) >= 2 && len(lonMatch) >= 2 {
-			lat, err1 := strconv.ParseFloat(latMatch[1], 64)
-			lon, err2 := strconv.ParseFloat(lonMatch[1], 64)
-			if err1 == nil && err2 == nil {
-				points = append(points, domain.LatLon{Lat: lat, Lon: lon})
+	for _, trk := range doc.Tracks {
+		for _, seg := range trk.Segments {
+			for _, pt := range seg.Points {
+				points = append(points, domain.LatLon{Lat: pt.Lat, Lon: pt.Lon})
 			}
 		}
 	}

@@ -123,7 +123,7 @@ func (e *Engine) PlayRoute(ctx context.Context, endLat, lon float64, speed float
 	e.cancelSim = cancel
 	e.simMu.Unlock()
 
-	go e.startRouteSimulation(simCtx, points, false)
+	go e.startRouteSimulation(simCtx, points, false, speed)
 	return nil
 }
 
@@ -171,7 +171,7 @@ func (e *Engine) PlaySequence(ctx context.Context, legs []domain.RouteLeg, loopi
 	e.cancelSim = cancel
 	e.simMu.Unlock()
 
-	go e.startRouteSimulation(simCtx, allPoints, looping)
+	go e.startRouteSimulation(simCtx, allPoints, looping, 0) // speed per-leg, not uniform
 	return nil
 }
 
@@ -200,7 +200,7 @@ func (e *Engine) PlayCustomGpx(ctx context.Context, gpxContent string, speedKmh 
 	e.cancelSim = cancel
 	e.simMu.Unlock()
 
-	go e.startRouteSimulation(simCtx, interpolated, false)
+	go e.startRouteSimulation(simCtx, interpolated, false, speedKmh)
 	return nil
 }
 

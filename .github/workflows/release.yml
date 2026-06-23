@@ -69,7 +69,11 @@ jobs:
           CGO_ENABLED: '0'
         run: |
           out="gpsmock-engine-${{ matrix.goos }}-${{ matrix.goarch }}${{ matrix.ext }}"
-          go build -tags webui -trimpath -ldflags="-s -w" -o "../dist/${out}" ./cmd/headless
+          ver="${{ github.ref_name }}"
+          ver="${ver#v}"  # strip leading 'v' → 0.4.0
+          go build -tags webui -trimpath \
+            -ldflags="-s -w -X github.com/remi-deher/maps-main/engine/internal/build.Version=${ver}" \
+            -o "../dist/${out}" ./cmd/headless
 
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
@@ -107,7 +111,7 @@ jobs:
         run: |
           $ver = "${{ github.ref_name }}"
           if ($ver -match '^v\d') { $ver = $ver.Substring(1) } else { $ver = "0.0.0" }
-          $ldflags = "-s -w -X github.com/remi-deher/maps-main/engine/internal/platform.driversVersion=$ver"
+          $ldflags = "-s -w -X github.com/remi-deher/maps-main/engine/internal/platform.driversVersion=$ver -X github.com/remi-deher/maps-main/engine/internal/build.Version=$ver"
           $env:CGO_ENABLED = "0"
           go build -tags "embed_drivers webui" -trimpath -ldflags="$ldflags" -o ../gpsmock-engine-portable.exe ./cmd/headless
           if ($LASTEXITCODE -ne 0) { throw "go build (portable) failed" }

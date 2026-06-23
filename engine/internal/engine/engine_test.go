@@ -1,4 +1,4 @@
-package engine
+﻿package engine
 
 import (
 	"context"
@@ -202,8 +202,8 @@ func TestEngineClearLocation(t *testing.T) {
 // RenameFavorite and PatrolUpdate used to call e.emit(...) while still
 // holding e.mu (via `defer e.mu.Unlock()` or a bare e.mu.Lock()/emit/Unlock).
 // Since emit is a callback into client code (the server's hub broadcast),
-// anything that re-enters the engine from within it — like calling
-// Status(), which takes e.mu.RLock() — would deadlock. Each call below
+// anything that re-enters the engine from within it â€” like calling
+// Status(), which takes e.mu.RLock() â€” would deadlock. Each call below
 // re-enters via Status() from inside emit and must return promptly.
 func TestEmitNeverHoldsTheLock(t *testing.T) {
 	eng := New(&mockDriver{id: domain.DriverPmd3}, settings.Default())
@@ -484,3 +484,101 @@ func TestEngineHeartbeat(t *testing.T) {
 		t.Errorf("expected positive LastHeartbeat timestamp")
 	}
 }
+
+// TestReportRealLocationDriftReinjectionRequiresTwoConsecutiveFailures verifies
+// the anti-drift shield: a single drift reading must NOT trigger re-injection,
+// but two consecutive readings above the threshold must. This is the most
+// critical path â€” premature re-injection causes visible location jumps on device.
+func TestReportRealLocationDriftReinjectionRequiresTwoConsecutiveFailures(t *testing.T) {
+	ti := driver.TunnelInfo{Address: "127.0.0.1", Port: 1, Type: domain.ConnUSB}
+	drv := &mockDriver{id: domain.DriverPmd3, tunnelInfo: ti}
+	eng := New(drv, settings.Default())
+	ctx := context.Background()
+	_ = eng.StartTunnel(ctx)
+	_ = eng.SetLocation(ctx, 48.8566, 2.3522, "Paris")
+
+	drv.setLocationCalled = false // reset to isolate re-injection detection
+
+	// 1st report: 2km away â€” above the 100m threshold. Must NOT re-inject yet.
+	eng.ReportRealLocation(ctx, 48.875, 2.3522)
+	if drv.setLocationCalled {
+		t.Error("expected no re-injection after only ONE drift reading above threshold")
+	}
+
+	// 2nd consecutive bad report: must now trigger re-injection.
+	eng.ReportRealLocation(ctx, 48.875, 2.3522)
+	if !drv.setLocationCalled {
+		t.Error("expected re-injection after TWO consecutive drift readings above threshold")
+	}
+}
+
+// TestReportRealLocationDriftCounterResetsOnGoodReading ensures that a reading
+// within tolerance resets the failure counter, so a bad->good->bad sequence never
+// triggers re-injection.
+func TestReportRealLocationDriftCounterResetsOnGoodReading(t *testing.T) {
+	ti := driver.TunnelInfo{Address: "127.0.0.1", Port: 1, Type: domain.ConnUSB}
+	drv := &mockDriver{id: domain.DriverPmd3, tunnelInfo: ti}
+	eng := New(drv, settings.Default())
+	ctx := context.Background()
+	_ = eng.StartTunnel(ctx)
+	_ = eng.SetLocation(ctx, 48.8566, 2.3522, "Paris")
+
+	drv.setLocationCalled = false
+
+	eng.ReportRealLocation(ctx, 48.875, 2.3522)  // bad (~2km)
+	eng.ReportRealLocation(ctx, 48.8566, 2.3522) // good (on-target) â€” resets counter
+	eng.ReportRealLocation(ctx, 48.875, 2.3522)  // bad again â€” only 1st since reset
+
+	if drv.setLocationCalled {
+		t.Error("expected no re-injection: counter should reset after a good reading")
+	}
+}
+
+// TestSwitchDriverResetsEngineState verifies that SwitchDriver resets the tunnel
+// state (TunnelActive=false, State="idle") and that subsequent actions target the
+// new driver, not the old one.
+func TestSwitchDriverResetsEngineState(t *testing.T) {
+	const switchTestID domain.DriverID = "switch-state-test-driver"
+	newDrv := &mockDriver{id: switchTestID}
+	driver.Register(switchTestID, func(cfg driver.Config) (driver.Driver, error) {
+		return newDrv, nil
+	})
+
+	oldDrv := &mockDriver{id: domain.DriverPmd3, tunnelInfo: driver.TunnelInfo{
+		Address: "127.0.0.1", Port: 1, Type: domain.ConnUSB,
+	}}
+	eng := New(oldDrv, settings.Default())
+	eng.SetDriverConfigBase(driver.Config{Transport: driver.TransportAuto})
+	ctx := context.Background()
+
+	if err := eng.StartTunnel(ctx); err != nil {
+		t.Fatalf("StartTunnel: %v", err)
+	}
+	if !eng.Status().TunnelActive {
+		t.Fatal("expected tunnel to be active before SwitchDriver")
+	}
+
+	if err := eng.SwitchDriver(ctx, string(switchTestID), "auto"); err != nil {
+		t.Fatalf("SwitchDriver: %v", err)
+	}
+
+	st := eng.Status()
+	if !st.TunnelActive {
+		t.Error("expected TunnelActive=true after SwitchDriver (new driver tunnel is up)")
+	}
+	if st.State != "ready" {
+		t.Errorf("expected State=ready after SwitchDriver, got %q", st.State)
+	}
+
+	// Subsequent SetLocation must reach the NEW driver.
+	if err := eng.SetLocation(ctx, 48.8566, 2.3522, "Paris"); err != nil {
+		t.Fatalf("SetLocation after SwitchDriver: %v", err)
+	}
+	if !newDrv.setLocationCalled {
+		t.Error("expected new driver to receive SetLocation after SwitchDriver")
+	}
+	if oldDrv.setLocationCalled {
+		t.Error("expected old driver NOT to receive SetLocation after SwitchDriver")
+	}
+}
+

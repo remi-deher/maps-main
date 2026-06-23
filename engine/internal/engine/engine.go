@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/remi-deher/maps-main/engine/internal/api"
+	"github.com/remi-deher/maps-main/engine/internal/build"
 	"github.com/remi-deher/maps-main/engine/internal/cluster"
 	"github.com/remi-deher/maps-main/engine/internal/domain"
 	"github.com/remi-deher/maps-main/engine/internal/driver"
@@ -310,7 +311,7 @@ func New(drv driver.Driver, cfg settings.Settings) *Engine {
 				OS:       runtime.GOOS,
 				IsDocker: isDocker(),
 				Mode:     "Headless",
-				Version:  "0.2.0",
+				Version:  build.Version,
 			},
 		},
 	}
