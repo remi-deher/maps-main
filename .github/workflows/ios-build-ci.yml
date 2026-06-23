@@ -41,7 +41,19 @@ jobs:
           xcodebuild -version
           xcodebuild -showsdks
 
+      - name: Cache XcodeGen
+        id: cache-xcodegen
+        uses: actions/cache@d4373f267a059c997e20073ff9e5b54fe74a2757 # v4.2.0
+        with:
+          path: |
+            /opt/homebrew/Cellar/xcodegen
+            /opt/homebrew/bin/xcodegen
+          key: ${{ runner.os }}-xcodegen-${{ hashFiles('.github/workflows/ios-build-ci.yml') }}
+          restore-keys: |
+            ${{ runner.os }}-xcodegen-
+
       - name: Install XcodeGen
+        if: steps.cache-xcodegen.outputs.cache-hit != 'true'
         run: brew install xcodegen
 
       - name: Generate Xcode project

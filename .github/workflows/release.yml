@@ -273,8 +273,20 @@ jobs:
         with:
           xcode-version: latest-stable
 
-      - name: Install XcodeGen
+      - name: Cache XcodeGen
         if: steps.check-changes.outputs.reused != 'true'
+        id: cache-xcodegen
+        uses: actions/cache@d4373f267a059c997e20073ff9e5b54fe74a2757 # v4.2.0
+        with:
+          path: |
+            /opt/homebrew/Cellar/xcodegen
+            /opt/homebrew/bin/xcodegen
+          key: ${{ runner.os }}-xcodegen-${{ hashFiles('.github/workflows/release.yml') }}
+          restore-keys: |
+            ${{ runner.os }}-xcodegen-
+
+      - name: Install XcodeGen
+        if: steps.check-changes.outputs.reused != 'true' && steps.cache-xcodegen.outputs.cache-hit != 'true'
         run: brew install xcodegen
 
       - name: Generate Xcode project

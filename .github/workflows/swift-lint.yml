@@ -24,12 +24,9 @@ permissions:
 jobs:
   swiftlint:
     name: SwiftLint
-    runs-on: macos-latest
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
 
-      - name: Install SwiftLint
-        run: brew install swiftlint
-
       - name: Run SwiftLint
-        run: swiftlint lint --strict --reporter github-actions-logging
+        run: docker run --rm -v "$PWD:/workspace" -w /workspace ghcr.io/realm/swiftlint:latest swiftlint lint --strict --reporter github-actions-logging
