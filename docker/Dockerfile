@@ -28,20 +28,41 @@ RUN cd engine && CGO_ENABLED=0 go build -tags webui -trimpath -ldflags="-s -w" \
 # Build arguments to customize driver installation
 ARG WITH_GOIOS=1
 ARG GOIOS_VERSION=v1.2.0
+ARG GOIOS_QUIC_GO_VERSION=v0.59.1
+ARG GOIOS_X_CRYPTO_VERSION=v0.53.0
+ARG GOIOS_X_NET_VERSION=v0.56.0
 
-# Compile go-ios from source (enables multi-architecture/platform support, e.g. ARM64)
+# Compile go-ios from source (enables multi-architecture/platform support, e.g. ARM64).
+# go-ios v1.2.0 still pins vulnerable quic-go/x packages; refresh those at
+# build time and apply the tiny quic-go API rename needed by newer releases.
 RUN if [ "$WITH_GOIOS" = "1" ]; then \
-      GOBIN=/out CGO_ENABLED=0 go install github.com/danielpaulus/go-ios@${GOIOS_VERSION} \
-      && mv /out/go-ios /out/ios ; \
+      go mod download github.com/danielpaulus/go-ios@${GOIOS_VERSION} \
+      && tmp="$(mktemp -d)" \
+      && cp -a "$(go env GOMODCACHE)/github.com/danielpaulus/go-ios@${GOIOS_VERSION}/." "$tmp/" \
+      && chmod -R u+w "$tmp" \
+      && cd "$tmp" \
+      && rm -f go.work go.work.sum \
+      && sed -i 's/quic\.Connection/*quic.Conn/g' ios/tunnel/tunnel.go \
+      && go get \
+        github.com/quic-go/quic-go@${GOIOS_QUIC_GO_VERSION} \
+        golang.org/x/crypto@${GOIOS_X_CRYPTO_VERSION} \
+        golang.org/x/net@${GOIOS_X_NET_VERSION} \
+      && go mod tidy \
+      && GOBIN=/out CGO_ENABLED=0 go install . \
+      && mv /out/go-ios /out/ios \
+      && rm -rf "$tmp" ; \
     fi
 
 # --- runtime ---
 FROM debian:bookworm-slim
 
 ARG WITH_PYMOBILEDEVICE=1
+ARG DEBIAN_FRONTEND=noninteractive
 
 # Install system dependencies
-RUN apt-get update && apt-get install -y --no-install-recommends \
+RUN apt-get update \
+ && apt-get upgrade -y \
+ && apt-get install -y --no-install-recommends \
       ca-certificates \
       curl \
       usbmuxd \

@@ -24,7 +24,10 @@ Vous pouvez désactiver l'un des drivers ou changer la version de `go-ios` au mo
 |---|---|---|
 | `WITH_PYMOBILEDEVICE` | Installer Python 3 + `pymobiledevice3` | `1` (Activé) |
 | `WITH_GOIOS` | Compiler et installer `go-ios` | `1` (Activé) |
-| `GOIOS_VERSION` | Version de la release `go-ios` à installer | `v1.0.218` |
+| `GOIOS_VERSION` | Version de la release `go-ios` à installer | `v1.2.0` |
+| `GOIOS_QUIC_GO_VERSION` | Version de `quic-go` forcée pendant le build `go-ios` | `v0.59.1` |
+| `GOIOS_X_CRYPTO_VERSION` | Version de `golang.org/x/crypto` forcée pendant le build `go-ios` | `v0.53.0` |
+| `GOIOS_X_NET_VERSION` | Version de `golang.org/x/net` forcée pendant le build `go-ios` | `v0.56.0` |
 
 Exemple pour construire sans Python/pymobiledevice3 :
 
