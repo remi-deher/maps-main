@@ -33,6 +33,13 @@ const destIcon = L.divIcon({
   iconAnchor: [7, 7],
 });
 
+const realIcon = L.divIcon({
+  html: `<div style="background-color: #ef4444; width: 14px; height: 14px; border-radius: 50%; border: 3px solid #ffffff; box-shadow: 0 0 10px #ef4444;"></div>`,
+  className: "custom-real-icon",
+  iconSize: [14, 14],
+  iconAnchor: [7, 7],
+});
+
 // Helper component to center map on coordinates
 const RecenterMap: React.FC<{ coords: LatLon }> = ({ coords }) => {
   const map = useMap();
@@ -76,6 +83,7 @@ const MapEventsHandler: React.FC<MapEventsHandlerProps> = ({ onMapClick }) => {
 export const InteractiveMap: React.FC = () => {
   const { status, setLocation, playRoute, playSequence, addFavorite, updatePatrolZone, canSend } = useWebSocket();
   const [selectedCoords, setSelectedCoords] = useState<LatLon | null>(null);
+  const [instantTeleport, setInstantTeleport] = useState(false);
   const [favName, setFavName] = useState("");
   const [routeSpeed, setRouteSpeed] = useState(15);
   const [routeProfile, setRouteProfile] = useState<"driving" | "walking" | "cycling">("driving");
@@ -141,6 +149,10 @@ export const InteractiveMap: React.FC = () => {
       const updated = [...drawnPoints, coords];
       setDrawnPoints(updated);
       window.dispatchEvent(new CustomEvent("draw-points-updated", { detail: updated }));
+    } else if (instantTeleport) {
+      if (canSend) {
+        setLocation(coords.lat, coords.lon, "Téléportation directe");
+      }
     } else {
       setSelectedCoords(coords);
     }
@@ -264,6 +276,35 @@ export const InteractiveMap: React.FC = () => {
                 </div>
               </div>
             )}
+            
+            {status.lastRealLocation && status.lastRealLocation.lat !== 0 && (
+              <>
+                <div className="widget-row" style={{ borderTop: "1px solid rgba(255,255,255,0.1)", paddingTop: "8px", marginTop: "4px" }}>
+                  <span className="label" style={{ color: "#ef4444" }}>Position réelle :</span>
+                  <span className="value coords" style={{ color: "#fca5a5" }}>
+                    {status.lastRealLocation.lat.toFixed(5)}, {status.lastRealLocation.lon.toFixed(5)}
+                  </span>
+                </div>
+                <div className="widget-row">
+                  <span className="label" style={{ color: "#ef4444" }}>Dérive :</span>
+                  <span className="value" style={{ color: status.lastRealLocation.drift && status.lastRealLocation.drift > 100 ? "#ef4444" : "#10b981", fontWeight: "bold" }}>
+                    {Math.round(status.lastRealLocation.drift ?? 0)} m
+                  </span>
+                </div>
+              </>
+            )}
+
+            <div className="widget-row" style={{ borderTop: "1px solid rgba(255,255,255,0.1)", paddingTop: "8px", marginTop: "4px" }}>
+              <label style={{ display: "flex", alignItems: "center", gap: "8px", cursor: "pointer", width: "100%", fontSize: "0.8rem", color: "#e2e8f0" }}>
+                <input
+                  type="checkbox"
+                  checked={instantTeleport}
+                  onChange={(e) => setInstantTeleport(e.target.checked)}
+                  style={{ cursor: "pointer" }}
+                />
+                Injection directe (1 clic)
+              </label>
+            </div>
           </div>
         </div>
       )}
@@ -290,6 +331,37 @@ export const InteractiveMap: React.FC = () => {
               </div>
             </Popup>
           </Marker>
+        )}
+
+        {/* Real Device Location Marker */}
+        {status?.lastRealLocation && status.lastRealLocation.lat !== 0 && (
+          <Marker position={[status.lastRealLocation.lat, status.lastRealLocation.lon]} icon={realIcon}>
+            <Popup>
+              <div style={{ color: "#334155" }}>
+                <strong>Position réelle (iPhone)</strong>
+                <br />
+                Lat: {status.lastRealLocation.lat.toFixed(6)}
+                <br />
+                Lon: {status.lastRealLocation.lon.toFixed(6)}
+                <br />
+                Dérive : {Math.round(status.lastRealLocation.drift || 0)} m
+              </div>
+            </Popup>
+          </Marker>
+        )}
+
+        {/* Polyline showing drift/distance between simulated and real location */}
+        {status?.lastRealLocation && status.lastRealLocation.lat !== 0 && currentPos.lat !== 0 && (
+          <Polyline
+            positions={[
+              [currentPos.lat, currentPos.lon],
+              [status.lastRealLocation.lat, status.lastRealLocation.lon],
+            ]}
+            color="#ef4444"
+            weight={3}
+            opacity={0.8}
+            dashArray="6, 6"
+          />
         )}
 
         {/* Selected target marker (on click) */}
