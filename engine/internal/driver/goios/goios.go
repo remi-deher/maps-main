@@ -27,6 +27,7 @@ type Driver struct {
 	lockdownArgs       []string
 	manual             string // optional "host:port" RSD endpoint (WiFi transport)
 	tunnelStartTimeout time.Duration
+	udid               string
 
 	mount driver.TunnelMount
 }
@@ -44,7 +45,7 @@ func New(cfg driver.Config) (driver.Driver, error) {
 	if timeout <= 0 {
 		timeout = defaultTunnelStartTimeout
 	}
-	return &Driver{bin: bin, binPaths: cfg.BinaryPaths, lockdownArgs: lock, manual: cfg.ManualAddress, tunnelStartTimeout: timeout}, nil
+	return &Driver{bin: bin, binPaths: cfg.BinaryPaths, lockdownArgs: lock, manual: cfg.ManualAddress, tunnelStartTimeout: timeout, udid: ""}, nil
 }
 
 // binPath returns the go-ios CLI path, resolving it lazily if New couldn't.
@@ -98,6 +99,8 @@ func (d *Driver) DeviceDetails(ctx context.Context) (driver.DeviceDetails, error
 		return driver.DeviceDetails{}, fmt.Errorf("go-ios info: invalid JSON: %w", err)
 	}
 
+	d.udid = udid
+
 	details := driver.DeviceDetails{
 		UDID:           udid,
 		Name:           stringField(raw, "DeviceName"),
@@ -110,6 +113,17 @@ func (d *Driver) DeviceDetails(ctx context.Context) (driver.DeviceDetails, error
 		details.TunnelAddress = ti.Address
 	}
 	return details, nil
+}
+
+func (d *Driver) getUDID(ctx context.Context) string {
+	if d.udid != "" {
+		return d.udid
+	}
+	devices, err := d.ListDevices(ctx)
+	if err == nil && len(devices) > 0 {
+		d.udid = devices[0].UDID
+	}
+	return d.udid
 }
 
 func stringField(raw map[string]any, key string) string {

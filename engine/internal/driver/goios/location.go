@@ -17,13 +17,17 @@ func (d *Driver) SetLocation(ctx context.Context, lat, lon float64) error {
 	if !ok {
 		return fmt.Errorf("go-ios: tunnel not started")
 	}
-	return d.run(ctx,
+	args := []string{
 		"setlocation",
-		"--address="+ti.Address,
-		"--rsd-port="+strconv.Itoa(ti.Port),
-		"--lat="+ftoa(lat),
-		"--lon="+ftoa(lon),
-	)
+		"--address=" + ti.Address,
+		"--rsd-port=" + strconv.Itoa(ti.Port),
+		"--lat=" + ftoa(lat),
+		"--lon=" + ftoa(lon),
+	}
+	if udid := d.getUDID(ctx); udid != "" {
+		args = append(args, "--udid="+udid)
+	}
+	return d.run(ctx, args...)
 }
 
 // ClearLocation removes any spoofed position (`ios resetlocation`).
@@ -32,11 +36,15 @@ func (d *Driver) ClearLocation(ctx context.Context) error {
 	if !ok {
 		return fmt.Errorf("go-ios: tunnel not started")
 	}
-	return d.run(ctx,
+	args := []string{
 		"resetlocation",
-		"--address="+ti.Address,
-		"--rsd-port="+strconv.Itoa(ti.Port),
-	)
+		"--address=" + ti.Address,
+		"--rsd-port=" + strconv.Itoa(ti.Port),
+	}
+	if udid := d.getUDID(ctx); udid != "" {
+		args = append(args, "--udid="+udid)
+	}
+	return d.run(ctx, args...)
 }
 
 func (d *Driver) run(ctx context.Context, args ...string) error {

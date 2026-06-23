@@ -4,8 +4,14 @@ import json
 import sys
 
 from pymobiledevice3.remote.remote_service_discovery import RemoteServiceDiscoveryService
-from pymobiledevice3.services.dvt.dvt_secure_socket_proxy import DvtSecureSocketProxyService
 from pymobiledevice3.services.dvt.instruments.location_simulation import LocationSimulation
+
+try:
+    from pymobiledevice3.services.dvt.dvt_secure_socket_proxy import DvtSecureSocketProxyService
+    USE_LEGACY_DVT = True
+except ImportError:
+    from pymobiledevice3.services.dvt.instruments.dvt_provider import DvtProvider as DvtSecureSocketProxyService
+    USE_LEGACY_DVT = False
 
 
 async def maybe_await(value):
@@ -19,6 +25,33 @@ def write(payload):
     sys.stdout.flush()
 
 
+async def run_simulation(dvt):
+    location = LocationSimulation(dvt)
+    write({"ok": True, "ready": True})
+
+    for line in sys.stdin:
+        line = line.strip()
+        if not line:
+            continue
+
+        try:
+            request = json.loads(line)
+            action = request.get("action")
+            if action == "set":
+                await maybe_await(location.set(float(request["lat"]), float(request["lon"])))
+                write({"ok": True})
+            elif action == "clear":
+                await maybe_await(location.clear())
+                write({"ok": True})
+            elif action == "stop":
+                write({"ok": True})
+                return
+            else:
+                write({"ok": False, "error": f"unknown action: {action}"})
+        except Exception as exc:
+            write({"ok": False, "error": str(exc)})
+
+
 async def main():
     if len(sys.argv) != 3:
         raise SystemExit("usage: location_worker.py <rsd-address> <rsd-port>")
@@ -30,31 +63,12 @@ async def main():
     await maybe_await(rsd.connect())
 
     try:
-        with DvtSecureSocketProxyService(rsd) as dvt:
-            location = LocationSimulation(dvt)
-            write({"ok": True, "ready": True})
-
-            for line in sys.stdin:
-                line = line.strip()
-                if not line:
-                    continue
-
-                try:
-                    request = json.loads(line)
-                    action = request.get("action")
-                    if action == "set":
-                        await maybe_await(location.set(float(request["lat"]), float(request["lon"])))
-                        write({"ok": True})
-                    elif action == "clear":
-                        await maybe_await(location.clear())
-                        write({"ok": True})
-                    elif action == "stop":
-                        write({"ok": True})
-                        return
-                    else:
-                        write({"ok": False, "error": f"unknown action: {action}"})
-                except Exception as exc:
-                    write({"ok": False, "error": str(exc)})
+        if USE_LEGACY_DVT:
+            with DvtSecureSocketProxyService(rsd) as dvt:
+                await run_simulation(dvt)
+        else:
+            async with DvtSecureSocketProxyService(rsd) as dvt:
+                await run_simulation(dvt)
     finally:
         close = getattr(rsd, "close", None)
         if close is not None:

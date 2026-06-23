@@ -20,6 +20,9 @@ func (d *Driver) StartTunnel(ctx context.Context) (driver.TunnelInfo, error) {
 	if d.tunnelStartTimeout <= 0 {
 		d.tunnelStartTimeout = defaultTunnelStartTimeout
 	}
+	// Try to resolve UDID before starting tunnel
+	_ = d.getUDID(ctx)
+
 	return d.mount.Start(ctx, driver.TunnelMountConfig{
 		DriverName:    "go-ios",
 		StartLabel:    "tunnel start",
@@ -33,6 +36,9 @@ func (d *Driver) StartTunnel(ctx context.Context) (driver.TunnelInfo, error) {
 				return nil, err
 			}
 			args := append([]string{"tunnel", "start"}, d.lockdownArgs...)
+			if d.udid != "" {
+				args = append(args, "--udid="+d.udid)
+			}
 			return execCommand(bin, args...), nil
 		},
 		Resolve: d.queryTunnel,
