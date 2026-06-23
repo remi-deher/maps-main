@@ -188,6 +188,7 @@ func (e *Engine) SwitchDriver(ctx context.Context, driverID, transport string) e
 	}
 
 	cfg := base
+	//nolint:staticcheck
 	switch transport {
 	case "usb":
 		cfg.Transport = driver.TransportUSB

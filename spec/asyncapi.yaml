@@ -135,7 +135,14 @@ components:
     SWITCH_DRIVER:
       payload: { $ref: "#/components/schemas/Envelope_SwitchDriver" }
     LOG:
-      payload: { $ref: "#/components/schemas/Envelope_Log" }
+      payload:
+        $ref: "#/components/schemas/Envelope_Log"
+    DIAGNOSTICS:
+      payload:
+        $ref: "#/components/schemas/Envelope_Diagnostics"
+    GET_DIAGNOSTICS:
+      payload:
+        $ref: "#/components/schemas/Envelope_GetDiagnostics" }
     LOGS:
       payload: { $ref: "#/components/schemas/Envelope_Logs" }
     DEVICE_INFO:
@@ -419,10 +426,23 @@ components:
           type: object
           properties:
             driverId: { type: string }
-            transport: { type: string, enum: [auto, usb, wifi] }
+            //nolint:staticcheck
+            switch transport: { type: string, enum: [auto, usb, wifi] }
           required: [driverId]
       required: [type, data]
 
+    Envelope_Diagnostics:
+      type: object
+      properties:
+        type: { type: string }
+        data: { type: object }
+      required: [type]
+    Envelope_GetDiagnostics:
+      type: object
+      properties:
+        type: { const: GET_DIAGNOSTICS }
+        data: { type: object }
+      required: [type]
     Envelope_Log:
       type: object
       properties:
