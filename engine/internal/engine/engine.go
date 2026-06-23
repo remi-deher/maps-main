@@ -188,7 +188,6 @@ func (e *Engine) SwitchDriver(ctx context.Context, driverID, transport string) e
 	}
 
 	cfg := base
-	//nolint:staticcheck
 	switch transport {
 	case "usb":
 		cfg.Transport = driver.TransportUSB
@@ -215,11 +214,12 @@ func (e *Engine) SwitchDriver(ctx context.Context, driverID, transport string) e
 	e.st.State = "idle"
 	e.st.DeviceInfo = nil
 	driverIdVal := domain.DriverID(driverID)
-	if transport == "usb" {
+	switch transport {
+	case "usb":
 		e.st.UsbDriver = driverIdVal
-	} else if transport == "wifi" {
+	case "wifi":
 		e.st.WifiDriver = driverIdVal
-	} else {
+	default:
 		e.st.UsbDriver = driverIdVal
 		e.st.WifiDriver = driverIdVal
 	}
