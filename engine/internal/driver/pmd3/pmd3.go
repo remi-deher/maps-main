@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"os/exec"
+	"sync"
 	"time"
 
 	"github.com/remi-deher/maps-main/engine/internal/domain"
@@ -28,7 +29,9 @@ type Driver struct {
 	tunnelStartTimeout time.Duration
 	tunneldURL         string // tunneld REST API base ("" => defaultTunneldURL); overridable in tests
 
-	mount driver.TunnelMount
+	mount    driver.TunnelMount
+	location *locationSession
+	locMu    sync.Mutex
 }
 
 // New builds a pmd3 Driver. It does NOT fail when Python can't be found: the

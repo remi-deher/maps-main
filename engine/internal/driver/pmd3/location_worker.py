@@ -1,0 +1,69 @@
+import asyncio
+import inspect
+import json
+import sys
+
+from pymobiledevice3.remote.remote_service_discovery import RemoteServiceDiscoveryService
+from pymobiledevice3.services.dvt.dvt_secure_socket_proxy import DvtSecureSocketProxyService
+from pymobiledevice3.services.dvt.instruments.location_simulation import LocationSimulation
+
+
+async def maybe_await(value):
+    if inspect.isawaitable(value):
+        return await value
+    return value
+
+
+def write(payload):
+    sys.stdout.write(json.dumps(payload, separators=(",", ":")) + "\n")
+    sys.stdout.flush()
+
+
+async def main():
+    if len(sys.argv) != 3:
+        raise SystemExit("usage: location_worker.py <rsd-address> <rsd-port>")
+
+    address = sys.argv[1]
+    port = int(sys.argv[2])
+
+    rsd = RemoteServiceDiscoveryService((address, port))
+    await maybe_await(rsd.connect())
+
+    try:
+        with DvtSecureSocketProxyService(rsd) as dvt:
+            location = LocationSimulation(dvt)
+            write({"ok": True, "ready": True})
+
+            for line in sys.stdin:
+                line = line.strip()
+                if not line:
+                    continue
+
+                try:
+                    request = json.loads(line)
+                    action = request.get("action")
+                    if action == "set":
+                        await maybe_await(location.set(float(request["lat"]), float(request["lon"])))
+                        write({"ok": True})
+                    elif action == "clear":
+                        await maybe_await(location.clear())
+                        write({"ok": True})
+                    elif action == "stop":
+                        write({"ok": True})
+                        return
+                    else:
+                        write({"ok": False, "error": f"unknown action: {action}"})
+                except Exception as exc:
+                    write({"ok": False, "error": str(exc)})
+    finally:
+        close = getattr(rsd, "close", None)
+        if close is not None:
+            await maybe_await(close())
+
+
+if __name__ == "__main__":
+    try:
+        asyncio.run(main())
+    except Exception as exc:
+        write({"ok": False, "error": str(exc)})
+        raise

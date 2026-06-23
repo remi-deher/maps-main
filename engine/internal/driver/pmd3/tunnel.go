@@ -48,6 +48,9 @@ func (d *Driver) StartTunnel(ctx context.Context) (driver.TunnelInfo, error) {
 }
 
 func (d *Driver) StopTunnel(ctx context.Context) error {
+	if err := d.stopLocationSession(ctx); err != nil {
+		return err
+	}
 	return d.mount.Stop(ctx)
 }
 

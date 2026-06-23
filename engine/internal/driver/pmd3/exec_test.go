@@ -7,7 +7,9 @@ package pmd3
 // tests use.
 
 import (
+	"bufio"
 	"context"
+	"encoding/json"
 	"fmt"
 	"net"
 	"net/http"
@@ -67,6 +69,12 @@ func TestHelperProcess(t *testing.T) {
 	// simulate-location, run under the same "tunnel-daemon" scenario in an
 	// end-to-end test) must return immediately.
 	isTunneld := len(args) >= 3 && args[1] == "remote" && args[2] == "tunneld"
+	isLocationWorker := len(args) >= 4 && args[1] == "-u" && args[2] == "-c"
+
+	if isLocationWorker {
+		runLocationWorkerHelper()
+		return
+	}
 
 	switch scenario {
 	case "tunnel-daemon":
@@ -83,6 +91,39 @@ func TestHelperProcess(t *testing.T) {
 	default:
 		os.Exit(0)
 	}
+}
+
+func runLocationWorkerHelper() {
+	fmt.Println(`{"ok":true,"ready":true}`)
+	sc := bufio.NewScanner(os.Stdin)
+	for sc.Scan() {
+		line := sc.Text()
+		if f := os.Getenv("FAKE_LOCATION_FILE"); f != "" {
+			_ = appendLine(f, line)
+		}
+		var req struct {
+			Action string `json:"action"`
+		}
+		_ = json.Unmarshal([]byte(line), &req)
+		if req.Action == os.Getenv("FAKE_LOCATION_FAIL_ACTION") {
+			fmt.Println(`{"ok":false,"error":"simulated worker failure"}`)
+			continue
+		}
+		fmt.Println(`{"ok":true}`)
+		if req.Action == "stop" {
+			return
+		}
+	}
+}
+
+func appendLine(path, line string) error {
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = f.Close() }()
+	_, err = f.WriteString(line + "\n")
+	return err
 }
 
 // tunneldServer spins up a fake tunneld REST API returning the given JSON body.
@@ -167,7 +208,7 @@ func TestListDevicesCommandFailureIsAnError(t *testing.T) {
 	}
 }
 
-func TestSetLocationRunsRealCommand(t *testing.T) {
+func TestSetLocationUsesPersistentWorker(t *testing.T) {
 	withFakeExec(t, "cmd-ok")
 	d := &Driver{py: "fake-python", base: []string{}}
 	d.mount.SetActive(driver.TunnelInfo{Address: "10.0.0.1", Port: 1234}, "")
@@ -175,64 +216,62 @@ func TestSetLocationRunsRealCommand(t *testing.T) {
 	if err := d.SetLocation(context.Background(), 48.8566, 2.3522); err != nil {
 		t.Errorf("SetLocation: %v", err)
 	}
+	t.Cleanup(func() { _ = d.stopLocationSession(context.Background()) })
+	first := d.location
+	if first == nil {
+		t.Fatal("expected a persistent location worker")
+	}
+	if err := d.SetLocation(context.Background(), 40.6892, -74.0445); err != nil {
+		t.Errorf("second SetLocation: %v", err)
+	}
+	if d.location != first {
+		t.Error("expected second SetLocation to reuse the same worker")
+	}
 }
 
-func TestSetLocationSurfacesCommandFailure(t *testing.T) {
-	withFakeExec(t, "cmd-fail")
+func TestSetLocationSurfacesWorkerFailure(t *testing.T) {
+	t.Setenv("FAKE_LOCATION_FAIL_ACTION", "set")
+	withFakeExec(t, "cmd-ok")
 	d := &Driver{py: "fake-python", base: []string{}}
 	d.mount.SetActive(driver.TunnelInfo{Address: "10.0.0.1", Port: 1234}, "")
+	t.Cleanup(func() { _ = d.stopLocationSession(context.Background()) })
 
-	if err := d.SetLocation(context.Background(), 48.8566, 2.3522); err == nil {
-		t.Error("expected an error when the underlying simulate-location command fails")
+	err := d.SetLocation(context.Background(), 48.8566, 2.3522)
+	if err == nil || !strings.Contains(err.Error(), "simulated worker failure") {
+		t.Fatalf("SetLocation error = %v, want simulated worker failure", err)
 	}
 }
 
-// echoArgs runs op against a driver wired to the echo-args fake and returns the
-// exact CLI args the driver built (everything after the bin name).
-func echoArgs(t *testing.T, op func() error) string {
-	t.Helper()
-	argsFile := filepath.Join(t.TempDir(), "args.txt")
-	t.Setenv("FAKE_ARGS_FILE", argsFile)
-	withFakeExec(t, "echo-args")
-	if err := op(); err != nil {
-		t.Fatalf("op: %v", err)
-	}
-	b, err := os.ReadFile(argsFile)
-	if err != nil {
-		t.Fatalf("read args file: %v", err)
-	}
-	return string(b)
-}
+func TestLocationWorkerReceivesSetClearStopProtocol(t *testing.T) {
+	commandsFile := filepath.Join(t.TempDir(), "commands.jsonl")
+	t.Setenv("FAKE_LOCATION_FILE", commandsFile)
+	withFakeExec(t, "cmd-ok")
 
-func TestSetLocationBuildsCorrectCommand(t *testing.T) {
 	d := &Driver{py: "fake-python", base: []string{}}
 	d.mount.SetActive(driver.TunnelInfo{Address: "fde6:1234::1", Port: 54321}, "")
 
-	got := echoArgs(t, func() error {
-		return d.SetLocation(context.Background(), 48.8566, 2.3522)
-	})
-	for _, want := range []string{
-		"developer dvt simulate-location set",
-		"--rsd fde6:1234::1 54321",
-		"-- 48.8566 2.3522",
-	} {
-		if !strings.Contains(got, want) {
-			t.Errorf("simulate-location args %q missing %q", got, want)
+	if err := d.SetLocation(context.Background(), 48.8566, 2.3522); err != nil {
+		t.Fatalf("SetLocation: %v", err)
+	}
+	if err := d.SetLocation(context.Background(), 40.6892, -74.0445); err != nil {
+		t.Fatalf("second SetLocation: %v", err)
+	}
+	if err := d.ClearLocation(context.Background()); err != nil {
+		t.Fatalf("ClearLocation: %v", err)
+	}
+
+	got := readLines(t, commandsFile)
+	wantActions := []string{"set", "set", "clear", "stop"}
+	if len(got) != len(wantActions) {
+		t.Fatalf("commands = %v, want %d commands", got, len(wantActions))
+	}
+	for i, want := range wantActions {
+		if !strings.Contains(got[i], `"action":"`+want+`"`) {
+			t.Errorf("command[%d] = %q, want action %q", i, got[i], want)
 		}
 	}
-}
-
-func TestClearLocationBuildsClearCommand(t *testing.T) {
-	d := &Driver{py: "fake-python", base: []string{}}
-	d.mount.SetActive(driver.TunnelInfo{Address: "fde6:1234::1", Port: 54321}, "")
-
-	got := echoArgs(t, func() error {
-		return d.ClearLocation(context.Background())
-	})
-	for _, want := range []string{"developer dvt simulate-location clear", "--rsd fde6:1234::1 54321"} {
-		if !strings.Contains(got, want) {
-			t.Errorf("simulate-location clear args %q missing %q", got, want)
-		}
+	if !strings.Contains(got[0], `"lat":48.8566`) || !strings.Contains(got[0], `"lon":2.3522`) {
+		t.Errorf("first set command = %q, want Paris coordinates", got[0])
 	}
 }
 
@@ -331,4 +370,19 @@ func TestCheckHealthFailsAgainstClosedPort(t *testing.T) {
 	if d.CheckHealth(context.Background()) {
 		t.Error("expected CheckHealth to fail against a closed port")
 	}
+}
+
+func readLines(t *testing.T, path string) []string {
+	t.Helper()
+	b, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read %s: %v", path, err)
+	}
+	var lines []string
+	for _, line := range strings.Split(strings.TrimSpace(string(b)), "\n") {
+		if line != "" {
+			lines = append(lines, line)
+		}
+	}
+	return lines
 }
