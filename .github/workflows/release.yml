@@ -6,6 +6,10 @@ on:
     tags:
       - 'v*'
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
 
@@ -175,6 +179,11 @@ jobs:
           cache-dependency-path: tauri-app/package-lock.json
 
       - uses: dtolnay/rust-toolchain@stable
+
+      - name: Rust Cache
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: tauri-app/src-tauri -> target
 
       - name: Install frontend dependencies
         working-directory: tauri-app
