@@ -45,6 +45,7 @@ struct SettingsSheet: View {
 
     @Environment(\.dismiss) var dismiss
 
+    // swiftlint:disable:next cyclomatic_complexity
     var body: some View {
         NavigationStack {
             List {
