@@ -140,13 +140,13 @@ func (m *TunnelMount) Start(ctx context.Context, cfg TunnelMountConfig) (TunnelI
 			}
 			return TunnelInfo{}, fmt.Errorf("%s: %s exited before a tunnel was established: %w", cfg.DriverName, cfg.DaemonLabel, err)
 		case <-deadline:
-			killProcess(cmd)
+			_ = killProcess(cmd)
 			if out := tailSnapshot(); out != "" {
 				return TunnelInfo{}, fmt.Errorf("%s: tunnel not established within %s, last output:\n%s", cfg.DriverName, cfg.StartTimeout, out)
 			}
 			return TunnelInfo{}, fmt.Errorf("%s: tunnel not established within %s", cfg.DriverName, cfg.StartTimeout)
 		case <-ctx.Done():
-			killProcess(cmd)
+			_ = killProcess(cmd)
 			return TunnelInfo{}, ctx.Err()
 		case <-ticker.C:
 		}
