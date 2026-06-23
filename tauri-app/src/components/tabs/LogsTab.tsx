@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from "react";
-import { ListFilter, RotateCw, ScrollText } from "lucide-react";
+import { Clipboard, ListFilter, RotateCw, ScrollText, X } from "lucide-react";
 import { LogEntry, useWebSocket } from "../../context/websocket";
 
 type LevelFilter = "all" | "info" | "warn" | "error";
@@ -51,6 +51,22 @@ export const LogsTab: React.FC = () => {
       .reverse();
   }, [action, category, level, logs, query, source]);
 
+  const resetFilters = () => {
+    setLevel("all");
+    setSource("all");
+    setCategory("all");
+    setAction("all");
+    setQuery("");
+  };
+
+  const copyFilteredLogs = async () => {
+    const text = filteredLogs.map((entry) => {
+      const meta = [entry.level, entry.source, entry.category, entry.action].filter(Boolean).join(" ");
+      return `${formatTime(entry.timestamp)} ${meta} ${entry.message} ${fieldsText(entry)}`.trim();
+    }).join("\n");
+    await navigator.clipboard?.writeText(text);
+  };
+
   return (
     <div className="logs-panel">
       <div className="logs-toolbar">
@@ -59,9 +75,17 @@ export const LogsTab: React.FC = () => {
           <span>Journaux</span>
           <b>{filteredLogs.length}</b>
         </div>
-        <button className="icon-btn" type="button" onClick={() => sendMessage("GET_LOGS")} disabled={!canSend} title="Rafraîchir">
-          <RotateCw size={16} />
-        </button>
+        <div className="logs-actions">
+          <button className="icon-btn" type="button" onClick={copyFilteredLogs} disabled={filteredLogs.length === 0} title="Copier">
+            <Clipboard size={16} />
+          </button>
+          <button className="icon-btn" type="button" onClick={resetFilters} title="Réinitialiser les filtres">
+            <X size={16} />
+          </button>
+          <button className="icon-btn" type="button" onClick={() => sendMessage("GET_LOGS")} disabled={!canSend} title="Rafraîchir">
+            <RotateCw size={16} />
+          </button>
+        </div>
       </div>
 
       <div className="logs-filter-grid">

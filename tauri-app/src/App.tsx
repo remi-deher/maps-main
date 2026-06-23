@@ -8,10 +8,10 @@ function App() {
   return (
     <WebSocketProvider>
       <div className="app-container">
-        {/* Fullscreen Interactive Leaflet Map */}
+        {/* Fullscreen interactive Leaflet map */}
         <InteractiveMap />
 
-        {/* Floating Glassmorphic Sidebar panel */}
+        {/* App shell: navigation rail + active work panel */}
         <Sidebar />
 
         {/* Engine LOG/LOGS warn/error events, surfaced app-wide */}

@@ -53,16 +53,6 @@ struct BottomSheet: View {
 
     var onOpenSettings: () -> Void
 
-    /// Live engine link state + anti-drift drift, surfaced as a discreet
-    /// banner right under the search capsule instead of being buried in
-    /// Réglages › Connexion (§3.9 of docs/UI_UX_BASELINE.md). The banner only
-    /// appears when there's something worth saying — link lost/connecting, or
-    /// the spoof has drifted past the warning threshold — so the happy,
-    /// connected-and-steady case stays just the search bar.
-    let connectionState: EngineConnectionState
-    let driftMeters: Double?
-    var onConnect: () -> Void
-
     /// The sheet's current detent — used to keep the collapsed state to
     /// *just* the search capsule, like Plans. Everything else (favorites,
     /// results, itinerary, place card...) only appears once the sheet is
@@ -86,23 +76,16 @@ struct BottomSheet: View {
 
     /// Fallback used only until the header's first layout pass reports its
     /// real height — never the value actually rendered against.
-    static let collapsedHeight: CGFloat = 120
+    static let collapsedHeight: CGFloat = 76
 
     var body: some View {
         VStack(spacing: 14) {
-            // Header + status banner form the always-visible top region, even
-            // when collapsed — so a dropped link is never hidden behind a
-            // collapsed handle. Both are measured together so the collapsed
-            // detent grows/shrinks to fit the banner as it appears/disappears.
-            VStack(spacing: 10) {
-                header
-                statusBanner
-            }
-            .background(
-                GeometryReader { proxy in
-                    Color.clear.preference(key: HeaderHeightKey.self, value: proxy.size.height)
-                }
-            )
+            header
+                .background(
+                    GeometryReader { proxy in
+                        Color.clear.preference(key: HeaderHeightKey.self, value: proxy.size.height)
+                    }
+                )
 
             if !isCollapsed {
                 ScrollView {
@@ -111,65 +94,11 @@ struct BottomSheet: View {
                 }
             }
         }
-        .padding(.top, 8)
         .onPreferenceChange(HeaderHeightKey.self) { measured in
-            let height = measured + 8
-            if abs(height - collapsedHeight) > 0.5 {
-                onCollapsedHeightChange(height)
+            if abs(measured - collapsedHeight) > 0.5 {
+                onCollapsedHeightChange(measured)
             }
         }
-    }
-
-    /// Threshold past which the anti-drift gap is worth warning about — matches
-    /// the orange cutoff already used in Réglages › Connexion's drift row.
-    private static let driftWarningThreshold: Double = 100
-
-    /// Nothing while connected and steady; a link-state banner when the engine
-    /// isn't connected; a drift warning when connected but the spoof has
-    /// wandered too far from the device's real position.
-    @ViewBuilder
-    private var statusBanner: some View {
-        switch connectionState {
-        case .connected:
-            if let drift = driftMeters, drift > Self.driftWarningThreshold {
-                bannerRow(
-                    icon: "scope",
-                    tint: .orange,
-                    title: "Dérive élevée : \(Int(drift)) m",
-                    action: nil
-                )
-            }
-        case .connecting:
-            bannerRow(icon: "antenna.radiowaves.left.and.right", tint: .secondary, title: "Connexion au moteur…", action: nil)
-        case .reconnecting:
-            bannerRow(icon: "antenna.radiowaves.left.and.right", tint: .orange, title: "Reconnexion au moteur…", action: nil)
-        case .disconnected:
-            bannerRow(icon: "bolt.horizontal.circle", tint: .orange, title: "Moteur déconnecté", action: ("Connecter", onConnect))
-        }
-    }
-
-    /// One discreet glass row: a tinted status icon, a label, and an optional
-    /// trailing action button (e.g. "Connecter"). Kept compact since it shares
-    /// the always-visible top region with the search capsule.
-    @ViewBuilder
-    private func bannerRow(icon: String, tint: Color, title: String, action: (label: String, run: () -> Void)?) -> some View {
-        HStack(spacing: 10) {
-            Image(systemName: icon)
-                .foregroundStyle(tint)
-            Text(title)
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-            Spacer()
-            if let action {
-                Button(action.label, action: action.run)
-                    .font(.subheadline.weight(.semibold))
-                    .buttonStyle(.glass)
-            }
-        }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 10)
-        .adaptiveGlassEffect(in: RoundedRectangle(cornerRadius: 20, style: .continuous))
-        .padding(.horizontal, 16)
     }
 
     /// The sheet's expanded content — exactly one of the place card, search
@@ -335,6 +264,7 @@ struct BottomSheet: View {
         .padding(.vertical, 10)
         .glassEffect(.regular.interactive(), in: .capsule)
         .padding(.horizontal, 16)
+        .padding(.vertical, 8)
     }
 
     /// The gear ⇄ ✕ control. The symbol swaps in place (`.replace`) so it

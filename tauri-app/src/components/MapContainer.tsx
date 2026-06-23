@@ -27,7 +27,7 @@ const mockIcon = L.divIcon({
 });
 
 const destIcon = L.divIcon({
-  html: `<div style="background-color: #6366f1; width: 14px; height: 14px; border-radius: 50%; border: 3px solid #ffffff; box-shadow: 0 0 10px #6366f1;"></div>`,
+  html: `<div style="background-color: #0ea5e9; width: 14px; height: 14px; border-radius: 50%; border: 3px solid #ffffff; box-shadow: 0 0 10px #0ea5e9;"></div>`,
   className: "custom-dest-icon",
   iconSize: [14, 14],
   iconAnchor: [7, 7],
@@ -329,7 +329,7 @@ export const InteractiveMap: React.FC = () => {
                       flex: 1,
                       padding: "4px 8px",
                       fontSize: "0.8rem",
-                      background: "#6366f1",
+                      background: "#0f766e",
                       color: "#fff",
                       border: "none",
                       borderRadius: "4px",
@@ -455,19 +455,19 @@ export const InteractiveMap: React.FC = () => {
 
         {/* Display sequence preview lines */}
         {sequencePoints.length > 0 && (
-          <Polyline positions={sequencePoints} color="#6366f1" weight={4} opacity={0.7} dashArray="5, 10" />
+          <Polyline positions={sequencePoints} color="#0f766e" weight={4} opacity={0.75} dashArray="5, 10" />
         )}
 
         {/* Display user drawn route lines */}
         {drawLinePoints.length > 0 && (
           <>
-            <Polyline positions={drawLinePoints} color="#a855f7" weight={4} opacity={0.8} />
+            <Polyline positions={drawLinePoints} color="#0ea5e9" weight={4} opacity={0.8} />
             {drawnPoints.map((p, idx) => (
               <Marker
                 key={idx}
                 position={[p.lat, p.lon]}
                 icon={L.divIcon({
-                  html: `<div style="background-color: #a855f7; width: 10px; height: 10px; border-radius: 50%; border: 2px solid #ffffff; box-shadow: 0 0 6px #a855f7;"></div>`,
+                  html: `<div style="background-color: #0ea5e9; width: 10px; height: 10px; border-radius: 50%; border: 2px solid #ffffff; box-shadow: 0 0 6px #0ea5e9;"></div>`,
                   className: "custom-draw-dot",
                   iconSize: [10, 10],
                   iconAnchor: [5, 5],
@@ -480,4 +480,3 @@ export const InteractiveMap: React.FC = () => {
     </div>
   );
 };
-
