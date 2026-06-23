@@ -113,9 +113,9 @@ struct DiagnosticsView: View {
         }
     }
 
-    private func latencyColor(_ ms: Double) -> Color {
-        if ms < 50 { return .green }
-        if ms < 200 { return .orange }
+    private func latencyColor(_ milliseconds: Double) -> Color {
+        if milliseconds < 50 { return .green }
+        if milliseconds < 200 { return .orange }
         return .red
     }
 

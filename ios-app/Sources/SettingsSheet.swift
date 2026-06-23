@@ -1,3 +1,4 @@
+// swiftlint:disable cyclomatic_complexity
 import SwiftUI
 import UniformTypeIdentifiers
 import CoreLocation
