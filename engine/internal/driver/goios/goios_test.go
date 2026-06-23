@@ -85,6 +85,12 @@ func TestParseTunnelList(t *testing.T) {
 			in:       "{\"time\":\"...\",\"msg\":\"no udid\"}\n[{\"address\":\"fdd7:4d14:2781::1\",\"rsdPort\":65032,\"udid\":\"u-1\",\"userspaceTun\":false}]",
 			wantAddr: "fdd7:4d14:2781::1", wantPort: 65032, wantUDID: "u-1",
 		},
+		{
+			name: "powershell native command noise with empty array first",
+			in: "[]\nRemoteException\n    + FullyQualifiedErrorId : NativeCommandError\n\n" +
+				"[{\"address\":\"fd17:5500:62d2::1\",\"rsdPort\":65047,\"udid\":\"u-2\",\"userspaceTun\":false,\"userspaceTunPort\":0}]",
+			wantAddr: "fd17:5500:62d2::1", wantPort: 65047, wantUDID: "u-2",
+		},
 		{name: "empty array", in: `[]`, wantEmpty: true},
 		{name: "not json", in: `garbage`, wantEmpty: true},
 	}

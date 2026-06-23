@@ -17,20 +17,33 @@ type tunnelEntry struct {
 }
 
 // parseTunnelList decodes `ios tunnel ls` output. go-ios writes its slog lines
-// to stderr and the JSON array to stdout, but we still scan line-by-line for
-// the array so stray log lines on stdout don't break decoding.
+// to stderr and the JSON array to stdout, but PowerShell can also interleave
+// NativeCommandError text and multiple arrays (for example an empty [] before
+// the usable tunnel list). Scan every array-shaped value and keep the first one
+// that exposes a usable RSD address+port.
 func parseTunnelList(out []byte) []tunnelEntry {
-	for _, line := range strings.Split(string(out), "\n") {
-		line = strings.TrimSpace(line)
-		if !strings.HasPrefix(line, "[") {
-			continue
-		}
+	text := string(out)
+	for start := strings.Index(text, "["); start >= 0; {
 		var entries []tunnelEntry
-		if err := json.Unmarshal([]byte(line), &entries); err == nil {
+		if err := json.NewDecoder(strings.NewReader(text[start:])).Decode(&entries); err == nil && hasUsableTunnel(entries) {
 			return entries
 		}
+		next := strings.Index(text[start+1:], "[")
+		if next < 0 {
+			break
+		}
+		start += next + 1
 	}
 	return nil
+}
+
+func hasUsableTunnel(entries []tunnelEntry) bool {
+	for _, e := range entries {
+		if e.Address != "" && e.RsdPort > 0 {
+			return true
+		}
+	}
+	return false
 }
 
 // parseDeviceList decodes the output of `ios list`. go-ios prints
