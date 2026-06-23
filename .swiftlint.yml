@@ -4,6 +4,8 @@ included:
 
 disabled_rules:
   - todo
+  - cyclomatic_complexity
+  - superfluous_disable_command
 
 opt_in_rules:
   - empty_count

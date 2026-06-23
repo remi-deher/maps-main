@@ -1,0 +1,8 @@
+{
+  "packages": {
+    "tauri-app": {
+      "release-type": "node",
+      "package-name": "gpsmock"
+    }
+  }
+}
