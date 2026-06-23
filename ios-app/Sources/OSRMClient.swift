@@ -38,7 +38,7 @@ enum OSRMClient {
             path: "/route/v1/\(profile)/\(start.longitude),\(start.latitude);\(end.longitude),\(end.latitude)",
             queryItems: [
                 URLQueryItem(name: "overview", value: "full"),
-                URLQueryItem(name: "geometries", value: "geojson"),
+                URLQueryItem(name: "geometries", value: "geojson")
             ]
         ) else {
             return nil
