@@ -46,6 +46,7 @@ channels:
       GET_LOGS: { $ref: "#/components/messages/EMPTY" }
       GET_DEVICE_INFO: { $ref: "#/components/messages/EMPTY" }
       SWITCH_DRIVER: { $ref: "#/components/messages/SWITCH_DRIVER" }
+      GET_DIAGNOSTICS: { $ref: "#/components/messages/GET_DIAGNOSTICS" }
       # ── Outbound (engine -> client) ──
       STATUS: { $ref: "#/components/messages/STATUS" }
       STATUS_UPDATE: { $ref: "#/components/messages/STATUS_UPDATE" }
@@ -58,6 +59,7 @@ channels:
       LOG: { $ref: "#/components/messages/LOG" }
       LOGS: { $ref: "#/components/messages/LOGS" }
       DEVICE_INFO: { $ref: "#/components/messages/DEVICE_INFO" }
+      DIAGNOSTICS: { $ref: "#/components/messages/DIAGNOSTICS" }
 
 operations:
   sendAction:
@@ -135,14 +137,11 @@ components:
     SWITCH_DRIVER:
       payload: { $ref: "#/components/schemas/Envelope_SwitchDriver" }
     LOG:
-      payload:
-        $ref: "#/components/schemas/Envelope_Log"
+      payload: { $ref: "#/components/schemas/Envelope_Log" }
     DIAGNOSTICS:
-      payload:
-        $ref: "#/components/schemas/Envelope_Diagnostics"
+      payload: { $ref: "#/components/schemas/Envelope_Diagnostics" }
     GET_DIAGNOSTICS:
-      payload:
-        $ref: "#/components/schemas/Envelope_GetDiagnostics" }
+      payload: { $ref: "#/components/schemas/Envelope_GetDiagnostics" }
     LOGS:
       payload: { $ref: "#/components/schemas/Envelope_Logs" }
     DEVICE_INFO:
@@ -426,8 +425,7 @@ components:
           type: object
           properties:
             driverId: { type: string }
-            //nolint:staticcheck
-            switch transport: { type: string, enum: [auto, usb, wifi] }
+            transport: { type: string, enum: [auto, usb, wifi] }
           required: [driverId]
       required: [type, data]
 
