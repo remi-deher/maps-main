@@ -3,6 +3,7 @@ package goios
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"strings"
 
 	"github.com/remi-deher/maps-main/engine/internal/driver"
@@ -29,11 +30,36 @@ func (d *Driver) queryTunnel(ctx context.Context) (driver.TunnelEndpoint, bool) 
 		return driver.TunnelEndpoint{}, false
 	}
 	for _, e := range parseTunnelList(out) {
+		if d.targetUDID != "" && e.UDID != d.targetUDID {
+			continue
+		}
 		if endpoint, ok := driver.NewTunnelEndpoint(e.Address, e.RsdPort, e.UDID); ok {
 			return endpoint, true
 		}
 	}
 	return driver.TunnelEndpoint{}, false
+}
+
+// ListNetworkDevices runs `ios tunnel ls` and returns every device the daemon
+// currently has a tunnel for, not just the first usable one — go-ios discovers
+// these on its own (USB or LAN), this just surfaces what it already found.
+func (d *Driver) ListNetworkDevices(ctx context.Context) ([]driver.NetworkDevice, error) {
+	bin, err := d.binPath()
+	if err != nil {
+		return nil, err
+	}
+	out, err := execCommandContext(ctx, bin, "tunnel", "ls").Output()
+	if err != nil {
+		return nil, fmt.Errorf("go-ios tunnel ls: %w", err)
+	}
+	var devices []driver.NetworkDevice
+	for _, e := range parseTunnelList(out) {
+		if e.Address == "" || e.RsdPort <= 0 {
+			continue
+		}
+		devices = append(devices, driver.NetworkDevice{UDID: e.UDID, Address: e.Address, Port: e.RsdPort})
+	}
+	return devices, nil
 }
 
 // parseTunnelList decodes `ios tunnel ls` output. go-ios writes its slog lines

@@ -27,6 +27,8 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({ showToast }) => {
     sendMessage,
     diagnostics,
     getDiagnostics,
+    networkDevices,
+    getNetworkDevices,
   } = useWebSocket();
 
   const [enginePortInput, setEnginePortInput] = useState(String(enginePort));
@@ -35,7 +37,13 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({ showToast }) => {
 
   const [companionPort, setCompanionPort] = useState("8080");
   const [preferredDriver, setPreferredDriver] = useState("go-ios");
-  const [preferredTransport, setPreferredTransport] = useState("auto");
+  // No more USB/WiFi/Auto picker: the tunnel daemon decides USB vs WiFi on its
+  // own (it runs over a virtual adapter either way, so we can't tell from here
+  // anyway — see ListNetworkDevices doc). "Auto" stays the only mode unless the
+  // user picks a discovered network device or types a manual RSD address below,
+  // in which case we target it directly.
+  const [wifiAddress, setWifiAddress] = useState("");
+  const [selectedNetworkDeviceUdid, setSelectedNetworkDeviceUdid] = useState("");
   const [isEveilMode, setIsEveilMode] = useState(true);
   const [eveilInterval, setEveilInterval] = useState("15");
   const [jitterEnabled, setJitterEnabled] = useState(true);
@@ -68,15 +76,6 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({ showToast }) => {
       } else if (status.usbDriver) {
         setPreferredDriver(status.usbDriver);
       }
-
-      if (status.connectionType) {
-        const lowerType = status.connectionType.toLowerCase();
-        if (lowerType === "usb" || lowerType === "wifi") {
-          setPreferredTransport(lowerType);
-        } else {
-          setPreferredTransport("auto");
-        }
-      }
       setHasInitialized(true);
     }
   }, [status, hasInitialized]);
@@ -84,6 +83,7 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({ showToast }) => {
   useEffect(() => {
     if (canSend) {
       getDiagnostics();
+      getNetworkDevices();
     }
   }, [canSend]);
 
@@ -242,12 +242,59 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({ showToast }) => {
         </div>
 
         <div className="form-group">
-          <label className="form-label">Transport</label>
-          <select value={preferredTransport} onChange={(e) => setPreferredTransport(e.target.value)}>
-            <option value="auto">Auto</option>
-            <option value="usb">USB</option>
-            <option value="wifi">Wi-Fi</option>
-          </select>
+          <label className="form-label">Appareils découverts (mDNS / tunnel actif)</label>
+          <div style={{ display: "flex", gap: "6px" }}>
+            <select
+              value={selectedNetworkDeviceUdid}
+              disabled={!networkDevices?.devices?.length}
+              onChange={(e) => {
+                // Pin the device by UDID (auto mode): the daemon keeps following
+                // it across USB/WiFi. Clear any manual address so the two pinning
+                // modes don't conflict.
+                setSelectedNetworkDeviceUdid(e.target.value);
+                setWifiAddress("");
+              }}
+            >
+              <option value="">
+                {networkDevices?.devices?.length ? "Choisir un appareil…" : "Aucun appareil découvert"}
+              </option>
+              {networkDevices?.devices?.map((d) => (
+                <option key={d.udid} value={d.udid}>
+                  {d.udid.slice(0, 8)}… — {d.address}:{d.port}
+                </option>
+              ))}
+            </select>
+            <button className="btn" type="button" disabled={!canSend} onClick={getNetworkDevices} title="Rechercher à nouveau">
+              <RefreshCw size={14} />
+            </button>
+          </div>
+          {networkDevices?.error && (
+            <small className="form-hint">
+              Découverte indisponible avec ce driver : {networkDevices.error}
+            </small>
+          )}
+          <small className="form-hint">
+            Découverts automatiquement (USB ou réseau mDNS/Bonjour) par le démon.
+            Choisir un appareil l'épingle par UDID : le tunnel le suit ensuite
+            automatiquement quand il passe de l'USB au WiFi.
+          </small>
+        </div>
+
+        <div className="form-group">
+          <label className="form-label">Adresse RSD manuelle (optionnel)</label>
+          <input
+            type="text"
+            value={wifiAddress}
+            placeholder="192.168.1.42:62078 — vide = auto"
+            onChange={(e) => {
+              setWifiAddress(e.target.value);
+              setSelectedNetworkDeviceUdid("");
+            }}
+          />
+          <small className="form-hint">
+            Adresse RSD figée (pas de suivi dynamique), pour un endpoint réseau
+            que le démon ne découvre pas seul. Laissez vide pour le mode auto.
+          </small>
         </div>
 
         <button
@@ -255,7 +302,15 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({ showToast }) => {
           style={{ marginTop: "4px" }}
           disabled={!canSend}
           onClick={() => {
-            sendMessage("SWITCH_DRIVER", { driverId: preferredDriver, transport: preferredTransport });
+            const trimmed = wifiAddress.trim();
+            // Priority: a typed manual address pins a raw endpoint (wifi); else a
+            // picked device pins by UDID (auto + follow); else plain auto.
+            sendMessage("SWITCH_DRIVER", {
+              driverId: preferredDriver,
+              transport: trimmed ? "wifi" : "auto",
+              wifiAddress: trimmed,
+              targetUdid: trimmed ? "" : selectedNetworkDeviceUdid,
+            });
             showToast("Changement de driver demandé, redémarrage du tunnel...");
           }}
         >

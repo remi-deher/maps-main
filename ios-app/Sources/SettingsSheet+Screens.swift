@@ -75,11 +75,15 @@ extension SettingsSheet {
                     Text("go-ios (natif)").tag("go-ios")
                     Text("pymobiledevice3 (Python)").tag("pymobiledevice")
                 }
-                Picker("Transport", selection: $selectedTransport) {
-                    Text("Auto").tag("auto")
-                    Text("USB").tag("usb")
-                    Text("Wi-Fi").tag("wifi")
-                }
+                TextField("Adresse RSD manuelle (host:port)", text: $wifiAddress)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                    .onSubmit {
+                        engine.switchDriver(driverId: selectedDriver, transport: wifiAddress.isEmpty ? "auto" : "wifi", wifiAddress: wifiAddress)
+                    }
+                Text("Vide = mode auto (le démon décide USB/réseau lui-même). Renseignez une adresse pour cibler un device réseau précis.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
         }
         .navigationTitle("Connexion")

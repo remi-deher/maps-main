@@ -140,6 +140,17 @@ export interface NetworkInterfaceInfo {
   ip: string;
 }
 
+export interface NetworkDevice {
+  udid: string;
+  address: string;
+  port: number;
+}
+
+export interface NetworkDevicesResult {
+  devices: NetworkDevice[] | null;
+  error?: string;
+}
+
 export interface Telemetry {
   latency: number;
   packetLoss: number;
@@ -191,6 +202,8 @@ interface WebSocketContextType {
   updatePatrolZone: (zone: PatrolZone | null) => void;
   diagnostics: Diagnostics | null;
   getDiagnostics: () => void;
+  networkDevices: NetworkDevicesResult | null;
+  getNetworkDevices: () => void;
 }
 
 const WebSocketContext = createContext<WebSocketContextType | null>(null);
@@ -219,6 +232,7 @@ export const WebSocketProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   const [deviceDetails, setDeviceDetails] = useState<DeviceDetails | null>(null);
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [diagnostics, setDiagnostics] = useState<Diagnostics | null>(null);
+  const [networkDevices, setNetworkDevices] = useState<NetworkDevicesResult | null>(null);
   const maxLogEntries = 200;
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectTimeoutRef = useRef<any>(null);
@@ -283,6 +297,9 @@ export const WebSocketProvider: React.FC<{ children: React.ReactNode }> = ({ chi
             break;
           case "DIAGNOSTICS":
             setDiagnostics(data);
+            break;
+          case "NETWORK_DEVICES":
+            setNetworkDevices(data);
             break;
           case "LOGS":
             setLogs((Array.isArray(data) ? data : []) as LogEntry[]);
@@ -498,6 +515,11 @@ export const WebSocketProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     sendMessage("GET_DIAGNOSTICS");
   };
 
+  const getNetworkDevices = () => {
+    setNetworkDevices(null);
+    sendMessage("GET_NETWORK_DEVICES");
+  };
+
   return (
     <WebSocketContext.Provider
       value={{
@@ -534,6 +556,8 @@ export const WebSocketProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         updatePatrolZone,
         diagnostics,
         getDiagnostics,
+        networkDevices,
+        getNetworkDevices,
       }}
     >
       {children}

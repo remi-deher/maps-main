@@ -38,6 +38,11 @@ type TunnelMount struct {
 	on   bool
 	cmd  *exec.Cmd
 	udid string
+	// daemonExited is set by the daemon's Wait goroutine when the launched
+	// process dies after a tunnel was established, so the health monitor can
+	// tell "daemon still searching for the device" apart from "daemon dead,
+	// must restart". Reset on every successful set().
+	daemonExited bool
 }
 
 func (m *TunnelMount) Start(ctx context.Context, cfg TunnelMountConfig) (TunnelInfo, error) {
@@ -93,6 +98,9 @@ func (m *TunnelMount) Start(ctx context.Context, cfg TunnelMountConfig) (TunnelI
 	pr, pw := io.Pipe()
 	cmd.Stdout = pw
 	cmd.Stderr = pw
+	// Put the daemon (and its children) in its own process group / job so
+	// killProcess can later tear down the whole tree, not just the launcher.
+	configureProcAttr(cmd)
 
 	if err := cmd.Start(); err != nil {
 		return TunnelInfo{}, fmt.Errorf("%s %s: %w", cfg.DriverName, cfg.StartLabel, err)
@@ -115,7 +123,7 @@ func (m *TunnelMount) Start(ctx context.Context, cfg TunnelMountConfig) (TunnelI
 	}
 
 	exited := make(chan error, 1)
-	go func() { err := cmd.Wait(); _ = pw.Close(); exited <- err }()
+	go func() { err := cmd.Wait(); _ = pw.Close(); m.onDaemonExit(cmd); exited <- err }()
 	go func() {
 		sc := bufio.NewScanner(pr)
 		for sc.Scan() {
@@ -156,7 +164,7 @@ func (m *TunnelMount) Start(ctx context.Context, cfg TunnelMountConfig) (TunnelI
 func (m *TunnelMount) Stop(context.Context) error {
 	m.mu.Lock()
 	cmd, on := m.cmd, m.on
-	m.info, m.on, m.cmd, m.udid = TunnelInfo{}, false, nil, ""
+	m.info, m.on, m.cmd, m.udid, m.daemonExited = TunnelInfo{}, false, nil, "", false
 	m.mu.Unlock()
 	if on && cmd != nil {
 		return killProcess(cmd)
@@ -196,12 +204,66 @@ func (m *TunnelMount) CheckHealth(timeout time.Duration) bool {
 func (m *TunnelMount) set(info TunnelInfo, cmd *exec.Cmd, udid string) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	m.info, m.on, m.cmd, m.udid = info, true, cmd, strings.TrimSpace(udid)
+	m.info, m.on, m.cmd, m.udid, m.daemonExited = info, true, cmd, strings.TrimSpace(udid), false
 }
 
+// onDaemonExit marks the mount as having lost its daemon, but only if cmd is
+// still the active daemon (a daemon that exited during startup, before set(),
+// is handled by the Start loop and must not flip this flag).
+func (m *TunnelMount) onDaemonExit(cmd *exec.Cmd) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.cmd == cmd {
+		m.daemonExited = true
+	}
+}
+
+// DaemonRunning reports whether a daemon-backed tunnel is up and its process is
+// still alive. False for manual-address mounts (no daemon) and for daemons that
+// have since exited.
+func (m *TunnelMount) DaemonRunning() bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.on && m.cmd != nil && !m.daemonExited
+}
+
+// IsManual reports whether the active tunnel targets a manual address (no local
+// daemon to restart or re-query).
+func (m *TunnelMount) IsManual() bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.on && m.cmd == nil
+}
+
+// UpdateInfo replaces the cached endpoint in place (same daemon, same device)
+// — used when a device followed by the daemon moves between USB and WiFi and
+// its RSD address/port changes. No-op when no tunnel is active.
+func (m *TunnelMount) UpdateInfo(info TunnelInfo) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.on {
+		m.info = info
+	}
+}
+
+// ConfigureProcAttr configures cmd so it (and its children) run in their own
+// process group / job, enabling a later KillProcessTree to reap the whole tree.
+// Call it before cmd.Start(). Exported for backends (e.g. pmd3's location
+// worker) that manage their own child processes outside TunnelMount.
+func ConfigureProcAttr(cmd *exec.Cmd) { configureProcAttr(cmd) }
+
+// KillProcessTree terminates cmd and every process it spawned. Pair it with
+// ConfigureProcAttr at start time. Safe to call with a nil cmd/process.
+func KillProcessTree(cmd *exec.Cmd) error { return killProcess(cmd) }
+
+// killProcess terminates cmd and every process it spawned. The tunnel daemons
+// (`ios tunnel start`, pmd3 `remote tunneld`) fork child processes that hold the
+// real tun adapter / device session, so a bare cmd.Process.Kill() would only
+// reap the launcher and leave orphans behind. killTree is platform-specific:
+// taskkill /T on Windows, process-group signal on Unix.
 func killProcess(cmd *exec.Cmd) error {
 	if cmd == nil || cmd.Process == nil {
 		return nil
 	}
-	return cmd.Process.Kill()
+	return killTree(cmd)
 }

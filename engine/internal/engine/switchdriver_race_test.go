@@ -62,7 +62,7 @@ func TestSwitchDriverRacesWithUnguardedDriverReads(t *testing.T) {
 		defer wg.Done()
 		ids := []domain.DriverID{raceTestDriverA, raceTestDriverB}
 		for i := 0; i < 50; i++ {
-			_ = eng.SwitchDriver(ctx, string(ids[i%2]), "auto")
+			_ = eng.SwitchDriver(ctx, string(ids[i%2]), "auto", "", "")
 		}
 	}()
 

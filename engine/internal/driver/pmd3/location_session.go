@@ -31,6 +31,7 @@ type locationSession struct {
 
 func newLocationSession(ctx context.Context, py string, endpoint driver.TunnelInfo) (*locationSession, error) {
 	cmd := execCommand(py, "-u", "-c", locationWorkerScript, endpoint.Address, strconv.Itoa(endpoint.Port))
+	driver.ConfigureProcAttr(cmd)
 
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
@@ -86,9 +87,7 @@ func (s *locationSession) stop(ctx context.Context) error {
 		select {
 		case <-waitCh:
 		case <-ctx.Done():
-			if s.cmd.Process != nil {
-				_ = s.cmd.Process.Kill()
-			}
+			_ = driver.KillProcessTree(s.cmd)
 			<-waitCh
 			return ctx.Err()
 		}

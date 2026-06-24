@@ -42,7 +42,8 @@ const (
 	ActionGetLogs        = "GET_LOGS"
 	ActionClearHistory   = "CLEAR_HISTORY"
 	ActionSwitchDriver   = "SWITCH_DRIVER"
-	ActionGetDiagnostics = "GET_DIAGNOSTICS"
+	ActionGetDiagnostics    = "GET_DIAGNOSTICS"
+	ActionGetNetworkDevices = "GET_NETWORK_DEVICES"
 )
 
 // Outbound event types (engine -> client).
@@ -59,6 +60,7 @@ const (
 	EventLog                    = "LOG"
 	EventLogs                   = "LOGS"
 	EventDiagnostics            = "DIAGNOSTICS"
+	EventNetworkDevices         = "NETWORK_DEVICES"
 )
 
 // ─── Inbound payloads ────────────────────────────────────────────────────────
@@ -191,6 +193,15 @@ type RouteFinishedPayload struct {
 type SwitchDriverPayload struct {
 	DriverID  string `json:"driverId"`
 	Transport string `json:"transport,omitempty"` // auto | usb | wifi
+	// WifiAddress is an optional manual RSD endpoint ("host:port", IPv6 bracketed)
+	// used when Transport is "wifi". When set, the driver targets it directly
+	// instead of bringing up a local USB tunnel. Empty means "let the tunnel
+	// daemon discover the device on the network" (auto WiFi).
+	WifiAddress string `json:"wifiAddress,omitempty"`
+	// TargetUdid pins the connection to one discovered device (auto transport):
+	// the daemon keeps running and following it across USB/WiFi, but the engine
+	// only ever uses that device's tunnel. Empty means "first usable device".
+	TargetUdid string `json:"targetUdid,omitempty"`
 }
 
 // LogEntryPayload is one entry in the engine's in-memory log buffer,
@@ -219,4 +230,20 @@ type DeviceInfoPayload struct {
 	WifiAddress    string `json:"wifiAddress,omitempty"`
 	TunnelAddress  string `json:"tunnelAddress,omitempty"`
 	Error          string `json:"error,omitempty"`
+}
+
+// NetworkDevicePayload is one entry in NETWORK_DEVICES — a device the active
+// driver's tunnel daemon has already auto-discovered (USB or LAN/mDNS).
+type NetworkDevicePayload struct {
+	UDID    string `json:"udid"`
+	Address string `json:"address"`
+	Port    int    `json:"port"`
+}
+
+// NetworkDevicesPayload is the data for NETWORK_DEVICES (the response to
+// GET_NETWORK_DEVICES). Error is set instead of Devices when the active driver
+// doesn't support discovery (e.g. a manual/USB-only setup).
+type NetworkDevicesPayload struct {
+	Devices []NetworkDevicePayload `json:"devices,omitempty"`
+	Error   string                 `json:"error,omitempty"`
 }

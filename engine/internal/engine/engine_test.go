@@ -558,7 +558,7 @@ func TestSwitchDriverResetsEngineState(t *testing.T) {
 		t.Fatal("expected tunnel to be active before SwitchDriver")
 	}
 
-	if err := eng.SwitchDriver(ctx, string(switchTestID), "auto"); err != nil {
+	if err := eng.SwitchDriver(ctx, string(switchTestID), "auto", "", ""); err != nil {
 		t.Fatalf("SwitchDriver: %v", err)
 	}
 

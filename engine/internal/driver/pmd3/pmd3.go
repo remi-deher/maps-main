@@ -26,6 +26,7 @@ type Driver struct {
 	base               []string          // base args, e.g. ["-m","pymobiledevice3"]
 	binPaths           map[string]string // explicit overrides, for lazy resolution
 	manual             string            // optional "host:port" RSD endpoint (WiFi transport)
+	targetUDID         string            // optional: pin resolution to this device's tunnel
 	tunnelStartTimeout time.Duration
 	tunneldURL         string // tunneld REST API base ("" => defaultTunneldURL); overridable in tests
 
@@ -47,6 +48,7 @@ func New(cfg driver.Config) (driver.Driver, error) {
 		base:               []string{"-m", "pymobiledevice3"},
 		binPaths:           cfg.BinaryPaths,
 		manual:             cfg.ManualAddress,
+		targetUDID:         cfg.TargetUDID,
 		tunnelStartTimeout: timeout,
 	}, nil
 }

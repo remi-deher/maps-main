@@ -57,3 +57,10 @@ func (d *Driver) StopTunnel(ctx context.Context) error {
 func (d *Driver) CheckHealth(context.Context) bool {
 	return d.mount.CheckHealth(3 * time.Second)
 }
+
+// ReresolveTunnel re-queries the tunneld REST API and updates the active
+// endpoint for the current device, following it across a USB↔WiFi move without
+// restarting the daemon (tunneld already monitors both transports concurrently).
+func (d *Driver) ReresolveTunnel(ctx context.Context) (driver.TunnelInfo, bool, bool) {
+	return driver.ReresolveActiveTunnel(ctx, &d.mount, d)
+}

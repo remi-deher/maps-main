@@ -87,3 +87,32 @@ type DeviceDetails struct {
 type DeviceInfoProvider interface {
 	DeviceDetails(ctx context.Context) (DeviceDetails, error)
 }
+
+// NetworkDevice is one RSD endpoint a tunnel daemon already knows about —
+// go-ios's `ios tunnel ls` and pymobiledevice3's `remote tunneld` REST API both
+// auto-discover every paired Apple device reachable on the LAN (over mDNS/
+// Bonjour) and keep a live tunnel per UDID, so this list reflects devices found
+// that way, not a browse we perform ourselves.
+type NetworkDevice struct {
+	UDID    string
+	Address string // host (IPv6 ULA, bracket if embedding in host:port)
+	Port    int
+}
+
+// NetworkDeviceLister is an optional capability: drivers whose tunnel daemon
+// exposes every currently-known device (not just the one StartTunnel picked)
+// implement it, so a client can offer a device picker instead of a free-text
+// manual address field. Both go-ios and pymobiledevice3 implement it.
+type NetworkDeviceLister interface {
+	ListNetworkDevices(ctx context.Context) ([]NetworkDevice, error)
+}
+
+// TunnelReresolver is an optional capability: drivers that can refresh the
+// active tunnel's endpoint for the current device without restarting the daemon
+// implement it, so the health monitor can transparently follow a device moving
+// between USB and WiFi. Returns the (possibly unchanged) info and ok=true when a
+// tunnel exists now; ok=false with daemonAlive=false signals the caller to
+// restart the daemon. Both go-ios and pymobiledevice3 implement it.
+type TunnelReresolver interface {
+	ReresolveTunnel(ctx context.Context) (info TunnelInfo, ok bool, daemonAlive bool)
+}

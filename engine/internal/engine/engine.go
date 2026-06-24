@@ -180,7 +180,7 @@ func (e *Engine) driver() driver.Driver {
 // the runtime equivalent of restarting headless with different -driver/
 // -transport flags, exposed so a client (tauri-app, iOS) can do it without
 // PC access to the machine running the engine.
-func (e *Engine) SwitchDriver(ctx context.Context, driverID, transport string) error {
+func (e *Engine) SwitchDriver(ctx context.Context, driverID, transport, wifiAddress, targetUDID string) error {
 	e.stopActiveSimulation()
 
 	e.mu.Lock()
@@ -193,13 +193,29 @@ func (e *Engine) SwitchDriver(ctx context.Context, driverID, transport string) e
 	}
 
 	cfg := base
+	wifiAddress = strings.TrimSpace(wifiAddress)
+	targetUDID = strings.TrimSpace(targetUDID)
+	// Reset selectors that might linger on the startup base config; each switch
+	// fully specifies how it wants to connect.
+	cfg.ManualAddress = ""
+	cfg.TargetUDID = ""
 	switch transport {
 	case "usb":
 		cfg.Transport = driver.TransportUSB
 	case "wifi":
 		cfg.Transport = driver.TransportWiFi
+		// A manual RSD address pins a raw endpoint (no daemon following). Empty
+		// keeps the startup -rsd if any, else auto network discovery.
+		if wifiAddress != "" {
+			cfg.ManualAddress = wifiAddress
+		} else if base.ManualAddress != "" {
+			cfg.ManualAddress = base.ManualAddress
+		}
 	default:
 		cfg.Transport = driver.TransportAuto
+		// In auto mode a target UDID pins one device while keeping the daemon
+		// running, so the health monitor can follow it across USB/WiFi.
+		cfg.TargetUDID = targetUDID
 	}
 
 	newDrv, err := driver.New(domain.DriverID(driverID), cfg)
@@ -231,10 +247,21 @@ func (e *Engine) SwitchDriver(ctx context.Context, driverID, transport string) e
 	e.emitStatusLocked()
 	e.persist()
 
-	e.LogEvent("info", "admin", "driver", "switch", fmt.Sprintf("Pilote changé pour %s (transport=%s), redémarrage du tunnel...", driverID, transport), map[string]string{
+	switchFields := map[string]string{
 		"driver":    driverID,
 		"transport": transport,
-	})
+	}
+	if cfg.TargetUDID != "" {
+		switchFields["udid"] = cfg.TargetUDID
+	}
+	if transport == "wifi" {
+		if cfg.ManualAddress != "" {
+			switchFields["rsd"] = cfg.ManualAddress
+		} else {
+			e.LogEvent("warn", "admin", "driver", "switch", "Transport WiFi sans adresse RSD : tentative de découverte réseau par le démon (fournissez une adresse host:port si le device n'est pas trouvé).", switchFields)
+		}
+	}
+	e.LogEvent("info", "admin", "driver", "switch", fmt.Sprintf("Pilote changé pour %s (transport=%s), redémarrage du tunnel...", driverID, transport), switchFields)
 
 	if err := e.StartTunnel(ctx); err != nil {
 		e.LogEvent("error", "tunnel", "tunnel", "start", fmt.Sprintf("Tunnel non démarré après changement de pilote : %v", err), map[string]string{"error": err.Error()})
@@ -573,6 +600,18 @@ func (e *Engine) GetDeviceInfo(ctx context.Context) (driver.DeviceDetails, error
 		return driver.DeviceDetails{}, fmt.Errorf("device info not supported by driver %q", drv.ID())
 	}
 	return provider.DeviceDetails(ctx)
+}
+
+// ListNetworkDevices surfaces every device the active driver's tunnel daemon
+// already auto-discovered (USB or LAN/mDNS), for a device picker in place of a
+// free-text manual address. Returns an error if the driver doesn't support it.
+func (e *Engine) ListNetworkDevices(ctx context.Context) ([]driver.NetworkDevice, error) {
+	drv := e.driver()
+	lister, ok := drv.(driver.NetworkDeviceLister)
+	if !ok {
+		return nil, fmt.Errorf("network device discovery not supported by driver %q", drv.ID())
+	}
+	return lister.ListNetworkDevices(ctx)
 }
 
 // Relance restarts simulation with last injected position

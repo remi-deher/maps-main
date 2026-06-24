@@ -126,6 +126,10 @@ func runEngine(ctx context.Context, cfg runConfig) error {
 	defer clusterMgr.Release()
 	defer clusterMgr.Stop()
 
+	// Background watchdog: follows the device across USB↔WiFi and re-establishes
+	// the tunnel if the daemon dies. No-op until a tunnel is up.
+	eng.StartHealthMonitor(ctx)
+
 	if !cfg.noTunnel {
 		tunnelStartTimeout := cfg.tunnelStartTimeout
 		if tunnelStartTimeout <= 0 {

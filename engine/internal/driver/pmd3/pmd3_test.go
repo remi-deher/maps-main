@@ -164,3 +164,29 @@ func TestStartTunnelWithInvalidManualAddressFails(t *testing.T) {
 		t.Error("StartTunnel with an invalid manual address should fail")
 	}
 }
+
+func TestParseTunneldFiltersByUDID(t *testing.T) {
+	body := []byte(`{
+		"UDID-A":[{"tunnel-address":"fd00::a","tunnel-port":111,"interface":"utun0"}],
+		"UDID-B":[{"tunnel-address":"fd00::b","tunnel-port":222,"interface":"utun1"}]
+	}`)
+
+	// With a target UDID, only that device's tunnel is returned.
+	ep, ok := parseTunneld(body, "UDID-B")
+	if !ok {
+		t.Fatal("expected a tunnel for UDID-B")
+	}
+	if ep.UDID != "UDID-B" || ep.Info.Address != "fd00::b" || ep.Info.Port != 222 {
+		t.Fatalf("got %s %s:%d, want UDID-B fd00::b:222", ep.UDID, ep.Info.Address, ep.Info.Port)
+	}
+
+	// A target UDID that isn't present yields no endpoint.
+	if _, ok := parseTunneld(body, "UDID-MISSING"); ok {
+		t.Fatal("expected no tunnel for an absent UDID")
+	}
+
+	// No filter falls back to first usable.
+	if _, ok := parseTunneld(body, ""); !ok {
+		t.Fatal("expected a tunnel with no UDID filter")
+	}
+}

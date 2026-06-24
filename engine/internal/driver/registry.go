@@ -19,6 +19,11 @@ type Config struct {
 	// ManualAddress, when set ("host:port"), makes the driver target this RSD
 	// endpoint directly (WiFi/network transport) instead of starting a tunnel.
 	ManualAddress string
+	// TargetUDID, when set, pins the driver to one specific device: the tunnel
+	// daemon still runs (and keeps following that device across USB/WiFi), but
+	// the resolver only ever returns the tunnel whose UDID matches. Empty means
+	// "first usable device". Mutually exclusive with ManualAddress in practice.
+	TargetUDID string
 	// TunnelStartTimeout overrides how long a driver waits for the RSD
 	// address to appear before giving up on StartTunnel. Zero means "use the
 	// driver's own default" (45s for go-ios, 60s for pmd3 — pmd3 additionally

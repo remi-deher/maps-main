@@ -36,7 +36,11 @@ struct SettingsSheet: View {
     @Environment(\.openURL) var openURL
 
     @State var selectedDriver = "go-ios"
-    @State var selectedTransport = "auto"
+    // No USB/WiFi/Auto picker: the tunnel daemon (go-ios/pymobiledevice3) decides
+    // USB vs network on its own — it runs over a virtual adapter either way, so
+    // the app can't actually steer that choice. Leaving wifiAddress empty keeps
+    // "auto"; filling it targets that RSD endpoint directly.
+    @State var wifiAddress = ""
     @State var jitterEnabled = true
     @State var portInput = ""
     @State var portError: String?
@@ -91,15 +95,6 @@ struct SettingsSheet: View {
                 } else if let usbDriver = engine.status?.usbDriver {
                     selectedDriver = usbDriver
                 }
-
-                if let connectionType = engine.status?.connectionType {
-                    let lowerType = connectionType.lowercased()
-                    if lowerType == "usb" || lowerType == "wifi" {
-                        selectedTransport = lowerType
-                    } else {
-                        selectedTransport = "auto"
-                    }
-                }
             }
             .onChange(of: engine.status) { _, status in
                 if let status {
@@ -111,27 +106,12 @@ struct SettingsSheet: View {
                     } else if let usbDriver = status.usbDriver {
                         selectedDriver = usbDriver
                     }
-
-                    if let connectionType = status.connectionType {
-                        let lowerType = connectionType.lowercased()
-                        if lowerType == "usb" || lowerType == "wifi" {
-                            selectedTransport = lowerType
-                        } else {
-                            selectedTransport = "auto"
-                        }
-                    }
                 }
             }
             .onChange(of: selectedDriver) { _, newValue in
                 let current = engine.status?.deviceInfo?.driver ?? engine.status?.usbDriver ?? "go-ios"
                 if newValue != current {
-                    engine.switchDriver(driverId: newValue, transport: selectedTransport)
-                }
-            }
-            .onChange(of: selectedTransport) { _, newValue in
-                let currentType = engine.status?.connectionType?.lowercased() ?? "auto"
-                if newValue != currentType {
-                    engine.switchDriver(driverId: selectedDriver, transport: newValue)
+                    engine.switchDriver(driverId: newValue, transport: wifiAddress.isEmpty ? "auto" : "wifi", wifiAddress: wifiAddress)
                 }
             }
             .toolbar {

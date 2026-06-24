@@ -361,8 +361,13 @@ final class EngineClient: NSObject, URLSessionWebSocketDelegate {
         sendEnvelope(type: "HEARTBEAT", data: [:])
     }
 
-    func switchDriver(driverId: String, transport: String) {
-        sendEnvelope(type: "SWITCH_DRIVER", data: ["driverId": driverId, "transport": transport])
+    func switchDriver(driverId: String, transport: String, wifiAddress: String = "") {
+        var data: [String: Any] = ["driverId": driverId, "transport": transport]
+        let trimmed = wifiAddress.trimmingCharacters(in: .whitespacesAndNewlines)
+        if transport == "wifi" && !trimmed.isEmpty {
+            data["wifiAddress"] = trimmed
+        }
+        sendEnvelope(type: "SWITCH_DRIVER", data: data)
     }
 
     /// Starts, updates, or stops a patrol zone — same PATROL_UPDATE envelope

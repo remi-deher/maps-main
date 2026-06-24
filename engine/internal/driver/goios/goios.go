@@ -26,6 +26,7 @@ type Driver struct {
 	binPaths           map[string]string // explicit overrides, for lazy resolution
 	lockdownArgs       []string
 	manual             string // optional "host:port" RSD endpoint (WiFi transport)
+	targetUDID         string // optional: pin resolution (and `tunnel start --udid`) to this device
 	tunnelStartTimeout time.Duration
 	udid               string
 
@@ -45,7 +46,9 @@ func New(cfg driver.Config) (driver.Driver, error) {
 	if timeout <= 0 {
 		timeout = defaultTunnelStartTimeout
 	}
-	return &Driver{bin: bin, binPaths: cfg.BinaryPaths, lockdownArgs: lock, manual: cfg.ManualAddress, tunnelStartTimeout: timeout, udid: ""}, nil
+	// Pre-seed udid from the target so `tunnel start --udid` and getUDID pin to
+	// the chosen device without a `ios list` round-trip.
+	return &Driver{bin: bin, binPaths: cfg.BinaryPaths, lockdownArgs: lock, manual: cfg.ManualAddress, targetUDID: cfg.TargetUDID, tunnelStartTimeout: timeout, udid: cfg.TargetUDID}, nil
 }
 
 // binPath returns the go-ios CLI path, resolving it lazily if New couldn't.

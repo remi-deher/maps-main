@@ -416,15 +416,15 @@ func (s *Server) dispatch(c *client, env api.Envelope) {
 		var p api.SwitchDriverPayload
 		swErr := json.Unmarshal(env.Data, &p)
 		if swErr == nil {
-			go func(driverID, transport string) {
+			go func(driverID, transport, wifiAddress, targetUDID string) {
 				swCtx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 				defer cancel()
-				execErr := s.eng.SwitchDriver(swCtx, driverID, transport)
+				execErr := s.eng.SwitchDriver(swCtx, driverID, transport, wifiAddress, targetUDID)
 				if execErr != nil {
 					slog.Error("SWITCH_DRIVER", "error", execErr)
 				}
 				s.trackAction(api.ActionSwitchDriver, execErr)
-			}(p.DriverID, p.Transport)
+			}(p.DriverID, p.Transport, p.WifiAddress, p.TargetUdid)
 		} else {
 			slog.Error("SWITCH_DRIVER payload unmarshal failed", "error", swErr)
 			s.trackAction(api.ActionSwitchDriver, swErr)
@@ -470,6 +470,18 @@ func (s *Server) dispatch(c *client, env api.Envelope) {
 			WifiAddress:    info.WifiAddress,
 			TunnelAddress:  info.TunnelAddress,
 		})
+	case api.ActionGetNetworkDevices:
+		devices, derr := s.eng.ListNetworkDevices(ctx)
+		if derr != nil {
+			slog.Error("GET_NETWORK_DEVICES", "error", derr)
+			c.send <- encode(api.EventNetworkDevices, api.NetworkDevicesPayload{Error: derr.Error()})
+			break
+		}
+		payload := api.NetworkDevicesPayload{Devices: make([]api.NetworkDevicePayload, 0, len(devices))}
+		for _, d := range devices {
+			payload.Devices = append(payload.Devices, api.NetworkDevicePayload{UDID: d.UDID, Address: d.Address, Port: d.Port})
+		}
+		c.send <- encode(api.EventNetworkDevices, payload)
 	case api.ActionGetDiagnostics:
 		var diag engine.Diagnostics
 		diag, err = s.eng.GetDiagnostics(ctx)
