@@ -130,6 +130,11 @@ func runEngine(ctx context.Context, cfg runConfig) error {
 	// the tunnel if the daemon dies. No-op until a tunnel is up.
 	eng.StartHealthMonitor(ctx)
 
+	// Keep iPhones discoverable: a passive mDNS browse stops iOS from powering
+	// down its discovery responder, which otherwise blinds the tunnel daemons
+	// over WiFi. Best-effort; no-ops when no browse tool is installed.
+	eng.StartMdnsWake(ctx)
+
 	if !cfg.noTunnel {
 		tunnelStartTimeout := cfg.tunnelStartTimeout
 		if tunnelStartTimeout <= 0 {
