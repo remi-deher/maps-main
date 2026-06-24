@@ -1,5 +1,6 @@
 {
   "draft": true,
+  "include-component-in-tag": false,
   "packages": {
     "tauri-app": {
       "release-type": "node",
