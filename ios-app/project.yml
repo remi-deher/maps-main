@@ -15,6 +15,10 @@ settings:
     CODE_SIGNING_ALLOWED: NO
     CODE_SIGNING_REQUIRED: NO
     DEVELOPMENT_TEAM: ""
+    # CI runs on Apple Silicon (arm64) runners; building/linking an x86_64
+    # simulator slice nobody runs just to have `xcodebuild test` fail there
+    # (the app module never gets fully built for it) is pure overhead.
+    "EXCLUDED_ARCHS[sdk=iphonesimulator*]": x86_64
 
 targets:
   GpsMockCompanion:
