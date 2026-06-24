@@ -92,6 +92,9 @@ targets:
     deploymentTarget: "26.0"
     sources:
       - path: Tests
+    settings:
+      base:
+        PRODUCT_NAME: GpsMockCompanionTests
     dependencies:
       - target: GpsMockCompanion
 
