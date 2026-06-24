@@ -38,7 +38,7 @@ jobs:
           set -e
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             should_release=true
-          elif printf '%s' "${{ toJSON(github.event.head_commit.message) }}" | grep -qiE 'release v.*'; then
+          elif printf '%s' ${{ toJSON(github.event.head_commit.message) }} | grep -qiE 'release v.*'; then
             should_release=true
           else
             should_release=false
