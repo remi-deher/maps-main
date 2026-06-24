@@ -1,23 +1,76 @@
 name: Release
 
+# Manual gate: a release only happens when a commit pushed to main has
+# "release v" (any case, anything after) somewhere in its message. No
+# release-please, no drafts — check-trigger computes the next version by
+# bumping the latest vX.Y.Z tag's patch number, every job below builds that
+# version, and the final `release` job only tags + publishes (with all
+# assets attached) once every single one of them has succeeded. A normal
+# push with no keyword just no-ops (every job is skipped).
 on:
   workflow_dispatch:
   push:
-    tags:
-      - 'v*'
+    branches: [main]
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 permissions:
   contents: read
 
 jobs:
+  check-trigger:
+    name: check release trigger
+    runs-on: ubuntu-latest
+    outputs:
+      should_release: ${{ steps.check.outputs.should_release }}
+      version: ${{ steps.check.outputs.version }}
+      tag: ${{ steps.check.outputs.tag }}
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        with:
+          fetch-depth: 0
+
+      - name: Decide whether to release and compute next version
+        id: check
+        run: |
+          set -e
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            should_release=true
+          elif printf '%s' "${{ toJSON(github.event.head_commit.message) }}" | grep -qiE 'release v.*'; then
+            should_release=true
+          else
+            should_release=false
+          fi
+          echo "should_release=$should_release" >> "$GITHUB_OUTPUT"
+
+          if [ "$should_release" != "true" ]; then
+            echo "No release keyword found, skipping."
+            exit 0
+          fi
+
+          last_tag="$(git tag -l 'v*' --sort=-v:refname | head -n1)"
+          if [ -z "$last_tag" ]; then
+            next_tag="v0.1.0"
+          else
+            ver="${last_tag#v}"
+            major="${ver%%.*}"
+            rest="${ver#*.}"
+            minor="${rest%%.*}"
+            patch="${rest#*.}"
+            next_tag="v${major}.${minor}.$((patch + 1))"
+          fi
+          echo "Previous tag: ${last_tag:-none}; next: $next_tag"
+          echo "tag=$next_tag" >> "$GITHUB_OUTPUT"
+          echo "version=${next_tag#v}" >> "$GITHUB_OUTPUT"
+
   # Build the web UI once and share it; every engine build embeds it (-tags
   # webui) so each shipped engine serves the browser UI at / (headless+web).
   build-webui:
     name: build web UI
+    needs: check-trigger
+    if: needs.check-trigger.outputs.should_release == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
@@ -39,7 +92,8 @@ jobs:
 
   build-engine:
     name: build engine ${{ matrix.goos }}/${{ matrix.goarch }}
-    needs: build-webui
+    needs: [check-trigger, build-webui]
+    if: needs.check-trigger.outputs.should_release == 'true'
     runs-on: ubuntu-latest
     strategy:
       matrix:
@@ -69,8 +123,7 @@ jobs:
           CGO_ENABLED: '0'
         run: |
           out="gpsmock-engine-${{ matrix.goos }}-${{ matrix.goarch }}${{ matrix.ext }}"
-          ver="${{ github.ref_name }}"
-          ver="${ver#v}"  # strip leading 'v' → 0.4.0
+          ver="${{ needs.check-trigger.outputs.version }}"
           go build -tags webui -trimpath \
             -ldflags="-s -w -X github.com/remi-deher/maps-main/engine/internal/build.Version=${ver}" \
             -o "../dist/${out}" ./cmd/headless
@@ -82,7 +135,8 @@ jobs:
 
   portable-windows-engine:
     name: build self-contained Windows portable .exe
-    needs: build-webui
+    needs: [check-trigger, build-webui]
+    if: needs.check-trigger.outputs.should_release == 'true'
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
@@ -109,8 +163,7 @@ jobs:
         shell: pwsh
         working-directory: engine
         run: |
-          $ver = "${{ github.ref_name }}"
-          if ($ver -match '^v\d') { $ver = $ver.Substring(1) } else { $ver = "0.0.0" }
+          $ver = "${{ needs.check-trigger.outputs.version }}"
           $ldflags = "-s -w -X github.com/remi-deher/maps-main/engine/internal/platform.driversVersion=$ver -X github.com/remi-deher/maps-main/engine/internal/build.Version=$ver"
           $env:CGO_ENABLED = "0"
           go build -tags "embed_drivers webui" -trimpath -ldflags="$ldflags" -o ../gpsmock-engine-portable.exe ./cmd/headless
@@ -124,7 +177,8 @@ jobs:
 
   installer-windows-engine:
     name: build Windows installer (Inno Setup)
-    needs: portable-windows-engine
+    needs: [check-trigger, portable-windows-engine]
+    if: needs.check-trigger.outputs.should_release == 'true'
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
@@ -136,9 +190,7 @@ jobs:
       - name: Compile installer
         shell: pwsh
         run: |
-          # Version from the release tag (v0.2.0 -> 0.2.0); 0.0.0 off-tag.
-          $ver = "${{ github.ref_name }}"
-          if ($ver -match '^v\d') { $ver = $ver.Substring(1) } else { $ver = "0.0.0" }
+          $ver = "${{ needs.check-trigger.outputs.version }}"
 
           $iscc = "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
           if (-not (Test-Path $iscc)) {
@@ -155,6 +207,8 @@ jobs:
 
   build-tauri:
     name: build desktop app (${{ matrix.platform }})
+    needs: check-trigger
+    if: needs.check-trigger.outputs.should_release == 'true'
     strategy:
       fail-fast: false
       matrix:
@@ -193,13 +247,12 @@ jobs:
         working-directory: tauri-app
         run: npm ci
 
-      - name: Set app version from tag
-        if: startsWith(github.ref, 'refs/tags/v')
+      - name: Set app version from the computed release version
         shell: pwsh
         run: |
           # The bundled installers read their version from tauri.conf.json,
-          # which is otherwise pinned at 0.0.x regardless of the release tag.
-          $ver = "${{ github.ref_name }}".Substring(1)
+          # which is otherwise pinned at 0.0.x regardless of the release.
+          $ver = "${{ needs.check-trigger.outputs.version }}"
           $conf = "tauri-app/src-tauri/tauri.conf.json"
           $json = Get-Content $conf -Raw | ConvertFrom-Json
           $json.version = $ver
@@ -231,6 +284,8 @@ jobs:
 
   build-ios:
     name: build unsigned .ipa
+    needs: check-trigger
+    if: needs.check-trigger.outputs.should_release == 'true'
     runs-on: macos-latest
     defaults:
       run:
@@ -248,13 +303,13 @@ jobs:
           echo "Checking for previous tag..."
           PREV_TAG=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || true)
           echo "Previous tag found: '$PREV_TAG'"
-          
+
           if [ -z "$PREV_TAG" ]; then
             echo "No previous tag found. Rebuild is required."
             echo "reused=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          
+
           if git diff --quiet "$PREV_TAG" HEAD -- ios-app/; then
             echo "No changes in ios-app/ since $PREV_TAG."
             echo "Attempting to download GpsMockCompanion-unsigned.ipa from release $PREV_TAG..."
@@ -330,6 +385,8 @@ jobs:
 
   docker:
     name: build & push engine image
+    needs: check-trigger
+    if: needs.check-trigger.outputs.should_release == 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -383,8 +440,7 @@ jobs:
             ghcr.io/${{ github.repository }}/gpsmock-engine
             ${{ env.DOCKERHUB_USERNAME != '' && format('docker.io/{0}/gpsmock-engine', env.DOCKERHUB_USERNAME) || '' }}
           tags: |
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
+            type=raw,value=${{ needs.check-trigger.outputs.version }}
             type=raw,value=latest,enable={{is_default_branch}}
 
       - name: Build and push
@@ -401,7 +457,8 @@ jobs:
 
   release:
     name: publish GitHub release
-    needs: [build-engine, portable-windows-engine, installer-windows-engine, build-tauri, build-ios, docker]
+    needs: [check-trigger, build-engine, portable-windows-engine, installer-windows-engine, build-tauri, build-ios, docker]
+    if: needs.check-trigger.outputs.should_release == 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -424,16 +481,15 @@ jobs:
         run: cp scripts/install.sh scripts/install.ps1 dist/
 
       - name: Publish release
-        # release-please creates this release as a draft (release-please-config.json
-        # "draft": true) precisely so it stays invisible until this job — gated by
-        # `needs:` on every build job above — actually runs. draft: false here is
-        # what flips it to published, so a build failure leaves a hidden, asset-less
-        # draft instead of a public "latest" release with nothing in it.
+        # Every job this depends on has already succeeded by the time this
+        # runs, so the tag + release are only ever created here, at the very
+        # end, with every asset already built. softprops/action-gh-release
+        # creates the tag (pointing at this commit) if it doesn't exist yet.
         uses: softprops/action-gh-release@718ea10b132b3b2eba29c1007bb80653f286566b # v3.0.1
         with:
+          tag_name: ${{ needs.check-trigger.outputs.tag }}
           files: dist/**/*
           generate_release_notes: true
-          draft: false
           body: |
             ## Installation en une commande (toujours la dernière version)
 
@@ -470,7 +526,7 @@ jobs:
             | Windows, installé | `gpsmock-engine-setup.exe` — installeur (menu Démarrer + désinstalleur), mêmes pilotes |
             | Windows, binaire nu | `gpsmock-engine-windows-amd64.exe` (sans pilote, pour configuration avancée) |
             | Linux / macOS | `gpsmock-engine-<os>-<arch>` |
-            | Conteneur | `docker pull ghcr.io/${{ github.repository }}/gpsmock-engine:${{ github.ref_name }}` |
+            | Conteneur | `docker pull ghcr.io/${{ github.repository }}/gpsmock-engine:${{ needs.check-trigger.outputs.tag }}` |
 
             ### Application compagnon iOS
             `GpsMockCompanion-unsigned.ipa` — non signé, à ré-signer à l'installation (AltStore, etc.).
