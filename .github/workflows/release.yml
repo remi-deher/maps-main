@@ -1,12 +1,14 @@
 name: Release
 
 # Manual gate: a release only happens when a commit pushed to main has
-# "release v" (any case, anything after) somewhere in its message. No
-# release-please, no drafts — check-trigger computes the next version by
-# bumping the latest vX.Y.Z tag's patch number, every job below builds that
-# version, and the final `release` job only tags + publishes (with all
-# assets attached) once every single one of them has succeeded. A normal
-# push with no keyword just no-ops (every job is skipped).
+# "(release) vX.Y.Z" somewhere in its message — the version is whatever you
+# write there, e.g. "(release) v0.6.0: New feature". No release-please, no
+# drafts, no silent auto-bump — check-trigger reads that exact version,
+# every job below builds it, and the final `release` job only tags +
+# publishes (with all assets attached) once every single one of them has
+# succeeded. A normal push with no such marker just no-ops (every job is
+# skipped). workflow_dispatch (no commit message to read) falls back to
+# auto-bumping the latest vX.Y.Z tag's patch number.
 on:
   workflow_dispatch:
   push:
@@ -32,38 +34,59 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Decide whether to release and compute next version
+      - name: Decide whether to release and compute the version
         id: check
+        env:
+          # Routed through env (GitHub's recommended pattern for untrusted
+          # input) rather than interpolated into the script body, so nothing
+          # in the commit message can break out of the string.
+          COMMIT_MSG: ${{ github.event.head_commit.message }}
         run: |
           set -e
+          shopt -s nocasematch
+
+          version=""
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             should_release=true
-          elif printf '%s' ${{ toJSON(github.event.head_commit.message) }} | grep -qiE 'release v.*'; then
+          elif [[ "$COMMIT_MSG" =~ \(release\)[[:space:]]*v([0-9]+\.[0-9]+\.[0-9]+) ]]; then
             should_release=true
+            version="${BASH_REMATCH[1]}"
           else
             should_release=false
           fi
           echo "should_release=$should_release" >> "$GITHUB_OUTPUT"
 
           if [ "$should_release" != "true" ]; then
-            echo "No release keyword found, skipping."
+            echo "No '(release) vX.Y.Z' marker found, skipping."
             exit 0
           fi
 
-          last_tag="$(git tag -l 'v*' --sort=-v:refname | head -n1)"
-          if [ -z "$last_tag" ]; then
-            next_tag="v0.1.0"
+          if [ -z "$version" ]; then
+            # workflow_dispatch: no commit message to read a version from,
+            # so fall back to auto-bumping the latest tag's patch number.
+            last_tag="$(git tag -l 'v*' --sort=-v:refname | head -n1)"
+            if [ -z "$last_tag" ]; then
+              version="0.1.0"
+            else
+              ver="${last_tag#v}"
+              major="${ver%%.*}"
+              rest="${ver#*.}"
+              minor="${rest%%.*}"
+              patch="${rest#*.}"
+              version="${major}.${minor}.$((patch + 1))"
+            fi
+            echo "workflow_dispatch with no explicit version: auto-bumped from ${last_tag:-none} to v$version"
           else
-            ver="${last_tag#v}"
-            major="${ver%%.*}"
-            rest="${ver#*.}"
-            minor="${rest%%.*}"
-            patch="${rest#*.}"
-            next_tag="v${major}.${minor}.$((patch + 1))"
+            echo "Explicit version from commit message: v$version"
           fi
-          echo "Previous tag: ${last_tag:-none}; next: $next_tag"
-          echo "tag=$next_tag" >> "$GITHUB_OUTPUT"
-          echo "version=${next_tag#v}" >> "$GITHUB_OUTPUT"
+
+          if git rev-parse "v$version" >/dev/null 2>&1; then
+            echo "::error::Tag v$version already exists — pick a version that hasn't been released yet."
+            exit 1
+          fi
+
+          echo "tag=v$version" >> "$GITHUB_OUTPUT"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
 
   # Build the web UI once and share it; every engine build embeds it (-tags
   # webui) so each shipped engine serves the browser UI at / (headless+web).
