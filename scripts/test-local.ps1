@@ -8,7 +8,7 @@
 #   ./scripts/test-local.ps1 -Driver pymobiledevice
 #   ./scripts/test-local.ps1 -Port 8090 -NoTunnel
 #
-# Run from a normal (non-admin) shell — it elevates the engine window itself.
+# Run from a normal (non-admin) shell - it elevates the engine window itself.
 
 param(
     [string]$Driver = "go-ios",
@@ -38,7 +38,7 @@ if ($NoTunnel) { $engineArgs += "-no-tunnel" }
 Write-Host "Launching engine (elevated window): $enginePath $($engineArgs -join ' ')" -ForegroundColor Cyan
 Start-Process -FilePath $enginePath -ArgumentList $engineArgs -Verb RunAs -WorkingDirectory $engineDir
 
-Write-Host "Waiting for the engine to answer on :$Port..." -ForegroundColor Cyan
+Write-Host "Waiting for the engine to answer on port $Port..." -ForegroundColor Cyan
 $ready = $false
 for ($i = 0; $i -lt 30; $i++) {
     try {
@@ -49,7 +49,7 @@ for ($i = 0; $i -lt 30; $i++) {
     }
 }
 if (-not $ready) {
-    Write-Host "Le moteur n'a pas répondu sur /api/health après 15s — il tourne peut-être quand même (vérifie sa fenêtre)." -ForegroundColor Yellow
+    Write-Host "Engine did not answer on /api/health after 15s - it may still be starting (check its window)." -ForegroundColor Yellow
 }
 
 Write-Host "Starting wsclient menu..." -ForegroundColor Green
