@@ -424,10 +424,16 @@ jobs:
         run: cp scripts/install.sh scripts/install.ps1 dist/
 
       - name: Publish release
+        # release-please creates this release as a draft (release-please-config.json
+        # "draft": true) precisely so it stays invisible until this job — gated by
+        # `needs:` on every build job above — actually runs. draft: false here is
+        # what flips it to published, so a build failure leaves a hidden, asset-less
+        # draft instead of a public "latest" release with nothing in it.
         uses: softprops/action-gh-release@718ea10b132b3b2eba29c1007bb80653f286566b # v3.0.1
         with:
           files: dist/**/*
           generate_release_notes: true
+          draft: false
           body: |
             ## Installation en une commande (toujours la dernière version)
 

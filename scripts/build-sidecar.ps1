@@ -24,7 +24,14 @@ $outputPath = Join-Path $binariesDir $outputName
 Write-Host "Building Go engine to sidecar path..."
 Push-Location $engineDir
 go build -o $outputPath ./cmd/headless
+$goBuildExitCode = $LASTEXITCODE
 Pop-Location
+if ($goBuildExitCode -ne 0) {
+    throw "go build failed with exit code $goBuildExitCode"
+}
+if (!(Test-Path $outputPath)) {
+    throw "go build reported success but $outputPath is missing"
+}
 
 Write-Host "Sidecar binary created successfully at: $outputPath"
 

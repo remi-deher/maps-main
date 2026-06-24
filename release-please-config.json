@@ -1,4 +1,5 @@
 {
+  "draft": true,
   "packages": {
     "tauri-app": {
       "release-type": "node",
