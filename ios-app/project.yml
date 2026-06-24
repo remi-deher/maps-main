@@ -106,6 +106,12 @@ targets:
     settings:
       base:
         PRODUCT_NAME: GpsMockCompanionTests
+        # Host the tests in the app: lets the linker defer resolving
+        # GpsMockCompanion's symbols to the running app process instead of
+        # requiring them at static-link time (XcodeGen's automatic wiring
+        # from the dependency below wasn't taking effect).
+        TEST_HOST: "$(BUILT_PRODUCTS_DIR)/GpsMockCompanion.app/GpsMockCompanion"
+        BUNDLE_LOADER: "$(TEST_HOST)"
     dependencies:
       - target: GpsMockCompanion
 
