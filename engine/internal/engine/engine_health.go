@@ -13,6 +13,12 @@ import (
 // spam `ios tunnel ls` / the tunneld REST API.
 const healthCheckInterval = 5 * time.Second
 
+// tunnelRetryInterval throttles re-attempts to establish a tunnel that has
+// never come up (e.g. no device was connected yet at boot). Each attempt
+// blocks the loop for up to the driver's tunnel-start timeout (tens of
+// seconds), so this must stay well above healthCheckInterval.
+const tunnelRetryInterval = 30 * time.Second
+
 // StartHealthMonitor launches the background tunnel watchdog. It runs until ctx
 // is cancelled. The loop is a no-op whenever no tunnel is active, so it is safe
 // to start once at boot regardless of whether the tunnel is up yet.
@@ -31,6 +37,7 @@ func (e *Engine) healthLoop(ctx context.Context) {
 
 	// Avoid logging "still searching" on every tick while a device is away.
 	warnedSearching := false
+	var lastRetry time.Time
 
 	for {
 		select {
@@ -44,6 +51,12 @@ func (e *Engine) healthLoop(ctx context.Context) {
 		e.mu.RUnlock()
 		if !active {
 			warnedSearching = false
+			// StartTunnel may have failed at boot (no device connected yet) —
+			// nothing else retries that, so do it here, throttled.
+			if time.Since(lastRetry) >= tunnelRetryInterval {
+				lastRetry = time.Now()
+				_ = e.StartTunnel(ctx)
+			}
 			continue
 		}
 
