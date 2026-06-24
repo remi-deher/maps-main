@@ -113,4 +113,3 @@ func TestSQLStore(t *testing.T) {
 		t.Errorf("expected fallback companion port 8080, got %d", fallback.CompanionPort)
 	}
 }
-
