@@ -95,3 +95,14 @@ targets:
     dependencies:
       - target: GpsMockCompanion
 
+schemes:
+  GpsMockCompanion:
+    build:
+      targets:
+        GpsMockCompanion: all
+        GpsMockWidgets: all
+        GpsMockCompanionTests: [test]
+    test:
+      targets:
+        - GpsMockCompanionTests
+
