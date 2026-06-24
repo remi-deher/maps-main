@@ -120,34 +120,6 @@ func (d *Driver) tunnelsCLI(ctx context.Context) []tunnelEntry {
 	return parseTunnelList(out)
 }
 
-// goiosVersion runs `ios version` and returns the reported version string, e.g.
-// "1.2.0". Empty when the binary can't be found or the output is unexpected.
-func (d *Driver) goiosVersion(ctx context.Context) string {
-	bin, err := d.binPath()
-	if err != nil {
-		return ""
-	}
-	out, err := execCommandContext(ctx, bin, "version").Output()
-	if err != nil {
-		return ""
-	}
-	// go-ios prints `{"version":"1.2.0"}` (plus slog noise on stderr).
-	for start := strings.Index(string(out), "{"); start >= 0; {
-		var v struct {
-			Version string `json:"version"`
-		}
-		if err := json.NewDecoder(strings.NewReader(string(out)[start:])).Decode(&v); err == nil && v.Version != "" {
-			return v.Version
-		}
-		next := strings.Index(string(out)[start+1:], "{")
-		if next < 0 {
-			break
-		}
-		start += next + 1
-	}
-	return ""
-}
-
 // parseTunnelList decodes `ios tunnel ls` output. go-ios writes its slog lines
 // to stderr and the JSON array to stdout, but PowerShell can also interleave
 // NativeCommandError text and multiple arrays. Scan every array-shaped value

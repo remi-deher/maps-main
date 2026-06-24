@@ -81,7 +81,7 @@ func main() {
 		fmt.Fprintf(os.Stderr, "Échec de connexion à %s après plusieurs tentatives: %v\n", u.String(), err)
 		os.Exit(1)
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 
 	env := map[string]any{"type": actionType}
 	if data != nil {
@@ -102,7 +102,7 @@ func main() {
 	for {
 		_, raw, err := conn.ReadMessage()
 		if err != nil {
-			fmt.Fprintln(os.Stdout, `{"type":"ERROR","data":{"message":"timeout en attente de réponse"}}`)
+			_, _ = fmt.Fprintln(os.Stdout, `{"type":"ERROR","data":{"message":"timeout en attente de réponse"}}`)
 			os.Exit(1)
 		}
 		var env struct {
@@ -118,10 +118,10 @@ func main() {
 			var v any
 			if err := json.Unmarshal(raw, &v); err == nil {
 				compact, _ := json.Marshal(v)
-				fmt.Fprintln(os.Stdout, string(compact))
+				_, _ = fmt.Fprintln(os.Stdout, string(compact))
 				return
 			}
-			fmt.Fprintln(os.Stdout, string(raw))
+			_, _ = fmt.Fprintln(os.Stdout, string(raw))
 			return
 		}
 		// Unrelated broadcast (e.g. TELEMETRY, a LOG line from something
