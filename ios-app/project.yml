@@ -63,6 +63,13 @@ targets:
         # so the app has a real String Catalog (source = fr) ready for
         # translations instead of hard-coded strings (§3.10 baseline).
         SWIFT_EMIT_LOC_STRINGS: "YES"
+      configs:
+        Debug:
+          # GpsMockCompanionTests does `@testable import GpsMockCompanion`,
+          # which requires the app module to be built with testability
+          # enabled. Xcode's project templates default this on for Debug;
+          # XcodeGen doesn't, so it has to be set explicitly here.
+          SWIFT_ENABLE_TESTABILITY: "YES"
     dependencies:
       - target: GpsMockWidgets
         embed: true
