@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.1](https://github.com/remi-deher/maps-main/compare/gpsmock-v0.4.0...gpsmock-v0.4.1) (2026-06-24)
+
+
+### Bug Fixes
+
+* **engine:** kill full tunnel process tree and follow devices dynamically across USB/WiFi ([0be82e8](https://github.com/remi-deher/maps-main/commit/0be82e87b72b1901a932f49668682415d87ad8e0))
+
 ## [0.4.0](https://github.com/remi-deher/maps-main/compare/gpsmock-v0.3.14...gpsmock-v0.4.0) (2026-06-23)
 
 
