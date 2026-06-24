@@ -55,6 +55,7 @@ targets:
           - com.remi2.gpsmock.companion.keepalive
     settings:
       base:
+        PRODUCT_NAME: GpsMockCompanion
         PRODUCT_BUNDLE_IDENTIFIER: com.remi2.gpsmock.companion
         INFOPLIST_FILE: Sources/Info.plist
         GENERATE_INFOPLIST_FILE: NO
@@ -80,6 +81,7 @@ targets:
           NSExtensionPointIdentifier: com.apple.widgetkit-extension
     settings:
       base:
+        PRODUCT_NAME: GpsMockWidgets
         PRODUCT_BUNDLE_IDENTIFIER: com.remi2.gpsmock.companion.widgets
         INFOPLIST_FILE: Widgets/Info.plist
         GENERATE_INFOPLIST_FILE: NO
