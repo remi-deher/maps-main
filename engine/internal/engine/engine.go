@@ -33,6 +33,12 @@ type Engine struct {
 	simPaused bool
 	simMu     sync.Mutex
 
+	// tunnelMu serializes StartTunnel: the boot goroutine and the health
+	// monitor's retry/reconnect paths can all call it around the same time,
+	// and a second concurrent `ios tunnel start` would race the first one for
+	// the tunnel-info HTTP port (28100) and fail to bind it.
+	tunnelMu sync.Mutex
+
 	// Anti-drift shield: tracks consecutive REAL_LOCATION reports that drift
 	// too far from the spoofed position, to confirm before forcing a re-inject.
 	driftFailures   int
@@ -373,6 +379,16 @@ func (e *Engine) emitStatusLocked() {
 
 // StartTunnel brings up the driver tunnel and updates the status.
 func (e *Engine) StartTunnel(ctx context.Context) error {
+	e.tunnelMu.Lock()
+	defer e.tunnelMu.Unlock()
+
+	e.mu.RLock()
+	alreadyActive := e.st.TunnelActive
+	e.mu.RUnlock()
+	if alreadyActive {
+		return nil
+	}
+
 	drv := e.driver()
 	e.LogEvent("info", "tunnel", "tunnel", "start", fmt.Sprintf("Démarrage du tunnel (%s)", drv.ID()), map[string]string{
 		"driver": string(drv.ID()),
@@ -385,6 +401,9 @@ func (e *Engine) StartTunnel(ctx context.Context) error {
 		// doesn't have to guess why the tunnel won't start.
 		if runtime.GOOS != "windows" && isPermissionError(err) {
 			msg += "\n→ Droits insuffisants pour créer le tunnel. Relancez le moteur avec sudo : sudo gpsmock-engine"
+		}
+		if hint := e.pairingHint(ctx, drv); hint != "" {
+			msg += hint
 		}
 		e.LogEvent("error", "tunnel", "tunnel", "start", msg, map[string]string{
 			"driver": string(drv.ID()),
@@ -600,6 +619,35 @@ func (e *Engine) GetDeviceInfo(ctx context.Context) (driver.DeviceDetails, error
 		return driver.DeviceDetails{}, fmt.Errorf("device info not supported by driver %q", drv.ID())
 	}
 	return provider.DeviceDetails(ctx)
+}
+
+// PairDevice runs the active driver's Lockdown pairing handshake (the
+// on-screen "Faire confiance à cet ordinateur ?" prompt) against a
+// USB-connected device. This is the prerequisite the iOS 17+ WiFi RSD
+// tunnel needs before it can ever come up — see docs/IOS_PAIRING_TUNNEL.md
+// and pairingHint, which detects the same missing-pairing condition after a
+// failed StartTunnel. Returns an error if the active driver doesn't support
+// pairing (none currently lack it, but the capability is optional like
+// DeviceInfoProvider/NetworkDeviceLister) or if the CLI call itself fails
+// (most commonly: no USB device connected, or the on-screen prompt timed out
+// without being accepted).
+func (e *Engine) PairDevice(ctx context.Context) error {
+	drv := e.driver()
+	pairer, ok := drv.(driver.Pairer)
+	if !ok {
+		return fmt.Errorf("pairing not supported by driver %q", drv.ID())
+	}
+	if err := pairer.Pair(ctx); err != nil {
+		e.LogEvent("error", "tunnel", "pairing", "pair", fmt.Sprintf("Échec du pairing (%s) : %v", drv.ID(), err), map[string]string{
+			"driver": string(drv.ID()),
+			"error":  err.Error(),
+		})
+		return err
+	}
+	e.LogEvent("info", "tunnel", "pairing", "pair", fmt.Sprintf("Pairing réussi (%s)", drv.ID()), map[string]string{
+		"driver": string(drv.ID()),
+	})
+	return nil
 }
 
 // ListNetworkDevices surfaces every device the active driver's tunnel daemon

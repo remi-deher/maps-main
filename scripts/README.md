@@ -1,5 +1,9 @@
 # Scripts — installation & gestion du moteur headless
 
+> Avant de modifier un script ici, voir [SCRIPTING_PITFALLS.md](SCRIPTING_PITFALLS.md)
+> — pièges PowerShell/Bash déjà rencontrés dans ce repo (quoting, élévation,
+> CRLF, etc.).
+
 ## Bootstrapper (recommandé)
 
 Un seul script léger qui demande la variante à installer puis télécharge

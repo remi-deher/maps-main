@@ -48,6 +48,9 @@ channels:
       SWITCH_DRIVER: { $ref: "#/components/messages/SWITCH_DRIVER" }
       GET_DIAGNOSTICS: { $ref: "#/components/messages/GET_DIAGNOSTICS" }
       GET_NETWORK_DEVICES: { $ref: "#/components/messages/EMPTY" }
+      SCAN_MDNS: { $ref: "#/components/messages/EMPTY" }
+      PROBE_RSD_PORTS: { $ref: "#/components/messages/PROBE_RSD_PORTS" }
+      PAIR_DEVICE: { $ref: "#/components/messages/EMPTY" }
       # ── Outbound (engine -> client) ──
       STATUS: { $ref: "#/components/messages/STATUS" }
       STATUS_UPDATE: { $ref: "#/components/messages/STATUS_UPDATE" }
@@ -62,6 +65,9 @@ channels:
       DEVICE_INFO: { $ref: "#/components/messages/DEVICE_INFO" }
       DIAGNOSTICS: { $ref: "#/components/messages/DIAGNOSTICS" }
       NETWORK_DEVICES: { $ref: "#/components/messages/NETWORK_DEVICES" }
+      MDNS_DEVICES: { $ref: "#/components/messages/MDNS_DEVICES" }
+      RSD_PORTS: { $ref: "#/components/messages/RSD_PORTS" }
+      PAIR_RESULT: { $ref: "#/components/messages/PAIR_RESULT" }
 
 operations:
   sendAction:
@@ -150,6 +156,14 @@ components:
       payload: { $ref: "#/components/schemas/Envelope_DeviceInfo" }
     NETWORK_DEVICES:
       payload: { $ref: "#/components/schemas/Envelope_NetworkDevices" }
+    MDNS_DEVICES:
+      payload: { $ref: "#/components/schemas/Envelope_MdnsDevices" }
+    PROBE_RSD_PORTS:
+      payload: { $ref: "#/components/schemas/Envelope_ProbeRsdPorts" }
+    RSD_PORTS:
+      payload: { $ref: "#/components/schemas/Envelope_RsdPorts" }
+    PAIR_RESULT:
+      payload: { $ref: "#/components/schemas/Envelope_PairResult" }
 
   schemas:
     Envelope_Empty:
@@ -495,4 +509,61 @@ components:
                   port: { type: integer }
                 required: [udid, address, port]
             error: { type: string }
+      required: [type, data]
+
+    Envelope_MdnsDevices:
+      type: object
+      properties:
+        type: { const: MDNS_DEVICES }
+        data:
+          type: object
+          properties:
+            devices:
+              type: array
+              items:
+                type: object
+                properties:
+                  service: { type: string }
+                  instance: { type: string }
+                  hostname: { type: string }
+                  ipv4: { type: array, items: { type: string } }
+                  ipv6: { type: array, items: { type: string } }
+                  port: { type: integer }
+                required: [service, instance, hostname, port]
+            error: { type: string }
+      required: [type, data]
+
+    Envelope_ProbeRsdPorts:
+      type: object
+      properties:
+        type: { const: PROBE_RSD_PORTS }
+        data:
+          type: object
+          properties:
+            host: { type: string }
+          required: [host]
+      required: [type, data]
+
+    Envelope_RsdPorts:
+      type: object
+      properties:
+        type: { const: RSD_PORTS }
+        data:
+          type: object
+          properties:
+            host: { type: string }
+            openPorts: { type: array, items: { type: integer } }
+            error: { type: string }
+      required: [type, data]
+
+    Envelope_PairResult:
+      type: object
+      properties:
+        type: { const: PAIR_RESULT }
+        data:
+          type: object
+          properties:
+            ok: { type: boolean }
+            error: { type: string }
+          required: [ok]
       required: [type, data]

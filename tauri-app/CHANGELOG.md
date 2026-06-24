@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.7.0](https://github.com/remi-deher/maps-main/compare/v0.6.0...v0.7.0) (2026-06-24)
+
+
+### Features
+
+* **engine:** keep iPhones discoverable with passive mDNS wake, MDNS scanning, RSD probing, and iOS pairing tunnel support
+* **tauri:** settings/pairing UI adjustments and robust WebSocket handling
+
 ## [0.6.0](https://github.com/remi-deher/maps-main/compare/v0.5.0...v0.6.0) (2026-06-24)
 
 

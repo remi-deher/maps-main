@@ -37,7 +37,11 @@ func (e *Engine) healthLoop(ctx context.Context) {
 
 	// Avoid logging "still searching" on every tick while a device is away.
 	warnedSearching := false
-	var lastRetry time.Time
+	// Starts at "now", not the zero value: a zero time.Time would make the
+	// very first tick's time.Since(lastRetry) huge, firing an extra StartTunnel
+	// just 5s after boot — racing the boot goroutine's own StartTunnel call for
+	// the tunnel daemon's HTTP port.
+	lastRetry := time.Now()
 
 	for {
 		select {

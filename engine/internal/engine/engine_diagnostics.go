@@ -3,6 +3,7 @@ package engine
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -32,6 +33,62 @@ type Diagnostics struct {
 	PairingRecords  []PairingRecord `json:"pairingRecords"`
 	USBDevices      []driver.Device `json:"usbDevices"`
 	USBDevicesError string          `json:"usbDevicesError,omitempty"`
+	// UnpairedUSBDevices lists the UDIDs of USB-connected devices (from
+	// USBDevices) that have NO matching entry in PairingRecords — i.e. no
+	// Lockdown trust certificate exists for them yet. iOS 17+'s WiFi RSD
+	// tunnel cannot be established for a device until this exists (it's
+	// created once, over USB, by accepting the "Trust This Computer?"
+	// prompt) — go-ios and pymobiledevice3 both refuse silently rather than
+	// surfacing this, which is why a missing entry here is the most likely
+	// explanation for "USB works, WiFi never connects".
+	UnpairedUSBDevices []string `json:"unpairedUsbDevices,omitempty"`
+}
+
+// isPaired reports whether a Lockdown pairing record exists for udid, by
+// direct file lookup rather than a full GetDiagnostics() scan — cheap enough
+// to call from a hot error path (e.g. right after a failed StartTunnel).
+func isPaired(udid string) bool {
+	if udid == "" {
+		return false
+	}
+	dir := platform.LockdownDir()
+	if dir == "" {
+		return false
+	}
+	info, err := os.Stat(filepath.Join(dir, udid+".plist"))
+	return err == nil && !info.IsDir()
+}
+
+// pairingHint checks whether a USB-visible device is missing its Lockdown
+// trust certificate and, if so, returns a remediation suffix to append to a
+// tunnel-start failure message. Returns "" when no USB device is visible at
+// all (a different problem — see the rest of the failure message) or when
+// every visible device is already paired (the failure has another cause).
+//
+// This is the single most common reason go-ios/pymobiledevice3 ever fail to
+// establish the iOS 17+ WiFi RSD tunnel — see docs/IOS_PAIRING_TUNNEL.md —
+// yet neither CLI surfaces it as a distinct error; both just report a
+// generic tunnel-start timeout/failure indistinguishable from a flaky
+// network. Checking it explicitly here turns hours of debugging into one
+// log line.
+func (e *Engine) pairingHint(ctx context.Context, drv driver.Driver) string {
+	devices, err := drv.ListDevices(ctx)
+	if err != nil || len(devices) == 0 {
+		return ""
+	}
+	var unpaired []string
+	for _, dev := range devices {
+		if dev.UDID != "" && !isPaired(dev.UDID) {
+			unpaired = append(unpaired, dev.UDID)
+		}
+	}
+	if len(unpaired) == 0 {
+		return ""
+	}
+	return fmt.Sprintf(
+		"\n→ Aucun pairing Lockdown trouvé pour %s : le tunnel WiFi iOS 17+ ne peut pas s'établir sans lui, même en USB. "+
+			"Branchez l'iPhone en USB et validez \"Faire confiance à cet ordinateur ?\" sur son écran (ou lancez l'action PAIR_DEVICE), puis réessayez.",
+		strings.Join(unpaired, ", "))
 }
 
 var deviceNameRe = regexp.MustCompile(`<key>DeviceName</key>\s*<string>([^<]+)</string>`)
@@ -144,6 +201,17 @@ func (e *Engine) GetDiagnostics(ctx context.Context) (Diagnostics, error) {
 	diag.USBDevices = devices
 	if devErr != nil {
 		diag.USBDevicesError = devErr.Error()
+	}
+
+	// 6. Cross-check: which connected USB devices have no Lockdown trust yet.
+	paired := make(map[string]bool, len(diag.PairingRecords))
+	for _, pr := range diag.PairingRecords {
+		paired[pr.UDID] = true
+	}
+	for _, dev := range diag.USBDevices {
+		if dev.UDID != "" && !paired[dev.UDID] {
+			diag.UnpairedUSBDevices = append(diag.UnpairedUSBDevices, dev.UDID)
+		}
 	}
 
 	return diag, nil

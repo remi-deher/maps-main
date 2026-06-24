@@ -44,6 +44,9 @@ const (
 	ActionSwitchDriver      = "SWITCH_DRIVER"
 	ActionGetDiagnostics    = "GET_DIAGNOSTICS"
 	ActionGetNetworkDevices = "GET_NETWORK_DEVICES"
+	ActionScanMdns          = "SCAN_MDNS"
+	ActionProbeRsdPorts     = "PROBE_RSD_PORTS"
+	ActionPairDevice        = "PAIR_DEVICE"
 )
 
 // Outbound event types (engine -> client).
@@ -61,6 +64,9 @@ const (
 	EventLogs                   = "LOGS"
 	EventDiagnostics            = "DIAGNOSTICS"
 	EventNetworkDevices         = "NETWORK_DEVICES"
+	EventMdnsDevices            = "MDNS_DEVICES"
+	EventRsdPorts               = "RSD_PORTS"
+	EventPairResult             = "PAIR_RESULT"
 )
 
 // ─── Inbound payloads ────────────────────────────────────────────────────────
@@ -246,4 +252,47 @@ type NetworkDevicePayload struct {
 type NetworkDevicesPayload struct {
 	Devices []NetworkDevicePayload `json:"devices,omitempty"`
 	Error   string                 `json:"error,omitempty"`
+}
+
+// MdnsDevicePayload is one entry in MDNS_DEVICES — a raw Bonjour announcement
+// found by actively browsing the LAN for _apple-mobdev2._tcp, independent of
+// any tunnel daemon. Used to tell apart "the iPhone isn't on mDNS at all" from
+// "it announces fine, the tunnel daemon just isn't picking it up".
+type MdnsDevicePayload struct {
+	Service  string   `json:"service"`
+	Instance string   `json:"instance"`
+	Hostname string   `json:"hostname"`
+	IPv4     []string `json:"ipv4,omitempty"`
+	IPv6     []string `json:"ipv6,omitempty"`
+	Port     int      `json:"port"`
+}
+
+// MdnsDevicesPayload is the data for MDNS_DEVICES (the response to SCAN_MDNS).
+type MdnsDevicesPayload struct {
+	Devices []MdnsDevicePayload `json:"devices,omitempty"`
+	Error   string              `json:"error,omitempty"`
+}
+
+// ProbeRsdPortsPayload is the data for PROBE_RSD_PORTS: probe a candidate TCP
+// port range on a host (typically a device's link-local IPv6 from MDNS_DEVICES)
+// for an open RemotePairing/RSD port, since there's no mDNS record for it.
+type ProbeRsdPortsPayload struct {
+	Host string `json:"host"`
+}
+
+// RsdPortsPayload is the data for RSD_PORTS (the response to PROBE_RSD_PORTS).
+type RsdPortsPayload struct {
+	Host      string `json:"host"`
+	OpenPorts []int  `json:"openPorts,omitempty"`
+	Error     string `json:"error,omitempty"`
+}
+
+// PairResultPayload is the data for PAIR_RESULT (the response to
+// PAIR_DEVICE): runs the active driver's Lockdown trust handshake against a
+// USB-connected device (see docs/IOS_PAIRING_TUNNEL.md). Success means the
+// on-screen "Faire confiance ?" prompt was accepted and a pairing record now
+// exists — a prerequisite for the iOS 17+ WiFi RSD tunnel.
+type PairResultPayload struct {
+	OK    bool   `json:"ok"`
+	Error string `json:"error,omitempty"`
 }

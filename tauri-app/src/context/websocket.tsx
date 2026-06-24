@@ -77,6 +77,16 @@ export interface Diagnostics {
   pairingRecords: PairingRecord[] | null;
   usbDevices: DiagnosticsDevice[] | null;
   usbDevicesError?: string;
+  // UDIDs of USB-connected devices with no Lockdown trust certificate yet —
+  // the iOS 17+ WiFi RSD tunnel cannot come up for them until paired over
+  // USB (see docs/IOS_PAIRING_TUNNEL.md). null/undefined on older engines
+  // that predate this field.
+  unpairedUsbDevices?: string[] | null;
+  error?: string;
+}
+
+export interface PairResult {
+  ok: boolean;
   error?: string;
 }
 
@@ -206,6 +216,9 @@ interface WebSocketContextType {
   getDiagnostics: () => void;
   networkDevices: NetworkDevicesResult | null;
   getNetworkDevices: () => void;
+  pairResult: PairResult | null;
+  pairing: boolean;
+  pairDevice: () => void;
 }
 
 const WebSocketContext = createContext<WebSocketContextType | null>(null);
@@ -235,6 +248,8 @@ export const WebSocketProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [diagnostics, setDiagnostics] = useState<Diagnostics | null>(null);
   const [networkDevices, setNetworkDevices] = useState<NetworkDevicesResult | null>(null);
+  const [pairResult, setPairResult] = useState<PairResult | null>(null);
+  const [pairing, setPairing] = useState(false);
   const maxLogEntries = 200;
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectTimeoutRef = useRef<any>(null);
@@ -302,6 +317,10 @@ export const WebSocketProvider: React.FC<{ children: React.ReactNode }> = ({ chi
             break;
           case "NETWORK_DEVICES":
             setNetworkDevices(data);
+            break;
+          case "PAIR_RESULT":
+            setPairResult(data);
+            setPairing(false);
             break;
           case "LOGS":
             setLogs((Array.isArray(data) ? data : []) as LogEntry[]);
@@ -522,6 +541,17 @@ export const WebSocketProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     sendMessage("GET_NETWORK_DEVICES");
   };
 
+  // Runs the active driver's Lockdown pairing handshake against a
+  // USB-connected device (the "Faire confiance ?" prompt) — see
+  // docs/IOS_PAIRING_TUNNEL.md. `pairing` stays true until PAIR_RESULT
+  // arrives, since the user has to physically accept the prompt on their
+  // phone before the engine's reply comes back (up to ~45s).
+  const pairDevice = () => {
+    setPairResult(null);
+    setPairing(true);
+    sendMessage("PAIR_DEVICE");
+  };
+
   return (
     <WebSocketContext.Provider
       value={{
@@ -560,6 +590,9 @@ export const WebSocketProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         getDiagnostics,
         networkDevices,
         getNetworkDevices,
+        pairResult,
+        pairing,
+        pairDevice,
       }}
     >
       {children}

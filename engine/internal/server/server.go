@@ -482,6 +482,36 @@ func (s *Server) dispatch(c *client, env api.Envelope) {
 			payload.Devices = append(payload.Devices, api.NetworkDevicePayload{UDID: d.UDID, Address: d.Address, Port: d.Port})
 		}
 		c.send <- encode(api.EventNetworkDevices, payload)
+	case api.ActionScanMdns:
+		devices, derr := engine.ScanMdnsAll(ctx, 5*time.Second)
+		if derr != nil {
+			slog.Error("SCAN_MDNS", "error", derr)
+			c.send <- encode(api.EventMdnsDevices, api.MdnsDevicesPayload{Error: derr.Error()})
+			break
+		}
+		payload := api.MdnsDevicesPayload{Devices: make([]api.MdnsDevicePayload, 0, len(devices))}
+		for _, d := range devices {
+			payload.Devices = append(payload.Devices, api.MdnsDevicePayload{
+				Service: d.Service, Instance: d.Instance, Hostname: d.Hostname, IPv4: d.IPv4, IPv6: d.IPv6, Port: d.Port,
+			})
+		}
+		c.send <- encode(api.EventMdnsDevices, payload)
+	case api.ActionProbeRsdPorts:
+		var p api.ProbeRsdPortsPayload
+		if uerr := json.Unmarshal(env.Data, &p); uerr != nil || p.Host == "" {
+			c.send <- encode(api.EventRsdPorts, api.RsdPortsPayload{Error: "host manquant ou invalide"})
+			break
+		}
+		openPorts := engine.ProbeRSDPorts(ctx, p.Host, 400*time.Millisecond)
+		c.send <- encode(api.EventRsdPorts, api.RsdPortsPayload{Host: p.Host, OpenPorts: openPorts})
+	case api.ActionPairDevice:
+		err = s.eng.PairDevice(ctx)
+		if err != nil {
+			slog.Error("PAIR_DEVICE", "error", err)
+			c.send <- encode(api.EventPairResult, api.PairResultPayload{Error: err.Error()})
+			break
+		}
+		c.send <- encode(api.EventPairResult, api.PairResultPayload{OK: true})
 	case api.ActionGetDiagnostics:
 		var diag engine.Diagnostics
 		diag, err = s.eng.GetDiagnostics(ctx)

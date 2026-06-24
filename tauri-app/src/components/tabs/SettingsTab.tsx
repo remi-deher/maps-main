@@ -29,6 +29,9 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({ showToast }) => {
     getDiagnostics,
     networkDevices,
     getNetworkDevices,
+    pairResult,
+    pairing,
+    pairDevice,
   } = useWebSocket();
 
   const [enginePortInput, setEnginePortInput] = useState(String(enginePort));
@@ -483,6 +486,44 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({ showToast }) => {
                 </p>
               )}
             </div>
+
+            {diagnostics.unpairedUsbDevices && diagnostics.unpairedUsbDevices.length > 0 && (
+              <div
+                style={{
+                  border: "1px solid rgba(251, 191, 36, 0.3)",
+                  background: "rgba(251, 191, 36, 0.08)",
+                  borderRadius: "8px",
+                  padding: "10px",
+                }}
+              >
+                <p style={{ fontSize: "0.8rem", color: "#fbbf24", margin: "0 0 8px 0" }}>
+                  Appareil(s) branché(s) en USB sans certificat d'appairage :{" "}
+                  <code style={{ fontFamily: "monospace" }}>{diagnostics.unpairedUsbDevices.join(", ")}</code>.
+                  Le tunnel WiFi (iOS 17+) ne peut pas s'établir tant qu'il n'est pas pairé une
+                  première fois en USB.
+                </p>
+                <button
+                  className="btn btn-secondary"
+                  onClick={pairDevice}
+                  disabled={!canSend || pairing}
+                >
+                  <Smartphone size={14} /> {pairing ? "En attente du prompt sur l'iPhone..." : "Pairer l'iPhone (USB)"}
+                </button>
+                {pairResult && (
+                  <p
+                    style={{
+                      fontSize: "0.78rem",
+                      margin: "8px 0 0 0",
+                      color: pairResult.ok ? "#4ade80" : "#f87171",
+                    }}
+                  >
+                    {pairResult.ok
+                      ? "Pairing réussi — le tunnel WiFi devrait maintenant pouvoir s'établir."
+                      : `Échec : ${pairResult.error || "erreur inconnue"}`}
+                  </p>
+                )}
+              </div>
+            )}
           </div>
         ) : (
           <p style={{ fontSize: "0.78rem", color: "#94a3b8", margin: 0 }}>

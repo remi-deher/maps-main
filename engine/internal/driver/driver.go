@@ -107,6 +107,20 @@ type NetworkDeviceLister interface {
 	ListNetworkDevices(ctx context.Context) ([]NetworkDevice, error)
 }
 
+// Pairer is an optional capability: drivers that can drive the Lockdown
+// trust handshake (the "Faire confiance à cet ordinateur ?" prompt) over USB
+// implement it. This is the prerequisite go-ios/pymobiledevice3 both need —
+// silently — before an iOS 17+ WiFi RSD tunnel can ever be established; see
+// docs/IOS_PAIRING_TUNNEL.md. Both backends implement it (`ios pair` /
+// `pymobiledevice3 lockdown pair`).
+type Pairer interface {
+	// Pair runs the Lockdown pairing handshake against a USB-connected
+	// device, prompting the user to accept on-screen. Blocks until the CLI
+	// returns (the prompt has a short OS-enforced timeout, so this won't
+	// hang indefinitely waiting on the user).
+	Pair(ctx context.Context) error
+}
+
 // TunnelReresolver is an optional capability: drivers that can refresh the
 // active tunnel's endpoint for the current device without restarting the daemon
 // implement it, so the health monitor can transparently follow a device moving

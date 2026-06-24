@@ -54,6 +54,12 @@ L'interface `Driver` (`engine/internal/driver/driver.go`) reprend le `BaseDriver
 historique : `StartTunnel/StopTunnel/SetLocation/ClearLocation/CheckHealth/ListDevices`.
 Le **registre** (`registry.go`) mappe `DriverID → Factory` ; `New(id, cfg)` est le menu.
 
+> Avant de toucher au tunnel WiFi iOS 17+ (RSD) ou de déboguer un device qui
+> ne se connecte pas en WiFi malgré l'USB, voir
+> [IOS_PAIRING_TUNNEL.md](IOS_PAIRING_TUNNEL.md) — le pairing Lockdown
+> (trust USB) est un prérequis invisible mais bloquant pour les deux
+> drivers.
+
 ## Arborescence
 
 ```

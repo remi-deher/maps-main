@@ -1,31 +1,72 @@
 // Command wsclient is a local manual-testing tool: it connects to a running
-// gpsmock-engine over its WebSocket API and offers an interactive menu to send
-// the actions a real client (Tauri/iOS app) would — without building either
-// of those. Meant to be run next to `gpsmock-engine`, e.g. via
-// scripts/test-local.ps1, while iterating on driver/discovery changes.
+// gpsmock-engine over its WebSocket API, sends ONE action, prints the matching
+// reply as a single compact JSON line on stdout, then exits. It is meant to be
+// driven by scripts/test-local.ps1, which does the menu/formatting/looping in
+// PowerShell — this binary only speaks JSON in and JSON out, so it stays a
+// dumb, scriptable building block instead of its own interactive UI.
+//
+// Everything other than the final JSON reply (connection retries, errors) goes
+// to stderr, so stdout can be piped straight into ConvertFrom-Json.
 package main
 
 import (
-	"bufio"
 	"encoding/json"
 	"flag"
 	"fmt"
 	"net/url"
 	"os"
-	"strconv"
-	"strings"
-	"sync"
 	"time"
 
 	"github.com/gorilla/websocket"
 )
 
+// replyTypeFor maps an action to the event type its direct reply carries, so
+// runOnce can ignore unrelated broadcasts (TELEMETRY ticks, LOG lines from
+// something else entirely) while waiting for the answer to THIS call.
+// SWITCH_DRIVER/start-tunnel-ish actions reply via a STATUS broadcast once the
+// driver is actually up, which can take longer than a plain query.
+var replyTypeFor = map[string]string{
+	"GET_STATUS":          "STATUS",
+	"GET_DIAGNOSTICS":     "DIAGNOSTICS",
+	"GET_NETWORK_DEVICES": "NETWORK_DEVICES",
+	"SCAN_MDNS":           "MDNS_DEVICES",
+	"PROBE_RSD_PORTS":     "RSD_PORTS",
+	"GET_DEVICE_INFO":     "DEVICE_INFO",
+	"GET_LOGS":            "LOGS",
+	"SET_LOCATION":        "STATUS",
+	"CLEAR_LOCATION":      "STATUS",
+	"HEARTBEAT":           "PONG",
+	"SWITCH_DRIVER":       "STATUS",
+	"PAIR_DEVICE":         "PAIR_RESULT",
+}
+
+var longTimeoutActions = map[string]time.Duration{
+	"SWITCH_DRIVER":   30 * time.Second,
+	"SCAN_MDNS":       15 * time.Second, // 5s browse + up to 3s+3s per-instance dns-sd -L/-G resolution
+	"PROBE_RSD_PORTS": 10 * time.Second, // ~180 candidate ports, 32 at a time
+	"PAIR_DEVICE":     45 * time.Second, // waits on the user accepting the on-screen "Trust" prompt
+}
+
 func main() {
 	addr := flag.String("addr", "localhost:8080", "engine listen address (host:port)")
+	timeout := flag.Duration("timeout", 5*time.Second, "how long to wait for the matching reply")
 	flag.Parse()
 
+	args := flag.Args()
+	if len(args) == 0 {
+		fmt.Fprintln(os.Stderr, "usage: wsclient -addr host:port ACTION_TYPE [json-data]")
+		os.Exit(2)
+	}
+	actionType := args[0]
+	var data any
+	if len(args) > 1 {
+		if err := json.Unmarshal([]byte(args[1]), &data); err != nil {
+			fmt.Fprintf(os.Stderr, "JSON invalide: %v\n", err)
+			os.Exit(2)
+		}
+	}
+
 	u := url.URL{Scheme: "ws", Host: *addr, Path: "/ws"}
-	fmt.Printf("Connexion à %s...\n", u.String())
 
 	var conn *websocket.Conn
 	var err error
@@ -37,189 +78,53 @@ func main() {
 		time.Sleep(500 * time.Millisecond)
 	}
 	if err != nil {
-		fmt.Printf("Échec de connexion après plusieurs tentatives : %v\n", err)
+		fmt.Fprintf(os.Stderr, "Échec de connexion à %s après plusieurs tentatives: %v\n", u.String(), err)
 		os.Exit(1)
 	}
 	defer conn.Close()
-	fmt.Println("Connecté.")
 
-	var mu sync.Mutex // guards stdout so the read-loop and the menu don't interleave mid-line
-
-	// Read loop: print every inbound event as pretty JSON, as it arrives —
-	// independent of the menu, so STATUS/LOG broadcasts show up live too.
-	go func() {
-		for {
-			_, raw, err := conn.ReadMessage()
-			if err != nil {
-				mu.Lock()
-				fmt.Printf("\n[connexion fermée: %v]\n", err)
-				mu.Unlock()
-				os.Exit(0)
-			}
-			mu.Lock()
-			fmt.Print("\n<< ")
-			printPrettyJSON(raw)
-			fmt.Print("\n> ")
-			mu.Unlock()
-		}
-	}()
-
-	send := func(msgType string, data any) {
-		env := map[string]any{"type": msgType}
-		if data != nil {
-			env["data"] = data
-		}
-		mu.Lock()
-		fmt.Printf(">> %s %v\n", msgType, dataOrEmpty(data))
-		mu.Unlock()
-		if err := conn.WriteJSON(env); err != nil {
-			fmt.Printf("[erreur d'envoi: %v]\n", err)
-		}
+	env := map[string]any{"type": actionType}
+	if data != nil {
+		env["data"] = data
+	}
+	if err := conn.WriteJSON(env); err != nil {
+		fmt.Fprintf(os.Stderr, "Échec d'envoi: %v\n", err)
+		os.Exit(1)
 	}
 
-	reader := bufio.NewScanner(os.Stdin)
-	printMenu()
+	wantType, known := replyTypeFor[actionType]
+	deadline := *timeout
+	if d, ok := longTimeoutActions[actionType]; ok {
+		deadline = d
+	}
+	_ = conn.SetReadDeadline(time.Now().Add(deadline))
+
 	for {
-		mu.Lock()
-		fmt.Print("\n> ")
-		mu.Unlock()
-		if !reader.Scan() {
-			return
+		_, raw, err := conn.ReadMessage()
+		if err != nil {
+			fmt.Fprintln(os.Stdout, `{"type":"ERROR","data":{"message":"timeout en attente de réponse"}}`)
+			os.Exit(1)
 		}
-		line := strings.TrimSpace(reader.Text())
-		if line == "" {
+		var env struct {
+			Type string `json:"type"`
+		}
+		if err := json.Unmarshal(raw, &env); err != nil {
 			continue
 		}
-		fields := strings.Fields(line)
-		cmd := fields[0]
-
-		switch cmd {
-		case "h", "help", "?":
-			printMenu()
-
-		case "q", "quit", "exit":
+		if env.Type == "ERROR" || !known || env.Type == wantType {
+			// Re-marshal compact (the wire format may already be compact, but
+			// this guarantees one line regardless) and print it as the sole
+			// stdout output.
+			var v any
+			if err := json.Unmarshal(raw, &v); err == nil {
+				compact, _ := json.Marshal(v)
+				fmt.Fprintln(os.Stdout, string(compact))
+				return
+			}
+			fmt.Fprintln(os.Stdout, string(raw))
 			return
-
-		case "status", "s":
-			send("GET_STATUS", nil)
-
-		case "diag", "d":
-			send("GET_DIAGNOSTICS", nil)
-
-		case "devices", "nd":
-			send("GET_NETWORK_DEVICES", nil)
-
-		case "deviceinfo", "di":
-			send("GET_DEVICE_INFO", nil)
-
-		case "logs", "l":
-			send("GET_LOGS", nil)
-
-		case "switch", "sw":
-			// switch <driverId> [transport] [wifiAddress] [targetUdid]
-			if len(fields) < 2 {
-				fmt.Println("usage: switch <go-ios|pymobiledevice> [auto|usb|wifi] [wifiAddress] [targetUdid]")
-				continue
-			}
-			payload := map[string]any{"driverId": fields[1]}
-			if len(fields) > 2 {
-				payload["transport"] = fields[2]
-			}
-			if len(fields) > 3 {
-				payload["wifiAddress"] = fields[3]
-			}
-			if len(fields) > 4 {
-				payload["targetUdid"] = fields[4]
-			}
-			send("SWITCH_DRIVER", payload)
-
-		case "set", "loc":
-			// set <lat> <lon> [name]
-			if len(fields) < 3 {
-				fmt.Println("usage: set <lat> <lon> [name]")
-				continue
-			}
-			lat, err1 := strconv.ParseFloat(fields[1], 64)
-			lon, err2 := strconv.ParseFloat(fields[2], 64)
-			if err1 != nil || err2 != nil {
-				fmt.Println("lat/lon invalides")
-				continue
-			}
-			payload := map[string]any{"lat": lat, "lon": lon}
-			if len(fields) > 3 {
-				payload["name"] = strings.Join(fields[3:], " ")
-			}
-			send("SET_LOCATION", payload)
-
-		case "clear", "c":
-			send("CLEAR_LOCATION", nil)
-
-		case "heartbeat", "hb":
-			send("HEARTBEAT", nil)
-
-		case "raw":
-			// raw <ACTION_TYPE> <json-data-or-nothing>
-			if len(fields) < 2 {
-				fmt.Println("usage: raw <ACTION_TYPE> [{json}]")
-				continue
-			}
-			actionType := fields[1]
-			if len(fields) == 2 {
-				send(actionType, nil)
-				continue
-			}
-			rawJSON := strings.Join(fields[2:], " ")
-			var data any
-			if err := json.Unmarshal([]byte(rawJSON), &data); err != nil {
-				fmt.Printf("JSON invalide : %v\n", err)
-				continue
-			}
-			send(actionType, data)
-
-		default:
-			fmt.Printf("Commande inconnue %q — tape 'help' pour la liste.\n", cmd)
 		}
+		// Unrelated broadcast (e.g. TELEMETRY, a LOG line from something
+		// else) — keep waiting for our own reply within the same deadline.
 	}
-}
-
-func dataOrEmpty(data any) string {
-	if data == nil {
-		return ""
-	}
-	b, _ := json.Marshal(data)
-	return string(b)
-}
-
-func printPrettyJSON(raw []byte) {
-	var v any
-	if err := json.Unmarshal(raw, &v); err != nil {
-		fmt.Print(string(raw))
-		return
-	}
-	pretty, err := json.MarshalIndent(v, "", "  ")
-	if err != nil {
-		fmt.Print(string(raw))
-		return
-	}
-	fmt.Print(string(pretty))
-}
-
-func printMenu() {
-	fmt.Print(`
-=== gpsmock wsclient — commandes ===
-  status, s                                          GET_STATUS
-  diag, d                                            GET_DIAGNOSTICS (chemins/versions go-ios+pmd3, USB, pairing)
-  devices, nd                                        GET_NETWORK_DEVICES (découverte mDNS/tunnel)
-  deviceinfo, di                                      GET_DEVICE_INFO
-  logs, l                                             GET_LOGS
-  switch <driverId> [transport] [wifiAddr] [udid]    SWITCH_DRIVER, ex: switch go-ios auto
-  set <lat> <lon> [name]                             SET_LOCATION, ex: set 48.8566 2.3522 Paris
-  clear, c                                           CLEAR_LOCATION
-  heartbeat, hb                                      HEARTBEAT
-  raw <ACTION_TYPE> [{json}]                         envoie un message brut, ex: raw GET_STATUS
-  help, h, ?                                         affiche ce menu
-  quit, q                                            quitte
-
-Les événements entrants (STATUS, LOG, NETWORK_DEVICES, ...) s'affichent en direct, préfixés "<<".
-`)
 }
