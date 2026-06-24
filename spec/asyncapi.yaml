@@ -47,6 +47,7 @@ channels:
       GET_DEVICE_INFO: { $ref: "#/components/messages/EMPTY" }
       SWITCH_DRIVER: { $ref: "#/components/messages/SWITCH_DRIVER" }
       GET_DIAGNOSTICS: { $ref: "#/components/messages/GET_DIAGNOSTICS" }
+      GET_NETWORK_DEVICES: { $ref: "#/components/messages/EMPTY" }
       # ── Outbound (engine -> client) ──
       STATUS: { $ref: "#/components/messages/STATUS" }
       STATUS_UPDATE: { $ref: "#/components/messages/STATUS_UPDATE" }
@@ -60,6 +61,7 @@ channels:
       LOGS: { $ref: "#/components/messages/LOGS" }
       DEVICE_INFO: { $ref: "#/components/messages/DEVICE_INFO" }
       DIAGNOSTICS: { $ref: "#/components/messages/DIAGNOSTICS" }
+      NETWORK_DEVICES: { $ref: "#/components/messages/NETWORK_DEVICES" }
 
 operations:
   sendAction:
@@ -146,6 +148,8 @@ components:
       payload: { $ref: "#/components/schemas/Envelope_Logs" }
     DEVICE_INFO:
       payload: { $ref: "#/components/schemas/Envelope_DeviceInfo" }
+    NETWORK_DEVICES:
+      payload: { $ref: "#/components/schemas/Envelope_NetworkDevices" }
 
   schemas:
     Envelope_Empty:
@@ -471,5 +475,24 @@ components:
             serialNumber: { type: string }
             wifiAddress: { type: string }
             tunnelAddress: { type: string }
+            error: { type: string }
+      required: [type, data]
+
+    Envelope_NetworkDevices:
+      type: object
+      properties:
+        type: { const: NETWORK_DEVICES }
+        data:
+          type: object
+          properties:
+            devices:
+              type: array
+              items:
+                type: object
+                properties:
+                  udid: { type: string }
+                  address: { type: string }
+                  port: { type: integer }
+                required: [udid, address, port]
             error: { type: string }
       required: [type, data]
