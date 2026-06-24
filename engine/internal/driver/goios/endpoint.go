@@ -3,13 +3,32 @@ package goios
 import (
 	"context"
 	"encoding/json"
-	"fmt"
+	"io"
+	"net/http"
 	"strings"
+	"time"
 
 	"github.com/remi-deher/maps-main/engine/internal/driver"
 )
 
-// tunnelEntry mirrors one element of `ios tunnel ls`'s JSON array, e.g.
+const (
+	// tunnelInfoPort is go-ios's local tunnel-info HTTP API port. We pass it
+	// explicitly to `ios tunnel start` (see tunnel.go) so the daemon and our
+	// queries always agree on it instead of relying on the CLI default.
+	tunnelInfoPort       = 28100
+	defaultTunnelInfoURL = "http://127.0.0.1:28100"
+)
+
+// tunnelAPIClient is the short-timeout client used to poll go-ios's tunnel-info
+// HTTP API. Reading GET /tunnels directly — instead of spawning `ios tunnel ls`
+// every poll — avoids a process launch each time and is immune to CLI
+// output-format drift between go-ios versions (the JSON shape of the API is
+// stable). The old Electron build polled this same API; the v3 rewrite had
+// regressed to shelling out, which is what this restores.
+var tunnelAPIClient = &http.Client{Timeout: 3 * time.Second}
+
+// tunnelEntry mirrors one element of go-ios's tunnel list (served at GET
+// /tunnels and printed by `ios tunnel ls`), e.g.
 // [{"address":"fdd7:...:1","rsdPort":65032,"udid":"...","userspaceTun":false}].
 type tunnelEntry struct {
 	Address      string `json:"address"`
@@ -18,18 +37,51 @@ type tunnelEntry struct {
 	UserspaceTun bool   `json:"userspaceTun"`
 }
 
-// queryTunnel asks the running daemon for the current device tunnel via
-// `ios tunnel ls` and returns the first entry with a usable RSD address+port.
+func (d *Driver) tunnelsURL() string {
+	base := d.tunnelInfoURL
+	if base == "" {
+		base = defaultTunnelInfoURL
+	}
+	return base + "/tunnels"
+}
+
+// fetchTunnels asks go-ios's tunnel-info HTTP API (GET /tunnels) for the live
+// tunnel list. Returns ok=false if the API isn't reachable (daemon not up yet),
+// so callers can fall back to the CLI.
+func (d *Driver) fetchTunnels(ctx context.Context) ([]tunnelEntry, bool) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, d.tunnelsURL(), nil)
+	if err != nil {
+		return nil, false
+	}
+	resp, err := tunnelAPIClient.Do(req)
+	if err != nil {
+		return nil, false
+	}
+	defer func() { _ = resp.Body.Close() }()
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, false
+	}
+	var entries []tunnelEntry
+	if err := json.Unmarshal(body, &entries); err != nil {
+		return nil, false
+	}
+	return entries, true
+}
+
+// tunnels returns the live tunnel list, preferring the HTTP API and falling
+// back to parsing `ios tunnel ls` stdout when the API can't be reached.
+func (d *Driver) tunnels(ctx context.Context) []tunnelEntry {
+	if entries, ok := d.fetchTunnels(ctx); ok {
+		return entries
+	}
+	return d.tunnelsCLI(ctx)
+}
+
+// queryTunnel asks go-ios for the current device tunnel and returns the first
+// entry with a usable RSD address+port, honoring the target UDID filter.
 func (d *Driver) queryTunnel(ctx context.Context) (driver.TunnelEndpoint, bool) {
-	bin, err := d.binPath()
-	if err != nil {
-		return driver.TunnelEndpoint{}, false
-	}
-	out, err := execCommandContext(ctx, bin, "tunnel", "ls").Output()
-	if err != nil {
-		return driver.TunnelEndpoint{}, false
-	}
-	for _, e := range parseTunnelList(out) {
+	for _, e := range d.tunnels(ctx) {
 		if d.targetUDID != "" && e.UDID != d.targetUDID {
 			continue
 		}
@@ -40,26 +92,60 @@ func (d *Driver) queryTunnel(ctx context.Context) (driver.TunnelEndpoint, bool) 
 	return driver.TunnelEndpoint{}, false
 }
 
-// ListNetworkDevices runs `ios tunnel ls` and returns every device the daemon
-// currently has a tunnel for, not just the first usable one — go-ios discovers
-// these on its own (USB or LAN), this just surfaces what it already found.
+// ListNetworkDevices returns every device go-ios currently has a tunnel for, not
+// just the first usable one — go-ios discovers these on its own (USB or LAN),
+// this just surfaces what it already found.
 func (d *Driver) ListNetworkDevices(ctx context.Context) ([]driver.NetworkDevice, error) {
-	bin, err := d.binPath()
-	if err != nil {
-		return nil, err
-	}
-	out, err := execCommandContext(ctx, bin, "tunnel", "ls").Output()
-	if err != nil {
-		return nil, fmt.Errorf("go-ios tunnel ls: %w", err)
-	}
 	var devices []driver.NetworkDevice
-	for _, e := range parseTunnelList(out) {
+	for _, e := range d.tunnels(ctx) {
 		if e.Address == "" || e.RsdPort <= 0 {
 			continue
 		}
 		devices = append(devices, driver.NetworkDevice{UDID: e.UDID, Address: e.Address, Port: e.RsdPort})
 	}
 	return devices, nil
+}
+
+// tunnelsCLI is the legacy fallback used when the HTTP API can't be reached:
+// run `ios tunnel ls` and parse its stdout.
+func (d *Driver) tunnelsCLI(ctx context.Context) []tunnelEntry {
+	bin, err := d.binPath()
+	if err != nil {
+		return nil
+	}
+	out, err := execCommandContext(ctx, bin, "tunnel", "ls").Output()
+	if err != nil {
+		return nil
+	}
+	return parseTunnelList(out)
+}
+
+// goiosVersion runs `ios version` and returns the reported version string, e.g.
+// "1.2.0". Empty when the binary can't be found or the output is unexpected.
+func (d *Driver) goiosVersion(ctx context.Context) string {
+	bin, err := d.binPath()
+	if err != nil {
+		return ""
+	}
+	out, err := execCommandContext(ctx, bin, "version").Output()
+	if err != nil {
+		return ""
+	}
+	// go-ios prints `{"version":"1.2.0"}` (plus slog noise on stderr).
+	for start := strings.Index(string(out), "{"); start >= 0; {
+		var v struct {
+			Version string `json:"version"`
+		}
+		if err := json.NewDecoder(strings.NewReader(string(out)[start:])).Decode(&v); err == nil && v.Version != "" {
+			return v.Version
+		}
+		next := strings.Index(string(out)[start+1:], "{")
+		if next < 0 {
+			break
+		}
+		start += next + 1
+	}
+	return ""
 }
 
 // parseTunnelList decodes `ios tunnel ls` output. go-ios writes its slog lines

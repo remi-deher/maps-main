@@ -3,6 +3,7 @@ package goios
 import (
 	"context"
 	"os/exec"
+	"strconv"
 	"time"
 
 	"github.com/remi-deher/maps-main/engine/internal/driver"
@@ -30,12 +31,26 @@ func (d *Driver) StartTunnel(ctx context.Context) (driver.TunnelInfo, error) {
 		ManualAddress: d.manual,
 		StartTimeout:  d.tunnelStartTimeout,
 		PollInterval:  tunnelPollInterval,
+		BeforeStart: func(ctx context.Context) error {
+			// Clear any stale tunnel agent so our fresh `tunnel start` owns a
+			// clean HTTP API on tunnelInfoPort. A leftover agent (from a prior
+			// run or a manual `ios tunnel start`) would otherwise keep serving
+			// its own — possibly empty — tunnel list. Best-effort; ignore errors
+			// (no agent to stop is the common, fine case).
+			if bin, err := d.binPath(); err == nil {
+				_ = execCommandContext(ctx, bin, "tunnel", "stopagent").Run()
+			}
+			return nil
+		},
 		StartDaemon: func(context.Context) (*exec.Cmd, error) {
 			bin, err := d.binPath()
 			if err != nil {
 				return nil, err
 			}
 			args := append([]string{"tunnel", "start"}, d.lockdownArgs...)
+			// Pin the tunnel-info HTTP API port so endpoint.go's queries hit the
+			// exact daemon we just launched, not whatever the CLI default is.
+			args = append(args, "--tunnel-info-port="+strconv.Itoa(tunnelInfoPort))
 			if d.udid != "" {
 				args = append(args, "--udid="+d.udid)
 			}

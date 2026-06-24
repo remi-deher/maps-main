@@ -2,7 +2,9 @@ package engine
 
 import (
 	"context"
+	"encoding/json"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -22,8 +24,10 @@ type PairingRecord struct {
 type Diagnostics struct {
 	GoIosPath       string          `json:"goIosPath"`
 	GoIosError      string          `json:"goIosError,omitempty"`
+	GoIosVersion    string          `json:"goIosVersion,omitempty"`
 	Pmd3Path        string          `json:"pmd3Path"`
 	Pmd3Error       string          `json:"pmd3Error,omitempty"`
+	Pmd3Version     string          `json:"pmd3Version,omitempty"`
 	LockdownDir     string          `json:"lockdownDir"`
 	PairingRecords  []PairingRecord `json:"pairingRecords"`
 	USBDevices      []driver.Device `json:"usbDevices"`
@@ -31,6 +35,42 @@ type Diagnostics struct {
 }
 
 var deviceNameRe = regexp.MustCompile(`<key>DeviceName</key>\s*<string>([^<]+)</string>`)
+
+// goIosVersionString runs `ios version` and extracts the version. go-ios prints
+// `{"version":"1.2.0"}` to stdout (slog noise goes to stderr), so scan for the
+// first JSON object that carries a non-empty version.
+func goIosVersionString(ctx context.Context, bin string) string {
+	out, err := exec.CommandContext(ctx, bin, "version").Output()
+	if err != nil {
+		return ""
+	}
+	text := string(out)
+	for start := strings.Index(text, "{"); start >= 0; {
+		var v struct {
+			Version string `json:"version"`
+		}
+		if err := json.NewDecoder(strings.NewReader(text[start:])).Decode(&v); err == nil && v.Version != "" {
+			return v.Version
+		}
+		next := strings.Index(text[start+1:], "{")
+		if next < 0 {
+			break
+		}
+		start += next + 1
+	}
+	return ""
+}
+
+// pmd3VersionString runs `python -m pymobiledevice3 version` and returns the
+// trimmed version line (pymobiledevice3 prints a bare version string).
+func pmd3VersionString(ctx context.Context, py string, base []string) string {
+	args := append(append([]string{}, base...), "version")
+	out, err := exec.CommandContext(ctx, py, args...).Output()
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(out))
+}
 
 // GetDiagnostics collects diagnostics about drivers, certificates, and devices.
 func (e *Engine) GetDiagnostics(ctx context.Context) (Diagnostics, error) {
@@ -45,13 +85,17 @@ func (e *Engine) GetDiagnostics(ctx context.Context) (Diagnostics, error) {
 	diag.GoIosPath = goIosBin
 	if goIosErr != nil {
 		diag.GoIosError = goIosErr.Error()
+	} else {
+		diag.GoIosVersion = goIosVersionString(ctx, goIosBin)
 	}
 
 	// 2. Check pymobiledevice3
-	pmd3Bin, _, pmd3Err := platform.Pmd3Command(explicit)
+	pmd3Bin, pmd3Base, pmd3Err := platform.Pmd3Command(explicit)
 	diag.Pmd3Path = pmd3Bin
 	if pmd3Err != nil {
 		diag.Pmd3Error = pmd3Err.Error()
+	} else {
+		diag.Pmd3Version = pmd3VersionString(ctx, pmd3Bin, pmd3Base)
 	}
 
 	// 3. Resolve lockdown dir

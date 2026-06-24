@@ -408,13 +408,17 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({ showToast }) => {
               </h4>
               <div className="info-grid">
                 <div className="info-item">
-                  <span className="info-label">go-ios (Natif)</span>
+                  <span className="info-label">
+                    go-ios (Natif){diagnostics.goIosVersion ? ` — v${diagnostics.goIosVersion}` : ""}
+                  </span>
                   <span className="info-value compact" style={{ color: diagnostics.goIosError ? "#f87171" : "#4ade80" }}>
                     {diagnostics.goIosError ? "Non trouvé dans le PATH" : diagnostics.goIosPath || "Trouvé"}
                   </span>
                 </div>
                 <div className="info-item">
-                  <span className="info-label">pymobiledevice3</span>
+                  <span className="info-label">
+                    pymobiledevice3{diagnostics.pmd3Version ? ` — v${diagnostics.pmd3Version}` : ""}
+                  </span>
                   <span className="info-value compact" style={{ color: diagnostics.pmd3Error ? "#f87171" : "#4ade80" }}>
                     {diagnostics.pmd3Error ? "Non trouvé dans le PATH" : diagnostics.pmd3Path || "Trouvé"}
                   </span>

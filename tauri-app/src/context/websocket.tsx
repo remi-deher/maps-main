@@ -69,8 +69,10 @@ export interface DiagnosticsDevice {
 export interface Diagnostics {
   goIosPath: string;
   goIosError?: string;
+  goIosVersion?: string;
   pmd3Path: string;
   pmd3Error?: string;
+  pmd3Version?: string;
   lockdownDir: string;
   pairingRecords: PairingRecord[] | null;
   usbDevices: DiagnosticsDevice[] | null;

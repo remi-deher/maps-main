@@ -28,6 +28,7 @@ type Driver struct {
 	manual             string // optional "host:port" RSD endpoint (WiFi transport)
 	targetUDID         string // optional: pin resolution (and `tunnel start --udid`) to this device
 	tunnelStartTimeout time.Duration
+	tunnelInfoURL      string // go-ios tunnel-info HTTP API base ("" => defaultTunnelInfoURL); overridable in tests
 	udid               string
 
 	mount driver.TunnelMount
