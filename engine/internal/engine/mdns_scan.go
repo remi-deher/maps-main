@@ -132,7 +132,7 @@ var browseAddLineRe = regexp.MustCompile(`^\S+\s+Add\s+\S+\s+\S+\s+\S+\s+(\S+)\s
 
 // avahiNewLineRe matches an `avahi-browse -r` "+" (found) line, e.g.:
 //
-//	+ wlan0 IPv4 c8:1f:e8:bf:5f:bd@...-supportsRP-24 _apple-mobdev2._tcp local
+//   - wlan0 IPv4 c8:1f:e8:bf:5f:bd@...-supportsRP-24 _apple-mobdev2._tcp local
 var avahiNewLineRe = regexp.MustCompile(`^\+\s+\S+\s+\S+\s+(.+?)\s+\S+\s+local\s*$`)
 
 // browseInstances runs a short, time-bounded browse for svc and returns the
