@@ -1,4 +1,4 @@
-﻿package engine
+package engine
 
 import (
 	"context"
@@ -581,4 +581,3 @@ func TestSwitchDriverResetsEngineState(t *testing.T) {
 		t.Error("expected old driver NOT to receive SetLocation after SwitchDriver")
 	}
 }
-
