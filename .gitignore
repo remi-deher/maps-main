@@ -42,6 +42,9 @@ CLAUDE.local.md
 # --- Builds & Cache ---
 dist/
 build/
+# ...except the Go package literally named "build" (engine/internal/build),
+# which the generic build/ rule above would otherwise swallow.
+!engine/internal/build/
 out/
 .cache/
 coverage/
