@@ -189,6 +189,18 @@
             outline: none;
         }
 
+        select {
+            width: 100%;
+            padding: 12px 16px;
+            background: rgba(15, 23, 42, 0.6);
+            border: 1px solid var(--card-border);
+            color: white;
+            border-radius: 12px;
+            font-size: 0.9rem;
+            font-family: 'JetBrains Mono', monospace;
+            outline: none;
+        }
+
         input:focus {
             border-color: var(--primary);
             box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.15);
@@ -318,6 +330,14 @@
             <div class="input-wrapper">
                 <input type="text" id="targetIp" placeholder="192.168.1.143" value="localhost">
             </div>
+            <select id="discoveredServers" style="display:none; margin-top: 10px;"></select>
+            <button id="btnScan" type="button" style="margin-top: 10px; background: rgba(255,255,255,0.06); box-shadow:none;">
+                <svg style="width:18px;height:18px" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <circle cx="11" cy="11" r="8"></circle>
+                    <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+                </svg>
+                Scanner le réseau (mDNS)
+            </button>
         </div>
         <button id="btnTransfer" class="btn-success">
             <svg style="width:20px;height:20px" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -343,6 +363,8 @@
     const statusDot = document.getElementById('statusDot');
     const btnPair = document.getElementById('btnPair');
     const btnTransfer = document.getElementById('btnTransfer');
+    const btnScan = document.getElementById('btnScan');
+    const discoveredServers = document.getElementById('discoveredServers');
     const transferSection = document.getElementById('transferSection');
     const targetIpInput = document.getElementById('targetIp');
     const logBox = document.getElementById('logBox');
@@ -422,6 +444,38 @@
             log("Erreur réseau de pairage.", 'error');
         }
         setTimeout(() => { btnPair.disabled = false; }, 3000);
+    });
+
+    btnScan.addEventListener('click', async () => {
+        btnScan.disabled = true;
+        discoveredServers.style.display = 'none';
+        discoveredServers.innerHTML = '';
+        log("Scan mDNS du réseau local (3s)...");
+
+        try {
+            const res = await fetch('/api/scan-engines');
+            const data = await res.json();
+            const servers = data.servers || [];
+
+            if (servers.length === 0) {
+                log("Aucun serveur Moteur découvert sur le réseau.", 'error');
+            } else {
+                log(`${servers.length} serveur(s) découvert(s) sur le réseau.`, 'success');
+                discoveredServers.innerHTML = '<option value="">— Choisir un serveur découvert —</option>' +
+                    servers.map(s => `<option value="${s.host}:${s.port}">${s.name} (${s.host}:${s.port})</option>`).join('');
+                discoveredServers.style.display = 'block';
+            }
+        } catch (e) {
+            log("Erreur lors du scan réseau.", 'error');
+        }
+
+        btnScan.disabled = false;
+    });
+
+    discoveredServers.addEventListener('change', () => {
+        if (discoveredServers.value) {
+            targetIpInput.value = discoveredServers.value;
+        }
     });
 
     btnTransfer.addEventListener('click', async () => {

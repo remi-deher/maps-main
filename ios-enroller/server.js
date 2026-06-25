@@ -4,6 +4,11 @@ const fs = require('fs');
 const path = require('path');
 const axios = require('axios');
 const cors = require('cors');
+const { Bonjour } = require('bonjour-service');
+
+// Service mDNS annoncé par le moteur Go (_gpsmock._tcp), réutilisé ici pour
+// découvrir automatiquement les serveurs disponibles sur le réseau local.
+const MDNS_SERVICE_TYPE = 'gpsmock';
 
 const app = express();
 app.use(cors());
@@ -160,6 +165,25 @@ app.post('/api/transfer', async (req, res) => {
             error: error.response ? JSON.stringify(error.response.data) : error.message 
         });
     }
+});
+
+// 4. Découverte des serveurs Moteur disponibles sur le réseau local (mDNS)
+app.get('/api/scan-engines', (req, res) => {
+    const bonjour = new Bonjour();
+    const found = new Map();
+
+    const browser = bonjour.find({ type: MDNS_SERVICE_TYPE }, (service) => {
+        const addr = (service.addresses || []).find((a) => a.includes('.')) || (service.addresses || [])[0];
+        if (!addr) return;
+        const key = `${addr}:${service.port}`;
+        found.set(key, { name: service.name, host: addr, port: service.port });
+    });
+
+    setTimeout(() => {
+        browser.stop();
+        bonjour.destroy();
+        res.json({ servers: Array.from(found.values()) });
+    }, 3000);
 });
 
 const PORT = 3001;

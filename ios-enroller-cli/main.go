@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"flag"
@@ -12,9 +13,28 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"sort"
 	"strings"
+	"sync"
 	"time"
+
+	"github.com/grandcat/zeroconf"
 )
+
+// mdnsServiceType is the service advertised by the engine for cluster/peer
+// discovery; we reuse it here so the enroller can find engines on the LAN.
+const mdnsServiceType = "_gpsmock._tcp"
+
+// discoveredServer represents an engine found via mDNS.
+type discoveredServer struct {
+	Name string
+	Addr string
+	Port int
+}
+
+func (d discoveredServer) URL() string {
+	return fmt.Sprintf("http://%s:%d", d.Addr, d.Port)
+}
 
 // Config holds the CLI configuration
 type Config struct {
@@ -24,20 +44,26 @@ type Config struct {
 }
 
 func main() {
-	serverFlag := flag.String("server", "http://localhost:8080", "URL du serveur Moteur (ex: http://192.168.1.143:8080)")
+	serverFlag := flag.String("server", "", "URL du serveur Moteur (ex: http://192.168.1.143:8080). Si omis, une découverte mDNS est tentée.")
 	udidFlag := flag.String("udid", "", "UDID de l'iPhone (optionnel, détecté automatiquement)")
 	iosBinFlag := flag.String("ios-bin", "", "Chemin vers l'exécutable go-ios / ios (optionnel)")
+	discoverTimeout := flag.Duration("discover-timeout", 3*time.Second, "Durée d'écoute mDNS pour la découverte automatique du serveur")
 	flag.Parse()
-
-	config := Config{
-		ServerUrl: strings.TrimSuffix(*serverFlag, "/"),
-		UDID:      *udidFlag,
-		GoIosBin:  *iosBinFlag,
-	}
 
 	fmt.Println("===========================================")
 	fmt.Println("       iOS-Enroller - Outil CLI Go")
 	fmt.Println("===========================================")
+
+	serverUrl := strings.TrimSuffix(*serverFlag, "/")
+	if serverUrl == "" {
+		serverUrl = resolveServerUrl(*discoverTimeout)
+	}
+
+	config := Config{
+		ServerUrl: serverUrl,
+		UDID:      *udidFlag,
+		GoIosBin:  *iosBinFlag,
+	}
 
 	// 1. Trouver le dossier Lockdown
 	lockdownDir := getLockdownDir()
@@ -125,6 +151,99 @@ func main() {
 
 	fmt.Println("\n[SUCCÈS] L'enrôlement s'est terminé avec succès ! ✅")
 	fmt.Println("          L'appareil peut maintenant être utilisé sur le serveur distant.")
+}
+
+// resolveServerUrl scans the LAN for engines advertising _gpsmock._tcp via
+// mDNS. With one match it's used automatically; with several the user picks
+// one interactively; with none it falls back to localhost:8080.
+func resolveServerUrl(timeout time.Duration) string {
+	const fallback = "http://localhost:8080"
+
+	fmt.Printf("[INFO] Recherche de serveurs Moteur sur le réseau local (mDNS, %s)...\n", timeout)
+	servers := discoverServers(timeout)
+
+	switch len(servers) {
+	case 0:
+		fmt.Printf("[ATTENTION] Aucun serveur découvert. Utilisation de l'adresse par défaut : %s\n", fallback)
+		fmt.Println("            Utilisez -server <URL> pour cibler un serveur manuellement.")
+		return fallback
+	case 1:
+		fmt.Printf("[INFO] Serveur découvert automatiquement : %s (%s)\n", servers[0].URL(), servers[0].Name)
+		return servers[0].URL()
+	default:
+		fmt.Println("[INFO] Plusieurs serveurs découverts :")
+		for i, s := range servers {
+			fmt.Printf("       %d) %s  -  %s\n", i+1, s.URL(), s.Name)
+		}
+		fmt.Print("Sélectionnez un serveur (numéro), ou Entrée pour le premier : ")
+
+		var choice string
+		fmt.Scanln(&choice)
+		choice = strings.TrimSpace(choice)
+		if choice == "" {
+			return servers[0].URL()
+		}
+		idx := 0
+		fmt.Sscanf(choice, "%d", &idx)
+		if idx >= 1 && idx <= len(servers) {
+			return servers[idx-1].URL()
+		}
+		fmt.Println("[ATTENTION] Sélection invalide, utilisation du premier serveur découvert.")
+		return servers[0].URL()
+	}
+}
+
+// discoverServers browses the LAN for _gpsmock._tcp engines for the given
+// duration and returns the de-duplicated, sorted results.
+func discoverServers(timeout time.Duration) []discoveredServer {
+	resolver, err := zeroconf.NewResolver(nil)
+	if err != nil {
+		fmt.Printf("[ATTENTION] Découverte mDNS indisponible : %v\n", err)
+		return nil
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+
+	var mu sync.Mutex
+	seen := make(map[string]discoveredServer)
+	entries := make(chan *zeroconf.ServiceEntry, 8)
+
+	go func() {
+		for entry := range entries {
+			var addr string
+			if len(entry.AddrIPv4) > 0 {
+				addr = entry.AddrIPv4[0].String()
+			} else if len(entry.AddrIPv6) > 0 {
+				addr = entry.AddrIPv6[0].String()
+			} else {
+				continue
+			}
+			name := strings.TrimSuffix(entry.Instance, "."+mdnsServiceType)
+			key := fmt.Sprintf("%s:%d", addr, entry.Port)
+			mu.Lock()
+			seen[key] = discoveredServer{Name: name, Addr: addr, Port: entry.Port}
+			mu.Unlock()
+		}
+	}()
+
+	if err := resolver.Browse(ctx, mdnsServiceType, "local.", entries); err != nil {
+		fmt.Printf("[ATTENTION] Échec de la découverte mDNS : %v\n", err)
+		return nil
+	}
+
+	<-ctx.Done()
+
+	mu.Lock()
+	defer mu.Unlock()
+	results := make([]discoveredServer, 0, len(seen))
+	for _, s := range seen {
+		results = append(results, s)
+	}
+	sort.Slice(results, func(i, j int) bool {
+		return results[i].URL() < results[j].URL()
+	})
+	return results
 }
 
 func getLockdownDir() string {

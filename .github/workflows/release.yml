@@ -509,8 +509,7 @@ jobs:
         shell: pwsh
         run: |
           cd ios-enroller-cli
-          go env -w GO111MODULE=auto
-          go build -ldflags="-s -w" -o dist/ios-enroller-cli.exe main.go
+          go build -ldflags="-s -w" -o dist/ios-enroller-cli.exe .
 
       # 3. Copy binaries to a common staging area and upload
       - name: Stage enroller artifacts
