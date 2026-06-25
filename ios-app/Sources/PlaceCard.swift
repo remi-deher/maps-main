@@ -1,5 +1,6 @@
 import SwiftUI
 import CoreLocation
+import MapKit
 
 /// A point selected on the map or from search — name/subtitle are nil for a
 /// raw map tap (no geocoded name available), populated for a search result.
@@ -27,6 +28,10 @@ struct PlaceCard: View {
     var onDismiss: () -> Void
 
     @State private var actionFeedback = 0
+    /// Look Around coverage for the selected place, fetched lazily. Nil when
+    /// the area has no Street-level imagery (oceans, remote spots) — the
+    /// preview is simply omitted then, never an error (§2 Plans parity).
+    @State private var lookAroundScene: MKLookAroundScene?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -50,6 +55,13 @@ struct PlaceCard: View {
                 }
             }
 
+            if let lookAroundScene {
+                LookAroundPreview(initialScene: lookAroundScene)
+                    .frame(height: 120)
+                    .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                    .accessibilityLabel("Aperçu Look Around de \(place.title)")
+            }
+
             // Horizontally scrollable so four full-width labels never get
             // clipped at large Dynamic Type sizes (e.g. iPhone SE under AX
             // text sizes) — matches Plans' own action row behavior.
@@ -66,6 +78,11 @@ struct PlaceCard: View {
         .adaptiveGlassEffect(in: RoundedRectangle(cornerRadius: 26, style: .continuous))
         .padding(.horizontal, 16)
         .sensoryFeedback(.success, trigger: actionFeedback)
+        // Re-fetch whenever the selected coordinate changes. Keyed on a
+        // lat,lon string because CLLocationCoordinate2D isn't Hashable.
+        .task(id: "\(place.coordinate.latitude),\(place.coordinate.longitude)") {
+            lookAroundScene = try? await MKLookAroundSceneRequest(coordinate: place.coordinate).scene
+        }
     }
 
     @ViewBuilder
