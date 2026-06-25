@@ -46,7 +46,16 @@ func (r Request) Validate() error {
 // Enroll decodes req.DeviceRecord and writes it as <udid>.plist into the
 // host's Lockdown directory, creating the directory if needed. It returns
 // the path written to.
+//
+// Re-validates req itself (defense in depth): the UDID is used directly as a
+// filename component below with no further sanitization, so this function
+// must not be safe to call only because some caller happened to validate
+// first — it has to hold on its own.
 func Enroll(req Request) (string, error) {
+	if err := req.Validate(); err != nil {
+		return "", err
+	}
+
 	dir := platform.LockdownDir()
 	if dir == "" {
 		return "", fmt.Errorf("lockdown directory not found on host")

@@ -493,7 +493,7 @@ func TestEnrollDevice(t *testing.T) {
 
 	// Test case 1: Successful enrollment
 	payload := map[string]string{
-		"udid":         "test-udid-12345",
+		"udid":         "00008030-001234567890ABCD",
 		"deviceRecord": base64.StdEncoding.EncodeToString([]byte("dummy plist content")),
 	}
 	body, _ := json.Marshal(payload)
@@ -510,7 +510,7 @@ func TestEnrollDevice(t *testing.T) {
 
 	// Test case 2: Bad base64
 	payloadBad := map[string]string{
-		"udid":         "test-udid-12345",
+		"udid":         "00008030-001234567890ABCD",
 		"deviceRecord": "invalid-base-64-content!!!!",
 	}
 	bodyBad, _ := json.Marshal(payloadBad)
