@@ -10,6 +10,8 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"regexp"
+	"strings"
 
 	"github.com/remi-deher/maps-main/engine/internal/platform"
 )
@@ -26,11 +28,17 @@ type Request struct {
 	DeviceRecord string // base64-encoded pairing record (plist)
 }
 
+var udidPattern = regexp.MustCompile(`^[A-Fa-f0-9-]+$`)
+
 // Validate reports whether the request has the minimum fields needed to
 // enroll a device.
 func (r Request) Validate() error {
 	if r.UDID == "" || r.DeviceRecord == "" {
 		return fmt.Errorf("%w: udid or deviceRecord missing", ErrInvalidInput)
+	}
+	// UDID is used as a single filename component; reject path/meta characters.
+	if strings.Contains(r.UDID, "/") || strings.Contains(r.UDID, "\\") || strings.Contains(r.UDID, "..") || !udidPattern.MatchString(r.UDID) {
+		return fmt.Errorf("%w: invalid udid", ErrInvalidInput)
 	}
 	return nil
 }
@@ -54,13 +62,7 @@ func Enroll(req Request) (string, error) {
 		return "", fmt.Errorf("%w: invalid base64 in deviceRecord: %v", ErrInvalidInput, err)
 	}
 
-	// Sanitize to prevent directory traversal via a crafted UDID.
-	cleanUDID := filepath.Base(req.UDID)
-	if cleanUDID == "." || cleanUDID == "/" || cleanUDID == "\\" || cleanUDID == ".." {
-		return "", fmt.Errorf("%w: invalid udid", ErrInvalidInput)
-	}
-
-	destPath := filepath.Join(dir, cleanUDID+".plist")
+	destPath := filepath.Join(dir, req.UDID+".plist")
 	if err := os.WriteFile(destPath, content, 0o600); err != nil {
 		return "", fmt.Errorf("failed to write pairing file: %w", err)
 	}
