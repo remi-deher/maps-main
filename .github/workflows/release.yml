@@ -478,9 +478,57 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
+  build-enroller:
+    name: build ios-enroller (GUI & CLI)
+    needs: check-trigger
+    if: needs.check-trigger.outputs.should_release == 'true'
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+
+      - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6
+        with:
+          go-version-file: engine/go.mod
+
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: ios-enroller/package-lock.json
+
+      # 1. Build GUI (ios-enroller standalone exe)
+      - name: Build GUI Enroller
+        shell: pwsh
+        run: |
+          cd ios-enroller
+          npm ci
+          npx pkg . --output dist/ios-enroller.exe
+
+      # 2. Build CLI (ios-enroller-cli Go binary)
+      - name: Build CLI Enroller
+        shell: pwsh
+        run: |
+          cd ios-enroller-cli
+          go env -w GO111MODULE=auto
+          go build -ldflags="-s -w" -o dist/ios-enroller-cli.exe main.go
+
+      # 3. Copy binaries to a common staging area and upload
+      - name: Stage enroller artifacts
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Path staging
+          Copy-Item ios-enroller/dist/ios-enroller.exe -Destination staging/
+          Copy-Item ios-enroller-cli/dist/ios-enroller-cli.exe -Destination staging/
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: ios-enroller-binaries
+          path: staging/*
+          if-no-files-found: error
+
   release:
     name: publish GitHub release
-    needs: [check-trigger, build-engine, portable-windows-engine, installer-windows-engine, build-tauri, build-ios, docker]
+    needs: [check-trigger, build-engine, portable-windows-engine, installer-windows-engine, build-tauri, build-ios, docker, build-enroller]
     if: needs.check-trigger.outputs.should_release == 'true'
     runs-on: ubuntu-latest
     permissions:
@@ -495,7 +543,7 @@ jobs:
           # Only the shipping artifacts — exclude the internal webui-dist
           # build artifact, whose raw frontend files (index.html, *.js, svgs)
           # would otherwise pollute the release assets.
-          pattern: "{gpsmock-*,GpsMockCompanion-*}"
+          pattern: "{gpsmock-*,GpsMockCompanion-*,ios-enroller-*}"
 
       - name: Attach bootstrap installer scripts
         # Pinned copy of the install one-liners, reproducible per-release even
@@ -550,6 +598,11 @@ jobs:
             | Windows, binaire nu | `gpsmock-engine-windows-amd64.exe` (sans pilote, pour configuration avancée) |
             | Linux / macOS | `gpsmock-engine-<os>-<arch>` |
             | Conteneur | `docker pull ghcr.io/${{ github.repository }}/gpsmock-engine:${{ needs.check-trigger.outputs.tag }}` |
+
+            ### Outils d'enrôlement iOS (Optionnels)
+            Utiles pour extraire et pousser les certificats locaux ("Lockdown") vers un serveur ou conteneur Docker distant.
+            *   `ios-enroller.exe` : Interface graphique (Web local).
+            *   `ios-enroller-cli.exe` : Outil ultra-léger en ligne de commande.
 
             ### Application compagnon iOS
             `GpsMockCompanion-unsigned.ipa` — non signé, à ré-signer à l'installation (AltStore, etc.).
