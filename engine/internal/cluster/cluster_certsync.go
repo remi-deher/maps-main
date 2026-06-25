@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"os"
 	"strconv"
+	"time"
 )
 
 // ─── Cert/plist sync (opt-in) ───────────────────────────────────────────────
@@ -19,6 +20,7 @@ import (
 type plistFile struct {
 	Name    string `json:"name"`
 	Content string `json:"content"` // base64
+	ModTime int64  `json:"modTime"` // Unix milli
 }
 
 // runCertSync drives both directions of the opt-in pairing-record sync: a
@@ -67,7 +69,7 @@ func (m *Manager) pullCertsFromMaster(ctx context.Context, masterKey string) {
 		return
 	}
 	for _, f := range files {
-		m.writeLocalPlist(f.Name, f.Content)
+		m.writeLocalPlist(f.Name, f.Content, f.ModTime)
 	}
 	slog.Info("cluster: synced pairing records from master", "count", len(files), "master", masterKey)
 
@@ -129,7 +131,11 @@ func (m *Manager) pushChangedCerts(ctx context.Context) {
 		m.certMtimes[name] = info.ModTime()
 		m.mu.Unlock()
 
-		file := plistFile{Name: name, Content: base64.StdEncoding.EncodeToString(content)}
+		file := plistFile{
+			Name:    name,
+			Content: base64.StdEncoding.EncodeToString(content),
+			ModTime: info.ModTime().UnixMilli(),
+		}
 		for _, p := range peers {
 			go m.pushPlistTo(ctx, p, file)
 		}
@@ -157,23 +163,49 @@ func (m *Manager) pushPlistTo(ctx context.Context, p *Peer, file plistFile) {
 // Lockdown folder. Best-effort: a missing/unwritable folder (e.g. the
 // process lacks the elevated rights this folder normally requires) is logged
 // and skipped rather than failing the cluster.
-func (m *Manager) writeLocalPlist(name, contentB64 string) {
+func (m *Manager) writeLocalPlist(name, contentB64 string, modTimeMilli int64) {
 	dir := m.lockdownDir()
 	if dir == "" {
 		slog.Warn("cluster: cannot sync pairing record, no local Lockdown folder", "name", name)
 		return
 	}
-	content, err := base64.StdEncoding.DecodeString(contentB64)
-	if err != nil {
-		slog.Warn("cluster: pairing record has invalid base64 content", "name", name, "error", err)
-		return
-	}
+
 	path, ok := lockdownFilePath(dir, name)
 	if !ok {
 		slog.Warn("cluster: rejecting pairing record with unsafe name", "name", name)
 		return
 	}
+
+	// If the file already exists locally, check its modification time.
+	if info, err := os.Stat(path); err == nil && modTimeMilli > 0 {
+		// If the local file is newer or equal, skip writing.
+		if !time.UnixMilli(modTimeMilli).After(info.ModTime()) {
+			slog.Debug("cluster: skipping pairing record sync, local version is newer or equal", "name", name)
+			return
+		}
+	}
+
+	content, err := base64.StdEncoding.DecodeString(contentB64)
+	if err != nil {
+		slog.Warn("cluster: pairing record has invalid base64 content", "name", name, "error", err)
+		return
+	}
+
 	if err := os.WriteFile(path, content, 0o600); err != nil {
 		slog.Warn("cluster: writing pairing record failed", "name", name, "error", err)
+		return
+	}
+
+	// Apply the sender's ModTime to the local file to keep it synced.
+	if modTimeMilli > 0 {
+		t := time.UnixMilli(modTimeMilli)
+		if err := os.Chtimes(path, time.Now(), t); err != nil {
+			slog.Warn("cluster: setting modification time failed", "name", name, "error", err)
+		}
+
+		// Also update internal cache so we don't immediately push this back.
+		m.mu.Lock()
+		m.certMtimes[name] = t
+		m.mu.Unlock()
 	}
 }

@@ -339,6 +339,37 @@ fn list_network_interfaces() -> Vec<NetworkInterfaceInfo> {
         .collect()
 }
 
+#[tauri::command]
+fn read_device_plist(udid: String) -> Result<String, String> {
+    use std::fs;
+    use std::path::PathBuf;
+    use base64::Engine;
+
+    let mut path = PathBuf::new();
+    if cfg!(target_os = "windows") {
+        let program_data = std::env::var("ProgramData").unwrap_or_else(|_| "C:\\ProgramData".to_string());
+        path.push(program_data);
+        path.push("Apple");
+        path.push("Lockdown");
+    } else if cfg!(target_os = "macos") {
+        path.push("/var/db/lockdown");
+    } else {
+        path.push("/var/lib/lockdown");
+    }
+
+    path.push(format!("{}.plist", udid));
+
+    if !path.exists() {
+        return Err(format!("Fichier de pairage introuvable pour l'UDID : {}", udid));
+    }
+
+    let content = fs::read(&path)
+        .map_err(|e| format!("Impossible de lire le fichier de pairage : {}", e))?;
+
+    let base64_content = base64::engine::general_purpose::STANDARD.encode(&content);
+    Ok(base64_content)
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -381,7 +412,8 @@ pub fn run() {
             set_engine_port,
             get_mdns_interface,
             set_mdns_interface,
-            list_network_interfaces
+            list_network_interfaces,
+            read_device_plist
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

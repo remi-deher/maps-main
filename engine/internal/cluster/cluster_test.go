@@ -154,6 +154,79 @@ func TestCertSyncDisabledByDefaultDoesNothing(t *testing.T) {
 	}
 }
 
+func TestCertSyncMostRecentWins(t *testing.T) {
+	masterDir := t.TempDir()
+	slaveDir := t.TempDir()
+
+	// 1. Create a file on slave with a newer modification time than the master's
+	slavePath := filepath.Join(slaveDir, "device-newer-on-slave.plist")
+	if err := os.WriteFile(slavePath, []byte("newer-slave-data"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now()
+	futureTime := now.Add(1 * time.Hour)
+	if err := os.Chtimes(slavePath, now, futureTime); err != nil {
+		t.Fatal(err)
+	}
+
+	masterPathOlder := filepath.Join(masterDir, "device-newer-on-slave.plist")
+	if err := os.WriteFile(masterPathOlder, []byte("older-master-data"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chtimes(masterPathOlder, now, now); err != nil {
+		t.Fatal(err)
+	}
+
+	// 2. Create a file on master with a newer modification time than the slave's
+	masterPathNewer := filepath.Join(masterDir, "device-newer-on-master.plist")
+	if err := os.WriteFile(masterPathNewer, []byte("newer-master-data"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chtimes(masterPathNewer, now, futureTime); err != nil {
+		t.Fatal(err)
+	}
+
+	slavePathOlder := filepath.Join(slaveDir, "device-newer-on-master.plist")
+	if err := os.WriteFile(slavePathOlder, []byte("older-slave-data"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chtimes(slavePathOlder, now, now); err != nil {
+		t.Fatal(err)
+	}
+
+	// Setup cluster
+	master := New("manual", nil, "master-node", 0, func() bool { return true }, true)
+	master.certDir = masterDir
+	master.Takeover(context.Background())
+	masterHost, masterPort := newTestServer(t, master)
+
+	slave := New("manual", []string{masterHost + ":" + strconv.Itoa(masterPort)}, "slave-node", 0, func() bool { return false }, true)
+	slave.certDir = slaveDir
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	slave.checkPeers(ctx)
+	slave.runCertSync(ctx)
+
+	// Verify device-newer-on-slave.plist was NOT overwritten (local slave data is preserved because it's newer)
+	gotSlaveData, err := os.ReadFile(slavePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(gotSlaveData) != "newer-slave-data" {
+		t.Errorf("expected newer local slave data to be preserved, got %q", gotSlaveData)
+	}
+
+	// Verify device-newer-on-master.plist WAS overwritten (master data is newer)
+	gotMasterData, err := os.ReadFile(filepath.Join(slaveDir, "device-newer-on-master.plist"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(gotMasterData) != "newer-master-data" {
+		t.Errorf("expected newer master data to overwrite older local data, got %q", gotMasterData)
+	}
+}
+
 func TestTakeoverRefusesWithoutQuorumInThreeNodeCluster(t *testing.T) {
 	// Two peers configured but neither reachable: with 3 total nodes, quorum
 	// needs a majority (2 of 3) — this node alone can't self-elect.

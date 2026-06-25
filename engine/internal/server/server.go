@@ -4,11 +4,13 @@ package server
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -18,6 +20,7 @@ import (
 	"github.com/remi-deher/maps-main/engine/internal/api"
 	"github.com/remi-deher/maps-main/engine/internal/driver"
 	"github.com/remi-deher/maps-main/engine/internal/engine"
+	"github.com/remi-deher/maps-main/engine/internal/platform"
 	"github.com/remi-deher/maps-main/engine/internal/webui"
 )
 
@@ -82,6 +85,7 @@ func New(eng *engine.Engine, addr string, opts ...Option) *Server {
 	mux.HandleFunc("GET /metrics", s.handleMetrics)
 	mux.HandleFunc("POST /api/location/set", s.handleSet)
 	mux.HandleFunc("POST /api/location/clear", s.handleClear)
+	mux.HandleFunc("POST /api/device/enroll", s.handleEnroll)
 	mux.HandleFunc("/ws", s.handleWS)
 
 	// Cluster peer-to-peer protocol (ping/takeover/status between engines),
@@ -656,4 +660,58 @@ func (s *Server) trackAction(action string, err error) {
 
 func statusError(err error) string {
 	return "error"
+}
+
+func (s *Server) handleEnroll(w http.ResponseWriter, r *http.Request) {
+	if !s.checkAuth(w, r) {
+		return
+	}
+	var p struct {
+		UDID         string `json:"udid"`
+		DeviceRecord string `json:"deviceRecord"`           // base64
+		SelfIdentity string `json:"selfIdentity,omitempty"` // base64, ignored or written if needed
+	}
+	if err := json.NewDecoder(r.Body).Decode(&p); err != nil {
+		writeJSON(w, http.StatusBadRequest, opErr(err))
+		return
+	}
+
+	if p.UDID == "" || p.DeviceRecord == "" {
+		writeJSON(w, http.StatusBadRequest, opResult{Success: false, Error: "udid or deviceRecord missing"})
+		return
+	}
+
+	dir := platform.LockdownDir()
+	if dir == "" {
+		writeJSON(w, http.StatusInternalServerError, opResult{Success: false, Error: "Lockdown directory not found on host"})
+		return
+	}
+
+	// Make sure the directory exists (create it if missing, best effort)
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		slog.Warn("failed to create lockdown dir", "dir", dir, "error", err)
+	}
+
+	// Decrypt/decode base64 content
+	content, err := base64.StdEncoding.DecodeString(p.DeviceRecord)
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, opResult{Success: false, Error: "invalid base64 in deviceRecord: " + err.Error()})
+		return
+	}
+
+	// Simple sanitization to prevent directory traversal
+	cleanUDID := filepath.Base(p.UDID)
+	if cleanUDID == "." || cleanUDID == "/" || cleanUDID == "\\" || cleanUDID == ".." {
+		writeJSON(w, http.StatusBadRequest, opResult{Success: false, Error: "invalid udid"})
+		return
+	}
+
+	destPath := filepath.Join(dir, cleanUDID+".plist")
+	if err := os.WriteFile(destPath, content, 0o600); err != nil {
+		writeJSON(w, http.StatusInternalServerError, opResult{Success: false, Error: "failed to write pairing file: " + err.Error()})
+		return
+	}
+
+	slog.Info("Successfully enrolled device", "udid", p.UDID, "path", destPath)
+	writeJSON(w, http.StatusOK, opOK())
 }

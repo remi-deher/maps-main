@@ -87,7 +87,15 @@ func (m *Manager) handlePlists(w http.ResponseWriter, r *http.Request) {
 					if err != nil {
 						continue
 					}
-					files = append(files, plistFile{Name: entry.Name(), Content: base64.StdEncoding.EncodeToString(content)})
+					info, err := entry.Info()
+					if err != nil {
+						continue
+					}
+					files = append(files, plistFile{
+						Name:    entry.Name(),
+						Content: base64.StdEncoding.EncodeToString(content),
+						ModTime: info.ModTime().UnixMilli(),
+					})
 				}
 			}
 		}
@@ -110,7 +118,7 @@ func (m *Manager) handleSyncPlist(w http.ResponseWriter, r *http.Request) {
 		writeResult(w, false)
 		return
 	}
-	m.writeLocalPlist(f.Name, f.Content)
+	m.writeLocalPlist(f.Name, f.Content, f.ModTime)
 	writeResult(w, true)
 }
 

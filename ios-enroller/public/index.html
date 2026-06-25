@@ -1,0 +1,464 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>iOS Enroller - Setup Trust</title>
+    <!-- Modern Typography -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    
+    <style>
+        :root {
+            --bg-gradient: linear-gradient(135deg, #0f172a 0%, #1e1b4b 100%);
+            --card-bg: rgba(30, 41, 59, 0.7);
+            --card-border: rgba(255, 255, 255, 0.08);
+            --text-main: #f8fafc;
+            --text-muted: #94a3b8;
+            --primary: #6366f1;
+            --primary-hover: #4f46e5;
+            --success: #10b981;
+            --success-glow: rgba(16, 185, 129, 0.15);
+            --danger: #ef4444;
+            --accent: #a855f7;
+            --shadow: 0 20px 40px -15px rgba(0, 0, 0, 0.5);
+        }
+
+        * {
+            box-sizing: border-box;
+            transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        body {
+            font-family: 'Outfit', system-ui, sans-serif;
+            background: var(--bg-gradient);
+            color: var(--text-main);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            margin: 0;
+            overflow-x: hidden;
+        }
+
+        .container {
+            background-color: var(--card-bg);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            border: 1px solid var(--card-border);
+            border-radius: 24px;
+            padding: 40px;
+            width: 100%;
+            max-width: 480px;
+            box-shadow: var(--shadow);
+            position: relative;
+        }
+
+        .container::before {
+            content: '';
+            position: absolute;
+            top: -2px;
+            left: -2px;
+            right: -2px;
+            bottom: -2px;
+            background: linear-gradient(135deg, var(--primary), var(--accent));
+            border-radius: 26px;
+            z-index: -1;
+            opacity: 0.15;
+        }
+
+        .header {
+            text-align: center;
+            margin-bottom: 35px;
+        }
+
+        .logo-area {
+            width: 60px;
+            height: 60px;
+            background: linear-gradient(135deg, var(--primary) 0%, var(--accent) 100%);
+            border-radius: 16px;
+            margin: 0 auto 16px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            box-shadow: 0 8px 20px rgba(99, 102, 241, 0.3);
+        }
+
+        .logo-area svg {
+            width: 32px;
+            height: 32px;
+            fill: white;
+        }
+
+        h1 {
+            margin: 0;
+            font-size: 1.8rem;
+            font-weight: 700;
+            letter-spacing: -0.02em;
+            background: linear-gradient(to right, #ffffff, #cbd5e1);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .subtitle {
+            color: var(--text-muted);
+            font-size: 0.95rem;
+            margin-top: 6px;
+        }
+
+        .status-box {
+            background: rgba(15, 23, 42, 0.4);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            border-radius: 16px;
+            padding: 20px;
+            margin-bottom: 25px;
+            text-align: center;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .pulse-dot {
+            display: inline-block;
+            width: 10px;
+            height: 10px;
+            background-color: var(--text-muted);
+            border-radius: 50%;
+            margin-right: 8px;
+            vertical-align: middle;
+            animation: pulse 1.8s infinite;
+        }
+
+        .pulse-dot.connected {
+            background-color: var(--primary);
+            box-shadow: 0 0 10px var(--primary);
+        }
+
+        .pulse-dot.paired {
+            background-color: var(--success);
+            box-shadow: 0 0 10px var(--success);
+        }
+
+        @keyframes pulse {
+            0% { transform: scale(0.95); opacity: 0.5; }
+            50% { transform: scale(1.1); opacity: 1; }
+            100% { transform: scale(0.95); opacity: 0.5; }
+        }
+
+        .status-text {
+            font-weight: 600;
+            font-size: 1.15rem;
+            display: inline-block;
+            vertical-align: middle;
+        }
+
+        .status-subtext {
+            color: var(--text-muted);
+            font-size: 0.88rem;
+            margin-top: 8px;
+            font-family: 'JetBrains Mono', monospace;
+            word-break: break-all;
+        }
+
+        .input-group {
+            margin-bottom: 20px;
+            text-align: left;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 8px;
+            color: var(--text-main);
+            font-size: 0.9rem;
+            font-weight: 500;
+        }
+
+        .input-wrapper {
+            position: relative;
+        }
+
+        input {
+            width: 100%;
+            padding: 14px 16px;
+            background: rgba(15, 23, 42, 0.6);
+            border: 1px solid var(--card-border);
+            color: white;
+            border-radius: 12px;
+            font-size: 0.95rem;
+            font-family: 'JetBrains Mono', monospace;
+            outline: none;
+        }
+
+        input:focus {
+            border-color: var(--primary);
+            box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.15);
+            background: rgba(15, 23, 42, 0.8);
+        }
+
+        button {
+            width: 100%;
+            padding: 14px;
+            background: linear-gradient(135deg, var(--primary) 0%, #4f46e5 100%);
+            color: white;
+            border: none;
+            border-radius: 12px;
+            font-size: 1rem;
+            font-weight: 600;
+            cursor: pointer;
+            box-shadow: 0 4px 12px rgba(99, 102, 241, 0.2);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+        }
+
+        button:hover:not(:disabled) {
+            transform: translateY(-1px);
+            box-shadow: 0 6px 18px rgba(99, 102, 241, 0.35);
+        }
+
+        button:active:not(:disabled) {
+            transform: translateY(1px);
+        }
+
+        button:disabled {
+            background: rgba(255, 255, 255, 0.08);
+            color: var(--text-muted);
+            cursor: not-allowed;
+            box-shadow: none;
+        }
+
+        .btn-success {
+            background: linear-gradient(135deg, var(--success) 0%, #059669 100%);
+            box-shadow: 0 4px 12px rgba(16, 185, 129, 0.2);
+        }
+
+        .btn-success:hover:not(:disabled) {
+            box-shadow: 0 6px 18px rgba(16, 185, 129, 0.35);
+        }
+
+        .card-divider {
+            height: 1px;
+            background: var(--card-border);
+            margin: 25px 0;
+        }
+
+        .log-container {
+            margin-top: 25px;
+            text-align: left;
+        }
+
+        .log-header {
+            font-size: 0.85rem;
+            color: var(--text-muted);
+            margin-bottom: 8px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .log-box {
+            background: #090d16;
+            border: 1px solid rgba(255, 255, 255, 0.04);
+            border-radius: 12px;
+            padding: 14px;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.8rem;
+            height: 120px;
+            overflow-y: auto;
+            color: #38bdf8;
+            box-shadow: inset 0 2px 8px rgba(0, 0, 0, 0.8);
+        }
+
+        .log-entry {
+            margin-bottom: 4px;
+            line-height: 1.4;
+        }
+
+        .log-entry .time {
+            color: var(--text-muted);
+            margin-right: 8px;
+        }
+
+        .log-entry.error { color: var(--danger); }
+        .log-entry.success { color: var(--success); }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <div class="header">
+        <div class="logo-area">
+            <svg viewBox="0 0 24 24">
+                <path d="M17 1.01L7 1c-1.1 0-2 .9-2 2v18c0 1.1.9 2 2 2h10c1.1 0 2-.9 2-2V3c0-1.1-.9-1.99-2-1.99zM17 19H7V5h10v14z"/>
+            </svg>
+        </div>
+        <h1>iOS Enroller</h1>
+        <div class="subtitle">Configuration du lien de confiance USB</div>
+    </div>
+
+    <div class="status-box">
+        <div id="statusDot" class="pulse-dot"></div>
+        <div class="status-text" id="statusMain">Recherche d'appareil...</div>
+        <div class="status-subtext" id="statusSub">Veuillez brancher votre iPhone en USB</div>
+    </div>
+
+    <button id="btnPair" style="display: none;">
+        <svg style="width:20px;height:20px" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path>
+            <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path>
+        </svg>
+        Associer l'appareil (Pair)
+    </button>
+
+    <div id="transferSection" style="display: none;">
+        <div class="card-divider"></div>
+        <div class="input-group">
+            <label for="targetIp">Adresse du Serveur Moteur cible</label>
+            <div class="input-wrapper">
+                <input type="text" id="targetIp" placeholder="192.168.1.143" value="localhost">
+            </div>
+        </div>
+        <button id="btnTransfer" class="btn-success">
+            <svg style="width:20px;height:20px" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <line x1="22" y1="2" x2="11" y2="13"></line>
+                <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+            </svg>
+            Transférer les clés de pairage
+        </button>
+    </div>
+
+    <div class="log-container">
+        <div class="log-header">
+            <span>Terminal de logs</span>
+            <span style="font-size:0.75rem; font-family:'JetBrains Mono'" id="logCount">0 msg</span>
+        </div>
+        <div class="log-box" id="logBox"></div>
+    </div>
+</div>
+
+<script>
+    const statusMain = document.getElementById('statusMain');
+    const statusSub = document.getElementById('statusSub');
+    const statusDot = document.getElementById('statusDot');
+    const btnPair = document.getElementById('btnPair');
+    const btnTransfer = document.getElementById('btnTransfer');
+    const transferSection = document.getElementById('transferSection');
+    const targetIpInput = document.getElementById('targetIp');
+    const logBox = document.getElementById('logBox');
+    const logCount = document.getElementById('logCount');
+
+    let currentUdid = null;
+    let messageCount = 0;
+
+    function log(msg, type = '') {
+        const time = new Date().toLocaleTimeString();
+        const entryClass = type ? `log-entry ${type}` : 'log-entry';
+        logBox.innerHTML += `<div class="${entryClass}"><span class="time">[${time}]</span>${msg}</div>`;
+        logBox.scrollTop = logBox.scrollHeight;
+        messageCount++;
+        logCount.textContent = `${messageCount} msg`;
+    }
+
+    async function checkStatus() {
+        try {
+            const res = await fetch('/api/status');
+            const data = await res.json();
+
+            if (data.connected && data.udid) {
+                if (currentUdid !== data.udid) {
+                    log(`Appareil branché : ${data.udid}`, 'success');
+                }
+                currentUdid = data.udid;
+                if (data.isPaired) {
+                    statusMain.textContent = "Prêt à être enrôlé ✅";
+                    statusMain.style.color = "var(--success)";
+                    statusDot.className = "pulse-dot paired";
+                    statusSub.textContent = `UDID: ${data.udid}`;
+                    btnPair.style.display = "none";
+                    transferSection.style.display = "block";
+                } else {
+                    statusMain.textContent = "Non associé";
+                    statusMain.style.color = "var(--text-main)";
+                    statusDot.className = "pulse-dot connected";
+                    statusSub.textContent = "Cliquez sur Associer puis validez sur l'écran.";
+                    btnPair.style.display = "flex";
+                    transferSection.style.display = "none";
+                }
+            } else {
+                if (currentUdid !== null) {
+                    log("Appareil déconnecté.", 'error');
+                }
+                statusMain.textContent = "Aucun appareil trouvé";
+                statusMain.style.color = "var(--text-muted)";
+                statusDot.className = "pulse-dot";
+                statusSub.textContent = "Vérillez brancher votre iPhone en USB";
+                btnPair.style.display = "none";
+                transferSection.style.display = "none";
+                currentUdid = null;
+            }
+        } catch (e) {
+            // Unsilence error logging but make it clean
+            if (messageCount < 5) {
+                log("Attente de connexion avec le serveur local...", 'error');
+            }
+        }
+    }
+
+    btnPair.addEventListener('click', async () => {
+        btnPair.disabled = true;
+        log("Lancement de la procédure d'association...");
+        try {
+            const res = await fetch('/api/pair', { method: 'POST' });
+            const data = await res.json();
+            if (data.success) {
+                log(data.message, 'success');
+                statusMain.textContent = "Faire confiance à cet ordinateur ?";
+                statusSub.textContent = "Déverrouillez l'iPhone et acceptez la demande de confiance.";
+            } else {
+                log("Erreur d'association : " + data.error, 'error');
+            }
+        } catch (e) {
+            log("Erreur réseau de pairage.", 'error');
+        }
+        setTimeout(() => { btnPair.disabled = false; }, 3000);
+    });
+
+    btnTransfer.addEventListener('click', async () => {
+        const targetIp = targetIpInput.value.trim();
+        if (!targetIp) {
+            log("Veuillez saisir l'adresse IP cible.", 'error');
+            return;
+        }
+
+        btnTransfer.disabled = true;
+        log(`Envoi des certificats vers ${targetIp}...`);
+
+        try {
+            const res = await fetch('/api/transfer', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ targetIp, udid: currentUdid })
+            });
+            const data = await res.json();
+
+            if (data.success) {
+                log("Envoi réussi ✅ ! Les certificats sont installés sur le moteur distant.", 'success');
+                statusSub.textContent = "Clés de pairage enregistrées avec succès.";
+            } else {
+                log("Échec de l'envoi : " + data.error, 'error');
+            }
+        } catch (e) {
+            log("Erreur réseau lors de la communication de transfert.", 'error');
+        }
+
+        btnTransfer.disabled = false;
+    });
+
+    log("Initialisation et recherche de périphériques...");
+    setInterval(checkStatus, 3000);
+    checkStatus();
+</script>
+
+</body>
+</html>

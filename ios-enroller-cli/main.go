@@ -1,0 +1,261 @@
+package main
+
+import (
+	"bytes"
+	"encoding/base64"
+	"encoding/json"
+	"flag"
+	"fmt"
+	"io"
+	"net/http"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"runtime"
+	"strings"
+	"time"
+)
+
+// Config holds the CLI configuration
+type Config struct {
+	ServerUrl string
+	UDID      string
+	GoIosBin  string
+}
+
+func main() {
+	serverFlag := flag.String("server", "http://localhost:8080", "URL du serveur Moteur (ex: http://192.168.1.143:8080)")
+	udidFlag := flag.String("udid", "", "UDID de l'iPhone (optionnel, détecté automatiquement)")
+	iosBinFlag := flag.String("ios-bin", "", "Chemin vers l'exécutable go-ios / ios (optionnel)")
+	flag.Parse()
+
+	config := Config{
+		ServerUrl: strings.TrimSuffix(*serverFlag, "/"),
+		UDID:      *udidFlag,
+		GoIosBin:  *iosBinFlag,
+	}
+
+	fmt.Println("===========================================")
+	fmt.Println("       iOS-Enroller - Outil CLI Go")
+	fmt.Println("===========================================")
+
+	// 1. Trouver le dossier Lockdown
+	lockdownDir := getLockdownDir()
+	if lockdownDir == "" {
+		fmt.Println("[ERREUR] Impossible de localiser le dossier Lockdown Apple sur ce système.")
+		os.Exit(1)
+	}
+	fmt.Printf("[INFO] Dossier Lockdown identifié : %s\n", lockdownDir)
+
+	// 2. Trouver l'exécutable go-ios/ios
+	iosBin := findGoIosBinary(config.GoIosBin)
+	if iosBin == "" {
+		fmt.Println("[ATTENTION] Impossible de trouver l'exécutable go-ios/ios.")
+		fmt.Println("            Assurez-vous qu'il est installé, sur le PATH, ou utilisez le flag -ios-bin.")
+	} else {
+		fmt.Printf("[INFO] Exécutable go-ios identifié : %s\n", iosBin)
+	}
+
+	// 3. Détection ou validation du UDID
+	udid := config.UDID
+	if udid == "" {
+		if iosBin == "" {
+			fmt.Println("[ERREUR] UDID non spécifié et go-ios non trouvé pour l'auto-détection.")
+			fmt.Println("         Veuillez brancher votre appareil et spécifier son UDID via -udid <UDID>.")
+			os.Exit(1)
+		}
+		var err error
+		udid, err = detectUDID(iosBin)
+		if err != nil {
+			fmt.Printf("[ERREUR] Échec de la détection de l'appareil via go-ios : %v\n", err)
+			fmt.Println("         Vérifiez que l'iPhone est bien connecté en USB.")
+			os.Exit(1)
+		}
+		if udid == "" {
+			fmt.Println("[ERREUR] Aucun iPhone détecté. Veuillez le brancher en USB.")
+			os.Exit(1)
+		}
+	}
+	fmt.Printf("[INFO] UDID de l'appareil cible : %s\n", udid)
+
+	// 4. Vérifier si le fichier de pairage existe
+	plistPath := filepath.Join(lockdownDir, udid+".plist")
+	if _, err := os.Stat(plistPath); os.IsNotExist(err) {
+		fmt.Println("[INFO] Aucun certificat d'association local trouvé pour cet UDID.")
+		if iosBin != "" {
+			fmt.Println("[INFO] Lancement de la procédure d'association (Veuillez cliquer sur 'Faire confiance' sur l'iPhone)...")
+			// Exécuter 'ios info' pour forcer l'invite de pairage
+			cmd := exec.Command(iosBin, "info")
+			_ = cmd.Run()
+			
+			// Attendre quelques secondes et vérifier à nouveau
+			fmt.Println("[INFO] Attente de validation sur l'iPhone (10 secondes)...")
+			for i := 0; i < 5; i++ {
+				time.Sleep(2 * time.Second)
+				if _, err := os.Stat(plistPath); err == nil {
+					break
+				}
+			}
+		}
+		
+		// Vérification finale
+		if _, err := os.Stat(plistPath); os.IsNotExist(err) {
+			fmt.Printf("[ERREUR] L'appareil n'est pas associé avec cet ordinateur.\n")
+			fmt.Printf("         Veuillez d'abord l'associer via iTunes ou en cliquant sur 'Faire confiance'.\n")
+			os.Exit(1)
+		}
+	}
+
+	// 5. Lire et encoder le fichier de pairage
+	fmt.Println("[INFO] Lecture du certificat de pairage...")
+	content, err := os.ReadFile(plistPath)
+	if err != nil {
+		fmt.Printf("[ERREUR] Impossible de lire le fichier de pairage : %v\n", err)
+		os.Exit(1)
+	}
+	deviceRecordB64 := base64.StdEncoding.EncodeToString(content)
+
+	// 6. Envoyer au serveur cible
+	fmt.Printf("[INFO] Envoi vers le serveur cible : %s...\n", config.ServerUrl)
+	err = sendEnrollment(config.ServerUrl, udid, deviceRecordB64)
+	if err != nil {
+		fmt.Printf("[ERREUR] Échec de l'envoi : %v\n", err)
+		os.Exit(1)
+	}
+
+	fmt.Println("\n[SUCCÈS] L'enrôlement s'est terminé avec succès ! ✅")
+	fmt.Println("          L'appareil peut maintenant être utilisé sur le serveur distant.")
+}
+
+func getLockdownDir() string {
+	if runtime.GOOS == "windows" {
+		programData := os.Getenv("ProgramData")
+		if programData == "" {
+			programData = `C:\ProgramData`
+		}
+		return filepath.Join(programData, "Apple", "Lockdown")
+	} else if runtime.GOOS == "darwin" {
+		return "/var/db/lockdown"
+	}
+	return "/var/lib/lockdown"
+}
+
+func findGoIosBinary(overridePath string) string {
+	if overridePath != "" {
+		if _, err := os.Stat(overridePath); err == nil {
+			return overridePath
+		}
+	}
+
+	// Recherche dans le PATH
+	if path, err := exec.LookPath("ios"); err == nil {
+		return path
+	}
+	if path, err := exec.LookPath("go-ios"); err == nil {
+		return path
+	}
+
+	// Recherche relative aux dossiers connus
+	cwd, _ := os.Getwd()
+	candidates := []string{
+		filepath.Join(cwd, "ios.exe"),
+		filepath.Join(cwd, "ios"),
+		filepath.Join(cwd, "tauri-app", "src-tauri", "resources", "ios.exe"),
+		filepath.Join(cwd, "tauri-app", "src-tauri", "resources", "ios"),
+		filepath.Join(cwd, "..", "tauri-app", "src-tauri", "resources", "ios.exe"),
+		filepath.Join(cwd, "..", "server", "resources", "ios.exe"),
+	}
+
+	for _, cand := range candidates {
+		if _, err := os.Stat(cand); err == nil {
+			return cand
+		}
+	}
+
+	return ""
+}
+
+func detectUDID(iosBin string) (string, error) {
+	cmd := exec.Command(iosBin, "list")
+	var stdout bytes.Buffer
+	cmd.Stdout = &stdout
+	if err := cmd.Run(); err != nil {
+		return "", err
+	}
+
+	output := stdout.String()
+	lines := strings.Split(output, "\n")
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" {
+			continue
+		}
+		
+		// Parsing JSON ou format liste
+		var parsed struct {
+			DeviceList []string `json:"deviceList"`
+		}
+		if err := json.Unmarshal([]byte(trimmed), &parsed); err == nil && len(parsed.DeviceList) > 0 {
+			return parsed.DeviceList[0], nil
+		}
+
+		var parsedArr []struct {
+			Udid string `json:"udid"`
+			UDID string `json:"Udid"`
+		}
+		if err := json.Unmarshal([]byte(trimmed), &parsedArr); err == nil && len(parsedArr) > 0 {
+			if parsedArr[0].Udid != "" {
+				return parsedArr[0].Udid, nil
+			}
+			return parsedArr[0].UDID, nil
+		}
+	}
+
+	return "", nil
+}
+
+func sendEnrollment(serverUrl, udid, deviceRecordB64 string) error {
+	payload := map[string]string{
+		"udid":         udid,
+		"deviceRecord": deviceRecordB64,
+	}
+	bodyBytes, _ := json.Marshal(payload)
+
+	// Essayer /api/device/enroll
+	url := fmt.Sprintf("%s/api/device/enroll", serverUrl)
+	fmt.Printf("[DEBUG] Tentative de POST sur %s...\n", url)
+	
+	req, _ := http.NewRequest("POST", url, bytes.NewBuffer(bodyBytes))
+	req.Header.Set("Content-Type", "application/json")
+	
+	client := &http.Client{Timeout: 5 * time.Second}
+	resp, err := client.Do(req)
+	
+	if err == nil && resp.StatusCode == http.StatusOK {
+		_ = resp.Body.Close()
+		return nil
+	}
+
+	if err == nil {
+		_ = resp.Body.Close()
+		// Essayer l'ancienne route /api/enroll
+		fallbackUrl := fmt.Sprintf("%s/api/enroll", serverUrl)
+		fmt.Printf("[DEBUG] Statut %d sur /api/device/enroll, tentative de repli sur %s...\n", resp.StatusCode, fallbackUrl)
+		
+		reqFallback, _ := http.NewRequest("POST", fallbackUrl, bytes.NewBuffer(bodyBytes))
+		reqFallback.Header.Set("Content-Type", "application/json")
+		
+		respFallback, errFallback := client.Do(reqFallback)
+		if errFallback == nil {
+			defer respFallback.Body.Close()
+			if respFallback.StatusCode == http.StatusOK {
+				return nil
+			}
+			bodyStr, _ := io.ReadAll(respFallback.Body)
+			return fmt.Errorf("statut d'erreur serveur : %d, corps : %s", respFallback.StatusCode, string(bodyStr))
+		}
+		return errFallback
+	}
+
+	return err
+}

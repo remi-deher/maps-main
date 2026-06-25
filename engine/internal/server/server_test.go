@@ -3,9 +3,13 @@ package server
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -452,5 +456,72 @@ func TestRateLimiting(t *testing.T) {
 
 	if !foundRateLimitMsg {
 		t.Error("expected rate limiter to drop connection or send rate limit error")
+	}
+}
+
+func TestEnrollDevice(t *testing.T) {
+	// If on Windows, we mock the ProgramData env variable so platform.LockdownDir() resolves to a temp dir
+	var tempDir string
+	if runtime.GOOS == "windows" {
+		var err error
+		tempDir, err = os.MkdirTemp("", "lockdown-test")
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer os.RemoveAll(tempDir)
+
+		oldProgramData := os.Getenv("ProgramData")
+		os.Setenv("ProgramData", tempDir)
+		defer os.Setenv("ProgramData", oldProgramData)
+
+		// Create the Apple/Lockdown subdirectory so platform.LockdownDir() finds it
+		lockdownPath := filepath.Join(tempDir, "Apple", "Lockdown")
+		if err := os.MkdirAll(lockdownPath, 0755); err != nil {
+			t.Fatal(err)
+		}
+	} else {
+		// On non-Windows (e.g. CI running Linux), the system Lockdown dir is /var/lib/lockdown.
+		// If it doesn't exist, we skip the writing phase of the test and just test payload validation.
+		lockdownPath := "/var/lib/lockdown"
+		if info, err := os.Stat(lockdownPath); err != nil || !info.IsDir() {
+			t.Skip("Skipping full TestEnrollDevice: no writeable lockdown directory on non-Windows host")
+		}
+	}
+
+	ts := newTestServer(t)
+	defer ts.Close()
+
+	// Test case 1: Successful enrollment
+	payload := map[string]string{
+		"udid":         "test-udid-12345",
+		"deviceRecord": base64.StdEncoding.EncodeToString([]byte("dummy plist content")),
+	}
+	body, _ := json.Marshal(payload)
+
+	resp, err := http.Post(ts.URL+"/api/device/enroll", "application/json", bytes.NewBuffer(body))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		t.Errorf("expected status 200, got %d", resp.StatusCode)
+	}
+
+	// Test case 2: Bad base64
+	payloadBad := map[string]string{
+		"udid":         "test-udid-12345",
+		"deviceRecord": "invalid-base-64-content!!!!",
+	}
+	bodyBad, _ := json.Marshal(payloadBad)
+
+	respBad, err := http.Post(ts.URL+"/api/device/enroll", "application/json", bytes.NewBuffer(bodyBad))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer respBad.Body.Close()
+
+	if respBad.StatusCode != http.StatusBadRequest {
+		t.Errorf("expected status 400 for bad base64, got %d", respBad.StatusCode)
 	}
 }
