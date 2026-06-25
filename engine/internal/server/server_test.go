@@ -468,11 +468,11 @@ func TestEnrollDevice(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		defer os.RemoveAll(tempDir)
+		defer func() { _ = os.RemoveAll(tempDir) }()
 
 		oldProgramData := os.Getenv("ProgramData")
-		os.Setenv("ProgramData", tempDir)
-		defer os.Setenv("ProgramData", oldProgramData)
+		_ = os.Setenv("ProgramData", tempDir)
+		defer func() { _ = os.Setenv("ProgramData", oldProgramData) }()
 
 		// Create the Apple/Lockdown subdirectory so platform.LockdownDir() finds it
 		lockdownPath := filepath.Join(tempDir, "Apple", "Lockdown")
@@ -502,7 +502,7 @@ func TestEnrollDevice(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		t.Errorf("expected status 200, got %d", resp.StatusCode)
@@ -519,7 +519,7 @@ func TestEnrollDevice(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer respBad.Body.Close()
+	defer func() { _ = respBad.Body.Close() }()
 
 	if respBad.StatusCode != http.StatusBadRequest {
 		t.Errorf("expected status 400 for bad base64, got %d", respBad.StatusCode)
