@@ -75,5 +75,14 @@ struct GpsMockShortcuts: AppShortcutsProvider {
             shortTitle: "Relancer",
             systemImageName: "arrow.clockwise"
         )
+        AppShortcut(
+            intent: TeleportToFavoriteIntent(),
+            phrases: [
+                "Téléporte-moi à \(\.$favorite) avec \(.applicationName)",
+                "Téléportation \(\.$favorite) dans \(.applicationName)"
+            ],
+            shortTitle: "Téléporter",
+            systemImageName: "star.fill"
+        )
     }
 }
