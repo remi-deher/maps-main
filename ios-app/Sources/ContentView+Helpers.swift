@@ -149,10 +149,10 @@ extension ContentView {
 
         let latitudes = coordinates.map(\.latitude)
         let longitudes = coordinates.map(\.longitude)
-        let minLat = latitudes.min()!
-        let maxLat = latitudes.max()!
-        let minLon = longitudes.min()!
-        let maxLon = longitudes.max()!
+        guard let minLat = latitudes.min(), let maxLat = latitudes.max(),
+              let minLon = longitudes.min(), let maxLon = longitudes.max() else {
+            return MKCoordinateRegion(center: first, latitudinalMeters: 800, longitudinalMeters: 800)
+        }
 
         let center = CLLocationCoordinate2D(latitude: (minLat + maxLat) / 2, longitude: (minLon + maxLon) / 2)
         // 1.6x padding so stops near the edge aren't flush against the screen

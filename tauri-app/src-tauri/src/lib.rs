@@ -7,6 +7,7 @@ use tauri_plugin_shell::ShellExt;
 
 const DEFAULT_PORT: u16 = 8080;
 const CONFIG_FILE: &str = "engine-config.json";
+const PID_FILE: &str = "engine.pid";
 
 #[derive(Default)]
 struct EngineState {
@@ -59,6 +60,88 @@ fn write_config(app: &AppHandle, cfg: &EngineConfig) {
     }
 }
 
+fn pid_file_path(app: &AppHandle) -> std::path::PathBuf {
+    let dir = app
+        .path()
+        .app_config_dir()
+        .expect("could not resolve app config dir");
+    fs::create_dir_all(&dir).ok();
+    dir.join(PID_FILE)
+}
+
+fn write_pid_file(app: &AppHandle, pid: u32) {
+    fs::write(pid_file_path(app), pid.to_string()).ok();
+}
+
+fn clear_pid_file(app: &AppHandle) {
+    fs::remove_file(pid_file_path(app)).ok();
+}
+
+/// Best-effort lookup of a running process's image name, used to confirm a PID
+/// read from our own PID file is still actually a `gpsmock-engine` process
+/// before killing it — guards against the file going stale (PID reused by an
+/// unrelated process) or two app instances overwriting each other's PID file,
+/// where blindly trusting "a PID that exists" could kill the wrong process or
+/// another instance's still-legitimate engine.
+#[cfg(target_os = "windows")]
+fn process_image_name(pid: u32) -> Option<String> {
+    let output = std::process::Command::new("tasklist")
+        .args(["/FI", &format!("PID eq {pid}"), "/FO", "CSV", "/NH"])
+        .output()
+        .ok()?;
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let name = stdout.split(',').next()?.trim_matches('"').to_string();
+    if name.is_empty() { None } else { Some(name) }
+}
+
+#[cfg(not(target_os = "windows"))]
+fn process_image_name(pid: u32) -> Option<String> {
+    let output = std::process::Command::new("ps")
+        .args(["-p", &pid.to_string(), "-o", "comm="])
+        .output()
+        .ok()?;
+    let name = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    if name.is_empty() { None } else { Some(name) }
+}
+
+/// Kills the whole process tree rooted at `pid` (best-effort, ignores errors —
+/// the PID may already be gone, which is the common/expected case).
+fn kill_pid_tree(pid: u32) {
+    #[cfg(target_os = "windows")]
+    {
+        let _ = std::process::Command::new("taskkill")
+            .args(["/F", "/T", "/PID", &pid.to_string()])
+            .output();
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = std::process::Command::new("kill")
+            .args(["-9", &format!("-{pid}")])
+            .output();
+    }
+}
+
+/// Recovers from a previous crash / force-kill (e.g. Task Manager "End task" on
+/// the app, which skips CloseRequested/Destroyed and so never runs
+/// `shutdown_engine`). On a clean exit the PID file is removed, so finding one
+/// here means a sidecar — and its go-ios/python children — may still be
+/// running from a prior session. Best-effort: a missing or already-dead PID is
+/// a silent no-op.
+fn cleanup_stray_engine(app: &AppHandle) {
+    let path = pid_file_path(app);
+    if let Ok(raw) = fs::read_to_string(&path) {
+        if let Ok(pid) = raw.trim().parse::<u32>() {
+            let is_our_engine = process_image_name(pid)
+                .map(|name| name.to_lowercase().contains("gpsmock-engine"))
+                .unwrap_or(false);
+            if is_our_engine {
+                kill_pid_tree(pid);
+            }
+        }
+    }
+    let _ = fs::remove_file(path);
+}
+
 /// Kills the engine sidecar and all its child processes (go-ios, python workers).
 ///
 /// On Windows we use `taskkill /F /T /PID` which recursively kills the whole
@@ -100,7 +183,7 @@ fn kill_engine_tree(child: CommandChild) {
 fn spawn_engine(app: &AppHandle, port: u16, mdns_interface: Option<&str>) -> Result<(), String> {
     let state = app.state::<EngineState>();
     {
-        let mut guard = state.child.lock().unwrap();
+        let mut guard = state.child.lock().unwrap_or_else(|e| e.into_inner());
         if let Some(child) = guard.take() {
             kill_engine_tree(child);
         }
@@ -129,7 +212,8 @@ fn spawn_engine(app: &AppHandle, port: u16, mdns_interface: Option<&str>) -> Res
         .spawn()
         .map_err(|err| format!("failed to spawn Go sidecar: {err}"))?;
 
-    *state.child.lock().unwrap() = Some(child);
+    write_pid_file(app, child.pid());
+    *state.child.lock().unwrap_or_else(|e| e.into_inner()) = Some(child);
     let _ = app.emit("engine-status", "starting");
 
     let app_handle = app.clone();
@@ -147,6 +231,7 @@ fn spawn_engine(app: &AppHandle, port: u16, mdns_interface: Option<&str>) -> Res
                 }
                 CommandEvent::Terminated(payload) => {
                     *app_handle.state::<EngineState>().child.lock().unwrap() = None;
+                    clear_pid_file(&app_handle);
                     let _ = app_handle.emit(
                         "engine-status",
                         format!("exited:{}", payload.code.unwrap_or(-1)),
@@ -198,10 +283,11 @@ fn bundled_driver_envs(app: &AppHandle) -> Vec<(String, String)> {
 /// Safe to call from multiple event handlers; a missing child is a no-op.
 fn shutdown_engine(app: &AppHandle) {
     let state = app.state::<EngineState>();
-    let child = state.child.lock().unwrap().take();
+    let child = state.child.lock().unwrap_or_else(|e| e.into_inner()).take();
     if let Some(child) = child {
         kill_engine_tree(child);
     }
+    clear_pid_file(app);
 }
 
 #[tauri::command]
@@ -263,6 +349,10 @@ pub fn run() {
             #[cfg(desktop)]
             {
                 let handle = app.handle().clone();
+                // Recover from a previous crash/force-kill: if a PID file from
+                // an earlier session is still present, that sidecar (and its
+                // go-ios/python children) may still be running orphaned.
+                cleanup_stray_engine(&handle);
                 let cfg = read_config(&handle);
                 if let Err(err) = spawn_engine(&handle, cfg.port, cfg.mdns_interface.as_deref()) {
                     eprintln!("{err}");

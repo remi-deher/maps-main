@@ -31,7 +31,7 @@ final class LiveActivityManager {
             do {
                 activity = try Activity.request(attributes: SimulationActivityAttributes(), content: content)
             } catch {
-                print("Live Activity request failed: \(error)")
+                AppLogger.shared.error("Live Activity request failed: \(error)")
             }
         }
     }

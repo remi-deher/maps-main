@@ -30,12 +30,24 @@ import {
   simplifyGeometry,
   getRailRouterUrl,
   makeWaitLeg,
+  haversineMeters,
 } from "../lib/osrm";
 import { DestinationSearchInput } from "./DestinationSearchInput";
 
 export type LegMode = "drive" | "walk" | "train" | "flight";
 
+/// Stable per-stop identifier, generated once at creation — lets async
+/// patches (reverse-geocode resolution) target the exact stop they were
+/// fired for, even if the list is reordered/edited before they resolve.
+/// Matching by lat/lon/placeholder text alone could hit a different stop
+/// that happens to share the same coordinates and not-yet-resolved name.
+export const makeWaypointId = (): string =>
+  typeof crypto !== "undefined" && "randomUUID" in crypto
+    ? crypto.randomUUID()
+    : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+
 export interface Waypoint extends LatLon {
+  id: string;
   name: string;
   /// Travel mode of the leg arriving at this stop (from the previous stop, or
   /// the current position for the first one).
@@ -106,21 +118,6 @@ function formatDuration(seconds: number): string {
   return `${Math.floor(minutes / 60)} h ${Math.round(minutes % 60)} min`;
 }
 
-/// Haversine great-circle distance in meters — straight-line fallback estimate
-/// shown before OSRM resolves the real road distance.
-function haversineMeters(a: LatLon, b: LatLon): number {
-  const R = 6371000;
-  const toRad = (deg: number) => (deg * Math.PI) / 180;
-  const dLat = toRad(b.lat - a.lat);
-  const dLon = toRad(b.lon - a.lon);
-  const lat1 = toRad(a.lat);
-  const lat2 = toRad(b.lat);
-  const sinDLat = Math.sin(dLat / 2);
-  const sinDLon = Math.sin(dLon / 2);
-  const h = sinDLat * sinDLat + Math.cos(lat1) * Math.cos(lat2) * sinDLon * sinDLon;
-  return 2 * R * Math.asin(Math.sqrt(h));
-}
-
 /// Compact icon-toggle row — mirrors Google Maps' segmented controls.
 const SegmentedToggle: React.FC<{
   options: Array<{ id: string; label: string; icon: React.ComponentType<{ size?: number }> }>;
@@ -136,6 +133,7 @@ const SegmentedToggle: React.FC<{
           type="button"
           className={`mode-toggle-btn ${value === opt.id ? "active" : ""}`}
           aria-pressed={value === opt.id}
+          aria-label={opt.label}
           title={opt.label}
           onClick={() => onChange(opt.id)}
         >
@@ -165,20 +163,23 @@ interface RouteModePanelProps {
 
 /// Names a freshly-added coordinate stop from its nearest place (reverse
 /// geocoding) and, if it's a station/airport matching the previous stop,
-/// auto-switches the leg's mode. Patches by matching coords + the still-
-/// placeholder name so a reorder/removal in between can't mislabel another stop.
+/// auto-switches the leg's mode. Patches by the stop's stable `id` (not
+/// coords/placeholder text) so a reorder/removal/re-add at the same spot in
+/// between can't mislabel a different stop; an optional `signal` lets the
+/// caller cancel the geocode if the stop is removed before it resolves.
 export function patchWithNearestPlace(
   setWaypoints: React.Dispatch<React.SetStateAction<Waypoint[]>>,
+  id: string,
   lat: number,
   lon: number,
-  placeholder: string,
-  onAuto?: (mode: LegMode) => void
+  onAuto?: (mode: LegMode) => void,
+  signal?: AbortSignal
 ) {
-  reverseGeocodeDetailed(lat, lon).then((res) => {
-    if (!res) return;
+  reverseGeocodeDetailed(lat, lon, signal).then((res) => {
+    if (!res || signal?.aborted) return;
     setWaypoints((prev) =>
       prev.map((wp, i) => {
-        if (!(wp.lat === lat && wp.lon === lon && wp.name === placeholder)) return wp;
+        if (wp.id !== id) return wp;
         const auto = autoLegMode(prev[i - 1]?.kind ?? null, res.kind) as LegMode | null;
         if (auto && auto !== wp.mode) onAuto?.(auto);
         // Suggest a dwell from the resolved kind unless the user already set one.
@@ -278,7 +279,7 @@ export const RouteModePanel: React.FC<RouteModePanelProps> = ({
     if (auto) showToast(autoModeToast(auto));
     setWaypoints([
       ...waypoints,
-      { lat, lon, name, mode: auto ?? nextMode(), kind: kind ?? null, waitMinutes: defaultDwellMinutes(kind ?? null) },
+      { id: makeWaypointId(), lat, lon, name, mode: auto ?? nextMode(), kind: kind ?? null, waitMinutes: defaultDwellMinutes(kind ?? null) },
     ]);
   };
 
@@ -331,8 +332,9 @@ export const RouteModePanel: React.FC<RouteModePanelProps> = ({
     }
     setCoordError("");
     const placeholder = `${lat.toFixed(5)}, ${lon.toFixed(5)}`;
-    setWaypoints([...waypoints, { lat, lon, name: placeholder, mode: nextMode() }]);
-    patchWithNearestPlace(setWaypoints, lat, lon, placeholder, (m) => showToast(autoModeToast(m)));
+    const id = makeWaypointId();
+    setWaypoints([...waypoints, { id, lat, lon, name: placeholder, mode: nextMode() }]);
+    patchWithNearestPlace(setWaypoints, id, lat, lon, (m) => showToast(autoModeToast(m)));
     setCoordLat("");
     setCoordLon("");
   };
@@ -473,7 +475,10 @@ export const RouteModePanel: React.FC<RouteModePanelProps> = ({
         if ((error as Error).name === "AbortError") return;
         setRouteOptions([]); // total failure → straight-line fallback below
       } finally {
-        setOsrmLoading(false);
+        // `finally` runs even on the early `return`s above for an aborted/
+        // superseded request — guard so a stale request's cleanup can't
+        // flip loading back to false while a newer request is still in flight.
+        if (!controller.signal.aborted) setOsrmLoading(false);
       }
     }, 500);
 

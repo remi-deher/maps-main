@@ -26,10 +26,18 @@ export const Modal: React.FC<ModalProps> = ({ open, onClose, title, sections, ch
   const [activeSectionId, setActiveSectionId] = useState(sections?.[0]?.id);
   const panelRef = useRef<HTMLDivElement>(null);
   const previouslyFocused = useRef<HTMLElement | null>(null);
+  const wasOpen = useRef(false);
 
+  // Reset to the first tab only on an actual closed->open transition (tracked
+  // via `wasOpen`, not the `open` prop's identity alone). `sections` is
+  // intentionally excluded from the deps: SettingsModal rebuilds that array
+  // (new reference) on every re-render — e.g. periodic status polling every
+  // ~5s — which was bouncing the user back to "Connexion" while the modal
+  // stayed open the whole time.
   useEffect(() => {
-    if (open) setActiveSectionId(sections?.[0]?.id);
-  }, [open, sections]);
+    if (open && !wasOpen.current) setActiveSectionId(sections?.[0]?.id);
+    wasOpen.current = open;
+  }, [open]);
 
   // Focus trap: move focus into the modal on open, cycle Tab/Shift+Tab within
   // it, and give focus back to whatever triggered the modal on close — Tab

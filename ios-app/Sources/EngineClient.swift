@@ -109,9 +109,16 @@ final class EngineClient: NSObject, URLSessionWebSocketDelegate {
     var status: EngineStatus?
     var logs: [LogEntryPayload] = []
 
+    // Mirrors the engine's in-memory log ring buffer size
+    // (engine/internal/engine/engine.go's log history cap) — keeping the same
+    // bound means a GET_LOGS snapshot never gets truncated client-side before
+    // the engine itself would have dropped the oldest entries.
     private let maxLogEntries = 200
 
-    private var session: URLSession!
+    // Defaults to `.shared` so the property is never nil/force-unwrapped; init()
+    // immediately replaces it with a delegate-bound session before any other
+    // method can run.
+    private var session: URLSession = .shared
     private var task: URLSessionWebSocketTask?
     var pingLatency: Double?
     private var lastPingSentAt: Date?
@@ -138,6 +145,14 @@ final class EngineClient: NSObject, URLSessionWebSocketDelegate {
     // exactly this kind of orphaned callback.
     private var generation = 0
 
+    // Reconnect backoff: 2s, 4s, 8s, 16s, capped at 30s — reset to 0 on every
+    // successful connection so a brief blip doesn't leave us backed off.
+    // Without this the app hammered the engine every 2s indefinitely while
+    // it was unreachable, wasting battery/network in the background.
+    private var reconnectAttempt = 0
+    private let reconnectBaseDelay: TimeInterval = 2
+    private let reconnectMaxDelay: TimeInterval = 30
+
     override init() {
         super.init()
         session = URLSession(configuration: .default, delegate: self, delegateQueue: nil)
@@ -147,6 +162,7 @@ final class EngineClient: NSObject, URLSessionWebSocketDelegate {
     func connect(to urlString: String) {
         self.urlString = urlString
         generation += 1
+        reconnectAttempt = 0
         startSocket(generation: generation)
     }
 
@@ -222,7 +238,9 @@ final class EngineClient: NSObject, URLSessionWebSocketDelegate {
             self.state = .reconnecting
             self.pingLatency = nil
         }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 2) { [weak self] in
+        let delay = min(reconnectBaseDelay * pow(2, Double(reconnectAttempt)), reconnectMaxDelay)
+        reconnectAttempt += 1
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
             guard let self, self.generation == generation else { return }
             self.startSocket(generation: generation)
         }
@@ -230,6 +248,7 @@ final class EngineClient: NSObject, URLSessionWebSocketDelegate {
 
     func urlSession(_ session: URLSession, webSocketTask: URLSessionWebSocketTask, didOpenWithProtocol protocol: String?) {
         AppLogger.shared.info("Connecté au moteur (\(self.urlString))")
+        reconnectAttempt = 0
         DispatchQueue.main.async {
             self.state = .connected
             self.pingTimer?.invalidate()
@@ -272,9 +291,13 @@ final class EngineClient: NSObject, URLSessionWebSocketDelegate {
                 AppLogger.shared.error("Échec du décodage de STATUS: \(error)")
             }
         case "PONG":
-            if let sentAt = lastPingSentAt {
-                let rtt = Date().timeIntervalSince(sentAt) * 1000 // ms
-                DispatchQueue.main.async { self.pingLatency = rtt }
+            // `lastPingSentAt` is written on the main queue (sendPing runs off
+            // the Timer, scheduled on main); read it there too instead of from
+            // this background receive-completion queue to avoid a data race.
+            DispatchQueue.main.async {
+                if let sentAt = self.lastPingSentAt {
+                    self.pingLatency = Date().timeIntervalSince(sentAt) * 1000 // ms
+                }
             }
         case "LOG":
             do {
@@ -296,7 +319,10 @@ final class EngineClient: NSObject, URLSessionWebSocketDelegate {
                 AppLogger.shared.error("Échec du décodage de LOGS: \(error)")
             }
         default:
-            break
+            // Surface protocol drift (e.g. a new message type the desktop side
+            // started sending) instead of silently dropping it — this is the
+            // only place that would reveal a desktop/iOS protocol mismatch.
+            AppLogger.shared.warn("Type de message inconnu ignoré: \(type)")
         }
     }
 

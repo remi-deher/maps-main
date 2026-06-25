@@ -25,6 +25,7 @@ const SegmentedToggle: React.FC<{
           type="button"
           className={`mode-toggle-btn ${value === opt.id ? "active" : ""}`}
           aria-pressed={value === opt.id}
+          aria-label={opt.label}
           title={opt.label}
           onClick={() => onChange(opt.id)}
         >

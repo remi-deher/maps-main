@@ -405,7 +405,15 @@ export const WebSocketProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     if (!isTauri) {
       return;
     }
-    const unlistenStatus = listen<string>("engine-status", (event) => {
+    // `listen()` resolves asynchronously; if cleanup already ran by the time
+    // it does (StrictMode double-effect, fast remount), `cancelled` skips
+    // registering a handler that would otherwise never get unsubscribed —
+    // the bare `unlistenStatus.then((fn) => fn())` below still unsubscribes
+    // once the promise resolves, but only after a window where two listeners
+    // could briefly coexist.
+    let cancelled = false;
+    let unsubscribe: (() => void) | null = null;
+    listen<string>("engine-status", (event) => {
       const payload = event.payload;
       if (payload === "starting") {
         setEngineStatus("starting");
@@ -415,9 +423,16 @@ export const WebSocketProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       } else {
         setEngineStatus("running");
       }
+    }).then((fn) => {
+      if (cancelled) {
+        fn();
+        return;
+      }
+      unsubscribe = fn;
     });
     return () => {
-      unlistenStatus.then((fn) => fn());
+      cancelled = true;
+      unsubscribe?.();
     };
   }, []);
 

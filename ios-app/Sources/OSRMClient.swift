@@ -20,6 +20,15 @@ enum OSRMClient {
         transportProfile == "walking" ? "walking" : "driving"
     }
 
+    /// Rejects NaN/infinite or out-of-bounds coordinates before they ever
+    /// reach a URL — otherwise OSRM rejects the request and the caller's
+    /// catch block silently falls back to MapKit, masking a corrupted
+    /// coordinate upstream (e.g. a bad reverse-geocode or parse).
+    private static func isValid(_ coordinate: CLLocationCoordinate2D) -> Bool {
+        coordinate.latitude.isFinite && coordinate.longitude.isFinite
+            && abs(coordinate.latitude) <= 90 && abs(coordinate.longitude) <= 180
+    }
+
     private static func makeURL(path: String, queryItems: [URLQueryItem]) -> URL? {
         var components = URLComponents(url: baseURL, resolvingAgainstBaseURL: false)
         components?.scheme = "https"
@@ -33,6 +42,10 @@ enum OSRMClient {
         to end: CLLocationCoordinate2D,
         profile transportProfile: String
     ) async -> OSRMRoute? {
+        guard isValid(start), isValid(end) else {
+            AppLogger.shared.warn("OSRM fetchRoute: coordonnée invalide (start=\(start), end=\(end))")
+            return nil
+        }
         let profile = profile(for: transportProfile)
         guard let url = makeURL(
             path: "/route/v1/\(profile)/\(start.longitude),\(start.latitude);\(end.longitude),\(end.latitude)",
@@ -59,6 +72,10 @@ enum OSRMClient {
     /// mirrors legacy's snapToRoad, used so a teleport/route target lands
     /// where the engine's OSRM-based simulation can actually drive to.
     static func snapToRoad(_ coordinate: CLLocationCoordinate2D, profile transportProfile: String) async -> CLLocationCoordinate2D? {
+        guard isValid(coordinate) else {
+            AppLogger.shared.warn("OSRM snapToRoad: coordonnée invalide (\(coordinate))")
+            return nil
+        }
         let profile = profile(for: transportProfile)
         guard let url = makeURL(
             path: "/nearest/v1/\(profile)/\(coordinate.longitude),\(coordinate.latitude)",

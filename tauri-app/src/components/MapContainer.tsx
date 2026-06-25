@@ -1,6 +1,10 @@
 import React, { useEffect, useState } from "react";
 import { MapContainer, TileLayer, Marker, Popup, Polyline, Circle, Rectangle, useMap, useMapEvents } from "react-leaflet";
 import L from "leaflet";
+// Bundle Leaflet's CSS locally instead of a CDN <link> — the Tauri CSP
+// (default-src 'self') blocks external stylesheets, which left the map
+// mis-sized/offset in the packaged app.
+import "leaflet/dist/leaflet.css";
 import { useWebSocket, LatLon } from "../context/websocket";
 import { SearchBox } from "./SearchBox";
 import { MapActionSheet } from "./MapActionSheet";
@@ -10,9 +14,9 @@ import { FavoritesModal } from "./FavoritesModal";
 import { EngineStatusFrame } from "./EngineStatusFrame";
 import { TelemetryWidget } from "./TelemetryWidget";
 import { DeviceModal } from "./DeviceModal";
-import { RouteModePanel, Waypoint, AddMethod, RouteSegment, MODE_META, defaultDwellMinutes } from "./RouteModePanel";
+import { RouteModePanel, Waypoint, AddMethod, RouteSegment, MODE_META, patchWithNearestPlace, makeWaypointId } from "./RouteModePanel";
 import { PatrolModePanel } from "./PatrolModePanel";
-import { reverseGeocode, reverseGeocodeDetailed, autoLegMode } from "../lib/geocoding";
+import { reverseGeocode } from "../lib/geocoding";
 import { osrmBaseUrl, snapToRoad } from "../lib/osrm";
 import { Crosshair, Route, ScrollText, Settings, ShieldCheck, Sliders, Smartphone, Star, X } from "lucide-react";
 
@@ -135,6 +139,11 @@ export const InteractiveMap: React.FC = () => {
   // Bumped on each new explore-mode selection so a late reverse-geocode result
   // can't relabel a target the user has since replaced.
   const selectionToken = React.useRef(0);
+  // Lifetime AbortController for geocode/snap requests fired from map clicks —
+  // aborted on unmount so a pending fetch can't call setState after the
+  // component is gone (the previous version had no cleanup at all here).
+  const geocodeAbortRef = React.useRef(new AbortController());
+  useEffect(() => () => geocodeAbortRef.current.abort(), []);
 
   // Map settings state
   const [mapStyle, setMapStyle] = useState<"dark" | "standard" | "satellite">("dark");
@@ -171,28 +180,27 @@ export const InteractiveMap: React.FC = () => {
         // middle of a building); leave train/flight stops at the raw click.
         const addAt = (pt: LatLon) => {
           const placeholder = `${pt.lat.toFixed(5)}, ${pt.lon.toFixed(5)}`;
-          setRouteWaypoints((prev) => [...prev, { lat: pt.lat, lon: pt.lon, name: placeholder, mode: inheritedMode }]);
+          const id = makeWaypointId();
+          setRouteWaypoints((prev) => [...prev, { id, lat: pt.lat, lon: pt.lon, name: placeholder, mode: inheritedMode }]);
           // Reverse-geocode to name the stop and, if it's a station/airport
-          // matching the previous stop, auto-switch this leg's mode.
-          reverseGeocodeDetailed(pt.lat, pt.lon).then((res) => {
-            if (!res) return;
-            setRouteWaypoints((prev) =>
-              prev.map((wp, i) => {
-                if (!(wp.lat === pt.lat && wp.lon === pt.lon && wp.name === placeholder)) return wp;
-                const auto = autoLegMode(prev[i - 1]?.kind ?? null, res.kind) as Waypoint["mode"] | null;
-                if (auto && auto !== wp.mode) {
-                  setRouteToast(`Mode ${MODE_META[auto].label} détecté — modifiable`);
-                  window.setTimeout(() => setRouteToast(null), 3000);
-                }
-                const waitMinutes = wp.waitMinutes ?? defaultDwellMinutes(res.kind);
-                return { ...wp, name: res.name, kind: res.kind, mode: auto ?? wp.mode, waitMinutes };
-              })
-            );
-          });
+          // matching the previous stop, auto-switch this leg's mode — shared
+          // with RouteModePanel's coordinate-entry flow so both patch by the
+          // stop's stable id (not coords/placeholder text).
+          patchWithNearestPlace(
+            setRouteWaypoints,
+            id,
+            pt.lat,
+            pt.lon,
+            (auto) => {
+              setRouteToast(`Mode ${MODE_META[auto].label} détecté — modifiable`);
+              window.setTimeout(() => setRouteToast(null), 3000);
+            },
+            geocodeAbortRef.current.signal
+          );
         };
         if (isRoad) {
           const base = osrmBaseUrl(status?.osrmBaseUrl);
-          snapToRoad(base, coords.lat, coords.lon, "driving").then((snapped) => addAt(snapped ?? coords));
+          snapToRoad(base, coords.lat, coords.lon, "driving", geocodeAbortRef.current.signal).then((snapped) => addAt(snapped ?? coords));
         } else {
           addAt(coords);
         }
@@ -206,7 +214,7 @@ export const InteractiveMap: React.FC = () => {
       setSelectedCoords(coords);
       setSelectedPlaceName(null);
       setFavName("");
-      reverseGeocode(coords.lat, coords.lon).then((name) => {
+      reverseGeocode(coords.lat, coords.lon, geocodeAbortRef.current.signal).then((name) => {
         if (!name || selectionToken.current !== token) return;
         setSelectedPlaceName(name);
         setFavName(name);
@@ -239,7 +247,7 @@ export const InteractiveMap: React.FC = () => {
     if (!selectedCoords) return;
     const name = selectedPlaceName || `${selectedCoords.lat.toFixed(5)}, ${selectedCoords.lon.toFixed(5)}`;
     const inheritedMode = routeWaypoints[routeWaypoints.length - 1]?.mode ?? "drive";
-    setRouteWaypoints((prev) => [...prev, { lat: selectedCoords.lat, lon: selectedCoords.lon, name, mode: inheritedMode }]);
+    setRouteWaypoints((prev) => [...prev, { id: makeWaypointId(), lat: selectedCoords.lat, lon: selectedCoords.lon, name, mode: inheritedMode }]);
     setRouteAddMethod("search");
     setMapMode("route");
     setSelectedCoords(null);

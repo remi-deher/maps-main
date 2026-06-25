@@ -160,6 +160,14 @@ func runEngine(ctx context.Context, cfg runConfig) error {
 	}
 	sctx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
 	defer cancel()
+
+	// Stop the tunnel daemon (go-ios/pymobiledevice3) before the HTTP server:
+	// without this, SIGINT/SIGTERM only closes the listener and leaves the
+	// daemon and its child processes running as orphans.
+	if err := drv.StopTunnel(sctx); err != nil {
+		log.Printf("error stopping tunnel: %v", err)
+	}
+
 	return srv.Shutdown(sctx)
 }
 

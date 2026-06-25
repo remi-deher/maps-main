@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { Activity, Pause, Play, Plug, QrCode, Save, RefreshCw, Settings, Smartphone, Square } from "lucide-react";
+import { Activity, Cable, Pause, Play, Plug, QrCode, Save, RefreshCw, Route, Server, Settings, Smartphone, Square } from "lucide-react";
 import { QRCodeSVG } from "qrcode.react";
 import { useWebSocket } from "../context/websocket";
 import { parseCoordinate } from "../lib/parse";
@@ -259,7 +259,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ open, onClose }) =
 
   const isSimRunning = status?.state === "moving" || status?.state === "paused";
 
-  const engineSection = (
+  const simulationSection = (
     <div className="ui-card">
       <h3 className="ui-card-title">
         <Activity size={16} /> Contrôle simulation
@@ -290,6 +290,41 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ open, onClose }) =
       )}
 
       <fieldset className="field-group" style={{ marginTop: 12 }}>
+        <legend className="field-group-legend">Comportement de simulation</legend>
+
+        <label className="switch-label">
+          <span className="form-label">Mode Éveil</span>
+          <span className="switch-control">
+            <input type="checkbox" checked={isEveilMode} onChange={(e) => setIsEveilMode(e.target.checked)} />
+            <span className="switch-slider"></span>
+          </span>
+        </label>
+
+        <label className="switch-label">
+          <span className="form-label">Variation de vitesse (jitter)</span>
+          <span className="switch-control">
+            <input type="checkbox" checked={jitterEnabled} onChange={(e) => setJitterEnabled(e.target.checked)} />
+            <span className="switch-slider"></span>
+          </span>
+        </label>
+
+        {isEveilMode && (
+          <div className="form-group">
+            <label className="form-label">Intervalle Éveil (secondes)</label>
+            <input type="number" value={eveilInterval} onChange={(e) => setEveilInterval(e.target.value)} />
+          </div>
+        )}
+      </fieldset>
+
+      <button className="btn" onClick={handleSaveSettings} style={{ marginTop: "10px" }} disabled={!canSend}>
+        <Save size={14} /> Enregistrer
+      </button>
+    </div>
+  );
+
+  const driverSection = (
+    <div className="ui-card">
+      <fieldset className="field-group">
         <legend className="field-group-legend">Pilote &amp; tunnel</legend>
 
         <div className="form-group">
@@ -384,34 +419,11 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ open, onClose }) =
           <RefreshCw size={14} /> Appliquer et relancer le tunnel
         </button>
       </fieldset>
+    </div>
+  );
 
-      <fieldset className="field-group">
-        <legend className="field-group-legend">Comportement de simulation</legend>
-
-        <label className="switch-label">
-          <span className="form-label">Mode Éveil</span>
-          <span className="switch-control">
-            <input type="checkbox" checked={isEveilMode} onChange={(e) => setIsEveilMode(e.target.checked)} />
-            <span className="switch-slider"></span>
-          </span>
-        </label>
-
-        <label className="switch-label">
-          <span className="form-label">Variation de vitesse (jitter)</span>
-          <span className="switch-control">
-            <input type="checkbox" checked={jitterEnabled} onChange={(e) => setJitterEnabled(e.target.checked)} />
-            <span className="switch-slider"></span>
-          </span>
-        </label>
-
-        {isEveilMode && (
-          <div className="form-group">
-            <label className="form-label">Intervalle Éveil (secondes)</label>
-            <input type="number" value={eveilInterval} onChange={(e) => setEveilInterval(e.target.value)} />
-          </div>
-        )}
-      </fieldset>
-
+  const routingSection = (
+    <div className="ui-card">
       <fieldset className="field-group">
         <legend className="field-group-legend">Routage</legend>
         <div className="form-group">
@@ -428,7 +440,10 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ open, onClose }) =
             (confidentialité, hors-ligne, limites de débit).
           </small>
         </div>
+      </fieldset>
 
+      <fieldset className="field-group">
+        <legend className="field-group-legend">Train — réglages locaux (navigateur)</legend>
         <div className="form-group">
           <label className="form-label">Routeur ferroviaire (optionnel)</label>
           <input
@@ -447,33 +462,39 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ open, onClose }) =
           </small>
         </div>
 
-        <label className="switch-label">
-          <span>
+        <div className="form-group">
+          <label className="switch-label">
             <span className="form-label">Horaires de train réels (Transitous)</span>
-            <small className="form-hint" style={{ marginTop: 2 }}>
-              Récupère vrais horaires, voies et nom du train pour les tronçons gare→gare
-              (service public gratuit). Repli sur l'estimation si indisponible.
-            </small>
-          </span>
-          <span className="switch-control">
-            <input
-              type="checkbox"
-              checked={transitEnabled}
-              onChange={(e) => {
-                setTransitEnabledState(e.target.checked);
-                persistTransitEnabled(e.target.checked);
-              }}
-            />
-            <span className="switch-slider"></span>
-          </span>
-        </label>
+            <span className="switch-control">
+              <input
+                type="checkbox"
+                checked={transitEnabled}
+                onChange={(e) => {
+                  setTransitEnabledState(e.target.checked);
+                  persistTransitEnabled(e.target.checked);
+                }}
+              />
+              <span className="switch-slider"></span>
+            </span>
+          </label>
+          <small className="form-hint">
+            Récupère vrais horaires, voies et nom du train pour les tronçons gare→gare
+            (service public gratuit). Repli sur l'estimation si indisponible.
+          </small>
+        </div>
       </fieldset>
 
-      <details className="field-group">
-        <summary className="field-group-legend" style={{ cursor: "pointer", display: "list-item" }}>
-          Cluster — réglages avancés
-        </summary>
-        <div className="form-group" style={{ marginTop: "8px" }}>
+      <button className="btn" onClick={handleSaveSettings} style={{ marginTop: "10px" }} disabled={!canSend}>
+        <Save size={14} /> Enregistrer
+      </button>
+    </div>
+  );
+
+  const clusterSection = (
+    <div className="ui-card">
+      <fieldset className="field-group">
+        <legend className="field-group-legend">Cluster — réglages avancés</legend>
+        <div className="form-group">
           <label className="form-label">Battement de cœur (s)</label>
           <input type="number" min={1} value={clusterHeartbeat} onChange={(e) => setClusterHeartbeat(e.target.value)} />
           <label className="form-label" style={{ marginTop: "8px" }}>
@@ -490,7 +511,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ open, onClose }) =
             pour un lien distant à forte latence.
           </small>
         </div>
-      </details>
+      </fieldset>
 
       <button className="btn" onClick={handleSaveSettings} style={{ marginTop: "10px" }} disabled={!canSend}>
         <Save size={14} /> Enregistrer
@@ -648,7 +669,10 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ open, onClose }) =
         sections={[
           { id: "connection", label: "Connexion", icon: Plug, content: connectionSection },
           { id: "device", label: "Appareil", icon: Smartphone, content: deviceSection },
-          { id: "engine", label: "Moteur & Tunnel", icon: Settings, content: engineSection },
+          { id: "simulation", label: "Simulation", icon: Settings, content: simulationSection },
+          { id: "driver", label: "Pilote & Tunnel", icon: Cable, content: driverSection },
+          { id: "routing", label: "Routage", icon: Route, content: routingSection },
+          { id: "cluster", label: "Cluster", icon: Server, content: clusterSection },
           { id: "diagnostics", label: "Diagnostics", icon: Activity, content: diagnosticsSection },
         ]}
       />
