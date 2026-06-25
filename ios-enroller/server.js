@@ -8,10 +8,32 @@ const cors = require('cors');
 const app = express();
 app.use(cors());
 app.use(express.json());
-app.use(express.static('public'));
+app.use(express.static(path.join(__dirname, 'public')));
 
-const GOIOS_PATH = path.join(__dirname, '..', 'server', 'resources', 'ios.exe');
-const SELF_IDENTITY_PATH = path.join(__dirname, '..', 'selfIdentity.plist');
+// Résolution dynamique du binaire ios.exe
+let GOIOS_PATH = "";
+const exeDir = path.dirname(process.execPath);
+const candidates = [
+    path.join(exeDir, 'ios.exe'),
+    path.join(exeDir, 'ios'),
+    path.join(__dirname, '..', 'server', 'resources', 'ios.exe'),
+    path.join(__dirname, '..', 'tauri-app', 'src-tauri', 'resources', 'ios.exe'),
+    path.join(__dirname, 'ios.exe')
+];
+for (const cand of candidates) {
+    if (fs.existsSync(cand)) {
+        GOIOS_PATH = cand;
+        break;
+    }
+}
+if (!GOIOS_PATH) {
+    GOIOS_PATH = "ios";
+}
+
+const SELF_IDENTITY_PATH = fs.existsSync(path.join(exeDir, 'selfIdentity.plist')) 
+    ? path.join(exeDir, 'selfIdentity.plist')
+    : path.join(__dirname, '..', 'selfIdentity.plist');
+
 const LOCKDOWN_DIR = 'C:\\ProgramData\\Apple\\Lockdown';
 
 // Helper pour exécuter une commande

@@ -2,8 +2,18 @@
   "name": "ios-enroller",
   "version": "1.0.0",
   "description": "",
-  "main": "index.js",
+  "main": "server.js",
+  "bin": "server.js",
+  "pkg": {
+    "assets": [
+      "public/**/*"
+    ],
+    "targets": [
+      "node18-win-x64"
+    ]
+  },
   "scripts": {
+    "build": "pkg . --output dist/ios-enroller.exe",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],
