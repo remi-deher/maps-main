@@ -45,6 +45,13 @@ struct SettingsSheet: View {
     @State var portInput = ""
     @State var portError: String?
 
+    // Remote-access pairing: the 6-digit code typed manually (or pre-filled from
+    // a scanned QR), an in-flight flag to disable the button, and a status line
+    // for success/error feedback.
+    @State var pairingCode = ""
+    @State var pairingInProgress = false
+    @State var pairingStatus: String?
+
     @State var showQrScanner = false
 
     @Environment(\.dismiss) var dismiss

@@ -1386,38 +1386,6 @@ input[aria-invalid="true"]:focus {
   }
 }
 
-/* QR pairing modal */
-.qr-overlay {
-  position: fixed;
-  inset: 0;
-  z-index: 1400;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: rgba(2, 6, 23, 0.7);
-  backdrop-filter: blur(4px);
-}
-
-.qr-modal {
-  background: #0f172a;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: var(--radius-xl);
-  padding: 24px;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 14px;
-  max-width: 320px;
-  text-align: center;
-  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.5);
-}
-
-.qr-modal-code {
-  background: #fff;
-  padding: 12px;
-  border-radius: var(--radius-md);
-}
-
 @keyframes slideIn {
   from { transform: translateX(100%); opacity: 0; }
   to { transform: translateX(0); opacity: 1; }
@@ -2210,4 +2178,23 @@ select:focus-visible,
   .map-action-sheet-actions {
     flex-wrap: wrap;
   }
+}
+
+/* Remote-access pairing gate (browser mode): a blocking overlay shown until a
+   remote client redeems the rotating code for a durable token. */
+.pairing-gate-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1500;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  background: rgba(8, 12, 20, 0.82);
+  backdrop-filter: blur(4px);
+}
+
+.pairing-gate-card {
+  width: 100%;
+  max-width: 360px;
 }

@@ -18,6 +18,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/remi-deher/maps-main/engine/internal/auth"
 	"github.com/remi-deher/maps-main/engine/internal/platform"
 	"github.com/remi-deher/maps-main/engine/internal/settings"
 
@@ -40,9 +41,18 @@ func main() {
 	if err := os.MkdirAll(dataDir, 0o755); err != nil {
 		log.Fatalf("settings: cannot create data dir %q: %v", dataDir, err)
 	}
-	store, err := settings.OpenStore(filepath.Join(dataDir, "gpsmock.db"))
+	dbPath := filepath.Join(dataDir, "gpsmock.db")
+	store, err := settings.OpenStore(dbPath)
 	if err != nil {
 		log.Fatalf("settings store: %v", err)
+	}
+	// Remote-access credentials (TOTP pairing seed + paired devices) live in
+	// their own tables in the same DB file, kept out of the client-facing
+	// settings blob. A failure here is non-fatal: the engine still runs for
+	// loopback and API-key callers, just without QR pairing.
+	authStore, err := auth.OpenStore(dbPath)
+	if err != nil {
+		log.Printf("auth store: %v (remote pairing disabled)", err)
 	}
 	def, err := store.Load()
 	if err != nil {
@@ -107,6 +117,7 @@ func main() {
 		telemetryInterval:  *telemetryInterval,
 		settingsCfg:        def,
 		store:              store,
+		authStore:          authStore,
 	}
 
 	// Windows service mode: when launched by the SCM, run under the service

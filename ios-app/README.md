@@ -22,6 +22,15 @@ desktop :
   l'IP:port à la main si le moteur est sur le même réseau. Le moteur Go
   s'annonce lui-même au démarrage (`engine/cmd/headless/run.go`,
   `advertiseMdns`) — desktop comme headless, puisque c'est le même binaire.
+- **Appairage sécurisé** (`EnginePairing.swift`) : le moteur n'accepte un
+  client distant (le téléphone l'est toujours, via le Wi-Fi) qu'après
+  appairage. L'app redime **une seule fois** le code rotatif à 6 chiffres
+  affiché côté bureau (section « Accès distant ») — par scan du QR Code
+  (`http://host:port/?pair=<code>`) ou saisie manuelle — contre un token
+  durable rangé dans le Trousseau (`EngineTokenStore`). Les connexions
+  suivantes, y compris après un redémarrage du moteur, réutilisent ce token
+  sans réappairage. Révocable depuis le bureau (« Accès distant » →
+  appareils).
 - Liste les favoris du moteur (ajout/suppression/téléportation en un tap).
 - Remonte la position réelle de l'appareil (`REAL_LOCATION`) toutes les 10s
   pour le bouclier anti-dérive du moteur (re-injecte la position simulée si
@@ -97,6 +106,10 @@ réinstaller/rafraîchir depuis AltStore quand le certificat expire).
 1. Récupérer le `.ipa` depuis l'artifact du workflow (Actions → run → Artifacts).
 2. L'installer via AltStore/AltServer sur l'iPhone.
 3. Autoriser l'accès à la localisation et au réseau local (popup iOS) :
-   l'app cherche automatiquement le moteur en Bonjour et se connecte seule
-   si elle le trouve. Sinon, saisir l'IP:port du PC manuellement
-   (ex. `192.168.1.42:8080`) puis "Connecter".
+   l'app cherche automatiquement le moteur en Bonjour. Sinon, saisir
+   l'IP:port du PC manuellement (ex. `192.168.1.42:8080`).
+4. **Appairer** : sur le PC, ouvrir Réglages → « Accès distant » pour
+   afficher le code à 6 chiffres et le QR Code. Dans l'app, scanner le QR
+   (Réglages → Connexion → « Scanner le QR Code ») — ou saisir le code dans
+   le champ « Code d'appairage » — puis « Connecter ». Le token obtenu est
+   mémorisé : les fois suivantes l'app se reconnecte seule, sans réappairage.

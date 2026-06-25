@@ -17,3 +17,41 @@ export function sameOriginWsUrl(path: string): string {
   const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
   return `${proto}//${window.location.host}${path}`;
 }
+
+// Same-origin HTTP URL for browser mode: used to call the engine's REST surface
+// (e.g. /api/pair) from the page it served. In Tauri, the engine is a localhost
+// sidecar, so callers target http://localhost:<port> explicitly instead.
+export function sameOriginHttpUrl(path: string): string {
+  return `${window.location.origin}${path}`;
+}
+
+// Durable remote-access token storage. After a remote client pairs once (via the
+// rotating QR/code), the engine hands back a "<deviceID>.<secret>" token; we keep
+// it in localStorage so every later connection — including after an engine
+// restart — reuses it silently, with no re-pairing. Cleared only on explicit
+// un-pair or when the engine rejects it.
+const TOKEN_KEY = "gpsmock.deviceToken";
+
+export function getStoredToken(): string | null {
+  try {
+    return window.localStorage.getItem(TOKEN_KEY);
+  } catch {
+    return null; // private mode / storage disabled
+  }
+}
+
+export function setStoredToken(token: string): void {
+  try {
+    window.localStorage.setItem(TOKEN_KEY, token);
+  } catch {
+    /* best effort */
+  }
+}
+
+export function clearStoredToken(): void {
+  try {
+    window.localStorage.removeItem(TOKEN_KEY);
+  } catch {
+    /* best effort */
+  }
+}

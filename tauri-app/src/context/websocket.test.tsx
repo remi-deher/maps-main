@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, act, waitFor } from "@testing-library/react";
 import React from "react";
 import { WebSocketProvider, useWebSocket } from "./websocket";
@@ -14,6 +14,19 @@ const TestConsumer: React.FC = () => {
       </button>
       <button data-testid="play-route" onClick={() => ws.playRoute(45.0, -75.0, 30, "driving")}>
         Play Route
+      </button>
+    </div>
+  );
+};
+
+const PairingConsumer: React.FC = () => {
+  const ws = useWebSocket();
+  return (
+    <div>
+      <span data-testid="connection">{ws.connectionStatus}</span>
+      <span data-testid="needs-pairing">{ws.needsPairing ? "yes" : "no"}</span>
+      <button data-testid="submit-code" onClick={() => void ws.submitCode("123456")}>
+        Pair
       </button>
     </div>
   );
@@ -80,6 +93,73 @@ describe("WebSocketContext Unit Tests", () => {
         type: "PLAY_ROUTE",
         data: { endLat: 45, endLon: -75, speed: 30, profile: "driving" },
       })
+    );
+  });
+});
+
+describe("WebSocketContext — remote pairing (browser mode)", () => {
+  const TOKEN_KEY = "gpsmock.deviceToken";
+  const seededToken = window.localStorage.getItem(TOKEN_KEY);
+
+  beforeEach(() => {
+    // Start each test as an *un*paired remote client.
+    window.localStorage.removeItem(TOKEN_KEY);
+  });
+
+  afterEach(() => {
+    // Restore the suite-wide seed so the other test files' assumptions hold.
+    if (seededToken) window.localStorage.setItem(TOKEN_KEY, seededToken);
+    vi.unstubAllGlobals();
+  });
+
+  it("requires pairing when no token is stored and does not connect", async () => {
+    await act(async () => {
+      render(
+        <WebSocketProvider>
+          <PairingConsumer />
+        </WebSocketProvider>
+      );
+    });
+
+    await waitFor(() => {
+      expect(screen.getByTestId("needs-pairing").textContent).toBe("yes");
+    });
+    // Without a token the provider must not open the socket.
+    expect(screen.getByTestId("connection").textContent).not.toBe("connected");
+  });
+
+  it("redeems a code, stores the token, and connects", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ token: "newdevice.secret-token" }),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await act(async () => {
+      render(
+        <WebSocketProvider>
+          <PairingConsumer />
+        </WebSocketProvider>
+      );
+    });
+
+    await act(async () => {
+      screen.getByTestId("submit-code").click();
+    });
+
+    // Token persisted and the socket comes up.
+    await waitFor(() => {
+      expect(window.localStorage.getItem(TOKEN_KEY)).toBe("newdevice.secret-token");
+    });
+    await waitFor(() => {
+      expect(screen.getByTestId("connection").textContent).toBe("connected");
+    });
+
+    // The code was POSTed to the engine's pairing endpoint.
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringContaining("/api/pair"),
+      expect.objectContaining({ method: "POST" })
     );
   });
 });

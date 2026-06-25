@@ -30,6 +30,26 @@ extension SettingsSheet {
                     Label("Scanner le QR Code du moteur", systemImage: "qrcode.viewfinder")
                 }
 
+                // Manual pairing: read the 6-digit code from the desktop's
+                // "Accès distant" screen and redeem it for a durable token. Not
+                // needed when the engine is reached over loopback, but the
+                // iPhone always connects over the LAN, where a token is required.
+                HStack {
+                    Text("Code d'appairage")
+                    TextField("000000", text: $pairingCode)
+                        .keyboardType(.numberPad)
+                        .multilineTextAlignment(.trailing)
+                        .monospaced()
+                    Button("Appairer") {
+                        pairManually()
+                    }
+                    .buttonStyle(.borderless)
+                    .disabled(pairingInProgress || pairingCode.filter(\.isNumber).count != 6)
+                }
+                if let pairingStatus {
+                    Text(pairingStatus).font(.caption).foregroundStyle(.secondary)
+                }
+
                 HStack {
                     Text("Port")
                     TextField("8080", text: $portInput)

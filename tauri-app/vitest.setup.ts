@@ -3,6 +3,16 @@ import { expect, vi } from "vitest";
 
 expect.extend(matchers);
 
+// Tests run in jsdom, i.e. browser mode (not Tauri). Browser mode now requires a
+// durable device token before it will open the WebSocket; seed one so the suite
+// exercises the steady-state "already paired" client rather than the pairing
+// gate. Individual tests can clear it to assert the gate instead.
+try {
+  window.localStorage.setItem("gpsmock.deviceToken", "test-device.test-secret");
+} catch {
+  /* no localStorage in this environment */
+}
+
 
 
 // Mock WebSocket globally

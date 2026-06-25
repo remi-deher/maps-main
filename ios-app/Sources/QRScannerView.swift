@@ -1,10 +1,11 @@
 import SwiftUI
 import VisionKit
 
-/// Scans the QR code tauri-app's Sidebar displays for pairing — it encodes a
-/// plain "host:port" string, the exact shape the manual address field
-/// already accepts, so a successful scan needs no parsing beyond handing
-/// the raw payload straight to `engineAddress`.
+/// Scans the QR code the desktop app displays for pairing. The payload is
+/// handed verbatim to the caller (`applyScannedAddress` → EnginePairing.parse),
+/// which accepts both the legacy "host:port" code and the newer "Accès distant"
+/// URL "http://host:port/?pair=<code>" that also carries the rotating pairing
+/// code for a one-scan pairing.
 struct QRScannerView: UIViewControllerRepresentable {
     var onScan: (String) -> Void
 

@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
-import { Activity, Cable, Pause, Play, Plug, QrCode, Save, RefreshCw, Route, Server, Settings, Smartphone, Square } from "lucide-react";
-import { QRCodeSVG } from "qrcode.react";
+import { Activity, Cable, Pause, Play, Plug, Save, RefreshCw, Route, Server, Settings, Smartphone, Square, Wifi } from "lucide-react";
 import { useWebSocket } from "../context/websocket";
+import { RemoteAccessSection } from "./RemoteAccessSection";
 import { parseCoordinate } from "../lib/parse";
 import { getRailRouterUrl, setRailRouterUrl as persistRailRouterUrl } from "../lib/osrm";
 import { isTransitEnabled, setTransitEnabled as persistTransitEnabled } from "../lib/transit";
@@ -51,7 +51,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ open, onClose }) =
 
   const [enginePortInput, setEnginePortInput] = useState(String(enginePort));
   const [enginePortError, setEnginePortError] = useState("");
-  const [showQrCode, setShowQrCode] = useState(false);
 
   const [companionPort, setCompanionPort] = useState("8080");
   const [preferredDriver, setPreferredDriver] = useState("go-ios");
@@ -80,7 +79,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ open, onClose }) =
   const qrPairingHost = networkInterfaces.find((iface) => iface.name === mdnsInterface)?.ip
     ?? networkInterfaces[0]?.ip
     ?? null;
-  const qrPairingAddress = qrPairingHost ? `${qrPairingHost}:${enginePort}` : null;
 
   // "ip:port" — accepts the format the daemon expects for a pinned RSD endpoint.
   const RSD_ADDRESS_RE = /^(\d{1,3}\.){3}\d{1,3}:\d{1,5}$/;
@@ -110,15 +108,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ open, onClose }) =
     getDiagnostics();
     getNetworkDevices();
   }, [open, canSend]);
-
-  useEffect(() => {
-    if (!showQrCode) return;
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setShowQrCode(false);
-    };
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [showQrCode]);
 
   const handleApplyEnginePort = async () => {
     const parsed = parseCoordinate(enginePortInput, 1, 65535);
@@ -197,16 +186,12 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ open, onClose }) =
         </div>
 
         <div className="form-group">
-          <label className="form-label">Appairage par QR Code</label>
-          <button className="btn btn-secondary" disabled={!qrPairingAddress} onClick={() => setShowQrCode(true)}>
-            <QrCode size={14} /> Afficher le QR Code
-          </button>
-          {!qrPairingAddress && (
-            <p style={{ fontSize: "0.78rem", color: "#94a3b8", margin: "6px 0 0" }}>
-              Aucune interface réseau locale détectée — connectez-vous à un réseau Wi-Fi
-              ou Ethernet pour générer un QR Code.
-            </p>
-          )}
+          <label className="form-label">Appairage (iPhone / autre PC)</label>
+          <p style={{ fontSize: "0.78rem", color: "#94a3b8", margin: 0 }}>
+            L'appairage se fait désormais depuis la section <strong>Accès distant</strong> :
+            elle affiche un code à 6 chiffres et un QR Code à scanner depuis l'app iOS ou le
+            navigateur d'un autre ordinateur.
+          </p>
         </div>
       </fieldset>
     </div>
@@ -490,6 +475,10 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ open, onClose }) =
     </div>
   );
 
+  const remoteSection = (
+    <RemoteAccessSection enginePort={enginePort} qrPairingHost={qrPairingHost} />
+  );
+
   const clusterSection = (
     <div className="ui-card">
       <fieldset className="field-group">
@@ -672,30 +661,11 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ open, onClose }) =
           { id: "simulation", label: "Simulation", icon: Settings, content: simulationSection },
           { id: "driver", label: "Pilote & Tunnel", icon: Cable, content: driverSection },
           { id: "routing", label: "Routage", icon: Route, content: routingSection },
+          { id: "remote", label: "Accès distant", icon: Wifi, content: remoteSection },
           { id: "cluster", label: "Cluster", icon: Server, content: clusterSection },
           { id: "diagnostics", label: "Diagnostics", icon: Activity, content: diagnosticsSection },
         ]}
       />
-
-      {showQrCode && qrPairingAddress && (
-        <div className="qr-overlay" role="dialog" aria-modal="true" onClick={() => setShowQrCode(false)}>
-          <div className="qr-modal" onClick={(e) => e.stopPropagation()}>
-            <h3 className="ui-card-title" style={{ margin: 0 }}>
-              <QrCode size={16} /> Appairer un iPhone
-            </h3>
-            <div className="qr-modal-code">
-              <QRCodeSVG value={qrPairingAddress} size={200} />
-            </div>
-            <p style={{ fontSize: "0.85rem", color: "#cbd5e1", margin: 0 }}>
-              Dans l'app iOS, ouvrez les réglages puis scannez ce code pour vous connecter
-              directement à <strong>{qrPairingAddress}</strong>.
-            </p>
-            <button className="btn btn-secondary" onClick={() => setShowQrCode(false)}>
-              Fermer
-            </button>
-          </div>
-        </div>
-      )}
 
       {toast && (
         <div className="toast-overlay" role="status" aria-live="polite">

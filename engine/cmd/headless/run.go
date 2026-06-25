@@ -12,6 +12,7 @@ import (
 
 	"github.com/grandcat/zeroconf"
 
+	"github.com/remi-deher/maps-main/engine/internal/auth"
 	"github.com/remi-deher/maps-main/engine/internal/cluster"
 	"github.com/remi-deher/maps-main/engine/internal/domain"
 	"github.com/remi-deher/maps-main/engine/internal/driver"
@@ -47,6 +48,11 @@ type runConfig struct {
 	// handle used to persist further changes made via SaveSettings.
 	settingsCfg settings.Settings
 	store       settings.Store
+
+	// authStore backs remote-access pairing (TOTP code + paired-device tokens).
+	// May be nil if it failed to open, in which case only loopback/API-key
+	// callers authenticate and the pairing endpoints are not mounted.
+	authStore *auth.Store
 }
 
 // runEngine builds the driver, engine and server, starts everything, and blocks
@@ -108,6 +114,10 @@ func runEngine(ctx context.Context, cfg runConfig) error {
 	}
 	if cfg.telemetryInterval > 0 {
 		opts = append(opts, server.WithTelemetryInterval(cfg.telemetryInterval))
+	}
+	if cfg.authStore != nil {
+		opts = append(opts, server.WithAuth(cfg.authStore))
+		defer func() { _ = cfg.authStore.Close() }()
 	}
 	srv := server.New(eng, cfg.addr, opts...)
 

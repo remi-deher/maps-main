@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"github.com/remi-deher/maps-main/engine/internal/api"
+	"github.com/remi-deher/maps-main/engine/internal/auth"
 	"github.com/remi-deher/maps-main/engine/internal/engine"
 	"github.com/remi-deher/maps-main/engine/internal/webui"
 )
@@ -35,6 +36,7 @@ type Server struct {
 	eng       *engine.Engine
 	hub       *hub
 	http      *http.Server
+	auth      *auth.Store
 	startedAt time.Time
 
 	actionTimeout     time.Duration
@@ -58,6 +60,14 @@ func WithActionTimeout(d time.Duration) Option {
 // and broadcast. Default: 5s.
 func WithTelemetryInterval(d time.Duration) Option {
 	return func(s *Server) { s.telemetryInterval = d }
+}
+
+// WithAuth attaches the credential store backing remote access (TOTP pairing
+// code + paired-device tokens). When nil (the default), only loopback and the
+// static GPSMOCK_API_KEY can authenticate, and the pairing endpoints 404 — so
+// existing local-only deployments are unchanged.
+func WithAuth(a *auth.Store) Option {
+	return func(s *Server) { s.auth = a }
 }
 
 // New builds a Server listening on addr (e.g. ":8080").
@@ -88,6 +98,17 @@ func New(eng *engine.Engine, addr string, opts ...Option) *Server {
 	mux.HandleFunc("POST /api/location/clear", s.handleClear)
 	mux.HandleFunc("POST /api/device/enroll", s.handleEnroll)
 	mux.HandleFunc("/ws", s.handleWS)
+
+	// Remote-access pairing (only meaningful when an auth store is attached):
+	//   - GET  /api/pair/code   loopback-only; current 6-digit code + QR payload
+	//   - POST /api/pair        public; redeem a code for a durable device token
+	//   - GET  /api/pair/devices, DELETE /api/pair/devices/{id}  manage devices
+	if s.auth != nil {
+		mux.HandleFunc("GET /api/pair/code", s.handlePairCode)
+		mux.HandleFunc("POST /api/pair", s.handlePair)
+		mux.HandleFunc("GET /api/pair/devices", s.handleListDevices)
+		mux.HandleFunc("DELETE /api/pair/devices/{id}", s.handleRevokeDevice)
+	}
 
 	// Cluster peer-to-peer protocol (ping/takeover/status between engines),
 	// distinct from the client-facing API above. Registered even if cluster
