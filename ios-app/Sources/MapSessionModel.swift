@@ -23,6 +23,14 @@ final class MapSessionModel {
     private var keepAliveTask: Task<Void, Never>?
     private var estimatesTask: Task<Void, Never>?
 
+    // Connection/simulation transition tracking, moved out of ContentView's
+    // body (where it lived as @State + inline onChange logic) so the view stays
+    // declarative and this state survives view re-creation. @ObservationIgnored:
+    // it's internal bookkeeping, no view observes it. See §3 of
+    // docs/UI_UX_BASELINE.md.
+    @ObservationIgnored private var wasConnected = false
+    @ObservationIgnored private var lastSimulationState: String?
+
     func toggleConnection(engineAddress: String, keepAliveEnabled: Bool) {
         if engine.state == .connected || engine.state == .connecting {
             stopReporting()
@@ -118,6 +126,47 @@ final class MapSessionModel {
     func stopReporting() {
         reportTask?.cancel()
         reportTask = nil
+    }
+
+    // MARK: - State-transition side effects (driven by ContentView onChange)
+
+    /// Tracks connection transitions and fires a single disconnect
+    /// notification when a previously-connected session drops. Idempotent —
+    /// safe to call on every `engine.state` change.
+    func handleEngineStateChange(notificationsEnabled: Bool) {
+        if engine.state == .connected {
+            wasConnected = true
+        } else if wasConnected && (engine.state == .reconnecting || engine.state == .disconnected) {
+            wasConnected = false
+            if notificationsEnabled { NotificationManager.shared.notifyDisconnect() }
+        }
+    }
+
+    /// Fires an arrival notification when the simulation transitions from a
+    /// moving/running state to "ready" (destination reached). Tracks the
+    /// previous state internally so the view doesn't have to.
+    func handleSimulationStateChange(notificationsEnabled: Bool) {
+        let previous = lastSimulationState
+        let newState = engine.status?.state
+        lastSimulationState = newState
+        guard notificationsEnabled, let newState else { return }
+        if newState == "ready" && (previous == "running" || previous == "moving") {
+            NotificationManager.shared.notifyArrival(locationName: engine.status?.lastInjectedLocation?.name)
+        }
+    }
+
+    /// Mirrors the keep-alive toggle into the engine and starts/stops the
+    /// background loop, requesting the Always authorization the background
+    /// location callback needs when enabling.
+    func applyKeepAliveEnabled(_ enabled: Bool, interval: Double) {
+        engine.keepAliveEnabled = enabled
+        location.enableBackgroundUpdates(enabled)
+        if enabled {
+            location.requestAlwaysPermission()
+            if engine.state == .connected { startKeepAlive(interval: interval) }
+        } else {
+            stopKeepAlive()
+        }
     }
 
     /// Recomputes per-leg distance/ETA via OSRM, keyed by destination stop id
