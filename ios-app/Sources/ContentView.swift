@@ -24,9 +24,10 @@ struct ContentView: View {
     @AppStorage("defaultProfile") var defaultProfile: String = "driving"
     @AppStorage("locationAccuracyMode") var locationAccuracyMode: String = "balanced"
 
-    @State var wasConnected = false
-    @State var lastSimulationState: String?
     @State var selectedPlace: SelectedPlace?
+    /// The system POI the user tapped on the map, if any. Resolved into a
+    /// `selectedPlace` (and cleared) by an onChange below.
+    @State var selectedFeature: MapFeature?
     @State var showAddFavorite = false
     @State var newFavoriteName = ""
     @State var cameraPosition: MapCameraPosition = .userLocation(fallback: .automatic)
@@ -55,7 +56,12 @@ struct ContentView: View {
     @State var gpxSpeed: Double = 25
     @State var gpxError: String?
 
-    @State var sheetDetent: PresentationDetent = .height(BottomSheet.collapsedHeight)
+    @AppStorage("mapStyleChoice") var mapStyleChoiceRaw: String = MapStyleChoice.standard.rawValue
+    private var mapStyleChoice: MapStyleChoice {
+        MapStyleChoice(rawValue: mapStyleChoiceRaw) ?? .standard
+    }
+
+    @State var sheetDetent: SheetDetent = .collapsed
     @State var collapsedSheetHeight: CGFloat = BottomSheet.collapsedHeight
     @State var showSettings = false
     @State var hasSavedItinerary = UserDefaults.standard.data(forKey: lastItineraryKey) != nil
@@ -85,6 +91,140 @@ struct ContentView: View {
         return (center: center, radius: patrolRadius)
     }
 
+    /// The only two fields of `EngineStatus` the Live Activity actually
+    /// reflects. The engine pushes a full STATUS on every action *and* every
+    /// telemetry tick (~every 5s), so observing `status` wholesale re-synced
+    /// the Live Activity constantly for no reason; keying the onChange on this
+    /// derived value collapses it to "only when the displayed state or
+    /// destination changed". See §3 (perf) of docs/UI_UX_BASELINE.md.
+    private struct LiveActivityKey: Equatable {
+        let state: String?
+        let name: String?
+    }
+
+    private var liveActivityKey: LiveActivityKey {
+        LiveActivityKey(
+            state: session.engine.status?.state,
+            name: session.engine.status?.lastInjectedLocation?.name
+        )
+    }
+
+    /// Plans-style layers control: a glass capsule menu to switch the map look
+    /// (plan/satellite/hybride). Lives in the same GlassEffectContainer as the
+    /// recenter button so the two share one lensing pass.
+    private var mapStyleMenu: some View {
+        Menu {
+            Picker("Style de carte", selection: $mapStyleChoiceRaw) {
+                ForEach(MapStyleChoice.allCases) { choice in
+                    Label(choice.label, systemImage: choice.symbol).tag(choice.rawValue)
+                }
+            }
+        } label: {
+            Label("Style de carte", systemImage: mapStyleChoice.symbol)
+                .labelStyle(.iconOnly)
+                .font(.title3.weight(.semibold))
+                .frame(width: 46, height: 46)
+        }
+        .buttonStyle(.glass)
+        .buttonBorderShape(.circle)
+        .accessibilityLabel("Style de carte")
+    }
+
+    /// The persistent panel's content, hosted inline by `FloatingSheet` in the
+    /// ZStack (no longer a system `.sheet` — §3.11 Option B). Extracted from
+    /// `body` so the large initializer doesn't bury the layout structure.
+    private var bottomSheetContent: some View {
+        BottomSheet(
+            searchQuery: $searchQuery,
+            isFocused: $searchFocused,
+            searchSuggestions: searchCompleter.results,
+            onSelectSuggestion: selectSearchSuggestion,
+            itineraryStops: $itineraryStops,
+            itinerarySpeed: $itinerarySpeed,
+            itineraryProfile: $itineraryProfile,
+            legEstimates: session.legEstimates,
+            onAddStop: { searchFocused = true },
+            onLaunchItinerary: launchItinerary,
+            favorites: session.engine.status?.favorites ?? [],
+            onSelectFavorite: selectFavorite,
+            onDeleteFavorite: { fav in session.engine.removeFavorite(lat: fav.lat, lon: fav.lon) },
+            hasSavedItinerary: hasSavedItinerary,
+            onLoadLastItinerary: loadLastItinerary,
+            selectedPlace: selectedPlace,
+            placeActions: PlaceActions(
+                onTeleport: {
+                    guard let place = selectedPlace, requireConnection() else { return }
+                    session.engine.setLocation(lat: place.coordinate.latitude, lon: place.coordinate.longitude)
+                    selectedPlace = nil
+                },
+                onRoute: {
+                    guard let place = selectedPlace, requireConnection() else { return }
+                    session.engine.playRoute(
+                        endLat: place.coordinate.latitude,
+                        endLon: place.coordinate.longitude,
+                        speed: defaultSpeed,
+                        profile: defaultProfile
+                    )
+                    selectedPlace = nil
+                },
+                onAddStop: {
+                    guard let place = selectedPlace else { return }
+                    itineraryStops.append(RouteStop(coordinate: place.coordinate, name: place.title))
+                    selectedPlace = nil
+                },
+                onFavorite: { showAddFavorite = true },
+                onDismiss: { selectedPlace = nil }
+            ),
+            patrol: PatrolControls(
+                isSettingUp: patrolMode,
+                isActive: session.engine.status?.patrolZone?.active == true,
+                type: $patrolType,
+                radius: $patrolRadius,
+                onBegin: {
+                    patrolMode = true
+                    withAnimation { sheetDetent = .medium }
+                },
+                onStart: {
+                    startPatrol()
+                    patrolMode = false
+                },
+                onCancel: { patrolMode = false },
+                onStop: { session.engine.updatePatrolZone(type: patrolType, center: nil, radius: nil, bounds: nil, active: false) }
+            ),
+            gpx: GpxImport(
+                isLoaded: !gpxContent.isEmpty,
+                fileName: gpxFileName,
+                errorMessage: gpxError,
+                speed: $gpxSpeed,
+                onPick: {
+                    gpxError = nil
+                    showGpxImporter = true
+                },
+                onLaunch: {
+                    session.engine.playCustomGpx(gpxContent: gpxContent, speed: gpxSpeed)
+                    gpxContent = ""
+                    gpxFileName = ""
+                },
+                onCancel: {
+                    gpxContent = ""
+                    gpxFileName = ""
+                }
+            ),
+            simulationState: session.engine.status?.state,
+            onPauseRoute: { session.engine.pauseRoute() },
+            onResumeRoute: { session.engine.resumeRoute() },
+            onStopRoute: { session.engine.stopRoute() },
+            onOpenSettings: { showSettings = true },
+            sheetDetent: sheetDetent,
+            collapsedHeight: collapsedSheetHeight,
+            onCollapsedHeightChange: { newHeight in
+                // FloatingSheet derives the collapsed detent height directly
+                // from this value, so we just store it — no detent juggling.
+                collapsedSheetHeight = newHeight
+            }
+        )
+    }
+
     var body: some View {
         ZStack(alignment: .bottom) {
             EngineMapView(
@@ -93,6 +233,8 @@ struct ContentView: View {
                 itineraryStops: itineraryStops,
                 patrolZone: session.engine.status?.patrolZone,
                 patrolPreview: patrolPreview,
+                mapStyleChoice: mapStyleChoice,
+                selectedFeature: $selectedFeature,
                 cameraPosition: $cameraPosition,
                 onLongPress: { coordinate in
                     searchFocused = false
@@ -132,14 +274,34 @@ struct ContentView: View {
 
                 HStack {
                     Spacer()
-                    RecenterButton {
-                        withAnimation {
-                            cameraPosition = .userLocation(fallback: .automatic)
+                    VStack(spacing: 10) {
+                        mapStyleMenu
+                        RecenterButton {
+                            withAnimation {
+                                cameraPosition = .userLocation(fallback: .automatic)
+                            }
                         }
                     }
                 }
                 .padding(.trailing, 16)
                 .padding(.bottom, 140)
+            }
+
+            // Inline bottom panel — replaces the persistent
+            // `.sheet(isPresented: .constant(true))` (§3.11 Option B). A
+            // GeometryReader gives it the map's full height so its medium/large
+            // detents are screen-relative; bottom-aligned so it hugs the home
+            // indicator like Plans' sheet. The map behind stays fully
+            // interactive (no dimming, no modal capture).
+            GeometryReader { geo in
+                FloatingSheet(
+                    detent: $sheetDetent,
+                    collapsedContentHeight: collapsedSheetHeight,
+                    availableHeight: geo.size.height
+                ) {
+                    bottomSheetContent
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
             }
         }
         .alert("Nom du favori", isPresented: $showAddFavorite) {
@@ -159,140 +321,33 @@ struct ContentView: View {
                 newFavoriteName = ""
             }
         }
-        .sheet(isPresented: .constant(true)) {
-            BottomSheet(
-                searchQuery: $searchQuery,
-                isFocused: $searchFocused,
-                searchSuggestions: searchCompleter.results,
-                onSelectSuggestion: selectSearchSuggestion,
-                itineraryStops: $itineraryStops,
-                itinerarySpeed: $itinerarySpeed,
-                itineraryProfile: $itineraryProfile,
-                legEstimates: session.legEstimates,
-                onAddStop: { searchFocused = true },
-                onLaunchItinerary: launchItinerary,
-                favorites: session.engine.status?.favorites ?? [],
-                onSelectFavorite: selectFavorite,
-                onDeleteFavorite: { fav in session.engine.removeFavorite(lat: fav.lat, lon: fav.lon) },
-                hasSavedItinerary: hasSavedItinerary,
-                onLoadLastItinerary: loadLastItinerary,
-                selectedPlace: selectedPlace,
-                placeActions: PlaceActions(
-                    onTeleport: {
-                        guard let place = selectedPlace, requireConnection() else { return }
-                        session.engine.setLocation(lat: place.coordinate.latitude, lon: place.coordinate.longitude)
-                        selectedPlace = nil
-                    },
-                    onRoute: {
-                        guard let place = selectedPlace, requireConnection() else { return }
-                        session.engine.playRoute(
-                            endLat: place.coordinate.latitude,
-                            endLon: place.coordinate.longitude,
-                            speed: defaultSpeed,
-                            profile: defaultProfile
-                        )
-                        selectedPlace = nil
-                    },
-                    onAddStop: {
-                        guard let place = selectedPlace else { return }
-                        itineraryStops.append(RouteStop(coordinate: place.coordinate, name: place.title))
-                        selectedPlace = nil
-                    },
-                    onFavorite: { showAddFavorite = true },
-                    onDismiss: { selectedPlace = nil }
-                ),
-                patrol: PatrolControls(
-                    isSettingUp: patrolMode,
-                    isActive: session.engine.status?.patrolZone?.active == true,
-                    type: $patrolType,
-                    radius: $patrolRadius,
-                    onBegin: {
-                        patrolMode = true
-                        withAnimation { sheetDetent = .medium }
-                    },
-                    onStart: {
-                        startPatrol()
-                        patrolMode = false
-                    },
-                    onCancel: { patrolMode = false },
-                    onStop: { session.engine.updatePatrolZone(type: patrolType, center: nil, radius: nil, bounds: nil, active: false) }
-                ),
-                gpx: GpxImport(
-                    isLoaded: !gpxContent.isEmpty,
-                    fileName: gpxFileName,
-                    errorMessage: gpxError,
-                    speed: $gpxSpeed,
-                    onPick: {
-                        gpxError = nil
-                        showGpxImporter = true
-                    },
-                    onLaunch: {
-                        session.engine.playCustomGpx(gpxContent: gpxContent, speed: gpxSpeed)
-                        gpxContent = ""
-                        gpxFileName = ""
-                    },
-                    onCancel: {
-                        gpxContent = ""
-                        gpxFileName = ""
-                    }
-                ),
-                simulationState: session.engine.status?.state,
-                onPauseRoute: { session.engine.pauseRoute() },
-                onResumeRoute: { session.engine.resumeRoute() },
-                onStopRoute: { session.engine.stopRoute() },
-                onOpenSettings: { showSettings = true },
-                sheetDetent: sheetDetent,
-                collapsedHeight: collapsedSheetHeight,
-                onCollapsedHeightChange: { newHeight in
-                    let wasCollapsed = sheetDetent == .height(collapsedSheetHeight)
-                    collapsedSheetHeight = newHeight
-                    if wasCollapsed {
-                        sheetDetent = .height(newHeight)
-                    }
-                }
+        // GPX picker now attaches to the root — the bottom panel is no longer a
+        // sheet, so there's no presenter collision to avoid (§3.11 Option B).
+        .fileImporter(isPresented: $showGpxImporter, allowedContentTypes: [.gpx, .xml]) { result in
+            switch result {
+            case .success(let url):
+                loadGpx(from: url)
+            case .failure(let error):
+                gpxError = error.localizedDescription
+            }
+        }
+        // Settings is now a normal single sheet on the root view. With the
+        // bottom panel inlined (no longer a `.sheet`), there's no nested-sheet
+        // conflict to work around — the gear simply presents this sheet.
+        .sheet(isPresented: $showSettings) {
+            SettingsSheet(
+                engineAddress: $engineAddress,
+                engine: session.engine,
+                discovery: discovery,
+                onToggleConnection: toggleConnection,
+                onRetryDiscovery: startDiscovery,
+                onApplyPort: reconnect,
+                liveActivityEnabled: $liveActivityEnabled,
+                keepAliveEnabled: $keepAliveEnabled,
+                keepAliveInterval: $keepAliveInterval,
+                notificationsEnabled: $notificationsEnabled,
+                locationAuthorization: session.location.authorizationStatus
             )
-            .presentationDetents([.height(collapsedSheetHeight), .medium, .large], selection: $sheetDetent)
-            .presentationDragIndicator(.visible)
-            .presentationBackgroundInteraction(.enabled)
-            .interactiveDismissDisabled()
-            // Presented FROM the bottom sheet (the topmost presenter) for the
-            // same reason settings is — a .fileImporter on ContentView would
-            // collide with the already-presented bottom sheet (§3.11).
-            .fileImporter(isPresented: $showGpxImporter, allowedContentTypes: [.gpx, .xml]) { result in
-                switch result {
-                case .success(let url):
-                    loadGpx(from: url)
-                case .failure(let error):
-                    gpxError = error.localizedDescription
-                }
-            }
-            // Settings are presented FROM the bottom sheet, not from
-            // ContentView. The bottom sheet is permanently presented via
-            // `.sheet(isPresented: .constant(true))`, and a single view
-            // controller can only present one modal at a time — attaching the
-            // settings presentation to ContentView (as a .sheet or
-            // .fullScreenCover) put it on the same presenter that the bottom
-            // sheet already occupies, so it silently never appeared and the
-            // gear button looked dead. Presented here, it stacks as a child of
-            // the already-presented sheet (parent → child), which is fully
-            // supported on iOS 26. SettingsSheet uses no presentationDetents,
-            // so there's no drag-indicator / detent conflict (§3.11 of
-            // docs/UI_UX_BASELINE.md).
-            .sheet(isPresented: $showSettings) {
-                SettingsSheet(
-                    engineAddress: $engineAddress,
-                    engine: session.engine,
-                    discovery: discovery,
-                    onToggleConnection: toggleConnection,
-                    onRetryDiscovery: startDiscovery,
-                    onApplyPort: reconnect,
-                    liveActivityEnabled: $liveActivityEnabled,
-                    keepAliveEnabled: $keepAliveEnabled,
-                    keepAliveInterval: $keepAliveInterval,
-                    notificationsEnabled: $notificationsEnabled,
-                    locationAuthorization: session.location.authorizationStatus
-                )
-            }
         }
         .onAppear {
             session.location.requestPermission()
@@ -312,16 +367,7 @@ struct ContentView: View {
             session.location.setAccuracyMode(mode)
         }
         .onChange(of: keepAliveEnabled) { enabled in
-            session.engine.keepAliveEnabled = enabled
-            session.location.enableBackgroundUpdates(enabled)
-            if enabled {
-                // Turning keep-alive on after connecting needs the Always grant
-                // too, otherwise background callbacks never fire.
-                session.location.requestAlwaysPermission()
-                if session.engine.state == .connected { session.startKeepAlive(interval: keepAliveInterval) }
-            } else {
-                session.stopKeepAlive()
-            }
+            session.applyKeepAliveEnabled(enabled, interval: keepAliveInterval)
         }
         .onChange(of: keepAliveInterval) { interval in
             session.engine.keepAliveInterval = interval
@@ -329,21 +375,11 @@ struct ContentView: View {
         .onChange(of: notificationsEnabled) { enabled in
             if enabled { NotificationManager.shared.requestPermission() }
         }
-        .onChange(of: session.engine.state) { newState in
-            if newState == .connected {
-                wasConnected = true
-            } else if wasConnected && (newState == .reconnecting || newState == .disconnected) {
-                wasConnected = false
-                if notificationsEnabled { NotificationManager.shared.notifyDisconnect() }
-            }
+        .onChange(of: session.engine.state) { _ in
+            session.handleEngineStateChange(notificationsEnabled: notificationsEnabled)
         }
-        .onChange(of: session.engine.status?.state) { newState in
-            let previous = lastSimulationState
-            lastSimulationState = newState
-            guard notificationsEnabled, let newState else { return }
-            if newState == "ready" && (previous == "running" || previous == "moving") {
-                NotificationManager.shared.notifyArrival(locationName: session.engine.status?.lastInjectedLocation?.name)
-            }
+        .onChange(of: session.engine.status?.state) { _ in
+            session.handleSimulationStateChange(notificationsEnabled: notificationsEnabled)
         }
         .onChange(of: discovery.state) { newState in
             guard case .found(let host, let port) = newState else { return }
@@ -379,8 +415,8 @@ struct ContentView: View {
         .onChange(of: itineraryProfile) { _ in
             session.recomputeLegEstimates(itineraryStops, profile: itineraryProfile)
         }
-        .onChange(of: session.engine.status) { status in
-            liveActivity.sync(state: status?.state, locationName: status?.lastInjectedLocation?.name, enabled: liveActivityEnabled)
+        .onChange(of: liveActivityKey) { key in
+            liveActivity.sync(state: key.state, locationName: key.name, enabled: liveActivityEnabled)
         }
         .onChange(of: liveActivityEnabled) { enabled in
             liveActivity.sync(state: session.engine.status?.state, locationName: session.engine.status?.lastInjectedLocation?.name, enabled: enabled)
@@ -392,6 +428,21 @@ struct ContentView: View {
             if place != nil {
                 withAnimation { sheetDetent = .medium }
             }
+        }
+        .onChange(of: selectedFeature) { _, feature in
+            // Tapping a system POI resolves into the same SelectedPlace flow as
+            // a long-press, so the user gets the identical action card
+            // (Téléporter / Itinéraire / Étape / Favori). Cleared immediately so
+            // re-tapping the same POI works, and so the map's own selection
+            // highlight doesn't linger once the card owns the interaction.
+            guard let feature else { return }
+            let coordsText = String(format: "%.5f, %.5f", feature.coordinate.latitude, feature.coordinate.longitude)
+            selectedPlace = SelectedPlace(
+                coordinate: feature.coordinate,
+                title: feature.title ?? "Lieu",
+                subtitle: coordsText
+            )
+            selectedFeature = nil
         }
     }
 

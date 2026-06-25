@@ -1,6 +1,41 @@
 import SwiftUI
 import MapKit
 
+/// The three map looks offered by the style picker, mirroring Plans' layers
+/// button (plan / satellite / hybride). Raw values are persisted via
+/// @AppStorage in ContentView.
+enum MapStyleChoice: String, CaseIterable, Identifiable {
+    case standard
+    case hybrid
+    case imagery
+
+    var id: String { rawValue }
+
+    var label: String {
+        switch self {
+        case .standard: return "Plan"
+        case .hybrid: return "Hybride"
+        case .imagery: return "Satellite"
+        }
+    }
+
+    var symbol: String {
+        switch self {
+        case .standard: return "map"
+        case .hybrid: return "map.fill"
+        case .imagery: return "globe.americas.fill"
+        }
+    }
+
+    var mapStyle: MapStyle {
+        switch self {
+        case .standard: return .standard(elevation: .realistic)
+        case .hybrid: return .hybrid(elevation: .realistic)
+        case .imagery: return .imagery(elevation: .realistic)
+        }
+    }
+}
+
 /// Full-screen map (à la Plans) using SwiftUI's native Map API: the device's
 /// real position (blue dot, via UserAnnotation), the engine's currently
 /// spoofed position as a marker, and the active route preview as a polyline.
@@ -18,6 +53,11 @@ struct EngineMapView: View {
     /// radius, instead of committing blind. Only circles preview: a rectangle
     /// zone is the visible region, which is already what's on screen.
     var patrolPreview: (center: CLLocationCoordinate2D, radius: Double)?
+    var mapStyleChoice: MapStyleChoice = .standard
+    /// System POI selection (restaurants, shops…). Binding so tapping a
+    /// built-in map feature surfaces it to ContentView, which turns it into
+    /// the same SelectedPlace a long-press produces — Plans' tap-a-POI flow.
+    @Binding var selectedFeature: MapFeature?
     @Binding var cameraPosition: MapCameraPosition
     var onLongPress: (CLLocationCoordinate2D) -> Void
     var onRegionChange: (MKCoordinateRegion) -> Void = { _ in }
@@ -26,7 +66,7 @@ struct EngineMapView: View {
 
     var body: some View {
         MapReader { proxy in
-            Map(position: $cameraPosition) {
+            Map(position: $cameraPosition, selection: $selectedFeature) {
                 UserAnnotation()
                 if let spoofed = spoofedLocation {
                     // Custom annotation instead of Marker: Marker's
@@ -61,6 +101,7 @@ struct EngineMapView: View {
                         .stroke(Color.accentColor, style: StrokeStyle(lineWidth: 2, dash: [8, 6]))
                 }
             }
+            .mapStyle(mapStyleChoice.mapStyle)
             .onMapCameraChange { context in
                 onRegionChange(context.region)
             }

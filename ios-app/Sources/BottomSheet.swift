@@ -53,16 +53,16 @@ struct BottomSheet: View {
 
     var onOpenSettings: () -> Void
 
-    /// The sheet's current detent — used to keep the collapsed state to
+    /// The panel's current detent — used to keep the collapsed state to
     /// *just* the search capsule, like Plans. Everything else (favorites,
-    /// results, itinerary, place card...) only appears once the sheet is
+    /// results, itinerary, place card...) only appears once the panel is
     /// actually dragged/expanded open.
-    var sheetDetent: PresentationDetent
+    var sheetDetent: SheetDetent
 
     /// The collapsed detent's height, measured live from the header's actual
     /// rendered size (see `HeaderHeightKey`) and reported up via
-    /// `onCollapsedHeightChange` so ContentView can keep its
-    /// `.presentationDetents` / `sheetDetent` in sync.
+    /// `onCollapsedHeightChange` so the hosting `FloatingSheet` can size its
+    /// collapsed detent to exactly the search capsule.
     var collapsedHeight: CGFloat
     var onCollapsedHeightChange: (CGFloat) -> Void
 
@@ -71,7 +71,7 @@ struct BottomSheet: View {
     }
 
     private var isCollapsed: Bool {
-        sheetDetent == .height(collapsedHeight)
+        sheetDetent == .collapsed
     }
 
     /// Fallback used only until the header's first layout pass reports its
@@ -364,7 +364,11 @@ struct BottomSheet: View {
                 .padding(.top, 8)
         } else {
             VStack(spacing: 0) {
-                ForEach(Array(searchSuggestions.enumerated()), id: \.offset) { index, completion in
+                // Stable composite identity (title|subtitle) instead of the
+                // array index: keying on `.offset` re-identified every row as
+                // the completion list mutates on each keystroke, breaking
+                // diffing/animation. See §4 (perf) of docs/UI_UX_BASELINE.md.
+                ForEach(searchSuggestions, id: \.compositeID) { completion in
                     Button {
                         onSelectSuggestion(completion)
                     } label: {
@@ -384,7 +388,7 @@ struct BottomSheet: View {
                         .frame(minHeight: 44)
                         .contentShape(Rectangle())
                     }
-                    if index < searchSuggestions.count - 1 {
+                    if completion.compositeID != searchSuggestions.last?.compositeID {
                         Divider()
                     }
                 }
@@ -392,4 +396,11 @@ struct BottomSheet: View {
             .padding(.horizontal, 16)
         }
     }
+}
+
+private extension MKLocalSearchCompletion {
+    /// A stable identity for SwiftUI diffing: `MKLocalSearchCompletion` isn't
+    /// `Identifiable`, and its array position changes on every keystroke, so
+    /// title+subtitle is the closest thing to a durable key for a row.
+    var compositeID: String { "\(title)|\(subtitle)" }
 }
