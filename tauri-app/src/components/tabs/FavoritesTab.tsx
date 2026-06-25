@@ -6,9 +6,9 @@ interface FavoritesTabProps {
   showToast: (message: string) => void;
 }
 
-/// Favorites + recent-history tab, extracted from the former Sidebar
-/// god-component. Owns its own import/export logic; engine data comes straight
-/// from the WebSocket context.
+/// Favorites + recent-history content, rendered inside FavoritesModal. Owns
+/// its own import/export logic; engine data comes straight from the
+/// WebSocket context.
 export const FavoritesTab: React.FC<FavoritesTabProps> = ({ showToast }) => {
   const { status, addFavorite, removeFavorite, setLocation } = useWebSocket();
   const importFileInputRef = useRef<HTMLInputElement>(null);
@@ -94,7 +94,11 @@ export const FavoritesTab: React.FC<FavoritesTabProps> = ({ showToast }) => {
                 <div className="list-item-actions">
                   <button
                     className="icon-btn"
-                    onClick={() => removeFavorite(fav.lat, fav.lon)}
+                    onClick={() => {
+                      if (window.confirm(`Supprimer le favori "${fav.name}" ?`)) {
+                        removeFavorite(fav.lat, fav.lon);
+                      }
+                    }}
                     aria-label={`Supprimer le favori ${fav.name}`}
                   >
                     <Trash size={14} />
@@ -103,8 +107,10 @@ export const FavoritesTab: React.FC<FavoritesTabProps> = ({ showToast }) => {
               </div>
             ))
           ) : (
-            <div style={{ fontSize: "0.85rem", color: "#64748b", textAlign: "center", padding: "10px" }}>
-              Aucun favori enregistré.
+            <div className="empty-state">
+              <Star size={22} className="empty-state-icon" />
+              <span>Aucun favori enregistré.</span>
+              <span className="empty-state-hint">Cliquez sur la carte puis « Favoris » pour en ajouter un.</span>
             </div>
           )}
         </div>
@@ -132,8 +138,10 @@ export const FavoritesTab: React.FC<FavoritesTabProps> = ({ showToast }) => {
               </div>
             ))
           ) : (
-            <div style={{ fontSize: "0.85rem", color: "#64748b", textAlign: "center", padding: "10px" }}>
-              Aucun historique récent.
+            <div className="empty-state">
+              <Activity size={22} className="empty-state-icon" />
+              <span>Aucun historique récent.</span>
+              <span className="empty-state-hint">Les téléportations et trajets récents apparaîtront ici.</span>
             </div>
           )}
         </div>

@@ -3,7 +3,20 @@ import { MapContainer, TileLayer, Marker, Popup, Polyline, Circle, Rectangle, us
 import L from "leaflet";
 import { useWebSocket, LatLon } from "../context/websocket";
 import { SearchBox } from "./SearchBox";
-import { Crosshair } from "lucide-react";
+import { MapActionSheet } from "./MapActionSheet";
+import { SettingsModal } from "./SettingsModal";
+import { LogsModal } from "./LogsModal";
+import { FavoritesModal } from "./FavoritesModal";
+import { EngineStatusFrame } from "./EngineStatusFrame";
+import { TelemetryWidget } from "./TelemetryWidget";
+import { DeviceModal } from "./DeviceModal";
+import { RouteModePanel, Waypoint, AddMethod, RouteSegment, MODE_META, defaultDwellMinutes } from "./RouteModePanel";
+import { PatrolModePanel } from "./PatrolModePanel";
+import { reverseGeocode, reverseGeocodeDetailed, autoLegMode } from "../lib/geocoding";
+import { osrmBaseUrl, snapToRoad } from "../lib/osrm";
+import { Crosshair, Route, ScrollText, Settings, ShieldCheck, Sliders, Smartphone, Star, X } from "lucide-react";
+
+export type MapMode = "explore" | "route" | "patrol";
 
 // Fix Leaflet marker icon issues in Vite
 import markerIcon2x from "leaflet/dist/images/marker-icon-2x.png";
@@ -40,21 +53,39 @@ const realIcon = L.divIcon({
   iconAnchor: [7, 7],
 });
 
-// Helper component to center map on coordinates
+// Helper component to center map on coordinates and keep following position
+// updates until the user manually pans the map away.
 const RecenterMap: React.FC<{ coords: LatLon }> = ({ coords }) => {
   const map = useMap();
   const hasCentered = React.useRef(false);
+  const isFollowing = React.useRef(true);
+
+  // Stop auto-following as soon as the user drags the map themselves.
+  useEffect(() => {
+    const handleDragStart = () => {
+      isFollowing.current = false;
+    };
+    map.on("dragstart", handleDragStart);
+    return () => {
+      map.off("dragstart", handleDragStart);
+    };
+  }, [map]);
 
   useEffect(() => {
-    if (coords && coords.lat !== 0 && coords.lon !== 0 && !hasCentered.current) {
+    if (!coords || (coords.lat === 0 && coords.lon === 0)) return;
+
+    if (!hasCentered.current) {
       map.setView([coords.lat, coords.lon], 13);
       hasCentered.current = true;
+    } else if (isFollowing.current) {
+      map.panTo([coords.lat, coords.lon]);
     }
   }, [coords, map]);
 
   useEffect(() => {
     const handleRecenter = () => {
       if (coords && coords.lat !== 0 && coords.lon !== 0) {
+        isFollowing.current = true;
         map.panTo([coords.lat, coords.lon]);
       }
     };
@@ -63,6 +94,22 @@ const RecenterMap: React.FC<{ coords: LatLon }> = ({ coords }) => {
       window.removeEventListener("recenter-map", handleRecenter);
     };
   }, [coords, map]);
+
+  return null;
+};
+
+// Keeps Leaflet's internal size in sync with its container (panel collapse/expand, window resize)
+const MapResizeHandler: React.FC = () => {
+  const map = useMap();
+
+  useEffect(() => {
+    const container = map.getContainer();
+    const observer = new ResizeObserver(() => {
+      map.invalidateSize();
+    });
+    observer.observe(container);
+    return () => observer.disconnect();
+  }, [map]);
 
   return null;
 };
@@ -81,63 +128,30 @@ const MapEventsHandler: React.FC<MapEventsHandlerProps> = ({ onMapClick }) => {
 };
 
 export const InteractiveMap: React.FC = () => {
-  const { status, setLocation, playRoute, playSequence, addFavorite, updatePatrolZone, canSend } = useWebSocket();
+  const { status, setLocation, addFavorite, updatePatrolZone, canSend } = useWebSocket();
   const [selectedCoords, setSelectedCoords] = useState<LatLon | null>(null);
-  const [instantTeleport, setInstantTeleport] = useState(false);
+  const [selectedPlaceName, setSelectedPlaceName] = useState<string | null>(null);
   const [favName, setFavName] = useState("");
-  const [routeSpeed, setRouteSpeed] = useState(15);
-  const [routeProfile, setRouteProfile] = useState<"driving" | "walking" | "cycling">("driving");
+  // Bumped on each new explore-mode selection so a late reverse-geocode result
+  // can't relabel a target the user has since replaced.
+  const selectionToken = React.useRef(0);
 
   // Map settings state
   const [mapStyle, setMapStyle] = useState<"dark" | "standard" | "satellite">("dark");
-  const [isDrawMode, setIsDrawMode] = useState(false);
-  const [drawnPoints, setDrawnPoints] = useState<LatLon[]>([]);
+  const [showSettings, setShowSettings] = useState(false);
+  const [showLogs, setShowLogs] = useState(false);
+  const [showFavorites, setShowFavorites] = useState(false);
+  const [showDevice, setShowDevice] = useState(false);
 
-  // Listen to draw mode controllers from Sidebar
-  useEffect(() => {
-    const handleToggleDraw = (e: Event) => {
-      const mode = (e as CustomEvent).detail;
-      setIsDrawMode(mode);
-      if (!mode) setSelectedCoords(null);
-    };
-
-    const handleClearDraw = () => {
-      setDrawnPoints([]);
-      window.dispatchEvent(new CustomEvent("draw-points-updated", { detail: [] }));
-    };
-
-    const handlePlayDraw = (e: Event) => {
-      const { speed, looping, profile } = (e as CustomEvent).detail;
-      if (drawnPoints.length < 2) return;
-
-      // Convert points list to sequence legs
-      const legs = [];
-      for (let i = 0; i < drawnPoints.length - 1; i++) {
-        legs.push({
-          type: profile === "walking" ? "walk" : "drive",
-          start: drawnPoints[i],
-          end: drawnPoints[i + 1],
-          speed: speed,
-        });
-      }
-
-      playSequence(legs, looping);
-      setDrawnPoints([]);
-      setIsDrawMode(false);
-      window.dispatchEvent(new CustomEvent("draw-points-updated", { detail: [] }));
-      window.dispatchEvent(new CustomEvent("draw-mode-disabled"));
-    };
-
-    window.addEventListener("draw-mode-toggle", handleToggleDraw);
-    window.addEventListener("draw-path-clear", handleClearDraw);
-    window.addEventListener("draw-path-play", handlePlayDraw);
-
-    return () => {
-      window.removeEventListener("draw-mode-toggle", handleToggleDraw);
-      window.removeEventListener("draw-path-clear", handleClearDraw);
-      window.removeEventListener("draw-path-play", handlePlayDraw);
-    };
-  }, [drawnPoints, playSequence]);
+  // Map mode (Explorer / Itinéraire / Patrouille) and the state each mode's
+  // floating tool panel shares with the map for live preview/rendering.
+  const [mapMode, setMapMode] = useState<MapMode>("explore");
+  const [routeWaypoints, setRouteWaypoints] = useState<Waypoint[]>([]);
+  const [routeAddMethod, setRouteAddMethod] = useState<AddMethod>("search");
+  const [routeStart, setRouteStart] = useState<LatLon | null>(null);
+  const [routeSegments, setRouteSegments] = useState<RouteSegment[] | null>(null);
+  const [routeToast, setRouteToast] = useState<string | null>(null);
+  const [patrolCenter, setPatrolCenter] = useState<LatLon | null>(null);
 
   // Get active position
   const currentPos: LatLon = status?.navigation?.progress
@@ -145,23 +159,68 @@ export const InteractiveMap: React.FC = () => {
     : (status?.deviceInfo ? { lat: 48.8566, lon: 2.3522 } : { lat: 48.8566, lon: 2.3522 }); // Default Paris
 
   const handleMapClick = (coords: LatLon) => {
-    if (isDrawMode) {
-      const updated = [...drawnPoints, coords];
-      setDrawnPoints(updated);
-      window.dispatchEvent(new CustomEvent("draw-points-updated", { detail: updated }));
-    } else if (instantTeleport) {
-      if (canSend) {
-        setLocation(coords.lat, coords.lon, "Téléportation directe");
+    if (mapMode === "route") {
+      // Only the "Sur la carte" add method turns clicks into stops, so panning
+      // around in search/coords mode doesn't accidentally drop waypoints. New
+      // stops inherit the previous leg's mode (drive by default), and are named
+      // from the nearest place via reverse geocoding once it resolves.
+      if (routeAddMethod === "map") {
+        const inheritedMode = routeWaypoints[routeWaypoints.length - 1]?.mode ?? "drive";
+        const isRoad = inheritedMode === "drive" || inheritedMode === "walk";
+        // Snap road-mode stops to the nearest road (so they don't land in the
+        // middle of a building); leave train/flight stops at the raw click.
+        const addAt = (pt: LatLon) => {
+          const placeholder = `${pt.lat.toFixed(5)}, ${pt.lon.toFixed(5)}`;
+          setRouteWaypoints((prev) => [...prev, { lat: pt.lat, lon: pt.lon, name: placeholder, mode: inheritedMode }]);
+          // Reverse-geocode to name the stop and, if it's a station/airport
+          // matching the previous stop, auto-switch this leg's mode.
+          reverseGeocodeDetailed(pt.lat, pt.lon).then((res) => {
+            if (!res) return;
+            setRouteWaypoints((prev) =>
+              prev.map((wp, i) => {
+                if (!(wp.lat === pt.lat && wp.lon === pt.lon && wp.name === placeholder)) return wp;
+                const auto = autoLegMode(prev[i - 1]?.kind ?? null, res.kind) as Waypoint["mode"] | null;
+                if (auto && auto !== wp.mode) {
+                  setRouteToast(`Mode ${MODE_META[auto].label} détecté — modifiable`);
+                  window.setTimeout(() => setRouteToast(null), 3000);
+                }
+                const waitMinutes = wp.waitMinutes ?? defaultDwellMinutes(res.kind);
+                return { ...wp, name: res.name, kind: res.kind, mode: auto ?? wp.mode, waitMinutes };
+              })
+            );
+          });
+        };
+        if (isRoad) {
+          const base = osrmBaseUrl(status?.osrmBaseUrl);
+          snapToRoad(base, coords.lat, coords.lon, "driving").then((snapped) => addAt(snapped ?? coords));
+        } else {
+          addAt(coords);
+        }
       }
+    } else if (mapMode === "patrol") {
+      setPatrolCenter(coords);
     } else {
+      // Explore mode: open the action sheet, then name the target from the
+      // nearest place (reverse geocoding) and prefill the favorite name.
+      const token = ++selectionToken.current;
       setSelectedCoords(coords);
+      setSelectedPlaceName(null);
+      setFavName("");
+      reverseGeocode(coords.lat, coords.lon).then((name) => {
+        if (!name || selectionToken.current !== token) return;
+        setSelectedPlaceName(name);
+        setFavName(name);
+      });
     }
   };
 
   const handleSearchSelect = (lat: number, lon: number, name: string) => {
     const coords = { lat, lon };
+    // A search result is already named — bump the token so any pending
+    // reverse-geocode from a prior map click can't overwrite it.
+    selectionToken.current += 1;
     setSelectedCoords(coords);
-    // Force set location description state
+    setSelectedPlaceName(name);
     setFavName(name);
   };
 
@@ -169,15 +228,22 @@ export const InteractiveMap: React.FC = () => {
     if (selectedCoords && canSend) {
       setLocation(selectedCoords.lat, selectedCoords.lon, favName || "Téléportation");
       setSelectedCoords(null);
+      setSelectedPlaceName(null);
       setFavName("");
     }
   };
 
-  const handleRoute = () => {
-    if (selectedCoords && canSend) {
-      playRoute(selectedCoords.lat, selectedCoords.lon, routeSpeed, routeProfile);
-      setSelectedCoords(null);
-    }
+  // "Itinéraire" in the action sheet seeds the unified route builder with this
+  // point and opens it, rather than running a one-shot direct route.
+  const handleAddToRoute = () => {
+    if (!selectedCoords) return;
+    const name = selectedPlaceName || `${selectedCoords.lat.toFixed(5)}, ${selectedCoords.lon.toFixed(5)}`;
+    const inheritedMode = routeWaypoints[routeWaypoints.length - 1]?.mode ?? "drive";
+    setRouteWaypoints((prev) => [...prev, { lat: selectedCoords.lat, lon: selectedCoords.lon, name, mode: inheritedMode }]);
+    setRouteAddMethod("search");
+    setMapMode("route");
+    setSelectedCoords(null);
+    setSelectedPlaceName(null);
   };
 
   const handleAddFav = (e: React.FormEvent) => {
@@ -190,7 +256,6 @@ export const InteractiveMap: React.FC = () => {
 
   // Convert sequence preview points into [lat, lon] tuples
   const sequencePoints: [number, number][] = (status?.currentSequencePreview || []).map((p) => [p.lat, p.lon]);
-  const drawLinePoints: [number, number][] = drawnPoints.map((p) => [p.lat, p.lon]);
 
   const tileUrls = {
     dark: "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png",
@@ -200,8 +265,21 @@ export const InteractiveMap: React.FC = () => {
 
   return (
     <div className="map-viewport">
+      {/* Tools entry — opens the contextual tool frame (defaults to Itinéraire).
+          Only shown in explore mode; once open, the frame's own tabs take over. */}
+      {mapMode === "explore" && (
+        <button
+          className="map-tools-toggle"
+          onClick={() => setMapMode("route")}
+          title="Outils de trajet"
+          aria-label="Ouvrir les outils de trajet"
+        >
+          <Sliders size={15} /> Outils
+        </button>
+      )}
+
       {/* Floating Geocoding SearchBox */}
-      <SearchBox onSelectLocation={handleSearchSelect} />
+      <SearchBox onSelectLocation={handleSearchSelect} near={currentPos} />
 
       {/* Floating Recenter Button */}
       <button
@@ -212,6 +290,51 @@ export const InteractiveMap: React.FC = () => {
       >
         <Crosshair size={18} />
       </button>
+
+      {/* Floating app-panel dock — settings / logs / favorites / device grouped
+          into a single translucent surface instead of four separate buttons. */}
+      <div className="map-dock" role="group" aria-label="Panneaux">
+        <button
+          className="map-dock-btn"
+          onClick={() => setShowSettings(true)}
+          title="Réglages"
+          aria-label="Réglages"
+        >
+          <Settings size={18} />
+        </button>
+        <button
+          className="map-dock-btn"
+          onClick={() => setShowLogs(true)}
+          title="Journaux"
+          aria-label="Journaux"
+        >
+          <ScrollText size={18} />
+        </button>
+        <button
+          className="map-dock-btn"
+          onClick={() => setShowFavorites(true)}
+          title="Favoris"
+          aria-label="Favoris"
+        >
+          <Star size={18} />
+        </button>
+        <button
+          className="map-dock-btn"
+          onClick={() => setShowDevice(true)}
+          title="Périphérique"
+          aria-label="Périphérique"
+        >
+          <Smartphone size={18} />
+        </button>
+      </div>
+
+      <SettingsModal open={showSettings} onClose={() => setShowSettings(false)} />
+      <LogsModal open={showLogs} onClose={() => setShowLogs(false)} />
+      <FavoritesModal open={showFavorites} onClose={() => setShowFavorites(false)} />
+      <DeviceModal open={showDevice} onClose={() => setShowDevice(false)} />
+
+      {/* Floating Engine status frame (kept visible — connection health is glanceable) */}
+      <EngineStatusFrame />
 
       {/* Floating Map Style Selector */}
       <div className="map-style-control" role="group" aria-label="Style de carte">
@@ -238,76 +361,8 @@ export const InteractiveMap: React.FC = () => {
         </button>
       </div>
 
-      {/* Floating Telemetry Status Widget */}
-      {status && (
-        <div className="map-telemetry-widget">
-          <div className="widget-header">
-            <span className="pulse-dot"></span>
-            <h4>Position simulée</h4>
-          </div>
-          <div className="widget-body">
-            <div className="widget-row">
-              <span className="label">Vitesse :</span>
-              <span className="value">
-                {status.navigation?.progress?.speed?.toFixed(1) || (status.state === "moving" ? "15.0" : "0.0")} km/h
-              </span>
-            </div>
-            <div className="widget-row">
-              <span className="label">Coordonnées :</span>
-              <span className="value coords">
-                {currentPos.lat.toFixed(5)}, {currentPos.lon.toFixed(5)}
-              </span>
-            </div>
-            {status.navigation?.status?.state === "running" && (
-              <div className="widget-progress">
-                <div className="progress-info">
-                  <span>Étape :</span>
-                  <span>
-                    {status.navigation.status.index + 1} / {status.navigation.status.total}
-                  </span>
-                </div>
-                <div className="progress-bar-container">
-                  <div
-                    className="progress-bar-fill"
-                    style={{
-                      width: `${((status.navigation.status.index + 1) / status.navigation.status.total) * 100}%`,
-                    }}
-                  ></div>
-                </div>
-              </div>
-            )}
-            
-            {status.lastRealLocation && status.lastRealLocation.lat !== 0 && (
-              <>
-                <div className="widget-row" style={{ borderTop: "1px solid rgba(255,255,255,0.1)", paddingTop: "8px", marginTop: "4px" }}>
-                  <span className="label" style={{ color: "#ef4444" }}>Position réelle :</span>
-                  <span className="value coords" style={{ color: "#fca5a5" }}>
-                    {status.lastRealLocation.lat.toFixed(5)}, {status.lastRealLocation.lon.toFixed(5)}
-                  </span>
-                </div>
-                <div className="widget-row">
-                  <span className="label" style={{ color: "#ef4444" }}>Dérive :</span>
-                  <span className="value" style={{ color: status.lastRealLocation.drift && status.lastRealLocation.drift > 100 ? "#ef4444" : "#10b981", fontWeight: "bold" }}>
-                    {Math.round(status.lastRealLocation.drift ?? 0)} m
-                  </span>
-                </div>
-              </>
-            )}
-
-            <div className="widget-row" style={{ borderTop: "1px solid rgba(255,255,255,0.1)", paddingTop: "8px", marginTop: "4px" }}>
-              <label style={{ display: "flex", alignItems: "center", gap: "8px", cursor: "pointer", width: "100%", fontSize: "0.8rem", color: "#e2e8f0" }}>
-                <input
-                  type="checkbox"
-                  checked={instantTeleport}
-                  onChange={(e) => setInstantTeleport(e.target.checked)}
-                  style={{ cursor: "pointer" }}
-                />
-                Injection directe (1 clic)
-              </label>
-            </div>
-          </div>
-        </div>
-      )}
+      {/* Floating Telemetry Status Widget — collapsed pill, expands on click */}
+      {status && <TelemetryWidget status={status} currentPos={currentPos} />}
 
       <MapContainer center={[currentPos.lat, currentPos.lon]} zoom={13} zoomControl={false} scrollWheelZoom={true}>
         <TileLayer
@@ -317,6 +372,7 @@ export const InteractiveMap: React.FC = () => {
 
         <MapEventsHandler onMapClick={handleMapClick} />
         <RecenterMap coords={currentPos} />
+        <MapResizeHandler />
 
         {/* Current Spoofed Location Marker */}
         {currentPos.lat !== 0 && (
@@ -365,113 +421,21 @@ export const InteractiveMap: React.FC = () => {
         )}
 
         {/* Selected target marker (on click) */}
-        {selectedCoords && !isDrawMode && (
-          <Marker position={[selectedCoords.lat, selectedCoords.lon]} icon={destIcon}>
-            <Popup minWidth={220}>
-              <div style={{ color: "#334155", display: "flex", flexDirection: "column", gap: "8px" }}>
-                <div>
-                  <strong>Cible choisie</strong>
-                  <div style={{ fontSize: "0.75rem", color: "#64748b" }}>
-                    {selectedCoords.lat.toFixed(6)}, {selectedCoords.lon.toFixed(6)}
-                  </div>
-                </div>
+        {selectedCoords && mapMode === "explore" && (
+          <Marker position={[selectedCoords.lat, selectedCoords.lon]} icon={destIcon} />
+        )}
 
-                <div style={{ display: "flex", gap: "4px" }}>
-                  <button
-                    onClick={handleTeleport}
-                    disabled={!canSend}
-                    style={{
-                      flex: 1,
-                      padding: "4px 8px",
-                      fontSize: "0.8rem",
-                      background: "#10b981",
-                      color: "#fff",
-                      border: "none",
-                      borderRadius: "4px",
-                      cursor: canSend ? "pointer" : "not-allowed",
-                      opacity: canSend ? 1 : 0.55,
-                    }}
-                  >
-                    Téléporter
-                  </button>
-                  <button
-                    onClick={handleRoute}
-                    disabled={!canSend}
-                    style={{
-                      flex: 1,
-                      padding: "4px 8px",
-                      fontSize: "0.8rem",
-                      background: "#0f766e",
-                      color: "#fff",
-                      border: "none",
-                      borderRadius: "4px",
-                      cursor: canSend ? "pointer" : "not-allowed",
-                      opacity: canSend ? 1 : 0.55,
-                    }}
-                  >
-                    Itinéraire
-                  </button>
-                </div>
-
-                <hr style={{ border: "none", borderTop: "1px solid #e2e8f0", margin: "4px 0" }} />
-
-                <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
-                  <label style={{ fontSize: "0.75rem", fontWeight: "600" }}>Itinéraire Rapide :</label>
-                  <div style={{ display: "flex", gap: "4px" }}>
-                    <select
-                      value={routeProfile}
-                      onChange={(e) => setRouteProfile(e.target.value as any)}
-                      style={{ fontSize: "0.75rem", padding: "2px" }}
-                    >
-                      <option value="driving">Voiture</option>
-                      <option value="cycling">Vélo</option>
-                      <option value="walking">Marche</option>
-                    </select>
-                    <input
-                      type="number"
-                      value={routeSpeed}
-                      onChange={(e) => setRouteSpeed(Number(e.target.value))}
-                      style={{ width: "45px", fontSize: "0.75rem", padding: "2px" }}
-                      placeholder="km/h"
-                    />
-                    <span style={{ fontSize: "0.75rem" }}>km/h</span>
-                  </div>
-                </div>
-
-                <hr style={{ border: "none", borderTop: "1px solid #e2e8f0", margin: "4px 0" }} />
-
-                <form onSubmit={handleAddFav} style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
-                  <label style={{ fontSize: "0.75rem", fontWeight: "600" }}>Ajouter aux favoris :</label>
-                  <div style={{ display: "flex", gap: "4px" }}>
-                    <input
-                      type="text"
-                      value={favName}
-                      onChange={(e) => setFavName(e.target.value)}
-                      placeholder="Nom du favori..."
-                      style={{ flex: 1, fontSize: "0.75rem", padding: "2px 6px" }}
-                      required
-                    />
-                    <button
-                      type="submit"
-                      disabled={!canSend}
-                      style={{
-                        padding: "2px 8px",
-                        fontSize: "0.75rem",
-                        background: "#f59e0b",
-                        color: "#fff",
-                        border: "none",
-                        borderRadius: "4px",
-                        cursor: canSend ? "pointer" : "not-allowed",
-                        opacity: canSend ? 1 : 0.55,
-                      }}
-                    >
-                      Ajouter
-                    </button>
-                  </div>
-                </form>
-              </div>
-            </Popup>
-          </Marker>
+        {/* Patrol center preview marker (before activation) */}
+        {mapMode === "patrol" && patrolCenter && (
+          <Marker
+            position={[patrolCenter.lat, patrolCenter.lon]}
+            icon={L.divIcon({
+              html: `<div style="background-color: #f59e0b; width: 14px; height: 14px; border-radius: 50%; border: 3px solid #ffffff; box-shadow: 0 0 10px #f59e0b;"></div>`,
+              className: "custom-patrol-preview-icon",
+              iconSize: [14, 14],
+              iconAnchor: [7, 7],
+            })}
+          />
         )}
 
         {/* Render Patrol Zone (Circle or Rectangle) */}
@@ -530,25 +494,147 @@ export const InteractiveMap: React.FC = () => {
           <Polyline positions={sequencePoints} color="#0f766e" weight={4} opacity={0.75} dashArray="5, 10" />
         )}
 
-        {/* Display user drawn route lines */}
-        {drawLinePoints.length > 0 && (
+        {/* Destination-search waypoints (Itinéraire) — one polyline per resolved
+            segment, styled by transport mode (train/flight dashed & coloured);
+            falls back to a dashed straight-line preview while it loads. */}
+        {mapMode === "route" && routeWaypoints.length > 0 && (
           <>
-            <Polyline positions={drawLinePoints} color="#0ea5e9" weight={4} opacity={0.8} />
-            {drawnPoints.map((p, idx) => (
+            {routeSegments && routeSegments.length > 0 ? (
+              routeSegments.map((seg, i) =>
+                seg.coords.length > 1 ? (
+                  <Polyline
+                    key={i}
+                    positions={seg.coords.map((p): [number, number] => [p.lat, p.lon])}
+                    color={MODE_META[seg.mode].color}
+                    weight={4}
+                    opacity={0.85}
+                    dashArray={MODE_META[seg.mode].dashed ? "6, 8" : undefined}
+                  />
+                ) : null
+              )
+            ) : (
+              <Polyline
+                positions={[
+                  [(routeStart ?? currentPos).lat, (routeStart ?? currentPos).lon],
+                  ...routeWaypoints.map((wp): [number, number] => [wp.lat, wp.lon]),
+                ]}
+                color="#14b8a6"
+                weight={3}
+                opacity={0.7}
+                dashArray="4, 8"
+              />
+            )}
+            {/* Custom start marker ("D" for départ) — only when overridden, since
+                the live position already has its own marker. */}
+            {routeStart && (
+              <Marker
+                position={[routeStart.lat, routeStart.lon]}
+                icon={L.divIcon({
+                  html: `<div style="background-color: #0ea5e9; width: 22px; height: 22px; border-radius: 50%; border: 2px solid #ffffff; box-shadow: 0 0 8px #0ea5e9; display: flex; align-items: center; justify-content: center; color: #fff; font-size: 11px; font-weight: 700; font-family: sans-serif;">D</div>`,
+                  className: "custom-start-icon",
+                  iconSize: [22, 22],
+                  iconAnchor: [11, 11],
+                })}
+              >
+                <Popup>Départ</Popup>
+              </Marker>
+            )}
+            {routeWaypoints.map((wp, idx) => (
               <Marker
                 key={idx}
-                position={[p.lat, p.lon]}
+                position={[wp.lat, wp.lon]}
                 icon={L.divIcon({
-                  html: `<div style="background-color: #0ea5e9; width: 10px; height: 10px; border-radius: 50%; border: 2px solid #ffffff; box-shadow: 0 0 6px #0ea5e9;"></div>`,
-                  className: "custom-draw-dot",
-                  iconSize: [10, 10],
-                  iconAnchor: [5, 5],
+                  html: `<div style="background-color: #14b8a6; width: 22px; height: 22px; border-radius: 50%; border: 2px solid #ffffff; box-shadow: 0 0 8px #14b8a6; display: flex; align-items: center; justify-content: center; color: #fff; font-size: 11px; font-weight: 700; font-family: sans-serif;">${idx + 1}</div>`,
+                  className: "custom-waypoint-icon",
+                  iconSize: [22, 22],
+                  iconAnchor: [11, 11],
                 })}
-              />
+              >
+                <Popup>{wp.name}</Popup>
+              </Marker>
             ))}
           </>
         )}
       </MapContainer>
+
+      {/* Auto-detected transport mode notice (map-click stops) */}
+      {routeToast && (
+        <div className="toast-overlay" role="status" aria-live="polite">
+          <div className="toast">{routeToast}</div>
+        </div>
+      )}
+
+      {/* Contextual action sheet for the selected target (Explorer mode) */}
+      {selectedCoords && mapMode === "explore" && (
+        <MapActionSheet
+          coords={selectedCoords}
+          placeName={selectedPlaceName}
+          canSend={canSend}
+          favName={favName}
+          setFavName={setFavName}
+          onTeleport={handleTeleport}
+          onAddToRoute={handleAddToRoute}
+          onAddFavorite={handleAddFav}
+          onClose={() => {
+            setSelectedCoords(null);
+            setSelectedPlaceName(null);
+          }}
+        />
+      )}
+
+      {/* Contextual tool frame — one surface whose content adapts to the
+          selected context (Itinéraire / Patrouille); replaces the always-on
+          three-button mode switcher. */}
+      {mapMode !== "explore" && (
+        <div className="map-tool-panel">
+          <div className="map-tool-header">
+            <div className="map-tool-tabs" role="tablist" aria-label="Outils de la carte">
+              <button
+                className={`map-tool-tab ${mapMode === "route" ? "active" : ""}`}
+                role="tab"
+                aria-selected={mapMode === "route"}
+                onClick={() => setMapMode("route")}
+                type="button"
+              >
+                <Route size={15} /> Itinéraire
+              </button>
+              <button
+                className={`map-tool-tab ${mapMode === "patrol" ? "active" : ""}`}
+                role="tab"
+                aria-selected={mapMode === "patrol"}
+                onClick={() => setMapMode("patrol")}
+                type="button"
+              >
+                <ShieldCheck size={15} /> Patrouille
+              </button>
+            </div>
+            <button
+              className="icon-btn"
+              onClick={() => setMapMode("explore")}
+              title="Fermer les outils"
+              aria-label="Fermer les outils"
+            >
+              <X size={16} />
+            </button>
+          </div>
+
+          {mapMode === "route" && (
+            <RouteModePanel
+              waypoints={routeWaypoints}
+              setWaypoints={setRouteWaypoints}
+              addMethod={routeAddMethod}
+              setAddMethod={setRouteAddMethod}
+              start={routeStart}
+              setStart={setRouteStart}
+              onRouteSegmentsChange={setRouteSegments}
+            />
+          )}
+
+          {mapMode === "patrol" && (
+            <PatrolModePanel patrolCenter={patrolCenter} setPatrolCenter={setPatrolCenter} />
+          )}
+        </div>
+      )}
     </div>
   );
 };

@@ -5,6 +5,8 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "engine": "node scripts/run-engine.mjs",
+    "dev:headless": "concurrently -n engine,vite -c yellow,cyan \"npm:engine\" \"npm:dev\"",
     "build": "tsc && vite build",
     "preview": "vite preview",
     "tauri": "tauri",
@@ -32,6 +34,7 @@
     "@typescript-eslint/eslint-plugin": "^8.62.0",
     "@typescript-eslint/parser": "^8.62.0",
     "@vitejs/plugin-react": "^6.0.3",
+    "concurrently": "^10.0.3",
     "eslint": "^10.5.0",
     "eslint-plugin-react-hooks": "^7.1.1",
     "jsdom": "^29.1.1",

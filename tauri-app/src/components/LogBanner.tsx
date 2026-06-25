@@ -9,8 +9,8 @@ interface Banner extends LogEntry {
 const AUTO_DISMISS_MS = 8000;
 
 // Surfaces engine LOG/LOGS warn/error events as dismissible banners, visible
-// regardless of which Sidebar tab is active — previously these events only
-// reached the browser console (C2, server UX audit).
+// app-wide regardless of which modal/panel is open — previously these events
+// only reached the browser console (C2, server UX audit).
 export const LogBanner: React.FC = () => {
   const { logs } = useWebSocket();
   const [banners, setBanners] = useState<Banner[]>([]);

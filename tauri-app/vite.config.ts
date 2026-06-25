@@ -34,5 +34,14 @@ export default defineConfig(async () => ({
       // 3. tell Vite to ignore watching `src-tauri`
       ignored: ["**/src-tauri/**"],
     },
+    // 4. proxy /ws to the GPS-Mock engine so the app works when run as a plain
+    //    browser page (e.g. `npm run dev`) instead of through `tauri dev` —
+    //    outside Tauri the frontend connects same-origin (see runtime.ts).
+    proxy: {
+      "/ws": {
+        target: "ws://localhost:8080",
+        ws: true,
+      },
+    },
   },
 }));

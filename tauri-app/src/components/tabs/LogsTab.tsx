@@ -128,7 +128,11 @@ export const LogsTab: React.FC = () => {
 
       <div className="logs-list">
         {filteredLogs.length === 0 ? (
-          <div className="empty-state">Aucun journal</div>
+          <div className="empty-state">
+            <ScrollText size={22} className="empty-state-icon" />
+            <span>Aucun journal pour le moment.</span>
+            <span className="empty-state-hint">Les événements du moteur GPS-Mock apparaîtront ici.</span>
+          </div>
         ) : (
           filteredLogs.map((entry, index) => (
             <article className={`log-row level-${entry.level}`} key={`${entry.timestamp}-${index}`}>

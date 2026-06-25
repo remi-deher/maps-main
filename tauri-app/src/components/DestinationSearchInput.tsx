@@ -1,14 +1,18 @@
 import React, { useState, useEffect, useRef } from "react";
-import { Search, MapPin, X } from "lucide-react";
-import { searchPlaces, PlaceResult } from "../lib/geocoding";
+import { Search, MapPin } from "lucide-react";
+import { searchPlaces, PlaceResult, PlaceKind } from "../lib/geocoding";
 
-interface SearchBoxProps {
-  onSelectLocation: (lat: number, lon: number, name: string) => void;
+interface DestinationSearchInputProps {
+  placeholder: string;
+  onSelect: (lat: number, lon: number, name: string, kind?: PlaceKind) => void;
   /// Optional reference point to bias results toward (nearby first).
   near?: { lat: number; lon: number };
 }
 
-export const SearchBox: React.FC<SearchBoxProps> = ({ onSelectLocation, near }) => {
+/// Inline geocoding search field — structured two-line results (name +
+/// address), French labels and proximity bias via the shared geocoding lib.
+/// Clears itself after a selection so it's ready for the next stop.
+export const DestinationSearchInput: React.FC<DestinationSearchInputProps> = ({ placeholder, onSelect, near }) => {
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<PlaceResult[]>([]);
   const [loading, setLoading] = useState(false);
@@ -20,7 +24,6 @@ export const SearchBox: React.FC<SearchBoxProps> = ({ onSelectLocation, near }) 
   const nearRef = useRef(near);
   nearRef.current = near;
 
-  // Handle clicking outside dropdown to close it
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (containerRef.current && !containerRef.current.contains(event.target as Node)) {
@@ -31,7 +34,6 @@ export const SearchBox: React.FC<SearchBoxProps> = ({ onSelectLocation, near }) 
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-  // Debounced search
   useEffect(() => {
     if (!query.trim() || query.length < 3) {
       setResults([]);
@@ -39,8 +41,6 @@ export const SearchBox: React.FC<SearchBoxProps> = ({ onSelectLocation, near }) 
       return;
     }
 
-    // Abort an in-flight request when the query changes or the component
-    // unmounts, so stale responses can't overwrite newer results.
     const controller = new AbortController();
     const delayDebounce = setTimeout(async () => {
       setLoading(true);
@@ -66,34 +66,23 @@ export const SearchBox: React.FC<SearchBoxProps> = ({ onSelectLocation, near }) 
   }, [query]);
 
   const handleSelect = (res: PlaceResult) => {
-    onSelectLocation(res.lat, res.lon, res.name);
-    setQuery(res.name);
-    setShowDropdown(false);
-  };
-
-  const handleClear = () => {
+    onSelect(res.lat, res.lon, res.name, res.kind);
     setQuery("");
     setResults([]);
     setShowDropdown(false);
-    setSearchError(null);
   };
 
   return (
-    <div className="search-box-container" ref={containerRef}>
+    <div className="inline-search-container" ref={containerRef}>
       <div className="search-input-wrapper">
-        <Search size={18} className="search-icon" />
+        <Search size={16} className="search-icon" />
         <input
           type="text"
-          placeholder="Rechercher un lieu ou une adresse..."
+          placeholder={placeholder}
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           onFocus={() => query.length >= 3 && setShowDropdown(true)}
         />
-        {query && (
-          <button className="clear-search-btn" onClick={handleClear} aria-label="Effacer la recherche">
-            <X size={16} />
-          </button>
-        )}
       </div>
 
       {showDropdown && (results.length > 0 || loading || searchError) && (
