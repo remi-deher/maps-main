@@ -392,3 +392,22 @@ func TestPullCertsFromMasterRejectsUnsafeMasterKey(t *testing.T) {
 	// so no request is attempted.
 	m.pullCertsFromMaster(context.Background(), "not-a-valid-hostport")
 }
+
+// TestSetTuningUpdatesIndependently exercises SetTuning/GetTuning: each knob
+// must update independently of the others, and a non-positive value must
+// leave its field unchanged rather than zeroing it.
+func TestSetTuningUpdatesIndependently(t *testing.T) {
+	origHB, origDead, origPeer := GetTuning()
+	defer SetTuning(origHB, origDead, origPeer)
+
+	SetTuning(5*time.Second, 20*time.Second, 2*time.Second)
+	if hb, dead, peer := GetTuning(); hb != 5*time.Second || dead != 20*time.Second || peer != 2*time.Second {
+		t.Fatalf("GetTuning() = %v, %v, %v; want 5s, 20s, 2s", hb, dead, peer)
+	}
+
+	// A non-positive value for one knob must not disturb the others.
+	SetTuning(0, 30*time.Second, -1)
+	if hb, dead, peer := GetTuning(); hb != 5*time.Second || dead != 30*time.Second || peer != 2*time.Second {
+		t.Fatalf("GetTuning() after partial update = %v, %v, %v; want 5s (unchanged), 30s, 2s (unchanged)", hb, dead, peer)
+	}
+}

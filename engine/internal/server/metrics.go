@@ -65,3 +65,26 @@ func writeCounter(b *strings.Builder, name, help string, value float64) {
 func writeGaugeLabeled(b *strings.Builder, name, help, label, activeValue string) {
 	fmt.Fprintf(b, "# HELP %s %s\n# TYPE %s gauge\n%s{%s=%q} 1\n", name, help, name, name, label, activeValue)
 }
+
+// ─── per-action WS counters, fed by dispatch and exposed by handleMetrics ───
+
+func (s *Server) incrementActionMetric(action, status string) {
+	s.metricsMu.Lock()
+	defer s.metricsMu.Unlock()
+	if s.wsActions[action] == nil {
+		s.wsActions[action] = make(map[string]int64)
+	}
+	s.wsActions[action][status]++
+}
+
+func (s *Server) trackAction(action string, err error) {
+	status := "success"
+	if err != nil {
+		status = statusError(err)
+	}
+	s.incrementActionMetric(action, status)
+}
+
+func statusError(err error) string {
+	return "error"
+}
