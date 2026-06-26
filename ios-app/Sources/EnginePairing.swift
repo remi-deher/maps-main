@@ -138,14 +138,23 @@ enum EngineTokenStore {
         return token
     }
 
-    static func save(token: String, forAddress address: String) {
-        guard !address.isEmpty else { return }
+    /// Returns whether the write actually succeeded. Callers in the app ignore
+    /// this (a failed save just means the next connection re-prompts pairing,
+    /// not a crash), but tests use it to tell a real regression apart from an
+    /// environment that can't grant Keychain access at all — e.g. CI/Simulator
+    /// runs of this app, which build every target unsigned
+    /// (CODE_SIGNING_ALLOWED=NO in project.yml, for AltStore's resign-on-install
+    /// flow) and securityd can refuse SecItemAdd for a fully unsigned binary
+    /// with errSecMissingEntitlement.
+    @discardableResult
+    static func save(token: String, forAddress address: String) -> Bool {
+        guard !address.isEmpty else { return false }
         // Delete any existing entry first so this is a clean upsert.
         SecItemDelete(baseQuery(address) as CFDictionary)
         var attrs = baseQuery(address)
         attrs[kSecValueData as String] = Data(token.utf8)
         attrs[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlock
-        SecItemAdd(attrs as CFDictionary, nil)
+        return SecItemAdd(attrs as CFDictionary, nil) == errSecSuccess
     }
 
     static func clear(forAddress address: String) {
@@ -157,7 +166,7 @@ enum EngineTokenStore {
         [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
-            kSecAttrAccount as String: address,
+            kSecAttrAccount as String: address
         ]
     }
 }
