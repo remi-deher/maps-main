@@ -3,6 +3,7 @@ package engine
 import (
 	"context"
 	"encoding/json"
+	"math"
 	"testing"
 	"time"
 
@@ -378,6 +379,9 @@ func TestSaveSettingsJSONMismatches(t *testing.T) {
 func TestRelanceReplaysLastInjectedLocation(t *testing.T) {
 	ti := driver.TunnelInfo{Address: "127.0.0.1", Port: 1, Type: domain.ConnUSB}
 	drv := &mockDriver{id: domain.DriverPmd3, tunnelInfo: ti}
+	// Jitter on (the default) so this also covers the keep-alive path: the
+	// re-injected coordinate must be a *near* match (within the jitter bound),
+	// while the stored anchor stays exact so it can't drift over many relances.
 	eng := New(drv, settings.Default())
 	ctx := context.Background()
 	_ = eng.StartTunnel(ctx)
@@ -387,8 +391,36 @@ func TestRelanceReplaysLastInjectedLocation(t *testing.T) {
 	if err := eng.Relance(ctx); err != nil {
 		t.Fatalf("Relance: %v", err)
 	}
+	if !drv.setLocationCalled {
+		t.Fatalf("expected Relance to re-inject, driver state: %+v", drv)
+	}
+	// Injected position is within the ±relanceJitterDeg keep-alive offset.
+	if math.Abs(drv.setLat-48.8566) > relanceJitterDeg || math.Abs(drv.setLon-2.3522) > relanceJitterDeg {
+		t.Errorf("re-injected %.7f,%.7f too far from anchor 48.8566,2.3522", drv.setLat, drv.setLon)
+	}
+	// The stored anchor is unchanged, so repeated relances jitter around the
+	// same point rather than random-walking away.
+	if loc := eng.Status().LastInjectedLocation; loc == nil || loc.Lat != 48.8566 || loc.Lon != 2.3522 {
+		t.Errorf("anchor drifted: %+v", loc)
+	}
+}
+
+func TestRelanceWithoutJitterIsExact(t *testing.T) {
+	ti := driver.TunnelInfo{Address: "127.0.0.1", Port: 1, Type: domain.ConnUSB}
+	drv := &mockDriver{id: domain.DriverPmd3, tunnelInfo: ti}
+	cfg := settings.Default()
+	cfg.JitterEnabled = false
+	eng := New(drv, cfg)
+	ctx := context.Background()
+	_ = eng.StartTunnel(ctx)
+	_ = eng.SetLocation(ctx, 48.8566, 2.3522, "Paris")
+
+	drv.setLocationCalled = false
+	if err := eng.Relance(ctx); err != nil {
+		t.Fatalf("Relance: %v", err)
+	}
 	if !drv.setLocationCalled || drv.setLat != 48.8566 || drv.setLon != 2.3522 {
-		t.Errorf("expected Relance to re-inject the last location, driver state: %+v", drv)
+		t.Errorf("expected exact re-injection with jitter off, driver state: %+v", drv)
 	}
 }
 

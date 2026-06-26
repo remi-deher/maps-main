@@ -6,6 +6,7 @@ package engine
 import (
 	"context"
 	"fmt"
+	"math/rand"
 	"os"
 	"runtime"
 	"sync"
@@ -403,14 +404,54 @@ func (e *Engine) ListNetworkDevices(ctx context.Context) ([]driver.NetworkDevice
 }
 
 // Relance restarts simulation with last injected position
+// relanceJitterDeg bounds the per-relance keep-alive offset. ~0.000001° of
+// latitude is ~0.11 m, so the ±0.5·relanceJitterDeg range below is roughly
+// ±11 cm — a micro-movement, not a real displacement.
+const relanceJitterDeg = 0.000002
+
 func (e *Engine) Relance(ctx context.Context) error {
 	e.mu.Lock()
 	loc := e.st.LastInjectedLocation
+	jitter := e.st.JitterEnabled
 	e.mu.Unlock()
 
-	if loc != nil {
+	if loc == nil {
+		return nil
+	}
+	if !jitter {
 		return e.SetLocation(ctx, loc.Lat, loc.Lon, loc.Name)
 	}
+	// Keep-alive jitter: re-send a coordinate offset by a few centimetres so
+	// each relance is a *fresh* fix. iOS (or the tunnel daemon) can drop a spoof
+	// that keeps receiving the byte-identical point — notably while the device
+	// sleeps — and a tiny change defeats that de-duplication. Jitter around the
+	// stable anchor (loc), never the previous jittered point, so the held
+	// position can't random-walk away over a long idle session.
+	injLat := loc.Lat + (rand.Float64()-0.5)*relanceJitterDeg
+	injLon := loc.Lon + (rand.Float64()-0.5)*relanceJitterDeg
+	return e.reinjectAnchor(ctx, loc, injLat, injLon)
+}
+
+// reinjectAnchor sends injLat/injLon to the driver but records anchor (the true
+// held position) as LastInjectedLocation, so relance jitter affects only what
+// iOS receives — not the stored state the anti-drift shield and the next
+// relance read back. Mirrors injectLocation's emit pattern without touching the
+// history list.
+func (e *Engine) reinjectAnchor(ctx context.Context, anchor *api.LocationStamp, injLat, injLon float64) error {
+	if err := e.driver().SetLocation(ctx, injLat, injLon); err != nil {
+		e.LogEvent("error", "engine", "location", "relance", fmt.Sprintf("Échec de la ré-injection : %v", err), map[string]string{
+			"lat":   fmt.Sprintf("%.6f", injLat),
+			"lon":   fmt.Sprintf("%.6f", injLon),
+			"error": err.Error(),
+		})
+		return err
+	}
+	now := nowMs()
+	e.mu.Lock()
+	e.st.LastInjectedLocation = &api.LocationStamp{Lat: anchor.Lat, Lon: anchor.Lon, Name: anchor.Name, Timestamp: now}
+	e.st.State = "running"
+	emit, st := e.statusSnapshotLocked()
+	emit(api.EventStatus, st)
 	return nil
 }
 
