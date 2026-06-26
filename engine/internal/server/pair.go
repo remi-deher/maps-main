@@ -143,12 +143,11 @@ func (s *Server) dispatchGetPairCode(c *client) error {
 	return nil
 }
 
-func (s *Server) dispatchListPairedDevices(c *client) error {
+func (s *Server) dispatchListPairedDevices(c *client) {
 	if !s.guardPairWS(c, api.EventPairedDevices) {
-		return nil
+		return
 	}
 	c.send <- encode(api.EventPairedDevices, s.pairedDevicesPayload())
-	return nil
 }
 
 func (s *Server) dispatchRevokePairedDevice(c *client, env api.Envelope) error {

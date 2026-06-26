@@ -182,7 +182,7 @@ func TestPairWSListAndRevoke(t *testing.T) {
 	}
 
 	local := &client{send: make(chan []byte, 4), loopback: true}
-	_ = srv.dispatchListPairedDevices(local)
+	srv.dispatchListPairedDevices(local)
 	if list := readDevices(local); len(list.Devices) != 1 || list.Devices[0].ID != dev.ID {
 		t.Fatalf("list = %+v, want the one paired device", list.Devices)
 	}

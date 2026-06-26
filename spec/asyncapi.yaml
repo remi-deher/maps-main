@@ -51,6 +51,9 @@ channels:
       SCAN_MDNS: { $ref: "#/components/messages/EMPTY" }
       PROBE_RSD_PORTS: { $ref: "#/components/messages/PROBE_RSD_PORTS" }
       PAIR_DEVICE: { $ref: "#/components/messages/EMPTY" }
+      GET_PAIR_CODE: { $ref: "#/components/messages/EMPTY" }
+      LIST_PAIRED_DEVICES: { $ref: "#/components/messages/EMPTY" }
+      REVOKE_PAIRED_DEVICE: { $ref: "#/components/messages/EMPTY" }
       # ── Outbound (engine -> client) ──
       STATUS: { $ref: "#/components/messages/STATUS" }
       STATUS_UPDATE: { $ref: "#/components/messages/STATUS_UPDATE" }
@@ -68,6 +71,8 @@ channels:
       MDNS_DEVICES: { $ref: "#/components/messages/MDNS_DEVICES" }
       RSD_PORTS: { $ref: "#/components/messages/RSD_PORTS" }
       PAIR_RESULT: { $ref: "#/components/messages/PAIR_RESULT" }
+      PAIR_CODE: { $ref: "#/components/messages/EMPTY" }
+      PAIRED_DEVICES: { $ref: "#/components/messages/EMPTY" }
 
 operations:
   sendAction:

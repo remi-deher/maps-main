@@ -151,7 +151,7 @@ func (s *Server) dispatch(c *client, env api.Envelope) {
 	case api.ActionGetPairCode:
 		err = s.dispatchGetPairCode(c)
 	case api.ActionListPairedDevices:
-		err = s.dispatchListPairedDevices(c)
+		s.dispatchListPairedDevices(c)
 	case api.ActionRevokePairedDevice:
 		err = s.dispatchRevokePairedDevice(c, env)
 	case api.ActionGetDiagnostics:
