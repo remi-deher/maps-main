@@ -6,7 +6,9 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/remi-deher/maps-main/engine/internal/api"
 	"github.com/remi-deher/maps-main/engine/internal/auth"
 	"github.com/remi-deher/maps-main/engine/internal/engine"
 	"github.com/remi-deher/maps-main/engine/internal/settings"
@@ -101,5 +103,97 @@ func TestRemotePairingFlow(t *testing.T) {
 	}
 	if rec := do(h, "GET", "/api/status?token="+pairResp.Token, remoteAddr, ""); rec.Code != http.StatusUnauthorized {
 		t.Errorf("revoked token still works: status = %d, want 401", rec.Code)
+	}
+}
+
+// TestPairWSLoopbackOnly verifies the WebSocket pairing-management actions
+// (used by the desktop window, which can't fetch the REST endpoints from the
+// Tauri webview because of CORS) answer a loopback client but refuse a remote
+// one — the rotating code must never reach a LAN/remote client.
+func TestPairWSLoopbackOnly(t *testing.T) {
+	store, err := auth.OpenStore(t.TempDir() + "/auth.db")
+	if err != nil {
+		t.Fatalf("OpenStore: %v", err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+	srv := New(engine.New(&fakeDriver{}, settings.Default()), ":0", WithAuth(store))
+
+	readEvent := func(c *client) api.Envelope {
+		select {
+		case raw := <-c.send:
+			var env api.Envelope
+			if err := json.Unmarshal(raw, &env); err != nil {
+				t.Fatalf("decode envelope: %v", err)
+			}
+			return env
+		case <-time.After(time.Second):
+			t.Fatal("no reply on client send channel")
+			return api.Envelope{}
+		}
+	}
+
+	// Remote client: GET_PAIR_CODE is refused with a PAIR_CODE error, no code.
+	remote := &client{send: make(chan []byte, 4), loopback: false}
+	_ = srv.dispatchGetPairCode(remote)
+	env := readEvent(remote)
+	if env.Type != api.EventPairCode {
+		t.Fatalf("remote reply type = %q, want %q", env.Type, api.EventPairCode)
+	}
+	var remotePayload api.PairCodePayload
+	_ = json.Unmarshal(env.Data, &remotePayload)
+	if remotePayload.Code != "" || remotePayload.Error == "" {
+		t.Errorf("remote got code=%q error=%q, want empty code + an error", remotePayload.Code, remotePayload.Error)
+	}
+
+	// Loopback client: gets a real 6-digit code.
+	local := &client{send: make(chan []byte, 4), loopback: true}
+	_ = srv.dispatchGetPairCode(local)
+	env = readEvent(local)
+	var localPayload api.PairCodePayload
+	_ = json.Unmarshal(env.Data, &localPayload)
+	if len(localPayload.Code) != 6 || localPayload.Error != "" {
+		t.Errorf("loopback got code=%q error=%q, want a 6-digit code", localPayload.Code, localPayload.Error)
+	}
+}
+
+func TestPairWSListAndRevoke(t *testing.T) {
+	store, err := auth.OpenStore(t.TempDir() + "/auth.db")
+	if err != nil {
+		t.Fatalf("OpenStore: %v", err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+	srv := New(engine.New(&fakeDriver{}, settings.Default()), ":0", WithAuth(store))
+
+	token, dev, err := store.Pair("phone")
+	if err != nil {
+		t.Fatalf("Pair: %v", err)
+	}
+
+	readDevices := func(c *client) api.PairedDevicesPayload {
+		raw := <-c.send
+		var env api.Envelope
+		_ = json.Unmarshal(raw, &env)
+		if env.Type != api.EventPairedDevices {
+			t.Fatalf("type = %q, want %q", env.Type, api.EventPairedDevices)
+		}
+		var p api.PairedDevicesPayload
+		_ = json.Unmarshal(env.Data, &p)
+		return p
+	}
+
+	local := &client{send: make(chan []byte, 4), loopback: true}
+	_ = srv.dispatchListPairedDevices(local)
+	if list := readDevices(local); len(list.Devices) != 1 || list.Devices[0].ID != dev.ID {
+		t.Fatalf("list = %+v, want the one paired device", list.Devices)
+	}
+
+	// Revoke it via WS, then the refreshed list is empty and the token dies.
+	revoke, _ := json.Marshal(api.RevokePairedDevicePayload{ID: dev.ID})
+	_ = srv.dispatchRevokePairedDevice(local, api.Envelope{Type: api.ActionRevokePairedDevice, Data: revoke})
+	if list := readDevices(local); len(list.Devices) != 0 {
+		t.Errorf("after revoke, list = %+v, want empty", list.Devices)
+	}
+	if store.VerifyToken(token) {
+		t.Error("revoked token still verifies")
 	}
 }

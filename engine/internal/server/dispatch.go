@@ -148,6 +148,12 @@ func (s *Server) dispatch(c *client, env api.Envelope) {
 		s.dispatchProbeRsdPorts(ctx, c, env)
 	case api.ActionPairDevice:
 		err = s.dispatchPairDevice(ctx, c)
+	case api.ActionGetPairCode:
+		err = s.dispatchGetPairCode(c)
+	case api.ActionListPairedDevices:
+		err = s.dispatchListPairedDevices(c)
+	case api.ActionRevokePairedDevice:
+		err = s.dispatchRevokePairedDevice(c, env)
 	case api.ActionGetDiagnostics:
 		err = s.dispatchGetDiagnostics(ctx, c)
 	default:

@@ -42,10 +42,14 @@ func (rl *rateLimiter) allow() bool {
 }
 
 // client is a single WebSocket connection with a buffered outbound queue.
+// loopback marks a connection from the local machine (the desktop window),
+// which is allowed to manage remote-access pairing (read the rotating code,
+// list/revoke devices) — a LAN/remote client never is.
 type client struct {
-	conn    *websocket.Conn
-	send    chan []byte
-	limiter *rateLimiter
+	conn     *websocket.Conn
+	send     chan []byte
+	limiter  *rateLimiter
+	loopback bool
 }
 
 func (c *client) writePump() {

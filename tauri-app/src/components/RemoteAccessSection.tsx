@@ -1,18 +1,11 @@
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useEffect, useState } from "react";
 import { QRCodeSVG } from "qrcode.react";
 import { RefreshCw, Trash2, Wifi } from "lucide-react";
 import { isTauri } from "../lib/runtime";
-
-interface PairedDevice {
-  id: string;
-  label: string;
-  createdAt: number;
-  lastSeen: number;
-}
+import { useWebSocket } from "../context/websocket";
 
 interface RemoteAccessSectionProps {
-  // Engine sidecar port (loopback) used to reach the pairing API from the
-  // trusted desktop window.
+  // Engine sidecar port (loopback), used to build the QR target URL.
   enginePort: number;
   // LAN host other machines use to reach this engine (null when no usable
   // interface was detected — e.g. offline), used to build the QR target URL.
@@ -24,65 +17,46 @@ interface RemoteAccessSectionProps {
 // deep-links a remote browser straight into auto-pairing), plus the list of
 // already-paired devices with a revoke action.
 //
-// All requests go to the engine over loopback (the pairing-code and device
-// endpoints are loopback-only on the server), so this is desktop-only.
+// Everything goes over the engine's loopback WebSocket (via the shared context),
+// not a REST fetch: the Tauri webview's origin is tauri://localhost, so a fetch
+// to http://localhost:<port> is cross-origin and blocked by CORS — but the
+// WebSocket the app already uses isn't. The engine answers these actions only
+// for loopback clients, so this stays desktop-only.
 export const RemoteAccessSection: React.FC<RemoteAccessSectionProps> = ({ enginePort, qrPairingHost }) => {
-  const base = `http://localhost:${enginePort}`;
-  const [code, setCode] = useState<string | null>(null);
-  const [secondsLeft, setSecondsLeft] = useState<number>(30);
-  const [devices, setDevices] = useState<PairedDevice[]>([]);
-  const [error, setError] = useState<string | null>(null);
+  const {
+    isConnected,
+    remotePairCode,
+    pairedDevices,
+    requestPairCode,
+    requestPairedDevices,
+    revokePairedDevice,
+  } = useWebSocket();
+  const [secondsLeft, setSecondsLeft] = useState(30);
 
-  const refreshCode = useCallback(async () => {
-    try {
-      const resp = await fetch(`${base}/api/pair/code`);
-      if (!resp.ok) throw new Error(String(resp.status));
-      const data = (await resp.json()) as { code: string; secondsRemaining: number };
-      setCode(data.code);
-      setSecondsLeft(data.secondsRemaining);
-      setError(null);
-    } catch {
-      setError("Impossible de récupérer le code (moteur hors ligne ?).");
-      setCode(null);
-    }
-  }, [base]);
-
-  const refreshDevices = useCallback(async () => {
-    try {
-      const resp = await fetch(`${base}/api/pair/devices`);
-      if (!resp.ok) throw new Error(String(resp.status));
-      setDevices((await resp.json()) as PairedDevice[]);
-    } catch {
-      /* non-fatal: leave the previous list */
-    }
-  }, [base]);
-
-  const revoke = async (id: string) => {
-    try {
-      await fetch(`${base}/api/pair/devices/${id}`, { method: "DELETE" });
-      await refreshDevices();
-    } catch {
-      setError("Échec de la révocation.");
-    }
-  };
-
-  // Initial load + tick down the countdown, refetching the code when the window
-  // rolls over (so the displayed code is always currently valid).
+  // Once connected, ask for the current code and device list, then keep the
+  // code fresh: tick the countdown down and re-request when the window rolls
+  // over so the displayed code is always currently valid.
   useEffect(() => {
-    if (!isTauri) return;
-    void refreshCode();
-    void refreshDevices();
+    if (!isTauri || !isConnected) return;
+    requestPairCode();
+    requestPairedDevices();
     const timer = window.setInterval(() => {
       setSecondsLeft((s) => {
         if (s <= 1) {
-          void refreshCode();
+          requestPairCode();
           return 30;
         }
         return s - 1;
       });
     }, 1000);
     return () => window.clearInterval(timer);
-  }, [refreshCode, refreshDevices]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isConnected]);
+
+  // Resync the countdown whenever a fresh code arrives from the engine.
+  useEffect(() => {
+    if (remotePairCode) setSecondsLeft(remotePairCode.secondsRemaining);
+  }, [remotePairCode]);
 
   if (!isTauri) {
     return (
@@ -94,10 +68,10 @@ export const RemoteAccessSection: React.FC<RemoteAccessSectionProps> = ({ engine
     );
   }
 
+  const code = remotePairCode?.code ?? null;
   // The QR encodes the engine origin plus the rotating code, so scanning opens
   // the remote browser directly into the (auto-submitting) pairing flow.
-  const qrValue =
-    qrPairingHost && code ? `http://${qrPairingHost}:${enginePort}/?pair=${code}` : null;
+  const qrValue = qrPairingHost && code ? `http://${qrPairingHost}:${enginePort}/?pair=${code}` : null;
   const remoteUrl = qrPairingHost ? `http://${qrPairingHost}:${enginePort}/` : null;
 
   return (
@@ -117,7 +91,9 @@ export const RemoteAccessSection: React.FC<RemoteAccessSectionProps> = ({ engine
         )}
       </div>
 
-      {error && <div className="inline-alert">{error}</div>}
+      {!isConnected && (
+        <div className="inline-alert">Moteur hors ligne — le code apparaîtra une fois connecté.</div>
+      )}
 
       <div style={{ display: "flex", gap: 16, alignItems: "center", flexWrap: "wrap" }}>
         <div style={{ textAlign: "center" }}>
@@ -132,7 +108,7 @@ export const RemoteAccessSection: React.FC<RemoteAccessSectionProps> = ({ engine
             {code ?? "——————"}
           </div>
           <div style={{ fontSize: "0.72rem", color: "#94a3b8" }}>
-            Nouveau code dans {secondsLeft}s
+            {code ? `Nouveau code dans ${secondsLeft}s` : "…"}
           </div>
         </div>
         {qrValue && (
@@ -145,19 +121,19 @@ export const RemoteAccessSection: React.FC<RemoteAccessSectionProps> = ({ engine
       <div>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
           <span className="ui-card-title" style={{ margin: 0 }}>
-            Appareils autorisés ({devices.length})
+            Appareils autorisés ({pairedDevices.length})
           </span>
-          <button className="btn btn-secondary btn-sm" onClick={() => void refreshDevices()}>
+          <button className="btn btn-secondary btn-sm" onClick={requestPairedDevices} disabled={!isConnected}>
             <RefreshCw size={13} /> Actualiser
           </button>
         </div>
-        {devices.length === 0 ? (
+        {pairedDevices.length === 0 ? (
           <p style={{ fontSize: "0.78rem", color: "#94a3b8", marginTop: 8 }}>
             Aucun appareil appairé pour l'instant.
           </p>
         ) : (
           <ul style={{ listStyle: "none", padding: 0, margin: "8px 0 0", display: "flex", flexDirection: "column", gap: 6 }}>
-            {devices.map((d) => (
+            {pairedDevices.map((d) => (
               <li
                 key={d.id}
                 style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}
@@ -168,7 +144,11 @@ export const RemoteAccessSection: React.FC<RemoteAccessSectionProps> = ({ engine
                     · vu {d.lastSeen ? new Date(d.lastSeen * 1000).toLocaleString() : "—"}
                   </span>
                 </span>
-                <button className="btn btn-danger btn-sm" onClick={() => void revoke(d.id)} title="Révoquer">
+                <button
+                  className="btn btn-danger btn-sm"
+                  onClick={() => revokePairedDevice(d.id)}
+                  title="Révoquer"
+                >
                   <Trash2 size={13} />
                 </button>
               </li>

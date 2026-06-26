@@ -47,6 +47,13 @@ const (
 	ActionScanMdns          = "SCAN_MDNS"
 	ActionProbeRsdPorts     = "PROBE_RSD_PORTS"
 	ActionPairDevice        = "PAIR_DEVICE"
+
+	// Remote-access pairing management, served only to loopback clients (the
+	// desktop window). The rotating code is a secret, so these must never be
+	// answered for a LAN/remote client — see server/dispatch.go.
+	ActionGetPairCode        = "GET_PAIR_CODE"
+	ActionListPairedDevices  = "LIST_PAIRED_DEVICES"
+	ActionRevokePairedDevice = "REVOKE_PAIRED_DEVICE"
 )
 
 // Outbound event types (engine -> client).
@@ -67,6 +74,8 @@ const (
 	EventMdnsDevices            = "MDNS_DEVICES"
 	EventRsdPorts               = "RSD_PORTS"
 	EventPairResult             = "PAIR_RESULT"
+	EventPairCode               = "PAIR_CODE"
+	EventPairedDevices          = "PAIRED_DEVICES"
 )
 
 // ─── Inbound payloads ────────────────────────────────────────────────────────
@@ -295,4 +304,36 @@ type RsdPortsPayload struct {
 type PairResultPayload struct {
 	OK    bool   `json:"ok"`
 	Error string `json:"error,omitempty"`
+}
+
+// PairCodePayload is the data for PAIR_CODE (the response to GET_PAIR_CODE):
+// the current rotating remote-access pairing code and how many seconds remain
+// before it rolls over. Loopback-only — see server/dispatch.go.
+type PairCodePayload struct {
+	Code             string `json:"code"`
+	SecondsRemaining int64  `json:"secondsRemaining"`
+	Error            string `json:"error,omitempty"`
+}
+
+// PairedDevicePayload describes one paired remote-access device for the
+// management UI (never includes the token or its hash).
+type PairedDevicePayload struct {
+	ID        string `json:"id"`
+	Label     string `json:"label"`
+	CreatedAt int64  `json:"createdAt"`
+	LastSeen  int64  `json:"lastSeen"`
+}
+
+// PairedDevicesPayload is the data for PAIRED_DEVICES (the response to
+// LIST_PAIRED_DEVICES and REVOKE_PAIRED_DEVICE — both reply with the refreshed
+// list so the UI updates from a single event type).
+type PairedDevicesPayload struct {
+	Devices []PairedDevicePayload `json:"devices"`
+	Error   string                `json:"error,omitempty"`
+}
+
+// RevokePairedDevicePayload is the data for REVOKE_PAIRED_DEVICE: the id of the
+// paired device to remove.
+type RevokePairedDevicePayload struct {
+	ID string `json:"id"`
 }

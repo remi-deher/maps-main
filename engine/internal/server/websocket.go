@@ -30,7 +30,7 @@ func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	conn.SetReadLimit(maxWSMessageBytes)
-	c := &client{conn: conn, send: make(chan []byte, 16), limiter: newRateLimiter(10, 20)}
+	c := &client{conn: conn, send: make(chan []byte, 16), limiter: newRateLimiter(10, 20), loopback: isLoopback(r)}
 	s.hub.register <- c
 
 	// Greet the new client with the current status.

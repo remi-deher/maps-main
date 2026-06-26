@@ -3,9 +3,11 @@ package server
 import (
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"net/http"
 	"time"
 
+	"github.com/remi-deher/maps-main/engine/internal/api"
 	"github.com/remi-deher/maps-main/engine/internal/auth"
 )
 
@@ -99,4 +101,87 @@ func (s *Server) handleRevokeDevice(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, opOK())
+}
+
+// ─── WebSocket pairing management (loopback-only) ─────────────────────────────
+//
+// The desktop window talks to its sidecar over the same WebSocket as everything
+// else; routing pairing through it (instead of a REST fetch) avoids the
+// cross-origin CORS wall the Tauri webview hits on http://localhost calls. Each
+// handler replies only to the requesting client and refuses any client that
+// isn't loopback — the rotating code is a secret a LAN/remote client must never
+// read, and device management is a local-operator action.
+
+// guardPairWS returns true if the client may use the pairing-management actions.
+// On refusal it sends the matching error event to that client only.
+func (s *Server) guardPairWS(c *client, errEvent string) bool {
+	if s.auth == nil {
+		c.send <- encode(errEvent, map[string]string{"error": "remote access not configured"})
+		return false
+	}
+	if !c.loopback {
+		c.send <- encode(errEvent, map[string]string{"error": "forbidden"})
+		return false
+	}
+	return true
+}
+
+func (s *Server) dispatchGetPairCode(c *client) error {
+	if !s.guardPairWS(c, api.EventPairCode) {
+		return nil
+	}
+	code, err := s.auth.CurrentCode(time.Now())
+	if err != nil {
+		slog.Error("GET_PAIR_CODE", "error", err)
+		c.send <- encode(api.EventPairCode, api.PairCodePayload{Error: err.Error()})
+		return err
+	}
+	c.send <- encode(api.EventPairCode, api.PairCodePayload{
+		Code:             code,
+		SecondsRemaining: 30 - (time.Now().Unix() % 30),
+	})
+	return nil
+}
+
+func (s *Server) dispatchListPairedDevices(c *client) error {
+	if !s.guardPairWS(c, api.EventPairedDevices) {
+		return nil
+	}
+	c.send <- encode(api.EventPairedDevices, s.pairedDevicesPayload())
+	return nil
+}
+
+func (s *Server) dispatchRevokePairedDevice(c *client, env api.Envelope) error {
+	if !s.guardPairWS(c, api.EventPairedDevices) {
+		return nil
+	}
+	var p api.RevokePairedDevicePayload
+	if err := json.Unmarshal(env.Data, &p); err != nil {
+		c.send <- encode(api.EventPairedDevices, api.PairedDevicesPayload{Error: err.Error()})
+		return err
+	}
+	if err := s.auth.Revoke(p.ID); err != nil && !errors.Is(err, auth.ErrInvalidToken) {
+		slog.Error("REVOKE_PAIRED_DEVICE", "error", err)
+		c.send <- encode(api.EventPairedDevices, api.PairedDevicesPayload{Error: err.Error()})
+		return err
+	}
+	// Reply with the refreshed list so the UI updates from one event type.
+	c.send <- encode(api.EventPairedDevices, s.pairedDevicesPayload())
+	return nil
+}
+
+// pairedDevicesPayload reads the paired-device list and maps it to the wire
+// payload (errors surface in the payload's Error field).
+func (s *Server) pairedDevicesPayload() api.PairedDevicesPayload {
+	devices, err := s.auth.ListDevices()
+	if err != nil {
+		return api.PairedDevicesPayload{Error: err.Error()}
+	}
+	out := api.PairedDevicesPayload{Devices: make([]api.PairedDevicePayload, 0, len(devices))}
+	for _, d := range devices {
+		out.Devices = append(out.Devices, api.PairedDevicePayload{
+			ID: d.ID, Label: d.Label, CreatedAt: d.CreatedAt, LastSeen: d.LastSeen,
+		})
+	}
+	return out
 }

@@ -187,6 +187,18 @@ export interface LogEntry {
   fields?: Record<string, string>;
 }
 
+export interface PairedDevice {
+  id: string;
+  label: string;
+  createdAt: number;
+  lastSeen: number;
+}
+
+export interface RemotePairCode {
+  code: string;
+  secondsRemaining: number;
+}
+
 interface WebSocketContextType {
   isConnected: boolean;
   connectionStatus: "connecting" | "connected" | "reconnecting" | "disconnected";
@@ -235,6 +247,15 @@ interface WebSocketContextType {
   prefillCode: string | null;
   submitCode: (code: string, label?: string) => Promise<boolean>;
   forgetPairing: () => void;
+  // Desktop-only remote-access management, served over the loopback WebSocket
+  // (the Tauri webview can't fetch the engine's REST API cross-origin). The
+  // engine answers GET_PAIR_CODE / LIST_PAIRED_DEVICES only for loopback
+  // clients, so these are inert in a remote browser.
+  remotePairCode: RemotePairCode | null;
+  pairedDevices: PairedDevice[];
+  requestPairCode: () => void;
+  requestPairedDevices: () => void;
+  revokePairedDevice: (id: string) => void;
 }
 
 const WebSocketContext = createContext<WebSocketContextType | null>(null);
@@ -259,6 +280,8 @@ export const WebSocketProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   const [needsPairing, setNeedsPairing] = useState(false);
   const [pairCodeError, setPairCodeError] = useState<string | null>(null);
   const [prefillCode, setPrefillCode] = useState<string | null>(null);
+  const [remotePairCode, setRemotePairCode] = useState<RemotePairCode | null>(null);
+  const [pairedDevices, setPairedDevices] = useState<PairedDevice[]>([]);
 
   // Tauri: the engine runs as a localhost sidecar on the configured port (no
   // token — loopback is trusted). Browser: same origin as the served page, with
@@ -348,6 +371,16 @@ export const WebSocketProvider: React.FC<{ children: React.ReactNode }> = ({ chi
           case "PAIR_RESULT":
             setPairResult(data);
             setPairing(false);
+            break;
+          case "PAIR_CODE":
+            if (data?.error) {
+              setRemotePairCode(null);
+            } else {
+              setRemotePairCode({ code: data.code, secondsRemaining: data.secondsRemaining });
+            }
+            break;
+          case "PAIRED_DEVICES":
+            setPairedDevices(Array.isArray(data?.devices) ? data.devices : []);
             break;
           case "LOGS":
             setLogs((Array.isArray(data) ? data : []) as LogEntry[]);
@@ -663,6 +696,12 @@ export const WebSocketProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     }
   };
 
+  // Desktop remote-access management (loopback WebSocket). These are no-ops in
+  // a remote browser — the engine refuses the actions for non-loopback clients.
+  const requestPairCode = () => sendMessage("GET_PAIR_CODE");
+  const requestPairedDevices = () => sendMessage("LIST_PAIRED_DEVICES");
+  const revokePairedDevice = (id: string) => sendMessage("REVOKE_PAIRED_DEVICE", { id });
+
   // forgetPairing drops the durable token so this client can re-pair from
   // scratch (e.g. after the desktop revoked it, leaving the WS unable to
   // reconnect).
@@ -722,6 +761,11 @@ export const WebSocketProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         prefillCode,
         submitCode,
         forgetPairing,
+        remotePairCode,
+        pairedDevices,
+        requestPairCode,
+        requestPairedDevices,
+        revokePairedDevice,
       }}
     >
       {children}
