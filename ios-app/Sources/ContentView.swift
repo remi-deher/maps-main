@@ -383,7 +383,12 @@ struct ContentView: View {
         }
         .onChange(of: discovery.state) { newState in
             guard case .found(let host, let port) = newState else { return }
-            engineAddress = "\(host):\(port)"
+            // Only auto-fill when the user hasn't configured an address. A
+            // manually entered (working, IPv4) address must not be clobbered by
+            // a discovery result — the user explicitly chose it.
+            if engineAddress.isEmpty {
+                engineAddress = "\(host):\(port)"
+            }
             if session.engine.state != .connected && session.engine.state != .connecting {
                 toggleConnection()
             }
