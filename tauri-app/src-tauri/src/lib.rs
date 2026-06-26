@@ -1,8 +1,5 @@
-mod updater;
-
 use serde::{Deserialize, Serialize};
 use std::fs;
-use std::io::{BufRead, BufReader};
 use std::sync::Mutex;
 use tauri::{AppHandle, Emitter, Manager};
 use tauri_plugin_shell::process::{CommandChild, CommandEvent};
@@ -12,27 +9,9 @@ const DEFAULT_PORT: u16 = 8080;
 const CONFIG_FILE: &str = "engine-config.json";
 const PID_FILE: &str = "engine.pid";
 
-/// A running engine process. Either the bundled sidecar (managed by the shell
-/// plugin) or an updated engine launched from the writable override directory
-/// via std::process (we only need its PID — killing goes through the process
-/// tree by PID, same as the sidecar path).
-enum EngineProcess {
-    Sidecar(CommandChild),
-    Plain(u32),
-}
-
-impl EngineProcess {
-    fn pid(&self) -> u32 {
-        match self {
-            EngineProcess::Sidecar(child) => child.pid(),
-            EngineProcess::Plain(pid) => *pid,
-        }
-    }
-}
-
 #[derive(Default)]
 struct EngineState {
-    child: Mutex<Option<EngineProcess>>,
+    child: Mutex<Option<CommandChild>>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -197,20 +176,20 @@ fn kill_engine_tree(child: CommandChild) {
     }
 }
 
-/// Kills an engine process regardless of how it was launched. The sidecar path
-/// closes stdio first; the override path kills purely by PID tree.
-fn kill_engine_process(proc: EngineProcess) {
-    match proc {
-        EngineProcess::Sidecar(child) => kill_engine_tree(child),
-        EngineProcess::Plain(pid) => kill_pid_tree(pid),
-    }
-}
-
 /// Spawns the Go engine sidecar bound to `port`, replacing any previously
 /// running instance, and forwards its stdout/stderr/exit as `engine-log` /
 /// `engine-status` events so the frontend can tell "starting" apart from
 /// "crashed" instead of just retrying the WebSocket forever.
-fn engine_args(port: u16, mdns_interface: Option<&str>) -> Vec<String> {
+fn spawn_engine(app: &AppHandle, port: u16, mdns_interface: Option<&str>) -> Result<(), String> {
+    let state = app.state::<EngineState>();
+    {
+        let mut guard = state.child.lock().unwrap_or_else(|e| e.into_inner());
+        if let Some(child) = guard.take() {
+            kill_engine_tree(child);
+        }
+    }
+
+    let shell = app.shell();
     let mut args = vec!["-addr".to_string(), format!(":{port}")];
     if let Some(iface) = mdns_interface {
         if !iface.is_empty() {
@@ -218,29 +197,10 @@ fn engine_args(port: u16, mdns_interface: Option<&str>) -> Vec<String> {
             args.push(iface.to_string());
         }
     }
-    args
-}
-
-fn spawn_engine(app: &AppHandle, port: u16, mdns_interface: Option<&str>) -> Result<(), String> {
-    let state = app.state::<EngineState>();
-    {
-        let mut guard = state.child.lock().unwrap_or_else(|e| e.into_inner());
-        if let Some(proc) = guard.take() {
-            kill_engine_process(proc);
-        }
-    }
-
-    // Prefer an updated engine from the writable override dir over the bundled
-    // sidecar (the component self-update path — see updater.rs).
-    if let Some(path) = updater::active_override_engine(app) {
-        return spawn_plain_engine(app, &path, port, mdns_interface);
-    }
-
-    let shell = app.shell();
     let mut sidecar = shell
         .sidecar("gpsmock-engine")
         .map_err(|err| format!("sidecar config not found: {err}"))?
-        .args(engine_args(port, mdns_interface));
+        .args(args);
 
     // Point the engine at the iOS-driver binaries bundled as app resources, so
     // go-ios / pymobiledevice work with no system install or PATH setup.
@@ -253,7 +213,7 @@ fn spawn_engine(app: &AppHandle, port: u16, mdns_interface: Option<&str>) -> Res
         .map_err(|err| format!("failed to spawn Go sidecar: {err}"))?;
 
     write_pid_file(app, child.pid());
-    *state.child.lock().unwrap_or_else(|e| e.into_inner()) = Some(EngineProcess::Sidecar(child));
+    *state.child.lock().unwrap_or_else(|e| e.into_inner()) = Some(child);
     let _ = app.emit("engine-status", "starting");
 
     let app_handle = app.clone();
@@ -279,80 +239,6 @@ fn spawn_engine(app: &AppHandle, port: u16, mdns_interface: Option<&str>) -> Res
                 }
                 _ => {}
             }
-        }
-    });
-
-    Ok(())
-}
-
-/// Spawns an updated engine binary from an arbitrary (writable) path using
-/// std::process, mirroring the sidecar path's event forwarding so the frontend
-/// sees the same "starting"/"engine-log"/"exited:" signals. Used for the
-/// component self-update override, where the shell plugin's sidecar resolution
-/// (target-triple suffix, resource scope) doesn't apply.
-fn spawn_plain_engine(
-    app: &AppHandle,
-    path: &std::path::Path,
-    port: u16,
-    mdns_interface: Option<&str>,
-) -> Result<(), String> {
-    use std::process::{Command, Stdio};
-
-    let mut cmd = Command::new(path);
-    cmd.args(engine_args(port, mdns_interface))
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
-    for (key, value) in bundled_driver_envs(app) {
-        cmd.env(key, value);
-    }
-    // Own process group on Unix so kill_pid_tree's `kill -<pgid>` reaches the
-    // go-ios/python children too.
-    #[cfg(unix)]
-    {
-        use std::os::unix::process::CommandExt;
-        cmd.process_group(0);
-    }
-
-    let mut child = cmd
-        .spawn()
-        .map_err(|err| format!("failed to spawn updated engine: {err}"))?;
-    let pid = child.id();
-
-    // Forward stdout/stderr line-by-line as engine-log, like the sidecar path.
-    for (stream, app_h) in [
-        (child.stdout.take().map(|s| Box::new(s) as Box<dyn std::io::Read + Send>), app.clone()),
-        (child.stderr.take().map(|s| Box::new(s) as Box<dyn std::io::Read + Send>), app.clone()),
-    ] {
-        if let Some(stream) = stream {
-            std::thread::spawn(move || {
-                let reader = BufReader::new(stream);
-                for line in reader.lines().map_while(Result::ok) {
-                    let _ = app_h.emit("engine-log", line);
-                }
-            });
-        }
-    }
-
-    write_pid_file(app, pid);
-    *app.state::<EngineState>()
-        .child
-        .lock()
-        .unwrap_or_else(|e| e.into_inner()) = Some(EngineProcess::Plain(pid));
-    let _ = app.emit("engine-status", "starting");
-
-    // Reap the process and report its exit, clearing state only if it's still
-    // the current one (a respawn may have replaced it in the meantime).
-    let app_handle = app.clone();
-    std::thread::spawn(move || {
-        let code = child.wait().ok().and_then(|s| s.code()).unwrap_or(-1);
-        let state = app_handle.state::<EngineState>();
-        let mut guard = state.child.lock().unwrap_or_else(|e| e.into_inner());
-        let still_current = guard.as_ref().map(|p| p.pid()) == Some(pid);
-        if still_current {
-            *guard = None;
-            drop(guard);
-            clear_pid_file(&app_handle);
-            let _ = app_handle.emit("engine-status", format!("exited:{code}"));
         }
     });
 
@@ -398,8 +284,8 @@ fn bundled_driver_envs(app: &AppHandle) -> Vec<(String, String)> {
 fn shutdown_engine(app: &AppHandle) {
     let state = app.state::<EngineState>();
     let child = state.child.lock().unwrap_or_else(|e| e.into_inner()).take();
-    if let Some(proc) = child {
-        kill_engine_process(proc);
+    if let Some(child) = child {
+        kill_engine_tree(child);
     }
     clear_pid_file(app);
 }
@@ -484,40 +370,6 @@ fn read_device_plist(udid: String) -> Result<String, String> {
     Ok(base64_content)
 }
 
-/// Checks GitHub for the latest engine release matching this platform. The
-/// frontend compares the returned tag against the engine's running version
-/// (already broadcast in STATUS) to decide whether to offer an update.
-#[tauri::command]
-async fn engine_check_update() -> Result<updater::EngineRelease, String> {
-    updater::fetch_latest_release().await
-}
-
-/// Downloads + verifies the latest engine binary into the override dir and
-/// restarts the sidecar so it takes effect immediately.
-#[tauri::command]
-async fn engine_apply_update(app: AppHandle) -> Result<String, String> {
-    let rel = updater::fetch_latest_release().await?;
-    updater::download_engine_update(&app, &rel).await?;
-    let cfg = read_config(&app);
-    spawn_engine(&app, cfg.port, cfg.mdns_interface.as_deref())?;
-    Ok(rel.tag)
-}
-
-/// Reverts to the bundled engine by removing the override, then restarts.
-#[tauri::command]
-fn engine_clear_update(app: AppHandle) -> Result<(), String> {
-    updater::clear_override(&app)?;
-    let cfg = read_config(&app);
-    spawn_engine(&app, cfg.port, cfg.mdns_interface.as_deref())
-}
-
-/// True when the running engine is an updated override rather than the bundled
-/// sidecar — lets the UI show a "reverter" affordance.
-#[tauri::command]
-fn engine_using_override(app: AppHandle) -> bool {
-    updater::active_override_engine(&app).is_some()
-}
-
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -561,11 +413,7 @@ pub fn run() {
             get_mdns_interface,
             set_mdns_interface,
             list_network_interfaces,
-            read_device_plist,
-            engine_check_update,
-            engine_apply_update,
-            engine_clear_update,
-            engine_using_override
+            read_device_plist
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

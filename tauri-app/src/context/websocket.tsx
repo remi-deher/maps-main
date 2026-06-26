@@ -152,7 +152,6 @@ export interface Status {
   clusterHeartbeatSeconds?: number;
   clusterMasterDeadSeconds?: number;
   clusterPeerTimeoutSeconds?: number;
-  envInfo?: { os: string; isDocker: boolean; mode: string; version: string };
 }
 
 export interface NetworkInterfaceInfo {

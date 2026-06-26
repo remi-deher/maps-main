@@ -1,8 +1,7 @@
 import React, { useEffect, useState } from "react";
-import { Activity, Cable, Download, Pause, Play, Plug, Save, RefreshCw, Route, Server, Settings, Smartphone, Square, Wifi } from "lucide-react";
+import { Activity, Cable, Pause, Play, Plug, Save, RefreshCw, Route, Server, Settings, Smartphone, Square, Wifi } from "lucide-react";
 import { useWebSocket } from "../context/websocket";
 import { RemoteAccessSection } from "./RemoteAccessSection";
-import { UpdatesSection } from "./UpdatesSection";
 import { parseCoordinate } from "../lib/parse";
 import { getRailRouterUrl, setRailRouterUrl as persistRailRouterUrl } from "../lib/osrm";
 import { isTransitEnabled, setTransitEnabled as persistTransitEnabled } from "../lib/transit";
@@ -480,8 +479,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ open, onClose }) =
     <RemoteAccessSection enginePort={enginePort} qrPairingHost={qrPairingHost} />
   );
 
-  const updatesSection = <UpdatesSection />;
-
   const clusterSection = (
     <div className="ui-card">
       <fieldset className="field-group">
@@ -667,7 +664,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ open, onClose }) =
           { id: "remote", label: "Accès distant", icon: Wifi, content: remoteSection },
           { id: "cluster", label: "Cluster", icon: Server, content: clusterSection },
           { id: "diagnostics", label: "Diagnostics", icon: Activity, content: diagnosticsSection },
-          { id: "updates", label: "Mises à jour", icon: Download, content: updatesSection },
         ]}
       />
 
