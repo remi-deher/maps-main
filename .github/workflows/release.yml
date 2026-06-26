@@ -228,6 +228,36 @@ jobs:
           path: setup-out/gpsmock-engine-setup.exe
           if-no-files-found: error
 
+  # Publish SHA-256 checksums of the per-platform engine binaries so the
+  # desktop app's component self-updater (tauri-app updater.rs) can verify a
+  # downloaded engine before swapping it in.
+  checksums:
+    name: compute engine checksums
+    needs: [check-trigger, build-engine]
+    if: needs.check-trigger.outputs.should_release == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          path: engines
+          pattern: gpsmock-engine-*
+          merge-multiple: true
+      - name: Compute SHA-256 of engine binaries
+        run: |
+          cd engines
+          sha256sum \
+            gpsmock-engine-linux-amd64 \
+            gpsmock-engine-linux-arm64 \
+            gpsmock-engine-darwin-amd64 \
+            gpsmock-engine-darwin-arm64 \
+            gpsmock-engine-windows-amd64.exe > ../checksums.txt
+          cat ../checksums.txt
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: gpsmock-checksums
+          path: checksums.txt
+          if-no-files-found: error
+
   build-tauri:
     name: build desktop app (${{ matrix.platform }})
     needs: check-trigger
@@ -527,7 +557,7 @@ jobs:
 
   release:
     name: publish GitHub release
-    needs: [check-trigger, build-engine, portable-windows-engine, installer-windows-engine, build-tauri, build-ios, docker, build-enroller]
+    needs: [check-trigger, build-engine, checksums, portable-windows-engine, installer-windows-engine, build-tauri, build-ios, docker, build-enroller]
     if: needs.check-trigger.outputs.should_release == 'true'
     runs-on: ubuntu-latest
     permissions:
