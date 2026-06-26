@@ -452,6 +452,16 @@ func (e *Engine) reinjectAnchor(ctx context.Context, anchor *api.LocationStamp, 
 	e.st.State = "running"
 	emit, st := e.statusSnapshotLocked()
 	emit(api.EventStatus, st)
+	// Log each successful keep-alive re-injection so the periodic relances stay
+	// visible in the logs (as they were before the jitter change). Report the
+	// held anchor; the actual jittered point goes in the fields for diagnostics.
+	e.LogEvent("info", "engine", "location", "relance", fmt.Sprintf("Position maintenue : %.6f, %.6f", anchor.Lat, anchor.Lon), map[string]string{
+		"lat":    fmt.Sprintf("%.6f", anchor.Lat),
+		"lon":    fmt.Sprintf("%.6f", anchor.Lon),
+		"name":   anchor.Name,
+		"injLat": fmt.Sprintf("%.6f", injLat),
+		"injLon": fmt.Sprintf("%.6f", injLon),
+	})
 	return nil
 }
 
