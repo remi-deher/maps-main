@@ -1,0 +1,67 @@
+package driver
+
+import (
+	"context"
+	"os"
+	"os/exec"
+	"testing"
+	"time"
+
+	"github.com/remi-deher/maps-main/engine/internal/driver/exectest"
+)
+
+// TestHelperProcess is the re-exec'd "fake daemon" driven by exectest — see
+// exectest's doc. The "sleep" scenario just blocks until killed, standing in
+// for a real tunnel daemon (`ios tunnel start` / pmd3 `remote tunneld`) that
+// keeps running until explicitly torn down.
+func TestHelperProcess(t *testing.T) {
+	args, scenario, ok := exectest.HelperArgs()
+	if !ok {
+		return
+	}
+	_ = args
+	switch scenario {
+	case "sleep":
+		time.Sleep(time.Minute)
+	}
+	os.Exit(0)
+}
+
+// TestStopWaitsForDaemonReap is a regression test for the tunnel-restart race:
+// Stop() must not return until the killed daemon has actually been reaped, so
+// an immediate Start() that follows doesn't race the still-dying old process
+// for the same OS resources (tun adapter, device lock, listening port).
+func TestStopWaitsForDaemonReap(t *testing.T) {
+	m := &TunnelMount{}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	_, err := m.Start(ctx, TunnelMountConfig{
+		DriverName:   "test",
+		StartTimeout: 5 * time.Second,
+		PollInterval: 10 * time.Millisecond,
+		StartDaemon: func(context.Context) (*exec.Cmd, error) {
+			return exectest.FakeCommand("sleep")("sleep"), nil
+		},
+		Resolve: func(context.Context) (TunnelEndpoint, bool) {
+			return TunnelEndpoint{Info: TunnelInfo{Address: "127.0.0.1", Port: 1234}}, true
+		},
+	})
+	if err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+
+	if err := m.Stop(context.Background()); err != nil {
+		t.Fatalf("Stop: %v", err)
+	}
+
+	// White-box check (same package): by the time Stop() returns, the reaper
+	// goroutine must already have closed m.exited — confirming Stop() actually
+	// waited for the OS to reap the killed process instead of returning the
+	// instant the kill signal was merely issued.
+	select {
+	case <-m.exited:
+	default:
+		t.Fatal("Stop() returned before the daemon was reaped")
+	}
+}

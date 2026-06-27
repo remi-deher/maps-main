@@ -15,6 +15,13 @@ import (
 
 const tunnelTailLines = 20
 
+// stopReapTimeout bounds how long Stop() waits for the killed daemon to
+// actually be reaped (see Stop's doc) before giving up and returning anyway —
+// a daemon that won't die within this window is treated the same way the
+// rest of the engine treats other stuck-process timeouts: better to let the
+// caller proceed than hang indefinitely.
+const stopReapTimeout = 5 * time.Second
+
 // TunnelMountConfig describes the backend-specific parts of bringing up an RSD
 // tunnel. TunnelMount owns the shared daemon lifecycle around it.
 type TunnelMountConfig struct {
@@ -43,6 +50,12 @@ type TunnelMount struct {
 	// tell "daemon still searching for the device" apart from "daemon dead,
 	// must restart". Reset on every successful set().
 	daemonExited bool
+	// exited is closed by cmd's reaper goroutine once cmd.Wait() returns, i.e.
+	// once the OS confirms the daemon (and, via killTree, its children) is
+	// actually gone. Stop() waits on it after issuing the kill so a caller that
+	// immediately calls Start() again doesn't race the old daemon for the tun
+	// adapter / device lock / listening port — see Stop's doc.
+	exited chan struct{}
 }
 
 func (m *TunnelMount) Start(ctx context.Context, cfg TunnelMountConfig) (TunnelInfo, error) {
@@ -106,6 +119,11 @@ func (m *TunnelMount) Start(ctx context.Context, cfg TunnelMountConfig) (TunnelI
 		return TunnelInfo{}, fmt.Errorf("%s %s: %w", cfg.DriverName, cfg.StartLabel, err)
 	}
 
+	reaped := make(chan struct{})
+	m.mu.Lock()
+	m.exited = reaped
+	m.mu.Unlock()
+
 	var tailMu sync.Mutex
 	var tail []string
 	appendTail := func(line string) {
@@ -123,7 +141,13 @@ func (m *TunnelMount) Start(ctx context.Context, cfg TunnelMountConfig) (TunnelI
 	}
 
 	exited := make(chan error, 1)
-	go func() { err := cmd.Wait(); _ = pw.Close(); m.onDaemonExit(cmd); exited <- err }()
+	go func() {
+		err := cmd.Wait()
+		_ = pw.Close()
+		m.onDaemonExit(cmd)
+		close(reaped)
+		exited <- err
+	}()
 	go func() {
 		sc := bufio.NewScanner(pr)
 		for sc.Scan() {
@@ -161,15 +185,30 @@ func (m *TunnelMount) Start(ctx context.Context, cfg TunnelMountConfig) (TunnelI
 	}
 }
 
+// Stop tears down the active tunnel. After issuing the kill it waits (up to
+// stopReapTimeout) for the daemon to actually be reaped before returning —
+// taskkill /F on Windows (and the Unix process-group signal) only requests
+// termination; the kernel needs a moment to actually tear down the tun
+// adapter and release the device lock / listening port. Returning early let a
+// caller's immediate StartTunnel() race the still-dying old daemon for those
+// same resources, which is what made tunnel restarts intermittently fail to
+// come back up.
 func (m *TunnelMount) Stop(context.Context) error {
 	m.mu.Lock()
-	cmd, on := m.cmd, m.on
+	cmd, on, exited := m.cmd, m.on, m.exited
 	m.info, m.on, m.cmd, m.udid, m.daemonExited = TunnelInfo{}, false, nil, "", false
 	m.mu.Unlock()
-	if on && cmd != nil {
-		return killProcess(cmd)
+	if !on || cmd == nil {
+		return nil
 	}
-	return nil
+	err := killProcess(cmd)
+	if exited != nil {
+		select {
+		case <-exited:
+		case <-time.After(stopReapTimeout):
+		}
+	}
+	return err
 }
 
 func (m *TunnelMount) Current() (TunnelInfo, bool) {
