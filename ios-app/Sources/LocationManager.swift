@@ -107,8 +107,24 @@ final class LocationManager: NSObject, CLLocationManagerDelegate {
         }
     }
 
+    /// CoreLocation's first delivery after a wake (unlock, foreground, tracking
+    /// restart) is often a cached fix it already had on hand — sometimes
+    /// minutes old and far from the device's actual current position — handed
+    /// out immediately while a fresh GPS fix is still being acquired. Forwarding
+    /// that straight to REAL_LOCATION can trip the engine's anti-drift shield
+    /// with a huge, entirely spurious distance. Apple's documented mitigation is
+    /// to check `timestamp`/`horizontalAccuracy` before trusting a fix.
+    private static let maxLocationAge: TimeInterval = 10
+    private static let maxHorizontalAccuracy: CLLocationDistance = 200
+
     func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
         guard let latest = locations.last else { return }
+        let age = -latest.timestamp.timeIntervalSinceNow
+        guard age <= Self.maxLocationAge,
+              latest.horizontalAccuracy >= 0,
+              latest.horizontalAccuracy <= Self.maxHorizontalAccuracy else {
+            return
+        }
         lastLocation = latest
         // Drives the background keep-alive — see `onLocationUpdate`.
         onLocationUpdate?(latest)
