@@ -11,12 +11,27 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/remi-deher/maps-main/engine/internal/driver"
 )
 
 //go:embed location_worker.py
 var locationWorkerScript string
+
+// workerStartTimeout bounds how long we wait for the worker's "ready"
+// handshake. The worker's first step is RemoteServiceDiscoveryService
+// connecting over the RSD tunnel address — when that address has gone stale
+// (e.g. the iOS tunnel daemon just reassigned a new one, as happens
+// repeatedly while the device screen is locked), the underlying Windows
+// socket can block until the OS's own much longer semaphore timeout fires
+// ("[WinError 121] The semaphore timeout period has expired", often
+// tens of seconds). Bounding startup separately from the caller's action
+// timeout means we give up on a doomed connection quickly and let the next
+// retry target a freshly re-resolved endpoint, instead of holding the
+// session lock — and blocking every other location operation — for as long
+// as Windows takes to notice.
+const workerStartTimeout = 12 * time.Second
 
 type locationSession struct {
 	cmd    *exec.Cmd
@@ -57,11 +72,38 @@ func newLocationSession(ctx context.Context, py string, endpoint driver.TunnelIn
 	if err := cmd.Start(); err != nil {
 		return nil, fmt.Errorf("pmd3 location worker start: %w", err)
 	}
-	if err := s.readResponse(ctx); err != nil {
-		_ = s.stop(context.Background())
+
+	startCtx, cancel := context.WithTimeout(ctx, workerStartTimeout)
+	err = s.readResponse(startCtx)
+	cancel()
+	if err != nil {
+		// A worker that never reached the ready handshake is presumed stuck
+		// inside its RSD connect (a stale tunnel address) rather than merely
+		// slow — it won't be reading stdin yet, so the polite "stop" round-trip
+		// used for a healthy session would itself hang. Kill the process tree
+		// directly and give it a short grace period to exit.
+		s.forceKill()
 		return nil, fmt.Errorf("pmd3 location worker ready: %w", err)
 	}
 	return s, nil
+}
+
+// forceKill terminates a worker that isn't responding (or never finished
+// starting up) without waiting indefinitely for a clean exit.
+func (s *locationSession) forceKill() {
+	_ = driver.KillProcessTree(s.cmd)
+	if s.stdin != nil {
+		_ = s.stdin.Close()
+	}
+	waitCh := make(chan struct{})
+	go func() {
+		_ = s.cmd.Wait()
+		close(waitCh)
+	}()
+	select {
+	case <-waitCh:
+	case <-time.After(5 * time.Second):
+	}
 }
 
 func (s *locationSession) set(ctx context.Context, lat, lon float64) error {

@@ -22,7 +22,10 @@ func (d *Driver) SetLocation(ctx context.Context, lat, lon float64) error {
 		// hammering a dead process indefinitely.
 		d.locMu.Lock()
 		if d.location == session {
-			_ = session.stop(context.Background())
+			// The roundtrip just failed, so the worker is presumed unresponsive
+			// (e.g. the same stale-tunnel hang covered in forceKill's doc) — a
+			// polite stop() round-trip would risk hanging just as long.
+			session.forceKill()
 			d.location = nil
 		}
 		d.locMu.Unlock()
@@ -45,7 +48,7 @@ func (d *Driver) ClearLocation(ctx context.Context) error {
 		_ = d.takeLocationSession()
 	}
 	if err := session.clear(ctx); err != nil {
-		_ = session.stop(context.Background())
+		session.forceKill()
 		return err
 	}
 	return session.stop(ctx)
