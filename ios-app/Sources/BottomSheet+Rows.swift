@@ -377,3 +377,10 @@ extension BottomSheet {
         .buttonStyle(.plain)
     }
 }
+
+private extension MKLocalSearchCompletion {
+    /// A stable identity for SwiftUI diffing: `MKLocalSearchCompletion` isn't
+    /// `Identifiable`, and its array position changes on every keystroke, so
+    /// title+subtitle is the closest thing to a durable key for a row.
+    var compositeID: String { "\(title)|\(subtitle)" }
+}
