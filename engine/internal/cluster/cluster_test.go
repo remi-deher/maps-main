@@ -311,6 +311,33 @@ func TestPingHandlerReportsRoleModeAndTunnelState(t *testing.T) {
 	}
 }
 
+// TestClusterRoutesRejectUnknownNonLoopbackSource confirms the LAN-trust gate
+// added to RegisterRoutes: a request whose source is neither loopback nor an
+// address already in m.peers must be refused, since these peer-protocol
+// routes (notably /api/cluster/plists, which serves Lockdown pairing-record
+// files verbatim) have no other credential check at all.
+func TestClusterRoutesRejectUnknownNonLoopbackSource(t *testing.T) {
+	m := New("manual", nil, "node-a", 0, func() bool { return true }, false)
+
+	if m.isAuthorizedPeerAddr("203.0.113.5:54321") {
+		t.Error("expected an unknown non-loopback source to be rejected")
+	}
+	if !m.isAuthorizedPeerAddr("127.0.0.1:54321") {
+		t.Error("expected loopback to be authorized")
+	}
+
+	m.mu.Lock()
+	m.peers["10.0.0.9:8080"] = &Peer{Address: "10.0.0.9", Port: 8080}
+	m.mu.Unlock()
+
+	if !m.isAuthorizedPeerAddr("10.0.0.9:54321") {
+		t.Error("expected a known peer's address (any source port) to be authorized")
+	}
+	if m.isAuthorizedPeerAddr("10.0.0.10:54321") {
+		t.Error("expected a different, unknown address to still be rejected")
+	}
+}
+
 func TestParsePeerAddrRejectsOutOfRangeOrUnsafePort(t *testing.T) {
 	cases := []string{
 		"127.0.0.1:0",     // port 0 is out of range

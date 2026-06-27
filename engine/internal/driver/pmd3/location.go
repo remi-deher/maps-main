@@ -67,7 +67,15 @@ func (d *Driver) locationSession(ctx context.Context) (*locationSession, error) 
 		return d.location, nil
 	}
 	if d.location != nil {
-		_ = d.location.stop(context.Background())
+		// The old session is bound to an endpoint the tunnel has moved on from
+		// (e.g. a reresolve while the device screen is locked, see
+		// workerStartTimeout's doc) — it may be mid-connect to a now-dead
+		// address and unresponsive to the polite "stop" round-trip. Bound the
+		// wait so a stuck worker can't hold locMu (and so every other location
+		// operation) for as long as Background() would have let it.
+		stopCtx, cancel := context.WithTimeout(ctx, workerStartTimeout)
+		_ = d.location.stop(stopCtx)
+		cancel()
 		d.location = nil
 	}
 

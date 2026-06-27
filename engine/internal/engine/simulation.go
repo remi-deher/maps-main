@@ -231,7 +231,15 @@ func (e *Engine) startRouteSimulation(ctx context.Context, points []domain.LatLo
 				Lon:   p.Lon,
 				Speed: speed, // actual interpolated speed in km/h
 			}
-			e.st.Navigation.Status.Index = index
+			// simSetLocation above can block for several seconds (a slow/stuck
+			// driver call) — if StopRoute ran concurrently while we were inside
+			// it, Navigation.Status is now nil (it cancels ctx too, but only the
+			// *next* loop iteration's select observes that; this one is already
+			// past it). Without this guard the write below would be a nil
+			// pointer dereference, panicking — and crashing — the whole engine.
+			if e.st.Navigation.Status != nil {
+				e.st.Navigation.Status.Index = index
+			}
 			e.emitStatusLocked() // snapshots + unlocks e.mu before emitting
 
 			index++

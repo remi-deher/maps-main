@@ -71,8 +71,8 @@ channels:
       MDNS_DEVICES: { $ref: "#/components/messages/MDNS_DEVICES" }
       RSD_PORTS: { $ref: "#/components/messages/RSD_PORTS" }
       PAIR_RESULT: { $ref: "#/components/messages/PAIR_RESULT" }
-      PAIR_CODE: { $ref: "#/components/messages/EMPTY" }
-      PAIRED_DEVICES: { $ref: "#/components/messages/EMPTY" }
+      PAIR_CODE: { $ref: "#/components/messages/PAIR_CODE" }
+      PAIRED_DEVICES: { $ref: "#/components/messages/PAIRED_DEVICES" }
 
 operations:
   sendAction:
@@ -169,6 +169,10 @@ components:
       payload: { $ref: "#/components/schemas/Envelope_RsdPorts" }
     PAIR_RESULT:
       payload: { $ref: "#/components/schemas/Envelope_PairResult" }
+    PAIR_CODE:
+      payload: { $ref: "#/components/schemas/Envelope_PairCode" }
+    PAIRED_DEVICES:
+      payload: { $ref: "#/components/schemas/Envelope_PairedDevices" }
 
   schemas:
     Envelope_Empty:
@@ -571,4 +575,36 @@ components:
             ok: { type: boolean }
             error: { type: string }
           required: [ok]
+      required: [type, data]
+
+    Envelope_PairCode:
+      type: object
+      properties:
+        type: { const: PAIR_CODE }
+        data:
+          type: object
+          properties:
+            code: { type: string }
+            secondsRemaining: { type: integer }
+            error: { type: string }
+      required: [type, data]
+
+    Envelope_PairedDevices:
+      type: object
+      properties:
+        type: { const: PAIRED_DEVICES }
+        data:
+          type: object
+          properties:
+            devices:
+              type: array
+              items:
+                type: object
+                properties:
+                  id: { type: string }
+                  label: { type: string }
+                  createdAt: { type: integer }
+                  lastSeen: { type: integer }
+                required: [id]
+            error: { type: string }
       required: [type, data]

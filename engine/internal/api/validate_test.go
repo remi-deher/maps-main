@@ -107,19 +107,19 @@ func TestDebugLogPayloadValidate(t *testing.T) {
 
 func TestPatrolUpdatePayloadValidate(t *testing.T) {
 	circle := PatrolUpdatePayload{Zone: domain.PatrolZone{
-		Type: "circle", Center: &domain.LatLon{Lat: 1, Lon: 1}, Radius: 500,
+		Type: "circle", Center: &domain.LatLon{Lat: 1, Lon: 1}, Radius: 500, Active: true,
 	}}
 	if err := circle.Validate(); err != nil {
 		t.Errorf("expected valid circle zone to pass, got %v", err)
 	}
 
-	noCenter := PatrolUpdatePayload{Zone: domain.PatrolZone{Type: "circle", Radius: 500}}
+	noCenter := PatrolUpdatePayload{Zone: domain.PatrolZone{Type: "circle", Radius: 500, Active: true}}
 	if err := noCenter.Validate(); err == nil {
 		t.Error("expected circle zone without center to be rejected")
 	}
 
 	badRadius := PatrolUpdatePayload{Zone: domain.PatrolZone{
-		Type: "circle", Center: &domain.LatLon{Lat: 1, Lon: 1}, Radius: -1,
+		Type: "circle", Center: &domain.LatLon{Lat: 1, Lon: 1}, Radius: -1, Active: true,
 	}}
 	if err := badRadius.Validate(); err == nil {
 		t.Error("expected a non-positive radius to be rejected")
@@ -128,14 +128,23 @@ func TestPatrolUpdatePayloadValidate(t *testing.T) {
 	rect := PatrolUpdatePayload{Zone: domain.PatrolZone{
 		Type:   "rectangle",
 		Bounds: &domain.PatrolBounds{NE: domain.LatLon{Lat: 2, Lon: 2}, SW: domain.LatLon{Lat: 1, Lon: 1}},
+		Active: true,
 	}}
 	if err := rect.Validate(); err != nil {
 		t.Errorf("expected valid rectangle zone to pass, got %v", err)
 	}
 
-	unknown := PatrolUpdatePayload{Zone: domain.PatrolZone{Type: "triangle"}}
+	unknown := PatrolUpdatePayload{Zone: domain.PatrolZone{Type: "triangle", Active: true}}
 	if err := unknown.Validate(); err == nil {
 		t.Error("expected an unknown zone type to be rejected")
+	}
+
+	// A stop request (active: false) must always be accepted regardless of
+	// geometry — the UI's "stop" button sends the zone type with center/bounds
+	// left nil, since Engine.PatrolUpdate only needs Active to stop.
+	stop := PatrolUpdatePayload{Zone: domain.PatrolZone{Type: "circle", Active: false}}
+	if err := stop.Validate(); err != nil {
+		t.Errorf("expected a stop request (active: false) to always pass, got %v", err)
 	}
 }
 

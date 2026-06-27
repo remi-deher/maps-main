@@ -130,9 +130,17 @@ func (p DebugLogPayload) Validate() error {
 	return nil
 }
 
-// Validate checks PATROL_UPDATE's payload.
+// Validate checks PATROL_UPDATE's payload. A stop request (active: false) is
+// always accepted regardless of geometry — the iOS/desktop "stop" button
+// sends the zone type with center/bounds left nil, and Engine.PatrolUpdate
+// only needs Active to decide to stop, never the geometry. Requiring a valid
+// geometry here would reject that stop request outright, leaving the patrol
+// simulation running.
 func (p PatrolUpdatePayload) Validate() error {
 	z := p.Zone
+	if !z.Active {
+		return nil
+	}
 	switch z.Type {
 	case "circle":
 		if z.Center == nil {

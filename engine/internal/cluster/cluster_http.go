@@ -3,6 +3,7 @@ package cluster
 import (
 	"encoding/base64"
 	"encoding/json"
+	"net"
 	"net/http"
 	"os"
 	"time"
@@ -12,13 +13,52 @@ import (
 
 // RegisterRoutes wires the cluster's peer-to-peer protocol onto mux: other
 // engines in the cluster call these directly (not through the iOS/desktop
-// client API).
+// client API — no UI ever calls these), so every route is gated by
+// requirePeer: anyone on the LAN who can reach this port would otherwise be
+// able to read Lockdown pairing-record files verbatim (handlePlists) or force
+// a takeover (handleTakeover) with no credential at all.
 func (m *Manager) RegisterRoutes(mux *http.ServeMux) {
-	mux.HandleFunc("GET /api/cluster/status", m.handleStatus)
-	mux.HandleFunc("GET /api/cluster/ping", m.handlePing)
-	mux.HandleFunc("POST /api/cluster/takeover", m.handleTakeover)
-	mux.HandleFunc("GET /api/cluster/plists", m.handlePlists)
-	mux.HandleFunc("POST /api/cluster/sync-plist", m.handleSyncPlist)
+	mux.HandleFunc("GET /api/cluster/status", m.requirePeer(m.handleStatus))
+	mux.HandleFunc("GET /api/cluster/ping", m.requirePeer(m.handlePing))
+	mux.HandleFunc("POST /api/cluster/takeover", m.requirePeer(m.handleTakeover))
+	mux.HandleFunc("GET /api/cluster/plists", m.requirePeer(m.handlePlists))
+	mux.HandleFunc("POST /api/cluster/sync-plist", m.requirePeer(m.handleSyncPlist))
+}
+
+// requirePeer rejects any request whose source isn't loopback (local
+// diagnostics) or the address of a peer already known to this manager
+// (configured manually, or previously seen via mDNS auto-discovery — the same
+// LAN-trust boundary the cluster's mDNS discovery already relies on). This
+// can't stop a peer's IP from being spoofed by something already on the LAN,
+// but it closes the far simpler hole of any LAN host being able to just ask
+// for these endpoints with zero credential.
+func (m *Manager) requirePeer(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if !m.isAuthorizedPeerAddr(r.RemoteAddr) {
+			http.Error(w, "forbidden", http.StatusForbidden)
+			return
+		}
+		next(w, r)
+	}
+}
+
+func (m *Manager) isAuthorizedPeerAddr(remoteAddr string) bool {
+	host, _, err := net.SplitHostPort(remoteAddr)
+	if err != nil {
+		host = remoteAddr
+	}
+	if ip := net.ParseIP(host); ip != nil && ip.IsLoopback() {
+		return true
+	}
+
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	for _, p := range m.peers {
+		if p.Address == host {
+			return true
+		}
+	}
+	return false
 }
 
 func (m *Manager) handleStatus(w http.ResponseWriter, r *http.Request) {

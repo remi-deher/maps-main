@@ -212,7 +212,8 @@ fn spawn_engine(app: &AppHandle, port: u16, mdns_interface: Option<&str>) -> Res
         .spawn()
         .map_err(|err| format!("failed to spawn Go sidecar: {err}"))?;
 
-    write_pid_file(app, child.pid());
+    let pid = child.pid();
+    write_pid_file(app, pid);
     *state.child.lock().unwrap_or_else(|e| e.into_inner()) = Some(child);
     let _ = app.emit("engine-status", "starting");
 
@@ -230,12 +231,25 @@ fn spawn_engine(app: &AppHandle, port: u16, mdns_interface: Option<&str>) -> Res
                     let _ = app_handle.emit("engine-status", format!("error: {err}"));
                 }
                 CommandEvent::Terminated(payload) => {
-                    *app_handle.state::<EngineState>().child.lock().unwrap() = None;
-                    clear_pid_file(&app_handle);
-                    let _ = app_handle.emit(
-                        "engine-status",
-                        format!("exited:{}", payload.code.unwrap_or(-1)),
-                    );
+                    // A fast port/interface change can spawn a replacement engine
+                    // before this (old) process's Terminated event arrives. Only
+                    // clear the shared state/PID file if it still refers to *this*
+                    // PID — otherwise we'd wipe out the new engine's tracked handle
+                    // and PID file while it's still very much alive, leaking it
+                    // (never killed on shutdown) and leaving the app thinking no
+                    // engine is running.
+                    let state = app_handle.state::<EngineState>();
+                    let mut guard = state.child.lock().unwrap_or_else(|e| e.into_inner());
+                    let still_current = guard.as_ref().map(|p| p.pid()) == Some(pid);
+                    if still_current {
+                        *guard = None;
+                        drop(guard);
+                        clear_pid_file(&app_handle);
+                        let _ = app_handle.emit(
+                            "engine-status",
+                            format!("exited:{}", payload.code.unwrap_or(-1)),
+                        );
+                    }
                 }
                 _ => {}
             }
