@@ -333,7 +333,12 @@ jobs:
             exit 0
           fi
 
-          if git diff --quiet "$PREV_TAG" HEAD -- ios-app/; then
+          # This step's working-directory is already ios-app/ (see the job's
+          # `defaults.run`), so the pathspec must be "." — "ios-app/" here
+          # would resolve to the nonexistent ios-app/ios-app/, which never
+          # differs, silently making this always report "no changes" and
+          # forever reuse a stale .ipa regardless of any real iOS changes.
+          if git diff --quiet "$PREV_TAG" HEAD -- .; then
             echo "No changes in ios-app/ since $PREV_TAG."
             echo "Attempting to download GpsMockCompanion-unsigned.ipa from release $PREV_TAG..."
             mkdir -p dist
