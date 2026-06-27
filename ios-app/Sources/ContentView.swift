@@ -3,6 +3,7 @@ import CoreLocation
 import MapKit
 import TipKit
 import UniformTypeIdentifiers
+import UIKit
 
 struct ContentView: View {
     // Empty by default — an arbitrary placeholder IP used to read as a false
@@ -28,10 +29,9 @@ struct ContentView: View {
     /// The system POI the user tapped on the map, if any. Resolved into a
     /// `selectedPlace` (and cleared) by an onChange below.
     @State var selectedFeature: MapFeature?
-    @State var showAddFavorite = false
-    @State var newFavoriteName = ""
     @State var cameraPosition: MapCameraPosition = .userLocation(fallback: .automatic)
     @State var visibleRegion: MKCoordinateRegion?
+    @State var recentPlaces: [RecentPlace] = []
 
     @State var searchQuery = ""
     @State var searchCompleter = SearchCompleter()
@@ -148,6 +148,9 @@ struct ContentView: View {
             favorites: session.engine.status?.favorites ?? [],
             onSelectFavorite: selectFavorite,
             onDeleteFavorite: { fav in session.engine.removeFavorite(lat: fav.lat, lon: fav.lon) },
+            recentPlaces: recentPlaces,
+            onSelectRecentPlace: selectRecentPlace,
+            onClearRecentPlaces: clearRecentPlaces,
             hasSavedItinerary: hasSavedItinerary,
             onLoadLastItinerary: loadLastItinerary,
             selectedPlace: selectedPlace,
@@ -172,7 +175,18 @@ struct ContentView: View {
                     itineraryStops.append(RouteStop(coordinate: place.coordinate, name: place.title))
                     selectedPlace = nil
                 },
-                onFavorite: { showAddFavorite = true },
+                onFavorite: {
+                    guard let place = selectedPlace, requireConnection() else { return }
+                    session.engine.addFavorite(
+                        lat: place.coordinate.latitude,
+                        lon: place.coordinate.longitude,
+                        name: place.title
+                    )
+                },
+                onCopyCoordinates: {
+                    guard let place = selectedPlace else { return }
+                    UIPasteboard.general.string = String(format: "%.6f, %.6f", place.coordinate.latitude, place.coordinate.longitude)
+                },
                 onDismiss: { selectedPlace = nil }
             ),
             patrol: PatrolControls(
@@ -241,7 +255,10 @@ struct ContentView: View {
                     MapLongPressTip().invalidate(reason: .actionPerformed)
                     Task {
                         let place = await reverseGeocode(coordinate)
-                        await MainActor.run { selectedPlace = place }
+                        await MainActor.run {
+                            rememberRecentPlace(place)
+                            selectedPlace = place
+                        }
                     }
                 },
                 onRegionChange: { visibleRegion = $0 }
@@ -304,23 +321,6 @@ struct ContentView: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
             }
         }
-        .alert("Nom du favori", isPresented: $showAddFavorite) {
-            TextField("Nom", text: $newFavoriteName)
-            Button("Enregistrer") {
-                if let place = selectedPlace, requireConnection() {
-                    session.engine.addFavorite(
-                        lat: place.coordinate.latitude,
-                        lon: place.coordinate.longitude,
-                        name: newFavoriteName.isEmpty ? "Favori" : newFavoriteName
-                    )
-                }
-                newFavoriteName = ""
-                selectedPlace = nil
-            }
-            Button("Annuler", role: .cancel) {
-                newFavoriteName = ""
-            }
-        }
         // GPX picker now attaches to the root — the bottom panel is no longer a
         // sheet, so there's no presenter collision to avoid (§3.11 Option B).
         .fileImporter(isPresented: $showGpxImporter, allowedContentTypes: [.gpx, .xml]) { result in
@@ -361,6 +361,7 @@ struct ContentView: View {
             // SwiftUI state (unavailable while suspended).
             session.engine.keepAliveEnabled = keepAliveEnabled
             session.engine.keepAliveInterval = keepAliveInterval
+            loadRecentPlaces()
             startDiscovery()
         }
         .onChange(of: locationAccuracyMode) { mode in
@@ -442,11 +443,13 @@ struct ContentView: View {
             // highlight doesn't linger once the card owns the interaction.
             guard let feature else { return }
             let coordsText = String(format: "%.5f, %.5f", feature.coordinate.latitude, feature.coordinate.longitude)
-            selectedPlace = SelectedPlace(
+            let place = SelectedPlace(
                 coordinate: feature.coordinate,
                 title: feature.title ?? "Lieu",
                 subtitle: coordsText
             )
+            rememberRecentPlace(place)
+            selectedPlace = place
             selectedFeature = nil
         }
     }

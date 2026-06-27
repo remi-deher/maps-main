@@ -15,10 +15,9 @@ private struct HeaderHeightKey: PreferenceKey {
 /// Persistent draggable bottom sheet (à la Plans): collapsed it only shows
 /// the search field, dragging the slider up reveals search results, the
 /// itinerary being built, or favorites — instead of floating cards over the
-/// map. The search capsule carries one contextual trailing control (gear ⇄ ✕,
-/// see `trailingButton`), exactly like Plans' account/cancel button — a gear
-/// that opens Réglages at rest, a cancel affordance once there's a search or a
-/// selected place to back out of.
+/// map. The resting row pairs the search capsule with a separate contextual
+/// control (gear ⇄ ✕, see `trailingButton`), like Plans' adjacent account or
+/// cancel affordance.
 struct BottomSheet: View {
     @Binding var searchQuery: String
     var isFocused: FocusState<Bool>.Binding
@@ -35,6 +34,9 @@ struct BottomSheet: View {
     let favorites: [Favorite]
     var onSelectFavorite: (Favorite) -> Void
     var onDeleteFavorite: (Favorite) -> Void
+    let recentPlaces: [RecentPlace]
+    var onSelectRecentPlace: (RecentPlace) -> Void
+    var onClearRecentPlaces: () -> Void
 
     let hasSavedItinerary: Bool
     var onLoadLastItinerary: () -> Void
@@ -76,7 +78,7 @@ struct BottomSheet: View {
 
     /// Fallback used only until the header's first layout pass reports its
     /// real height — never the value actually rendered against.
-    static let collapsedHeight: CGFloat = 76
+    static let collapsedHeight: CGFloat = 66
 
     var body: some View {
         VStack(spacing: 14) {
@@ -147,19 +149,15 @@ struct BottomSheet: View {
                 // living inside the sheet, it never can.
                 PlaceCard(
                     place: place,
+                    isFavorite: isFavorite(place),
                     onTeleport: placeActions.onTeleport,
                     onRoute: placeActions.onRoute,
                     onAddStop: placeActions.onAddStop,
                     onFavorite: placeActions.onFavorite,
+                    onCopyCoordinates: placeActions.onCopyCoordinates,
                     onDismiss: placeActions.onDismiss
                 )
             } else {
-                // Favorites stay visible like Plans' "Maison"/"Travail" row,
-                // regardless of what's below — they're quick-access, not content.
-                if !isSearching && !favorites.isEmpty {
-                    FavoriteChips(favorites: favorites, onSelect: onSelectFavorite, onDelete: onDeleteFavorite)
-                }
-
                 if isSearching {
                     searchResultsSection
                 } else if !itineraryStops.isEmpty {
@@ -173,55 +171,12 @@ struct BottomSheet: View {
                         onCancel: { itineraryStops = [] }
                     )
                 } else {
-                    if hasSavedItinerary {
-                        Button(action: onLoadLastItinerary) {
-                            HStack {
-                                Image(systemName: "arrow.uturn.backward.circle.fill")
-                                Text("Charger le dernier itinéraire")
-                            }
-                            .frame(maxWidth: .infinity)
-                        }
-                        .buttonStyle(.glass)
-                        .padding(.horizontal, 16)
-                    }
-                    // Patrol entry, promoted out of Réglages so it's reachable
-                    // from the map's resting state instead of buried in a form.
-                    if !patrol.isActive {
-                        Button(action: patrol.onBegin) {
-                            HStack {
-                                Image(systemName: "shield.lefthalf.filled")
-                                Text("Lancer une patrouille")
-                            }
-                            .frame(maxWidth: .infinity)
-                        }
-                        .buttonStyle(.glass)
-                        .padding(.horizontal, 16)
-                    }
-                    // GPX import entry, promoted out of Réglages › Outils —
-                    // starting a simulation from a track is a peer of the
-                    // other "start something" actions, not an admin tool.
-                    Button(action: gpx.onPick) {
-                        HStack {
-                            Image(systemName: "doc.badge.plus")
-                            Text("Importer un GPX")
-                        }
-                        .frame(maxWidth: .infinity)
-                    }
-                    .buttonStyle(.glass)
-                    .padding(.horizontal, 16)
+                    expandedHomeContent
                     if let gpxError = gpx.errorMessage {
                         Text(gpxError)
                             .font(.caption)
                             .foregroundStyle(.red)
                             .padding(.horizontal, 16)
-                    }
-                    if favorites.isEmpty {
-                        ContentUnavailableView(
-                            "Aucun itinéraire",
-                            systemImage: "map",
-                            description: Text("Recherchez une adresse ou touchez la carte pour commencer.")
-                        )
-                        .padding(.top, 8)
                     }
                 }
             }
@@ -244,12 +199,141 @@ struct BottomSheet: View {
         return .settings
     }
 
-    /// A single, self-contained glass capsule — search field plus the one
-    /// contextual trailing control, with margin on every side instead of
-    /// bleeding edge-to-edge. No manual shadow: the glass material already
-    /// carries its own elevation (§3.1 of docs/UI_UX_BASELINE.md).
+    private var expandedHomeContent: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            quickActionsSection
+            placesSection
+            if hasSavedItinerary || !recentPlaces.isEmpty {
+                recentsSection
+            }
+            guidesSection
+            utilitySection
+        }
+        .padding(.top, 2)
+    }
+
+    private var quickActionsSection: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 18) {
+                homeShortcutButton("Parcours GPX", icon: "doc.badge.plus", isPrimary: true, action: gpx.onPick)
+                if !patrol.isActive {
+                    homeShortcutButton("Patrouille", icon: "shield.lefthalf.filled", action: patrol.onBegin)
+                }
+                homeShortcutButton("Ajouter", icon: "plus", action: focusSearchForAddition)
+            }
+            .padding(.horizontal, 18)
+        }
+    }
+
+    private var placesSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            sectionHeader("Lieux") {
+                Button(action: focusSearchForAddition) {
+                    Label("Ajouter un lieu", systemImage: "plus.circle.fill")
+                        .labelStyle(.iconOnly)
+                        .font(.title3.weight(.semibold))
+                        .frame(width: 44, height: 44)
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(Color.accentColor)
+            }
+
+            if favorites.isEmpty {
+                emptyFavoritesCard
+            } else {
+                favoriteListCard
+            }
+        }
+        .padding(.horizontal, 16)
+    }
+
+    private var recentsSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            sectionHeader("Récents") {
+                if !recentPlaces.isEmpty {
+                    Button("Effacer", action: onClearRecentPlaces)
+                        .font(.subheadline.weight(.medium))
+                        .foregroundStyle(Color.accentColor)
+                }
+            }
+            groupedActionList {
+                if hasSavedItinerary {
+                    utilityRow(
+                        "Dernier itinéraire",
+                        subtitle: "Charger l’itinéraire enregistré",
+                        icon: "clock.arrow.circlepath",
+                        action: onLoadLastItinerary
+                    )
+                    if !recentPlaces.isEmpty {
+                        Divider().padding(.leading, 58)
+                    }
+                }
+
+                ForEach(recentPlaces.prefix(5)) { recent in
+                    recentPlaceRow(recent)
+                    if recent.id != recentPlaces.prefix(5).last?.id {
+                        Divider().padding(.leading, 58)
+                    }
+                }
+            }
+        }
+        .padding(.horizontal, 16)
+    }
+
+    private var guidesSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            sectionHeader("Vos guides")
+            guideCard(
+                title: "Favoris",
+                subtitle: favorites.isEmpty ? "Aucun lieu enregistré" : "\(favorites.count) lieu\(favorites.count > 1 ? "x" : "")",
+                icon: "star.fill"
+            )
+        }
+        .padding(.horizontal, 16)
+    }
+
+    private var utilitySection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            sectionHeader("Plus")
+            groupedActionList {
+                utilityRow(
+                    "Rechercher ou ajouter un lieu",
+                    subtitle: "Créer un favori depuis la recherche",
+                    icon: "mappin.and.ellipse",
+                    action: focusSearchForAddition
+                )
+                Divider().padding(.leading, 58)
+                utilityRow(
+                    "Réglages de connexion",
+                    subtitle: "Connexion, appareil et préférences",
+                    icon: "gearshape.fill",
+                    action: onOpenSettings
+                )
+                Divider().padding(.leading, 58)
+                utilityRow(
+                    "Signaler un problème",
+                    subtitle: "Ouvrir les diagnostics de l’app",
+                    icon: "exclamationmark.bubble.fill",
+                    action: onOpenSettings
+                )
+            }
+        }
+        .padding(.horizontal, 16)
+    }
+
+    /// Plans-style resting row: a search capsule plus a separate round
+    /// settings/cancel control, instead of embedding that control in the field.
     private var header: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: 10) {
+            searchField
+            trailingButton
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 8)
+    }
+
+    private var searchField: some View {
+        HStack(spacing: 9) {
             Image(systemName: "magnifyingglass")
                 .foregroundStyle(.secondary)
                 .accessibilityHidden(true)
@@ -257,14 +341,12 @@ struct BottomSheet: View {
             TextField("Rechercher une adresse", text: $searchQuery)
                 .focused(isFocused)
                 .submitLabel(.search)
-
-            trailingButton
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 10)
+        .padding(.horizontal, 15)
+        .padding(.vertical, 12)
+        .frame(minHeight: 50)
+        .frame(maxWidth: .infinity, alignment: .leading)
         .glassEffect(.regular.interactive(), in: .capsule)
-        .padding(.horizontal, 16)
-        .padding(.vertical, 8)
     }
 
     /// The gear ⇄ ✕ control. The symbol swaps in place (`.replace`) so it
@@ -284,21 +366,292 @@ struct BottomSheet: View {
             }
         } label: {
             Image(systemName: action == .settings ? "gearshape.fill" : "xmark.circle.fill")
-                .font(action == .settings ? .body.weight(.semibold) : .title3)
+                .font(action == .settings ? .body.weight(.semibold) : .title3.weight(.semibold))
                 .foregroundStyle(.secondary)
-                .frame(width: 44, height: 44) // ≥44pt hit-target (§3.3)
+                .frame(width: 50, height: 50)
                 .contentShape(Circle())
                 .contentTransition(.symbolEffect(.replace))
         }
         .buttonStyle(.plain)
+        .glassEffect(.regular.interactive(), in: Circle())
         .accessibilityLabel(action == .settings ? "Réglages" : "Annuler")
         .animation(.snappy(duration: 0.2), value: action)
     }
 
+    private var visibleFavorites: [Favorite] {
+        favorites
+    }
+
+    private func focusSearchForAddition() {
+        searchQuery = ""
+        isFocused.wrappedValue = true
+    }
+
+    private func homeShortcutButton(_ title: String, icon: String, isPrimary: Bool = false, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            VStack(spacing: 8) {
+                Image(systemName: icon)
+                    .font(.title3.weight(.semibold))
+                    .foregroundStyle(isPrimary ? Color.white : Color.accentColor)
+                    .frame(width: 64, height: 64)
+                    .background(isPrimary ? Color.accentColor : Color(.secondarySystemFill), in: Circle())
+
+                Text(title)
+                    .font(.caption.weight(.medium))
+                    .foregroundStyle(.primary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.78)
+            }
+            .frame(width: 82)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(title)
+    }
+
+    private func sectionHeader(_ title: String) -> some View {
+        HStack {
+            Text(title)
+                .font(.title3.weight(.semibold))
+            Spacer()
+        }
+    }
+
+    private func sectionHeader<Trailing: View>(_ title: String, @ViewBuilder trailing: () -> Trailing) -> some View {
+        HStack {
+            Text(title)
+                .font(.title3.weight(.semibold))
+            Spacer()
+            trailing()
+        }
+    }
+
+    private var emptyFavoritesCard: some View {
+        Button(action: focusSearchForAddition) {
+            HStack(spacing: 12) {
+                Image(systemName: "star")
+                    .font(.headline.weight(.semibold))
+                    .foregroundStyle(Color.accentColor)
+                    .frame(width: 38, height: 38)
+                    .background(Color(.secondarySystemFill), in: Circle())
+
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("Aucun favori")
+                        .font(.body.weight(.medium))
+                        .foregroundStyle(.primary)
+                    Text("Recherchez un lieu pour l’ajouter ici.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+
+                Spacer()
+
+                Image(systemName: "plus")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(Color.accentColor)
+            }
+            .padding(14)
+            .frame(maxWidth: .infinity, minHeight: 66, alignment: .leading)
+            .contentShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .adaptiveGlassEffect(in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+    }
+
+    private var favoriteListCard: some View {
+        VStack(spacing: 0) {
+            ForEach(visibleFavorites) { favorite in
+                favoriteRow(favorite)
+                if favorite.id != visibleFavorites.last?.id {
+                    Divider()
+                        .padding(.leading, 58)
+                }
+            }
+        }
+        .adaptiveGlassEffect(in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+    }
+
+    private func favoriteRow(_ favorite: Favorite) -> some View {
+        Button {
+            onSelectFavorite(favorite)
+        } label: {
+            HStack(spacing: 12) {
+                Image(systemName: favoriteIcon(for: favorite))
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(Color.accentColor)
+                    .frame(width: 34, height: 34)
+                    .background(Color(.secondarySystemFill), in: Circle())
+
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(favorite.name ?? "Favori")
+                        .font(.body.weight(.medium))
+                        .foregroundStyle(.primary)
+                        .lineLimit(1)
+                    Text(favoriteCoordinates(for: favorite))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+
+                Spacer(minLength: 8)
+
+                Image(systemName: "chevron.right")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.tertiary)
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 10)
+            .frame(minHeight: 58)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .contextMenu {
+            Button("Supprimer", role: .destructive) {
+                onDeleteFavorite(favorite)
+            }
+        }
+    }
+
+    private func recentPlaceRow(_ recent: RecentPlace) -> some View {
+        Button {
+            onSelectRecentPlace(recent)
+        } label: {
+            HStack(spacing: 12) {
+                Image(systemName: "clock.fill")
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(Color.accentColor)
+                    .frame(width: 34, height: 34)
+                    .background(Color(.secondarySystemFill), in: Circle())
+
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(recent.title)
+                        .font(.body.weight(.medium))
+                        .foregroundStyle(.primary)
+                        .lineLimit(1)
+                    Text(recent.subtitle ?? recentCoordinates(for: recent))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+
+                Spacer(minLength: 8)
+
+                Image(systemName: "chevron.right")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.tertiary)
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 10)
+            .frame(minHeight: 58)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func guideCard(title: String, subtitle: String, icon: String) -> some View {
+        HStack(spacing: 12) {
+            Image(systemName: icon)
+                .font(.headline.weight(.semibold))
+                .foregroundStyle(Color.accentColor)
+                .frame(width: 42, height: 42)
+                .background(Color(.secondarySystemFill), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text(title)
+                    .font(.body.weight(.medium))
+                Text(subtitle)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            Spacer()
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, minHeight: 70, alignment: .leading)
+        .adaptiveGlassEffect(in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+    }
+
+    private func groupedActionList<Content: View>(@ViewBuilder content: () -> Content) -> some View {
+        VStack(spacing: 0) {
+            content()
+        }
+        .adaptiveGlassEffect(in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+    }
+
+    private func utilityRow(_ title: String, subtitle: String, icon: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack(spacing: 12) {
+                Image(systemName: icon)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(Color.accentColor)
+                    .frame(width: 34, height: 34)
+                    .background(Color(.secondarySystemFill), in: Circle())
+
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(title)
+                        .font(.body.weight(.medium))
+                        .foregroundStyle(.primary)
+                        .lineLimit(1)
+                    Text(subtitle)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+
+                Spacer(minLength: 8)
+
+                Image(systemName: "chevron.right")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.tertiary)
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 10)
+            .frame(minHeight: 58)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func favoriteIcon(for favorite: Favorite) -> String {
+        let name = (favorite.name ?? "").lowercased()
+        if ["maison", "domicile", "home"].contains(where: name.contains) {
+            return "house.fill"
+        }
+        if ["travail", "bureau", "work"].contains(where: name.contains) {
+            return "briefcase.fill"
+        }
+        return "star.fill"
+    }
+
+    private func favoriteCoordinates(for favorite: Favorite) -> String {
+        String(format: "%.5f, %.5f", favorite.lat, favorite.lon)
+    }
+
+    private func recentCoordinates(for recent: RecentPlace) -> String {
+        String(format: "%.5f, %.5f", recent.lat, recent.lon)
+    }
+
+    private func isFavorite(_ place: SelectedPlace) -> Bool {
+        favorites.contains { favorite in
+            abs(favorite.lat - place.coordinate.latitude) < 0.000001
+                && abs(favorite.lon - place.coordinate.longitude) < 0.000001
+        }
+    }
+
     private var simulationControlBar: some View {
         HStack(spacing: 10) {
-            Text(simulationState == "paused" ? "Simulation en pause" : "Simulation en cours")
-                .font(.subheadline.weight(.medium))
+            Image(systemName: simulationState == "paused" ? "pause.circle.fill" : "location.north.circle.fill")
+                .font(.title3.weight(.semibold))
+                .foregroundStyle(Color.accentColor)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(simulationState == "paused" ? "Simulation en pause" : "Position active")
+                    .font(.subheadline.weight(.semibold))
+                Text(simulationState == "paused" ? "Reprendre ou arrêter le parcours" : "Le moteur applique la position")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
             Spacer()
             if simulationState == "paused" {
                 Button(action: onResumeRoute) {
@@ -337,8 +690,14 @@ struct BottomSheet: View {
         HStack(spacing: 10) {
             Image(systemName: "shield.lefthalf.filled")
                 .foregroundStyle(Color.accentColor)
-            Text("Patrouille active")
-                .font(.subheadline.weight(.medium))
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Patrouille active")
+                    .font(.subheadline.weight(.semibold))
+                Text("Déplacement automatique dans la zone")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
             Spacer()
             Button(action: patrol.onStop) {
                 Label("Arrêter la patrouille", systemImage: "stop.fill")
@@ -369,32 +728,55 @@ struct BottomSheet: View {
                 // the completion list mutates on each keystroke, breaking
                 // diffing/animation. See §4 (perf) of docs/UI_UX_BASELINE.md.
                 ForEach(searchSuggestions, id: \.compositeID) { completion in
-                    Button {
-                        onSelectSuggestion(completion)
-                    } label: {
-                        HStack(spacing: 12) {
-                            Image(systemName: "mappin.circle.fill")
-                                .foregroundStyle(Color.accentColor)
-                                .frame(width: 28)
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(completion.title).foregroundStyle(.primary)
-                                if !completion.subtitle.isEmpty {
-                                    Text(completion.subtitle).font(.caption).foregroundStyle(.secondary)
-                                }
-                            }
-                            Spacer()
-                        }
-                        .padding(.vertical, 8)
-                        .frame(minHeight: 44)
-                        .contentShape(Rectangle())
-                    }
+                    searchResultRow(completion)
                     if completion.compositeID != searchSuggestions.last?.compositeID {
                         Divider()
+                            .padding(.leading, 58)
                     }
                 }
             }
+            .adaptiveGlassEffect(in: RoundedRectangle(cornerRadius: 22, style: .continuous))
             .padding(.horizontal, 16)
         }
+    }
+
+    private func searchResultRow(_ completion: MKLocalSearchCompletion) -> some View {
+        Button {
+            onSelectSuggestion(completion)
+        } label: {
+            HStack(spacing: 12) {
+                Image(systemName: "mappin.and.ellipse")
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(Color.accentColor)
+                    .frame(width: 34, height: 34)
+                    .background(Color(.secondarySystemFill), in: Circle())
+
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(completion.title)
+                        .font(.body.weight(.medium))
+                        .foregroundStyle(.primary)
+                        .lineLimit(1)
+
+                    if !completion.subtitle.isEmpty {
+                        Text(completion.subtitle)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                    }
+                }
+
+                Spacer(minLength: 8)
+
+                Image(systemName: "chevron.right")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.tertiary)
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 10)
+            .frame(minHeight: 58)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
     }
 }
 

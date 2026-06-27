@@ -2,7 +2,7 @@ import SwiftUI
 
 /// The three resting heights of the bottom panel, replacing the system sheet's
 /// `presentationDetents`.
-enum SheetDetent: CaseIterable {
+enum SheetDetent: CaseIterable, Equatable {
     case collapsed  // just the search capsule
     case medium     // ~half screen — results / itinerary / place card
     case large      // ~full screen
@@ -10,8 +10,8 @@ enum SheetDetent: CaseIterable {
 
 /// Inline, bottom-anchored glass panel that replaces the persistent
 /// `.sheet(isPresented: .constant(true))` (§3.11 Option B of
-/// docs/UI_UX_BASELINE.md). Its height snaps between three detents via a drag
-/// handle while the map stays fully interactive behind it — the technique
+/// docs/UI_UX_BASELINE.md). Its height snaps between three detents via a
+/// full-panel drag while the map stays fully interactive behind it — the technique
 /// Plans actually uses, instead of a system sheet presented through the
 /// `.constant(true)` hack (which also forced Settings to stack as a nested
 /// sheet). Settings can now be a normal single `.sheet` on the root.
@@ -19,7 +19,7 @@ enum SheetDetent: CaseIterable {
 /// ON-DEVICE TUNING (could not be verified without a simulator):
 ///   - keyboard avoidance when the search field is focused,
 ///   - the exact medium/large fractions and the spring feel,
-///   - whether the drag handle's hit area conflicts with the search field.
+///   - how the full-panel drag arbitrates with long scrollable content.
 struct FloatingSheet<Content: View>: View {
     @Binding var detent: SheetDetent
     /// Measured height of the panel's collapsed content (the search capsule),
@@ -34,9 +34,11 @@ struct FloatingSheet<Content: View>: View {
     /// release, when `detent` takes over.
     @State private var dragOffset: CGFloat = 0
 
-    /// Vertical space the drag handle occupies above the content (8 top pad +
-    /// 5 capsule + 4 bottom pad).
-    private let handleAreaHeight: CGFloat = 17
+    /// Vertical space the drag handle occupies above the content.
+    private let handleAreaHeight: CGFloat = 18
+    private let horizontalInset: CGFloat = 10
+    private let bottomInset: CGFloat = 8
+    private let cornerRadius: CGFloat = 28
 
     private func height(for detent: SheetDetent) -> CGFloat {
         switch detent {
@@ -56,31 +58,43 @@ struct FloatingSheet<Content: View>: View {
     var body: some View {
         VStack(spacing: 0) {
             Capsule()
-                .fill(.secondary)
-                .frame(width: 36, height: 5)
-                .padding(.top, 8)
+                .fill(.secondary.opacity(0.72))
+                .frame(width: 38, height: 5)
+                .padding(.top, 9)
                 .padding(.bottom, 4)
                 .frame(maxWidth: .infinity)
                 .contentShape(Rectangle())
                 .accessibilityLabel("Poignée du panneau")
                 .accessibilityHint("Faites glisser pour agrandir ou réduire")
                 .accessibilityAddTraits(.isButton)
-                .gesture(dragGesture)
 
             content()
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         }
         .frame(height: resolvedHeight, alignment: .top)
         .frame(maxWidth: .infinity)
-        .adaptiveGlassEffect(in: UnevenRoundedRectangle(topLeadingRadius: 22, topTrailingRadius: 22, style: .continuous))
+        .contentShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+        .simultaneousGesture(dragGesture)
+        .adaptiveGlassEffect(in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+        .shadow(color: .black.opacity(0.16), radius: 24, x: 0, y: 12)
+        .padding(.horizontal, horizontalInset)
+        .padding(.bottom, bottomInset)
+        .sensoryFeedback(.selection, trigger: detent)
     }
 
     private var dragGesture: some Gesture {
         DragGesture(minimumDistance: 1)
             .onChanged { value in
+                guard abs(value.translation.height) >= abs(value.translation.width) else { return }
                 dragOffset = -value.translation.height
             }
             .onEnded { value in
+                guard abs(value.predictedEndTranslation.height) >= abs(value.predictedEndTranslation.width) else {
+                    withAnimation(.interactiveSpring(response: 0.32, dampingFraction: 0.85)) {
+                        dragOffset = 0
+                    }
+                    return
+                }
                 let projected = height(for: detent) - value.predictedEndTranslation.height
                 let target = nearestDetent(to: projected)
                 withAnimation(.interactiveSpring(response: 0.32, dampingFraction: 0.85)) {

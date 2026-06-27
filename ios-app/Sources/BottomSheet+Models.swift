@@ -1,4 +1,19 @@
 import SwiftUI
+import CoreLocation
+
+struct RecentPlace: Codable, Identifiable, Equatable {
+    let lat: Double
+    let lon: Double
+    let title: String
+    let subtitle: String?
+    let timestamp: Int64
+
+    var id: String { "\(lat),\(lon)" }
+
+    var coordinate: CLLocationCoordinate2D {
+        CLLocationCoordinate2D(latitude: lat, longitude: lon)
+    }
+}
 
 /// The five actions the place card (PlaceCard) can trigger, grouped into one
 /// value instead of five separate closure parameters on BottomSheet's
@@ -9,6 +24,7 @@ struct PlaceActions {
     var onRoute: () -> Void
     var onAddStop: () -> Void
     var onFavorite: () -> Void
+    var onCopyCoordinates: () -> Void
     var onDismiss: () -> Void
 }
 

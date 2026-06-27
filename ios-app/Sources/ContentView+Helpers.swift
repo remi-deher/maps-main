@@ -16,6 +16,8 @@ struct SavedItinerary: Codable {
 }
 
 let lastItineraryKey = "lastItinerary"
+let recentPlacesKey = "recentPlaces"
+private let recentPlacesLimit = 10
 
 // MARK: - ContentView Helpers Extension
 extension ContentView {
@@ -50,7 +52,9 @@ extension ContentView {
             guard let item = await searchCompleter.resolve(completion),
                   let coordinate = item.placemark.location?.coordinate else { return }
             await MainActor.run {
-                selectedPlace = SelectedPlace(coordinate: coordinate, title: item.name ?? "Lieu", subtitle: item.placemark.title)
+                let place = SelectedPlace(coordinate: coordinate, title: item.name ?? "Lieu", subtitle: item.placemark.title)
+                rememberRecentPlace(place)
+                selectedPlace = place
             }
         }
     }
@@ -115,8 +119,47 @@ extension ContentView {
 
     func selectFavorite(_ fav: Favorite) {
         let coordinate = CLLocationCoordinate2D(latitude: fav.lat, longitude: fav.lon)
+        rememberRecentPlace(SelectedPlace(coordinate: coordinate, title: fav.name ?? "Favori", subtitle: nil))
         session.engine.setLocation(lat: fav.lat, lon: fav.lon, name: fav.name ?? "Favori")
         focus(on: coordinate)
+    }
+
+    func selectRecentPlace(_ recent: RecentPlace) {
+        selectedPlace = SelectedPlace(coordinate: recent.coordinate, title: recent.title, subtitle: recent.subtitle)
+        focus(on: recent.coordinate)
+    }
+
+    func loadRecentPlaces() {
+        guard let data = UserDefaults.standard.data(forKey: recentPlacesKey),
+              let decoded = try? JSONDecoder().decode([RecentPlace].self, from: data) else {
+            recentPlaces = []
+            return
+        }
+        recentPlaces = decoded
+    }
+
+    func rememberRecentPlace(_ place: SelectedPlace) {
+        let recent = RecentPlace(
+            lat: place.coordinate.latitude,
+            lon: place.coordinate.longitude,
+            title: place.title,
+            subtitle: place.subtitle,
+            timestamp: Int64(Date().timeIntervalSince1970)
+        )
+        var updated = recentPlaces.filter { $0.id != recent.id }
+        updated.insert(recent, at: 0)
+        recentPlaces = Array(updated.prefix(recentPlacesLimit))
+        saveRecentPlaces()
+    }
+
+    func clearRecentPlaces() {
+        recentPlaces = []
+        saveRecentPlaces()
+    }
+
+    private func saveRecentPlaces() {
+        guard let data = try? JSONEncoder().encode(recentPlaces) else { return }
+        UserDefaults.standard.set(data, forKey: recentPlacesKey)
     }
 
     func focus(on coordinate: CLLocationCoordinate2D) {
