@@ -390,10 +390,9 @@ struct BottomSheet: View {
         } label: {
             Group {
                 if action == .settings {
-                    Text("DR")
-                        .font(.title3.weight(.bold))
+                    Image(systemName: "gearshape.fill")
+                        .font(.title3.weight(.semibold))
                         .foregroundStyle(.white)
-                        .minimumScaleFactor(0.75)
                 } else {
                     Image(systemName: "xmark.circle.fill")
                         .font(.title2.weight(.semibold))
