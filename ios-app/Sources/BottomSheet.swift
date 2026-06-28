@@ -390,7 +390,7 @@ struct BottomSheet: View {
         Group {
             if hasActiveRouteControls, let activeRoute = activeRoute {
                 activeRouteCompactHeader(activeRoute)
-            } else if !itineraryStops.isEmpty {
+            } else if !itineraryStops.isEmpty && !isFocused.wrappedValue {
                 itineraryPlanningHeader
             } else {
                 HStack(spacing: 10) {
@@ -409,7 +409,7 @@ struct BottomSheet: View {
                 .foregroundStyle(.secondary)
                 .accessibilityHidden(true)
 
-            TextField("Rechercher une adresse", text: $searchQuery)
+            TextField(!itineraryStops.isEmpty ? "Ajouter un arrêt..." : "Rechercher une adresse", text: $searchQuery)
                 .focused(isFocused)
                 .submitLabel(.search)
         }
