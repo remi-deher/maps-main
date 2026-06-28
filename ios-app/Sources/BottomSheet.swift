@@ -80,6 +80,78 @@ struct BottomSheet: View {
     var collapsedHeight: CGFloat
     var onCollapsedHeightChange: (CGFloat) -> Void
 
+    init(
+        searchQuery: Binding<String>,
+        isFocused: FocusState<Bool>.Binding,
+        searchSuggestions: [MKLocalSearchCompletion],
+        onSelectSuggestion: @escaping (MKLocalSearchCompletion) -> Void,
+        itineraryStops: Binding<[RouteStop]>,
+        itinerarySpeed: Binding<Double>,
+        itineraryProfile: Binding<String>,
+        legEstimates: [UUID: LegEstimate],
+        activeRoute: ActiveRoute?,
+        onAddStop: @escaping () -> Void,
+        onLaunchItinerary: @escaping () -> Void,
+        onShowActiveRouteDetails: @escaping () -> Void,
+        onRecenterActiveRoute: @escaping () -> Void,
+        favorites: [Favorite],
+        onSelectFavorite: @escaping (Favorite) -> Void,
+        onDeleteFavorite: @escaping (Favorite) -> Void,
+        recentPlaces: [RecentPlace],
+        onSelectRecentPlace: @escaping (RecentPlace) -> Void,
+        onClearRecentPlaces: @escaping () -> Void,
+        hasSavedItinerary: Bool,
+        onLoadLastItinerary: @escaping () -> Void,
+        selectedPlace: SelectedPlace?,
+        placeActions: PlaceActions,
+        patrol: PatrolControls,
+        gpx: GpxImport,
+        simulationState: String?,
+        onPauseRoute: @escaping () -> Void,
+        onResumeRoute: @escaping () -> Void,
+        onStopRoute: @escaping () -> Void,
+        onOpenSettings: @escaping () -> Void,
+        scrollOffset: Binding<CGFloat>,
+        sheetDetent: Binding<SheetDetent>,
+        collapsedHeight: CGFloat,
+        onCollapsedHeightChange: @escaping (CGFloat) -> Void
+    ) {
+        self._searchQuery = searchQuery
+        self.isFocused = isFocused
+        self.searchSuggestions = searchSuggestions
+        self.onSelectSuggestion = onSelectSuggestion
+        self._itineraryStops = itineraryStops
+        self._itinerarySpeed = itinerarySpeed
+        self._itineraryProfile = itineraryProfile
+        self.legEstimates = legEstimates
+        self.activeRoute = activeRoute
+        self.onAddStop = onAddStop
+        self.onLaunchItinerary = onLaunchItinerary
+        self.onShowActiveRouteDetails = onShowActiveRouteDetails
+        self.onRecenterActiveRoute = onRecenterActiveRoute
+        self.favorites = favorites
+        self.onSelectFavorite = onSelectFavorite
+        self.onDeleteFavorite = onDeleteFavorite
+        self.recentPlaces = recentPlaces
+        self.onSelectRecentPlace = onSelectRecentPlace
+        self.onClearRecentPlaces = onClearRecentPlaces
+        self.hasSavedItinerary = hasSavedItinerary
+        self.onLoadLastItinerary = onLoadLastItinerary
+        self.selectedPlace = selectedPlace
+        self.placeActions = placeActions
+        self.patrol = patrol
+        self.gpx = gpx
+        self.simulationState = simulationState
+        self.onPauseRoute = onPauseRoute
+        self.onResumeRoute = onResumeRoute
+        self.onStopRoute = onStopRoute
+        self.onOpenSettings = onOpenSettings
+        self._scrollOffset = scrollOffset
+        self._sheetDetent = sheetDetent
+        self.collapsedHeight = collapsedHeight
+        self.onCollapsedHeightChange = onCollapsedHeightChange
+    }
+
     private var isSearching: Bool {
         !searchQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }

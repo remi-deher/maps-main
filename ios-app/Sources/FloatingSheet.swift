@@ -32,6 +32,22 @@ struct FloatingSheet<Content: View>: View {
     var onHeightChange: (CGFloat) -> Void = { _ in }
     @ViewBuilder var content: () -> Content
 
+    init(
+        detent: Binding<SheetDetent>,
+        collapsedContentHeight: CGFloat,
+        availableHeight: CGFloat,
+        scrollOffset: Binding<CGFloat>,
+        onHeightChange: @escaping (CGFloat) -> Void = { _ in },
+        @ViewBuilder content: @escaping () -> Content
+    ) {
+        self._detent = detent
+        self.collapsedContentHeight = collapsedContentHeight
+        self.availableHeight = availableHeight
+        self._scrollOffset = scrollOffset
+        self.onHeightChange = onHeightChange
+        self.content = content
+    }
+
     /// Live finger offset during a drag (positive = taller). Reset to 0 on
     /// release, when `detent` takes over.
     @State private var dragOffset: CGFloat = 0
