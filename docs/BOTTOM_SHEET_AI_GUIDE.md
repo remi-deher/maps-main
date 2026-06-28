@@ -36,6 +36,17 @@ par un composant custom.
 - `large`: contenu scrollable complet. Le `ScrollView` est active seulement ici
   via `scrollDisabled(sheetDetent != .large)`.
 
+## Barre de recherche
+
+- Le header collapsed doit ressembler a une omnibar Apple Plans: grand champ
+  arrondi, icone loupe a gauche, micro a droite dans le champ, bouton rond
+  profil/reglages separe.
+- Le bouton rond affiche l'action principale du moment: profil/reglages en
+  collapsed, croix quand un lieu, une recherche ou un panneau ouvert peut etre
+  annule/replie.
+- Ne pas remplacer cette barre par un petit `TextField` compact: la taille et
+  le poids visuel du header participent au comportement type Plans.
+
 ## Modales et actions secondaires
 
 - Les modales lancees depuis la bottom sheet doivent etre attachees au contenu

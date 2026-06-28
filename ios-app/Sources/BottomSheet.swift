@@ -369,15 +369,29 @@ struct BottomSheet: View {
         HStack(spacing: 9) {
             Image(systemName: "magnifyingglass")
                 .foregroundStyle(.secondary)
+                .font(.title3.weight(.semibold))
                 .accessibilityHidden(true)
 
             TextField(!itineraryStops.isEmpty ? "Ajouter un arrêt..." : "Rechercher une adresse", text: $searchQuery)
                 .focused(isFocused)
                 .submitLabel(.search)
+                .font(.title3.weight(.semibold))
+
+            Button {
+                isFocused.wrappedValue = true
+            } label: {
+                Image(systemName: "mic.fill")
+                    .font(.title3.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                    .frame(width: 44, height: 44)
+                    .contentShape(Circle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Recherche vocale")
         }
-        .padding(.horizontal, 13)
-        .padding(.vertical, 8)
-        .frame(minHeight: 44)
+        .padding(.leading, 20)
+        .padding(.trailing, 8)
+        .frame(minHeight: 58)
         .frame(maxWidth: .infinity, alignment: .leading)
         .glassEffect(.regular.interactive(), in: .capsule)
     }
@@ -397,12 +411,26 @@ struct BottomSheet: View {
                 onCollapseSheet()
             }
         } label: {
-            Image(systemName: action == .settings ? "gearshape.fill" : "xmark.circle.fill")
-                .font(action == .settings ? .body.weight(.semibold) : .title3.weight(.semibold))
-                .foregroundStyle(.secondary)
-                .frame(width: 44, height: 44)
-                .contentShape(Circle())
-                .contentTransition(.symbolEffect(.replace))
+            Group {
+                if action == .settings {
+                    Text("DR")
+                        .font(.title3.weight(.bold))
+                        .foregroundStyle(.white)
+                        .minimumScaleFactor(0.75)
+                } else {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.title2.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                        .contentTransition(.symbolEffect(.replace))
+                }
+            }
+            .frame(width: 58, height: 58)
+            .contentShape(Circle())
+            .background {
+                if action == .settings {
+                    Circle().fill(.indigo.opacity(0.82))
+                }
+            }
         }
         .buttonStyle(.plain)
         .glassEffect(.regular.interactive(), in: Circle())
