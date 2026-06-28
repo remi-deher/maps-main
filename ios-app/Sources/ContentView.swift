@@ -2,7 +2,6 @@ import SwiftUI
 import CoreLocation
 import MapKit
 import TipKit
-import UniformTypeIdentifiers
 
 struct ContentView: View {
     // Empty by default - an arbitrary placeholder IP used to read as a false
@@ -60,6 +59,9 @@ struct ContentView: View {
 
     @State var sheetDetent: SheetDetent = .collapsed
     @State var collapsedSheetHeight: CGFloat = BottomSheet.collapsedHeight
+    @State var nativeSheetPresented = true
+    @State var nativeSheetDetent: PresentationDetent = .height(72)
+    @State var sheetScrollOffset: CGFloat = 0
     @State var isMapTilted = false
     @State var showSettings = false
     @State var hasSavedItinerary = UserDefaults.standard.data(forKey: lastItineraryKey) != nil
@@ -137,55 +139,17 @@ struct ContentView: View {
                 MapScaleView()
             }
 
-            // Inline bottom panel - replaces the persistent
-            // `.sheet(isPresented: .constant(true))` (section 3.11 Option B). A
-            // GeometryReader gives it the map's full height so its medium/large
-            // detents are screen-relative; bottom-aligned so it hugs the home
-            // indicator like Plans' sheet. The map behind stays fully
-            // interactive (no dimming, no modal capture).
             GeometryReader { geo in
-                ZStack(alignment: .bottom) {
-                    mapChrome(safeArea: geo.safeAreaInsets, availableHeight: geo.size.height)
-
-                    FloatingSheet(
-                        detent: $sheetDetent,
-                        collapsedContentHeight: collapsedSheetHeight,
-                        availableHeight: geo.size.height,
-                        content: { scrollOffsetBinding in
-                            bottomSheetContent(scrollOffset: scrollOffsetBinding)
-                        }
-                    )
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
-                }
+                mapChrome(safeArea: geo.safeAreaInsets, availableHeight: geo.size.height)
             }
         }
-        // GPX picker now attaches to the root - the bottom panel is no longer a
-        // sheet, so there's no presenter collision to avoid (section 3.11 Option B).
-        .fileImporter(isPresented: $showGpxImporter, allowedContentTypes: [.gpx, .xml]) { result in
-            switch result {
-            case .success(let url):
-                loadGpx(from: url)
-            case .failure(let error):
-                gpxError = error.localizedDescription
-            }
-        }
-        // Settings is now a normal single sheet on the root view. With the
-        // bottom panel inlined (no longer a `.sheet`), there's no nested-sheet
-        // conflict to work around - the gear simply presents this sheet.
-        .sheet(isPresented: $showSettings) {
-            SettingsSheet(
-                engineAddress: $engineAddress,
-                engine: session.engine,
-                discovery: discovery,
-                onToggleConnection: toggleConnection,
-                onRetryDiscovery: startDiscovery,
-                onApplyPort: reconnect,
-                liveActivityEnabled: $liveActivityEnabled,
-                keepAliveEnabled: $keepAliveEnabled,
-                keepAliveInterval: $keepAliveInterval,
-                notificationsEnabled: $notificationsEnabled,
-                locationAuthorization: session.location.authorizationStatus
-            )
+        .sheet(isPresented: $nativeSheetPresented) {
+            bottomSheetContent(scrollOffset: $sheetScrollOffset)
+                .presentationDetents(bottomSheetPresentationDetents, selection: $nativeSheetDetent)
+                .presentationDragIndicator(.visible)
+                .presentationBackgroundInteraction(.enabled)
+                .presentationCornerRadius(26)
+                .interactiveDismissDisabled(true)
         }
         .toolbar {
             ToolbarItemGroup(placement: .keyboard) {
@@ -221,6 +185,17 @@ struct ContentView: View {
         }
         .onChange(of: notificationsEnabled) { enabled in
             if enabled { NotificationManager.shared.requestPermission() }
+        }
+        .onChange(of: nativeSheetPresented) { isPresented in
+            if !isPresented {
+                nativeSheetPresented = true
+            }
+        }
+        .onChange(of: nativeSheetDetent) { newDetent in
+            syncSheetDetent(to: newDetent)
+        }
+        .onChange(of: sheetDetent) { newDetent in
+            syncNativeSheetDetent(to: newDetent)
         }
         .onChange(of: session.engine.state) { _ in
             session.handleEngineStateChange(notificationsEnabled: notificationsEnabled)

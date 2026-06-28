@@ -1,10 +1,11 @@
 import SwiftUI
 import UIKit
+import UniformTypeIdentifiers
 
 extension ContentView {
-    /// The persistent panel's content, hosted inline by `FloatingSheet` in the
-    /// ZStack. Kept out of ContentView.swift so the root view reads as the app
-    /// shell instead of a long dependency-wiring block.
+    /// The persistent panel's content, hosted by the system sheet. Kept out of
+    /// ContentView.swift so the root view reads as the app shell instead of a
+    /// long dependency-wiring block.
     func bottomSheetContent(scrollOffset: Binding<CGFloat>) -> some View {
         BottomSheet(
             searchQuery: $searchQuery,
@@ -44,6 +45,80 @@ extension ContentView {
             collapsedHeight: collapsedSheetHeight,
             onCollapsedHeightChange: updateCollapsedSheetHeight
         )
+        .fileImporter(isPresented: $showGpxImporter, allowedContentTypes: [.gpx, .xml]) { result in
+            switch result {
+            case .success(let url):
+                loadGpx(from: url)
+            case .failure(let error):
+                gpxError = error.localizedDescription
+            }
+        }
+        .fullScreenCover(isPresented: $showSettings) {
+            SettingsSheet(
+                engineAddress: $engineAddress,
+                engine: session.engine,
+                discovery: discovery,
+                onToggleConnection: toggleConnection,
+                onRetryDiscovery: startDiscovery,
+                onApplyPort: reconnect,
+                liveActivityEnabled: $liveActivityEnabled,
+                keepAliveEnabled: $keepAliveEnabled,
+                keepAliveInterval: $keepAliveInterval,
+                notificationsEnabled: $notificationsEnabled,
+                locationAuthorization: session.location.authorizationStatus
+            )
+        }
+    }
+
+    var collapsedPresentationDetentHeight: CGFloat {
+        max(72, collapsedSheetHeight + 14)
+    }
+
+    var mediumPresentationDetent: PresentationDetent {
+        .fraction(0.43)
+    }
+
+    var collapsedPresentationDetent: PresentationDetent {
+        .height(collapsedPresentationDetentHeight)
+    }
+
+    var bottomSheetPresentationDetents: Set<PresentationDetent> {
+        [collapsedPresentationDetent, mediumPresentationDetent, .large]
+    }
+
+    func presentationDetent(for detent: SheetDetent) -> PresentationDetent {
+        switch detent {
+        case .collapsed:
+            return collapsedPresentationDetent
+        case .medium:
+            return mediumPresentationDetent
+        case .large:
+            return .large
+        }
+    }
+
+    func sheetDetent(for presentationDetent: PresentationDetent) -> SheetDetent {
+        if presentationDetent == .large {
+            return .large
+        }
+        if presentationDetent == mediumPresentationDetent {
+            return .medium
+        }
+        return .collapsed
+    }
+
+    func syncNativeSheetDetent(to detent: SheetDetent) {
+        let target = presentationDetent(for: detent)
+        if nativeSheetDetent != target {
+            nativeSheetDetent = target
+        }
+    }
+
+    func syncSheetDetent(to presentationDetent: PresentationDetent) {
+        let target = sheetDetent(for: presentationDetent)
+        if sheetDetent != target {
+            sheetDetent = target
+        }
     }
 
     var placeActions: PlaceActions {
@@ -86,6 +161,9 @@ extension ContentView {
         let roundedHeight = newHeight.rounded(.toNearestOrAwayFromZero)
         if abs(roundedHeight - collapsedSheetHeight) > 1 {
             collapsedSheetHeight = roundedHeight
+            if sheetDetent == .collapsed {
+                nativeSheetDetent = collapsedPresentationDetent
+            }
         }
     }
 

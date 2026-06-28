@@ -136,10 +136,6 @@ struct BottomSheet: View {
         !searchQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
-    private var isCollapsed: Bool {
-        sheetDetent == .collapsed
-    }
-
     static let collapsedHeight: CGFloat = 52
 
     var body: some View {
@@ -152,14 +148,9 @@ struct BottomSheet: View {
                 )
 
             scrollableContent
-                .padding(.top, isCollapsed ? 0 : 10)
-                .frame(maxHeight: isCollapsed ? 0 : .infinity, alignment: .top)
-                .opacity(isCollapsed ? 0 : 1)
-                .allowsHitTesting(!isCollapsed)
-                .accessibilityHidden(isCollapsed)
-                .clipped()
+                .padding(.top, 10)
 
-            if !isCollapsed, hasActiveRouteControls {
+            if hasActiveRouteControls {
                 BottomSheetActiveRouteControlDockView(
                     simulationState: simulationState,
                     onResumeRoute: onResumeRoute,

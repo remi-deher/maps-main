@@ -88,11 +88,11 @@ extension ContentView {
     func restingSheetVisibleHeight(availableHeight: CGFloat) -> CGFloat {
         switch sheetDetent {
         case .collapsed:
-            return collapsedSheetHeight + 14 + 8
+            return collapsedPresentationDetentHeight
         case .medium:
-            return availableHeight * 0.43 + 8
+            return availableHeight * 0.43
         case .large:
-            return availableHeight * 0.92 + 8
+            return availableHeight * 0.92
         }
     }
 
