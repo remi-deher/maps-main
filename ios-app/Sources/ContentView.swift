@@ -3,24 +3,23 @@ import CoreLocation
 import MapKit
 import TipKit
 import UniformTypeIdentifiers
-import UIKit
 
 struct ContentView: View {
-    // Empty by default — an arbitrary placeholder IP used to read as a false
+    // Empty by default - an arbitrary placeholder IP used to read as a false
     // "already configured" state before Bonjour discovery had a chance to
-    // run. See §3.24 of docs/UI_UX_BASELINE.md.
+    // run. See section 3.24 of docs/UI_UX_BASELINE.md.
     @AppStorage("engineAddress") var engineAddress: String = ""
     @State var session = MapSessionModel()
     @State var discovery = EngineDiscovery()
     @State var liveActivity = LiveActivityManager()
     @AppStorage("liveActivityEnabled") var liveActivityEnabled = true
     // Mirrors the engine's EveilMode/EveilInterval defaults (settings/schema.go)
-    // — keeping them in sync means the iOS keep-alive cadence matches what the
+    // - keeping them in sync means the iOS keep-alive cadence matches what the
     // desktop app and headless engine already assume "maintaining" means.
     @AppStorage("keepAliveEnabled") var keepAliveEnabled = true
     @AppStorage("keepAliveInterval") var keepAliveInterval: Double = 5
     @AppStorage("notificationsEnabled") var notificationsEnabled = true
-    // Reused defaults, edited in Réglages (SettingsSheet binds the same keys).
+    // Reused defaults, edited in Reglages (SettingsSheet binds the same keys).
     @AppStorage("defaultSpeed") var defaultSpeed: Double = 30
     @AppStorage("defaultProfile") var defaultProfile: String = "driving"
     @AppStorage("locationAccuracyMode") var locationAccuracyMode: String = "balanced"
@@ -42,14 +41,14 @@ struct ContentView: View {
     @State var itineraryProfile: String = "driving"
     @State var activeRoute: ActiveRoute?
 
-    // Patrol-zone setup, promoted out of Réglages: `patrolMode` shows the
+    // Patrol-zone setup, promoted out of Reglages: `patrolMode` shows the
     // setup panel in the sheet and draws a live dashed preview on the map;
     // type/radius are the zone being defined (moved here from SettingsSheet).
     @State var patrolMode = false
     @State var patrolType = "circle"
     @State var patrolRadius: Double = 200
 
-    // GPX import, promoted out of Réglages › Outils into the sheet: pick a
+    // GPX import, promoted out of Reglages > Outils into the sheet: pick a
     // track, then a GpxPanel shows the file + a speed slider before launching.
     @State var showGpxImporter = false
     @State var gpxContent = ""
@@ -58,9 +57,6 @@ struct ContentView: View {
     @State var gpxError: String?
 
     @AppStorage("mapStyleChoice") var mapStyleChoiceRaw: String = MapStyleChoice.standard.rawValue
-    private var mapStyleChoice: MapStyleChoice {
-        MapStyleChoice(rawValue: mapStyleChoiceRaw) ?? .standard
-    }
 
     @State var sheetDetent: SheetDetent = .collapsed
     @State var collapsedSheetHeight: CGFloat = BottomSheet.collapsedHeight
@@ -94,20 +90,12 @@ struct ContentView: View {
         spoofedCoordinate ?? session.location.lastLocation?.coordinate
     }
 
-    /// The live dashed circle drawn on the map while defining a circle patrol —
-    /// nil for rectangle (its zone is the visible region, already on screen) or
-    /// when not setting up.
+    /// The live dashed circle drawn on the map while defining a circle patrol.
     private var patrolPreview: (center: CLLocationCoordinate2D, radius: Double)? {
         guard patrolMode, patrolType == "circle", let center = patrolCenter else { return nil }
         return (center: center, radius: patrolRadius)
     }
 
-    /// The only two fields of `EngineStatus` the Live Activity actually
-    /// reflects. The engine pushes a full STATUS on every action *and* every
-    /// telemetry tick (~every 5s), so observing `status` wholesale re-synced
-    /// the Live Activity constantly for no reason; keying the onChange on this
-    /// derived value collapses it to "only when the displayed state or
-    /// destination changed". See §3 (perf) of docs/UI_UX_BASELINE.md.
     private struct LiveActivityKey: Equatable {
         let state: String?
         let name: String?
@@ -117,227 +105,6 @@ struct ContentView: View {
         LiveActivityKey(
             state: session.engine.status?.state,
             name: session.engine.status?.lastInjectedLocation?.name
-        )
-    }
-
-    /// Plans-style layers control: a glass capsule menu to switch the map look
-    /// (plan/satellite/hybride). Lives in the same GlassEffectContainer as the
-    /// recenter button so the two share one lensing pass.
-    private var mapStyleMenu: some View {
-        Menu {
-            Picker("Style de carte", selection: $mapStyleChoiceRaw) {
-                ForEach(MapStyleChoice.allCases) { choice in
-                    Label(choice.label, systemImage: choice.symbol).tag(choice.rawValue)
-                }
-            }
-        } label: {
-            Label("Style de carte", systemImage: mapStyleChoice.symbol)
-                .labelStyle(.iconOnly)
-                .font(.title3.weight(.semibold))
-                .frame(width: 44, height: 44)
-        }
-        .buttonStyle(.glass)
-        .buttonBorderShape(.circle)
-        .accessibilityLabel("Style de carte")
-    }
-
-    private var mapPitchButton: some View {
-        Button {
-            toggleMapPitch()
-        } label: {
-            Text(isMapTilted ? "2D" : "3D")
-                .font(.subheadline.weight(.bold))
-                .monospacedDigit()
-                .frame(width: 44, height: 44)
-                .contentShape(Circle())
-        }
-        .buttonStyle(.glass)
-        .buttonBorderShape(.circle)
-        .accessibilityLabel(isMapTilted ? "Revenir en vue 2D" : "Passer en vue 3D")
-    }
-
-    @ViewBuilder
-    private func mapChrome(safeArea: EdgeInsets, availableHeight: CGFloat) -> some View {
-        let bottomPadding = mapControlsBottomPadding(
-            safeArea: safeArea,
-            availableHeight: availableHeight
-        )
-
-        GlassEffectContainer(spacing: 12) {
-            VStack(alignment: .trailing, spacing: 10) {
-                TipView(MapLongPressTip(), arrowEdge: .top)
-                    .frame(maxWidth: 280)
-                Spacer()
-            }
-            .padding(.top, max(safeArea.top + 8, 8))
-            .padding(.trailing, max(safeArea.trailing + 16, 16))
-
-            HStack {
-                Spacer()
-                VStack(spacing: 10) {
-                    mapPitchButton
-                    mapStyleMenu
-                    RecenterButton {
-                        withAnimation {
-                            cameraPosition = .userLocation(fallback: .automatic)
-                            isMapTilted = false
-                        }
-                    }
-                }
-            }
-            .padding(.trailing, max(safeArea.trailing + 16, 16))
-            .padding(.bottom, bottomPadding)
-            .animation(.interactiveSpring(response: 0.28, dampingFraction: 0.88), value: bottomPadding)
-        }
-    }
-
-    private func mapControlsBottomPadding(safeArea: EdgeInsets, availableHeight: CGFloat) -> CGFloat {
-        let desiredPadding = sheetVisibleHeight + 18
-        let deadzoneFloor = safeArea.bottom + 24
-        let topLimit = max(120, availableHeight - safeArea.top - 150)
-        return min(max(desiredPadding, deadzoneFloor), topLimit)
-    }
-
-    private func toggleMapPitch() {
-        guard let visibleRegion = visibleRegion else {
-            withAnimation(.interactiveSpring(response: 0.28, dampingFraction: 0.88)) {
-                cameraPosition = .userLocation(fallback: .automatic)
-                isMapTilted = false
-            }
-            return
-        }
-
-        withAnimation(.interactiveSpring(response: 0.28, dampingFraction: 0.88)) {
-            if isMapTilted {
-                cameraPosition = .region(visibleRegion)
-                isMapTilted = false
-            } else {
-                cameraPosition = .camera(
-                    MapCamera(
-                        centerCoordinate: visibleRegion.center,
-                        distance: cameraDistance(for: visibleRegion),
-                        heading: 0,
-                        pitch: 55
-                    )
-                )
-                isMapTilted = true
-            }
-        }
-    }
-
-    private func cameraDistance(for region: MKCoordinateRegion) -> CLLocationDistance {
-        let latitudeMeters = region.span.latitudeDelta * 111_000
-        let longitudeMeters = region.span.longitudeDelta * 111_000
-        return max(700, min(max(latitudeMeters, longitudeMeters) * 1.25, 25_000))
-    }
-
-    /// The persistent panel's content, hosted inline by `FloatingSheet` in the
-    /// ZStack (no longer a system `.sheet` — §3.11 Option B). Extracted from
-    /// `body` so the large initializer doesn't bury the layout structure.
-    private var bottomSheetContent: some View {
-        BottomSheet(
-            searchQuery: $searchQuery,
-            isFocused: $searchFocused,
-            searchSuggestions: searchCompleter.results,
-            onSelectSuggestion: selectSearchSuggestion,
-            itineraryStops: $itineraryStops,
-            itinerarySpeed: $itinerarySpeed,
-            itineraryProfile: $itineraryProfile,
-            legEstimates: session.legEstimates,
-            activeRoute: activeRoute,
-            onAddStop: { searchFocused = true },
-            onLaunchItinerary: launchItinerary,
-            onShowActiveRouteDetails: showActiveRouteDetails,
-            onRecenterActiveRoute: recenterActiveRoute,
-            favorites: session.engine.status?.favorites ?? [],
-            onSelectFavorite: selectFavorite,
-            onDeleteFavorite: { fav in session.engine.removeFavorite(lat: fav.lat, lon: fav.lon) },
-            recentPlaces: recentPlaces,
-            onSelectRecentPlace: selectRecentPlace,
-            onClearRecentPlaces: clearRecentPlaces,
-            hasSavedItinerary: hasSavedItinerary,
-            onLoadLastItinerary: loadLastItinerary,
-            selectedPlace: selectedPlace,
-            placeActions: PlaceActions(
-                onTeleport: {
-                    guard let place = selectedPlace, requireConnection() else { return }
-                    session.engine.setLocation(lat: place.coordinate.latitude, lon: place.coordinate.longitude)
-                    selectedPlace = nil
-                },
-                onRoute: {
-                    guard let place = selectedPlace else { return }
-                    startRoute(to: place)
-                },
-                onAddStop: {
-                    guard let place = selectedPlace else { return }
-                    if activeRoute != nil {
-                        addSelectedPlaceToActiveRoute()
-                        return
-                    }
-                    itineraryStops.append(RouteStop(coordinate: place.coordinate, name: place.title))
-                    selectedPlace = nil
-                },
-                onFavorite: {
-                    guard let place = selectedPlace, requireConnection() else { return }
-                    session.engine.addFavorite(
-                        lat: place.coordinate.latitude,
-                        lon: place.coordinate.longitude,
-                        name: place.title
-                    )
-                },
-                onCopyCoordinates: {
-                    guard let place = selectedPlace else { return }
-                    UIPasteboard.general.string = String(format: "%.6f, %.6f", place.coordinate.latitude, place.coordinate.longitude)
-                },
-                onDismiss: { selectedPlace = nil }
-            ),
-            patrol: PatrolControls(
-                isSettingUp: patrolMode,
-                isActive: session.engine.status?.patrolZone?.active == true,
-                type: $patrolType,
-                radius: $patrolRadius,
-                onBegin: {
-                    patrolMode = true
-                    withAnimation { sheetDetent = .medium }
-                },
-                onStart: {
-                    startPatrol()
-                    patrolMode = false
-                },
-                onCancel: { patrolMode = false },
-                onStop: { session.engine.updatePatrolZone(type: patrolType, center: nil, radius: nil, bounds: nil, active: false) }
-            ),
-            gpx: GpxImport(
-                isLoaded: !gpxContent.isEmpty,
-                fileName: gpxFileName,
-                errorMessage: gpxError,
-                speed: $gpxSpeed,
-                onPick: {
-                    gpxError = nil
-                    showGpxImporter = true
-                },
-                onLaunch: {
-                    session.engine.playCustomGpx(gpxContent: gpxContent, speed: gpxSpeed)
-                    gpxContent = ""
-                    gpxFileName = ""
-                },
-                onCancel: {
-                    gpxContent = ""
-                    gpxFileName = ""
-                }
-            ),
-            simulationState: session.engine.status?.state,
-            onPauseRoute: pauseActiveRoute,
-            onResumeRoute: resumeActiveRoute,
-            onStopRoute: stopActiveRoute,
-            onOpenSettings: { showSettings = true },
-            sheetDetent: sheetDetent,
-            collapsedHeight: collapsedSheetHeight,
-            onCollapsedHeightChange: { newHeight in
-                // FloatingSheet derives the collapsed detent height directly
-                // from this value, so we just store it — no detent juggling.
-                collapsedSheetHeight = newHeight
-            }
         )
     }
 
@@ -371,8 +138,8 @@ struct ContentView: View {
                 MapScaleView()
             }
 
-            // Inline bottom panel — replaces the persistent
-            // `.sheet(isPresented: .constant(true))` (§3.11 Option B). A
+            // Inline bottom panel - replaces the persistent
+            // `.sheet(isPresented: .constant(true))` (section 3.11 Option B). A
             // GeometryReader gives it the map's full height so its medium/large
             // detents are screen-relative; bottom-aligned so it hugs the home
             // indicator like Plans' sheet. The map behind stays fully
@@ -385,16 +152,17 @@ struct ContentView: View {
                         detent: $sheetDetent,
                         collapsedContentHeight: collapsedSheetHeight,
                         availableHeight: geo.size.height,
-                        onHeightChange: { sheetVisibleHeight = $0 }
-                    ) {
-                        bottomSheetContent
-                    }
+                        onHeightChange: { sheetVisibleHeight = $0 },
+                        content: {
+                            bottomSheetContent
+                        }
+                    )
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
                 }
             }
         }
-        // GPX picker now attaches to the root — the bottom panel is no longer a
-        // sheet, so there's no presenter collision to avoid (§3.11 Option B).
+        // GPX picker now attaches to the root - the bottom panel is no longer a
+        // sheet, so there's no presenter collision to avoid (section 3.11 Option B).
         .fileImporter(isPresented: $showGpxImporter, allowedContentTypes: [.gpx, .xml]) { result in
             switch result {
             case .success(let url):
@@ -405,7 +173,7 @@ struct ContentView: View {
         }
         // Settings is now a normal single sheet on the root view. With the
         // bottom panel inlined (no longer a `.sheet`), there's no nested-sheet
-        // conflict to work around — the gear simply presents this sheet.
+        // conflict to work around - the gear simply presents this sheet.
         .sheet(isPresented: $showSettings) {
             SettingsSheet(
                 engineAddress: $engineAddress,
@@ -459,7 +227,7 @@ struct ContentView: View {
             guard case .found(let host, let port) = newState else { return }
             // Only auto-fill when the user hasn't configured an address. A
             // manually entered (working, IPv4) address must not be clobbered by
-            // a discovery result — the user explicitly chose it.
+            // a discovery result - the user explicitly chose it.
             if engineAddress.isEmpty {
                 engineAddress = "\(host):\(port)"
             }
@@ -503,7 +271,7 @@ struct ContentView: View {
         .onChange(of: selectedPlace) { place in
             // The place card now lives inside the bottom sheet (it used to
             // float over the map, where the sheet could end up covering it)
-            // — expand the sheet so it's actually visible when set.
+            // - expand the sheet so it's actually visible when set.
             if place != nil {
                 withAnimation { sheetDetent = .medium }
             }
@@ -511,7 +279,7 @@ struct ContentView: View {
         .onChange(of: selectedFeature) { _, feature in
             // Tapping a system POI resolves into the same SelectedPlace flow as
             // a long-press, so the user gets the identical action card
-            // (Téléporter / Itinéraire / Étape / Favori). Cleared immediately so
+            // (Teleporter / Itineraire / Etape / Favori). Cleared immediately so
             // re-tapping the same POI works, and so the map's own selection
             // highlight doesn't linger once the card owns the interaction.
             guard let feature else { return }
