@@ -72,7 +72,7 @@ struct ContentView: View {
     }
 
     private var routePreview: [CLLocationCoordinate2D] {
-        if activeRoute != nil, isRouteSimulationState(session.engine.status?.state) {
+        if activeRoute != nil, isActiveRouteStatus(session.engine.status) {
             let enginePreview = (session.engine.status?.currentSequencePreview ?? []).map {
                 CLLocationCoordinate2D(latitude: $0.lat, longitude: $0.lon)
             }
@@ -202,9 +202,9 @@ struct ContentView: View {
         .onChange(of: session.engine.state) { _ in
             session.handleEngineStateChange(notificationsEnabled: notificationsEnabled)
         }
-        .onChange(of: session.engine.status?.state) { oldState, newState in
+        .onChange(of: session.engine.status) { oldStatus, newStatus in
             session.handleSimulationStateChange(notificationsEnabled: notificationsEnabled)
-            syncActiveRouteState(oldState: oldState, newState: newState)
+            syncActiveRouteState(oldStatus: oldStatus, newStatus: newStatus)
         }
         .onChange(of: discovery.state) { newState in
             guard case .found(let host, let port) = newState else { return }

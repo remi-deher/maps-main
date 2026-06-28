@@ -170,13 +170,41 @@ extension ContentView {
         state == "moving" || state == "paused" || state == "running"
     }
 
-    func syncActiveRouteState(oldState: String?, newState: String?) {
+    func isActiveRouteStatus(_ status: EngineStatus?) -> Bool {
+        let navigationState = status?.navigation?.status?.state
+        if navigationState == "running" || navigationState == "paused" {
+            return true
+        }
+        if navigationState == "stopped" {
+            return false
+        }
+        return isRouteSimulationState(status?.state)
+    }
+
+    func syncActiveRouteState(oldStatus: EngineStatus?, newStatus: EngineStatus?) {
         guard activeRoute != nil else { return }
-        guard let newState = newState else { return }
+        guard let newStatus = newStatus else { return }
 
-        let wasActive = isRouteSimulationState(oldState)
-        let isNowActive = isRouteSimulationState(newState)
+        let oldNavigationState = oldStatus?.navigation?.status?.state
+        let newNavigationState = newStatus.navigation?.status?.state
 
+        if newNavigationState == "running" || newNavigationState == "paused" {
+            return
+        }
+        if newNavigationState == "stopped" {
+            activeRoute = nil
+            return
+        }
+
+        // Older engines may not expose navigation.status. In that case, fall
+        // back to the global state. If navigation.status existed previously,
+        // avoid treating a transient global "ready" as route completion.
+        if oldNavigationState != nil {
+            return
+        }
+
+        let wasActive = isRouteSimulationState(oldStatus?.state)
+        let isNowActive = isRouteSimulationState(newStatus.state)
         if wasActive && !isNowActive {
             activeRoute = nil
         }

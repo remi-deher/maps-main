@@ -63,4 +63,31 @@ final class EngineClientModelsTests: XCTestCase {
         XCTAssertNil(status.patrolZone)
         XCTAssertNil(status.jitterEnabled)
     }
+
+    func testEngineStatusDecodesNavigationStatus() throws {
+        let json = """
+        {
+          "state": "running",
+          "navigation": {
+            "status": {
+              "state": "running",
+              "index": 4,
+              "total": 42,
+              "destination": {"lat": 48.86, "lon": 2.35, "name": "Destination"}
+            },
+            "progress": {
+              "index": 4,
+              "total": 42,
+              "lat": 48.8566,
+              "lon": 2.3522,
+              "speed": 5
+            }
+          }
+        }
+        """
+        let status = try JSONDecoder().decode(EngineStatus.self, from: Data(json.utf8))
+        XCTAssertEqual(status.navigation?.status?.state, "running")
+        XCTAssertEqual(status.navigation?.status?.index, 4)
+        XCTAssertEqual(status.navigation?.progress?.speed, 5)
+    }
 }

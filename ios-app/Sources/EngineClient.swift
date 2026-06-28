@@ -69,6 +69,26 @@ struct PatrolZone: Codable, Equatable {
     let active: Bool
 }
 
+struct NavigationProgressPayload: Codable, Equatable {
+    let index: Int?
+    let total: Int?
+    let lat: Double?
+    let lon: Double?
+    let speed: Double?
+}
+
+struct NavigationStatusPayload: Codable, Equatable {
+    let state: String?
+    let index: Int?
+    let total: Int?
+    let destination: RoutePoint?
+}
+
+struct NavigationPayload: Codable, Equatable {
+    let progress: NavigationProgressPayload?
+    let status: NavigationStatusPayload?
+}
+
 struct DeviceInfo: Codable, Equatable {
     let udid: String
     let name: String
@@ -83,6 +103,7 @@ struct EngineStatus: Codable, Equatable {
     let currentSequencePreview: [RoutePoint]?
     let jitterEnabled: Bool?
     let patrolZone: PatrolZone?
+    let navigation: NavigationPayload?
     let usbDriver: String?
     let wifiDriver: String?
     let connectionType: String?
