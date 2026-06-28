@@ -96,7 +96,8 @@ struct FloatingSheet<Content: View>: View {
                 .accessibilityAddTraits(.isButton)
 
             content($scrollOffset)
-                .frame(maxWidth: .infinity, height: max(0, maxHeight - handleAreaHeight), alignment: .top)
+                .frame(maxWidth: .infinity, alignment: .top)
+                .frame(height: max(0, maxHeight - handleAreaHeight), alignment: .top)
         }
         .frame(height: resolvedHeight, alignment: .top)
         .frame(maxWidth: .infinity)
