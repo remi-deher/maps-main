@@ -192,15 +192,12 @@ struct BottomSheet: View {
                 if isSearching {
                     searchResultsSection
                 } else if !itineraryStops.isEmpty {
-                    ItineraryPanel(
-                        stops: $itineraryStops,
+                    ItineraryOptions(
+                        stops: itineraryStops,
                         speed: $itinerarySpeed,
-                        profile: $itineraryProfile,
-                        legEstimates: legEstimates,
+                        profile: itineraryProfile,
                         totalEstimate: itineraryTotalEstimate,
-                        onAddStop: onAddStop,
-                        onLaunch: onLaunchItinerary,
-                        onCancel: { itineraryStops = [] }
+                        onLaunch: onLaunchItinerary
                     )
                 } else {
                     expandedHomeContent
@@ -359,10 +356,42 @@ struct BottomSheet: View {
 
     /// Plans-style resting row: a search capsule plus a separate round
     /// settings/cancel control, instead of embedding that control in the field.
+    private var itineraryPlanningHeader: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Text("Itinéraire")
+                    .font(.title3.weight(.bold))
+                Spacer()
+                Button(action: {
+                    withAnimation {
+                        itineraryStops = []
+                    }
+                }) {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.title3)
+                        .foregroundStyle(.secondary)
+                        .frame(width: 44, height: 44)
+                }
+                .buttonStyle(.plain)
+            }
+            .padding(.horizontal, 4)
+
+            ItineraryHeader(
+                stops: $itineraryStops,
+                profile: $itineraryProfile,
+                legEstimates: legEstimates,
+                onAddStop: onAddStop
+            )
+        }
+        .padding(.top, 4)
+    }
+
     private var header: some View {
         Group {
             if hasActiveRouteControls, let activeRoute = activeRoute {
                 activeRouteCompactHeader(activeRoute)
+            } else if !itineraryStops.isEmpty {
+                itineraryPlanningHeader
             } else {
                 HStack(spacing: 10) {
                     searchField
