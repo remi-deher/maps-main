@@ -167,17 +167,13 @@ extension ContentView {
     }
 
     func syncActiveRouteState(oldState: String?, newState: String?) {
-        guard let route = activeRoute else { return }
+        guard activeRoute != nil else { return }
         guard let newState = newState else { return }
 
         let wasActive = (oldState == "moving" || oldState == "paused")
         let isNowActive = (newState == "moving" || newState == "paused")
 
         if wasActive && !isNowActive {
-            // Empêche la réinitialisation si le trajet a été lancé il y a moins de 2 secondes
-            if Date().timeIntervalSince(route.startedAt) < 2.0 {
-                return
-            }
             activeRoute = nil
         }
     }

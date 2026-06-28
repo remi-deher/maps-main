@@ -168,14 +168,6 @@ func (e *Engine) startRouteSimulation(ctx context.Context, points []domain.LatLo
 	for {
 		select {
 		case <-ctx.Done():
-			e.mu.Lock()
-			e.st.State = "ready"
-			e.st.Navigation.Status = &domain.NavigationStatus{
-				State: "stopped",
-				Index: index,
-				Total: len(points),
-			}
-			e.emitStatusLocked() // snapshots + unlocks e.mu before emitting
 			return
 		case <-ticker.C:
 			if e.isPaused() {
