@@ -54,6 +54,7 @@ struct BottomSheet: View {
     var onStopRoute: () -> Void
 
     var onOpenSettings: () -> Void
+    var onCollapseSheet: () -> Void
 
     @Binding var scrollOffset: CGFloat
     @Binding var sheetDetent: SheetDetent
@@ -91,6 +92,7 @@ struct BottomSheet: View {
         onResumeRoute: @escaping () -> Void,
         onStopRoute: @escaping () -> Void,
         onOpenSettings: @escaping () -> Void,
+        onCollapseSheet: @escaping () -> Void,
         scrollOffset: Binding<CGFloat>,
         sheetDetent: Binding<SheetDetent>,
         collapsedHeight: CGFloat,
@@ -126,6 +128,7 @@ struct BottomSheet: View {
         self.onResumeRoute = onResumeRoute
         self.onStopRoute = onStopRoute
         self.onOpenSettings = onOpenSettings
+        self.onCollapseSheet = onCollapseSheet
         self._scrollOffset = scrollOffset
         self._sheetDetent = sheetDetent
         self.collapsedHeight = collapsedHeight
@@ -134,6 +137,10 @@ struct BottomSheet: View {
 
     private var isSearching: Bool {
         !searchQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    private var isCollapsed: Bool {
+        sheetDetent == .collapsed
     }
 
     static let collapsedHeight: CGFloat = 52
@@ -147,10 +154,13 @@ struct BottomSheet: View {
                     }
                 )
 
-            scrollableContent
-                .padding(.top, 10)
+            if !isCollapsed {
+                scrollableContent
+                    .padding(.top, 10)
+                    .transition(.opacity)
+            }
 
-            if hasActiveRouteControls {
+            if !isCollapsed, hasActiveRouteControls {
                 BottomSheetActiveRouteControlDockView(
                     simulationState: simulationState,
                     onResumeRoute: onResumeRoute,
@@ -384,9 +394,7 @@ struct BottomSheet: View {
                 searchQuery = ""
                 isFocused.wrappedValue = false
             case .collapseSheet:
-                withAnimation(.interactiveSpring(response: 0.28, dampingFraction: 0.88)) {
-                    sheetDetent = .collapsed
-                }
+                onCollapseSheet()
             }
         } label: {
             Image(systemName: action == .settings ? "gearshape.fill" : "xmark.circle.fill")

@@ -40,6 +40,7 @@ extension ContentView {
             onResumeRoute: resumeActiveRoute,
             onStopRoute: stopActiveRoute,
             onOpenSettings: { showSettings = true },
+            onCollapseSheet: collapseBottomSheet,
             scrollOffset: scrollOffset,
             sheetDetent: $sheetDetent,
             collapsedHeight: collapsedSheetHeight,
@@ -118,6 +119,13 @@ extension ContentView {
         let target = sheetDetent(for: presentationDetent)
         if sheetDetent != target {
             sheetDetent = target
+        }
+    }
+
+    func collapseBottomSheet() {
+        withAnimation(.interactiveSpring(response: 0.28, dampingFraction: 0.88)) {
+            sheetDetent = .collapsed
+            nativeSheetDetent = collapsedPresentationDetent
         }
     }
 
