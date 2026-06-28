@@ -1,10 +1,6 @@
 import SwiftUI
 import MapKit
 
-/// Reports the search capsule's actual rendered height up to ContentView, so
-/// the collapsed detent can hug exactly the search bar — Plans-style — rather
-/// than guessing a fixed height that leaves a strip of empty sheet background
-/// below the capsule (or worse, clips it) on different dynamic-type sizes.
 private struct HeaderHeightKey: PreferenceKey {
     static var defaultValue: CGFloat = BottomSheet.collapsedHeight
     static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
@@ -19,12 +15,6 @@ private struct ScrollOffsetKey: PreferenceKey {
     }
 }
 
-/// Persistent draggable bottom sheet (à la Plans): collapsed it only shows
-/// the search field, dragging the slider up reveals search results, the
-/// itinerary being built, or favorites — instead of floating cards over the
-/// map. The resting row pairs the search capsule with a separate contextual
-/// control (gear ⇄ ✕, see `trailingButton`), like Plans' adjacent account or
-/// cancel affordance.
 struct BottomSheet: View {
     @Binding var searchQuery: String
     var isFocused: FocusState<Bool>.Binding
@@ -66,17 +56,7 @@ struct BottomSheet: View {
     var onOpenSettings: () -> Void
 
     @Binding var scrollOffset: CGFloat
-
-    /// The panel's current detent — used to keep the collapsed state to
-    /// *just* the search capsule, like Plans. Everything else (favorites,
-    /// results, itinerary, place card...) only appears once the panel is
-    /// actually dragged/expanded open.
     @Binding var sheetDetent: SheetDetent
-
-    /// The collapsed detent's height, measured live from the header's actual
-    /// rendered size (see `HeaderHeightKey`) and reported up via
-    /// `onCollapsedHeightChange` so the hosting `FloatingSheet` can size its
-    /// collapsed detent to exactly the search capsule.
     var collapsedHeight: CGFloat
     var onCollapsedHeightChange: (CGFloat) -> Void
 
@@ -160,8 +140,6 @@ struct BottomSheet: View {
         sheetDetent == .collapsed
     }
 
-    /// Fallback used only until the header's first layout pass reports its
-    /// real height — never the value actually rendered against.
     static let collapsedHeight: CGFloat = 52
 
     var body: some View {
@@ -193,8 +171,16 @@ struct BottomSheet: View {
             }
 
             if !isCollapsed, hasActiveRouteControls {
-                activeRouteControlDock
-                    .padding(.bottom, 8)
+                BottomSheetActiveRouteControlDockView(
+                    simulationState: simulationState,
+                    onResumeRoute: onResumeRoute,
+                    onPauseRoute: onPauseRoute,
+                    onStopRoute: onStopRoute,
+                    onRecenterActiveRoute: onRecenterActiveRoute,
+                    onShowActiveRouteDetails: onShowActiveRouteDetails,
+                    onOpenSettings: onOpenSettings
+                )
+                .padding(.bottom, 8)
             }
         }
         .onPreferenceChange(HeaderHeightKey.self) { measured in
@@ -204,32 +190,37 @@ struct BottomSheet: View {
         }
     }
 
-    /// The sheet's expanded content — exactly one of the place card, search
-    /// results, the itinerary being built, or an empty/last-itinerary state,
-    /// plus the persistent simulation banner and favorites row. Split out of
-    /// `body` so each state reads as its own case instead of nested
-    /// `if/else` inline.
     @ViewBuilder
     private var mainContent: some View {
         VStack(spacing: 12) {
-            // Persistent like Plans' "navigation active" banner — visible
-            // regardless of what else is on screen, since pausing/
-            // stopping a running simulation is a system-level action.
             if hasGenericSimulationControls {
-                simulationControlBar
+                SimulationControlBarView(
+                    simulationState: simulationState,
+                    onResumeRoute: onResumeRoute,
+                    onPauseRoute: onPauseRoute,
+                    onStopRoute: onStopRoute
+                )
             }
 
-            // Persistent like the simulation bar — a running patrol is a
-            // system-level mode you can stop from anywhere in the sheet.
             if patrol.isActive {
-                patrolActiveBar
+                PatrolActiveBarView(patrol: patrol)
             }
 
             if hasActiveRouteControls, let activeRoute = activeRoute {
-                activeRouteOverview(activeRoute)
+                BottomSheetActiveRouteControlsView(
+                    route: activeRoute,
+                    simulationState: simulationState,
+                    selectedPlace: selectedPlace,
+                    placeActions: placeActions,
+                    favorites: favorites,
+                    onResumeRoute: onResumeRoute,
+                    onPauseRoute: onPauseRoute,
+                    onStopRoute: onStopRoute,
+                    onRecenterActiveRoute: onRecenterActiveRoute,
+                    onShowActiveRouteDetails: onShowActiveRouteDetails,
+                    onOpenSettings: onOpenSettings
+                )
             } else if patrol.isSettingUp {
-                // Defining a zone takes over the sheet like the place card —
-                // the live dashed preview is drawn on the map underneath.
                 PatrolPanel(
                     type: patrol.type,
                     radius: patrol.radius,
@@ -237,8 +228,6 @@ struct BottomSheet: View {
                     onCancel: patrol.onCancel
                 )
             } else if gpx.isLoaded {
-                // A picked GPX track takes over the sheet until launched or
-                // discarded, same as the patrol setup panel.
                 GpxPanel(
                     fileName: gpx.fileName,
                     speed: gpx.speed,
@@ -246,10 +235,6 @@ struct BottomSheet: View {
                     onCancel: gpx.onCancel
                 )
             } else if let place = selectedPlace {
-                // Selecting a place (search result or map long-press) takes
-                // over the sheet's content — this used to float over the
-                // map, where the sheet itself could end up covering it;
-                // living inside the sheet, it never can.
                 PlaceCard(
                     place: place,
                     isFavorite: isFavorite(place),
@@ -262,7 +247,10 @@ struct BottomSheet: View {
                 )
             } else {
                 if isSearching {
-                    searchResultsSection
+                    BottomSheetSearchResultsView(
+                        searchSuggestions: searchSuggestions,
+                        onSelectSuggestion: onSelectSuggestion
+                    )
                 } else if !itineraryStops.isEmpty {
                     ItineraryOptions(
                         stops: itineraryStops,
@@ -272,7 +260,21 @@ struct BottomSheet: View {
                         onLaunch: onLaunchItinerary
                     )
                 } else {
-                    expandedHomeContent
+                    BottomSheetHomeView(
+                        favorites: favorites,
+                        recentPlaces: recentPlaces,
+                        hasSavedItinerary: hasSavedItinerary,
+                        patrol: patrol,
+                        gpx: gpx,
+                        onSelectFavorite: onSelectFavorite,
+                        onDeleteFavorite: onDeleteFavorite,
+                        onSelectRecentPlace: onSelectRecentPlace,
+                        onClearRecentPlaces: onClearRecentPlaces,
+                        onLoadLastItinerary: onLoadLastItinerary,
+                        onOpenSettings: onOpenSettings,
+                        searchQuery: $searchQuery,
+                        isFocused: isFocused
+                    )
                     if let gpxError = gpx.errorMessage {
                         Text(gpxError)
                             .font(.caption)
@@ -284,15 +286,11 @@ struct BottomSheet: View {
         }
     }
 
-    /// What the trailing button in the search capsule does right now. Plans
-    /// puts a single contextual control at the trailing edge of its search
-    /// field: an account/settings button at rest that morphs into a cancel
-    /// affordance the moment there's something to back out of.
     private enum TrailingAction {
-        case settings       // sheet is collapsed -> open settings (gear)
-        case cancelPlace    // place card is showing -> dismiss it (xmark)
-        case cancelSearch   // typing / focused -> clear query and unfocus (xmark)
-        case collapseSheet  // sheet is expanded, nothing else in progress -> collapse to minimal (xmark)
+        case settings
+        case cancelPlace
+        case cancelSearch
+        case collapseSheet
     }
 
     private var trailingAction: TrailingAction {
@@ -304,8 +302,6 @@ struct BottomSheet: View {
         return .collapseSheet
     }
 
-    /// Plans-style resting row: a search capsule plus a separate round
-    /// settings/cancel control, instead of embedding that control in the field.
     private var itineraryPlanningHeader: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
@@ -339,7 +335,11 @@ struct BottomSheet: View {
     private var header: some View {
         Group {
             if hasActiveRouteControls, let activeRoute = activeRoute {
-                activeRouteCompactHeader(activeRoute)
+                BottomSheetActiveRouteHeaderView(
+                    route: activeRoute,
+                    simulationState: simulationState,
+                    onShowActiveRouteDetails: onShowActiveRouteDetails
+                )
             } else if !itineraryStops.isEmpty && !isFocused.wrappedValue {
                 itineraryPlanningHeader
             } else {
@@ -370,9 +370,6 @@ struct BottomSheet: View {
         .glassEffect(.regular.interactive(), in: .capsule)
     }
 
-    /// The gear ⇄ ✕ control. The symbol swaps in place (`.replace`) so it
-    /// reads as one button changing role, not two buttons appearing and
-    /// disappearing — matching how Plans' trailing control morphs.
     private var trailingButton: some View {
         let action = trailingAction
         return Button {
@@ -401,5 +398,29 @@ struct BottomSheet: View {
         .glassEffect(.regular.interactive(), in: Circle())
         .accessibilityLabel(action == .settings ? "Réglages" : "Annuler")
         .animation(.snappy(duration: 0.2), value: action)
+    }
+
+    private var hasActiveRouteControls: Bool {
+        activeRoute != nil
+    }
+
+    private var hasGenericSimulationControls: Bool {
+        activeRoute == nil && (simulationState == "moving" || simulationState == "paused")
+    }
+
+    private var itineraryTotalEstimate: LegEstimate? {
+        let estimates = itineraryStops.compactMap { legEstimates[$0.id] }
+        guard !estimates.isEmpty else { return nil }
+        return LegEstimate(
+            distanceMeters: estimates.reduce(0) { $0 + $1.distanceMeters },
+            travelTime: estimates.reduce(0) { $0 + $1.travelTime }
+        )
+    }
+
+    private func isFavorite(_ place: SelectedPlace) -> Bool {
+        favorites.contains { favorite in
+            abs(favorite.lat - place.coordinate.latitude) < 0.000001
+                && abs(favorite.lon - place.coordinate.longitude) < 0.000001
+        }
     }
 }
