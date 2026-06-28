@@ -72,11 +72,13 @@ struct ContentView: View {
     }
 
     private var routePreview: [CLLocationCoordinate2D] {
-        let enginePreview = (session.engine.status?.currentSequencePreview ?? []).map {
-            CLLocationCoordinate2D(latitude: $0.lat, longitude: $0.lon)
-        }
-        if !enginePreview.isEmpty {
-            return enginePreview
+        if activeRoute != nil, isRouteSimulationState(session.engine.status?.state) {
+            let enginePreview = (session.engine.status?.currentSequencePreview ?? []).map {
+                CLLocationCoordinate2D(latitude: $0.lat, longitude: $0.lon)
+            }
+            if !enginePreview.isEmpty {
+                return enginePreview
+            }
         }
         return activeRoute?.stops.map(\.coordinate) ?? []
     }

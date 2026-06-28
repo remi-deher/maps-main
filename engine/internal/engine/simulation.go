@@ -184,6 +184,8 @@ func (e *Engine) startRouteSimulation(ctx context.Context, points []domain.LatLo
 						Index: index,
 						Total: len(points),
 					}
+					e.st.Navigation.Progress = nil
+					e.st.CurrentSequencePreview = nil
 					// Snapshot emit+status under lock, then release before emitting.
 					emit, st := e.statusSnapshotLocked()
 					emit(api.EventRouteFinished, api.RouteFinishedPayload{Timestamp: time.Now().UnixMilli()})
