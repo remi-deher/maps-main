@@ -61,6 +61,7 @@ struct ContentView: View {
     @State var sheetDetent: SheetDetent = .collapsed
     @State var collapsedSheetHeight: CGFloat = BottomSheet.collapsedHeight
     @State var sheetVisibleHeight: CGFloat = BottomSheet.collapsedHeight
+    @State var scrollOffset: CGFloat = 0
     @State var isMapTilted = false
     @State var showSettings = false
     @State var hasSavedItinerary = UserDefaults.standard.data(forKey: lastItineraryKey) != nil
@@ -152,6 +153,7 @@ struct ContentView: View {
                         detent: $sheetDetent,
                         collapsedContentHeight: collapsedSheetHeight,
                         availableHeight: geo.size.height,
+                        scrollOffset: $scrollOffset,
                         onHeightChange: { sheetVisibleHeight = $0 },
                         content: {
                             bottomSheetContent
@@ -219,9 +221,9 @@ struct ContentView: View {
         .onChange(of: session.engine.state) { _ in
             session.handleEngineStateChange(notificationsEnabled: notificationsEnabled)
         }
-        .onChange(of: session.engine.status?.state) { _ in
+        .onChange(of: session.engine.status?.state) { oldState, newState in
             session.handleSimulationStateChange(notificationsEnabled: notificationsEnabled)
-            syncActiveRouteState(session.engine.status?.state)
+            syncActiveRouteState(oldState: oldState, newState: newState)
         }
         .onChange(of: discovery.state) { newState in
             guard case .found(let host, let port) = newState else { return }

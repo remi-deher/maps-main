@@ -22,6 +22,7 @@ enum SheetDetent: CaseIterable, Equatable {
 ///   - how the full-panel drag arbitrates with long scrollable content.
 struct FloatingSheet<Content: View>: View {
     @Binding var detent: SheetDetent
+    @Binding var scrollOffset: CGFloat
     /// Measured height of the panel's collapsed content (the search capsule),
     /// reported by the content via its header preference.
     let collapsedContentHeight: CGFloat
@@ -35,6 +36,10 @@ struct FloatingSheet<Content: View>: View {
     /// release, when `detent` takes over.
     @State private var dragOffset: CGFloat = 0
 
+    @State private var dragDirectionDetermined = false
+    @State private var isDraggingVertically = false
+    @State private var dragStartedInHeader = false
+
     /// Vertical space the drag handle occupies above the content.
     private let handleAreaHeight: CGFloat = 14
     private let horizontalInset: CGFloat = 8
@@ -45,7 +50,7 @@ struct FloatingSheet<Content: View>: View {
         switch detent {
         case .collapsed: return collapsedContentHeight + handleAreaHeight
         case .medium: return availableHeight * 0.43
-        case .large: return availableHeight * 0.88
+        case .large: return availableHeight * 0.92
         }
     }
 
@@ -90,10 +95,43 @@ struct FloatingSheet<Content: View>: View {
     private var dragGesture: some Gesture {
         DragGesture(minimumDistance: 1)
             .onChanged { value in
-                guard abs(value.translation.height) >= abs(value.translation.width) else { return }
+                if !dragDirectionDetermined {
+                    let headerHeight = collapsedContentHeight + handleAreaHeight
+                    let isDraggingDown = value.translation.height > 0
+                    let isAtTop = scrollOffset >= -1
+                    let canDragInContent = isDraggingDown && isAtTop
+                    dragStartedInHeader = (detent != .large) || (value.startLocation.y <= headerHeight) || canDragInContent
+                    
+                    let horizontalAmount = abs(value.translation.width)
+                    let verticalAmount = abs(value.translation.height)
+                    if horizontalAmount > 2 || verticalAmount > 2 {
+                        isDraggingVertically = verticalAmount > horizontalAmount
+                        dragDirectionDetermined = true
+                    }
+                }
+                
+                guard dragStartedInHeader && isDraggingVertically else { return }
+                
+                if detent == .large {
+                    let isDraggingDown = value.translation.height > 0
+                    let isAtTop = scrollOffset >= -1
+                    if isDraggingDown && !isAtTop {
+                        return
+                    }
+                }
+                
                 dragOffset = -value.translation.height
             }
             .onEnded { value in
+                let wasDragging = dragStartedInHeader && isDraggingVertically
+                
+                // Reset state immediately
+                dragDirectionDetermined = false
+                isDraggingVertically = false
+                dragStartedInHeader = false
+                
+                guard wasDragging else { return }
+                
                 guard abs(value.predictedEndTranslation.height) >= abs(value.predictedEndTranslation.width) else {
                     withAnimation(.interactiveSpring(response: 0.32, dampingFraction: 0.85)) {
                         dragOffset = 0

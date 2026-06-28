@@ -12,6 +12,13 @@ private struct HeaderHeightKey: PreferenceKey {
     }
 }
 
+private struct ScrollOffsetKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = nextValue()
+    }
+}
+
 /// Persistent draggable bottom sheet (à la Plans): collapsed it only shows
 /// the search field, dragging the slider up reveals search results, the
 /// itinerary being built, or favorites — instead of floating cards over the
@@ -58,11 +65,13 @@ struct BottomSheet: View {
 
     var onOpenSettings: () -> Void
 
+    @Binding var scrollOffset: CGFloat
+
     /// The panel's current detent — used to keep the collapsed state to
     /// *just* the search capsule, like Plans. Everything else (favorites,
     /// results, itinerary, place card...) only appears once the panel is
     /// actually dragged/expanded open.
-    var sheetDetent: SheetDetent
+    @Binding var sheetDetent: SheetDetent
 
     /// The collapsed detent's height, measured live from the header's actual
     /// rendered size (see `HeaderHeightKey`) and reported up via
@@ -96,6 +105,18 @@ struct BottomSheet: View {
                 ScrollView {
                     mainContent
                         .padding(.bottom, hasActiveRouteControls ? 8 : 24)
+                        .background(
+                            GeometryReader { proxy in
+                                let y = proxy.frame(in: .named("scroll")).minY
+                                Color.clear
+                                    .preference(key: ScrollOffsetKey.self, value: y)
+                            }
+                        )
+                }
+                .coordinateSpace(name: "scroll")
+                .scrollDisabled(sheetDetent != .large)
+                .onPreferenceChange(ScrollOffsetKey.self) { value in
+                    scrollOffset = value
                 }
             }
 
@@ -199,15 +220,19 @@ struct BottomSheet: View {
     /// field: an account/settings button at rest that morphs into a cancel
     /// affordance the moment there's something to back out of.
     private enum TrailingAction {
-        case settings    // nothing in progress → open Réglages (the gear)
-        case cancelPlace // a place card is showing → dismiss it
-        case cancelSearch // typing / focused → clear the query and unfocus
+        case settings       // sheet is collapsed -> open settings (gear)
+        case cancelPlace    // place card is showing -> dismiss it (xmark)
+        case cancelSearch   // typing / focused -> clear query and unfocus (xmark)
+        case collapseSheet  // sheet is expanded, nothing else in progress -> collapse to minimal (xmark)
     }
 
     private var trailingAction: TrailingAction {
+        if sheetDetent == .collapsed {
+            return .settings
+        }
         if selectedPlace != nil { return .cancelPlace }
         if isFocused.wrappedValue || !searchQuery.isEmpty { return .cancelSearch }
-        return .settings
+        return .collapseSheet
     }
 
     private var expandedHomeContent: some View {
@@ -380,6 +405,10 @@ struct BottomSheet: View {
             case .cancelSearch:
                 searchQuery = ""
                 isFocused.wrappedValue = false
+            case .collapseSheet:
+                withAnimation(.interactiveSpring(response: 0.28, dampingFraction: 0.88)) {
+                    sheetDetent = .collapsed
+                }
             }
         } label: {
             Image(systemName: action == .settings ? "gearshape.fill" : "xmark.circle.fill")

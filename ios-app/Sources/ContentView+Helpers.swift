@@ -166,10 +166,14 @@ extension ContentView {
         fitItinerary(activeRoute.stops)
     }
 
-    func syncActiveRouteState(_ state: String?) {
+    func syncActiveRouteState(oldState: String?, newState: String?) {
         guard activeRoute != nil else { return }
-        guard let state = state else { return }
-        if state != "moving" && state != "paused" {
+        guard let newState = newState else { return }
+        
+        let wasActive = (oldState == "moving" || oldState == "paused")
+        let isNowActive = (newState == "moving" || newState == "paused")
+        
+        if wasActive && !isNowActive {
             activeRoute = nil
         }
     }

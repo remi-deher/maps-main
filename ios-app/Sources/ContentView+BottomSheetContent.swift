@@ -39,7 +39,8 @@ extension ContentView {
             onResumeRoute: resumeActiveRoute,
             onStopRoute: stopActiveRoute,
             onOpenSettings: { showSettings = true },
-            sheetDetent: sheetDetent,
+            scrollOffset: $scrollOffset,
+            sheetDetent: $sheetDetent,
             collapsedHeight: collapsedSheetHeight,
             onCollapsedHeightChange: updateCollapsedSheetHeight
         )
