@@ -5,7 +5,7 @@ extension ContentView {
     /// The persistent panel's content, hosted inline by `FloatingSheet` in the
     /// ZStack. Kept out of ContentView.swift so the root view reads as the app
     /// shell instead of a long dependency-wiring block.
-    var bottomSheetContent: some View {
+    func bottomSheetContent(scrollOffset: Binding<CGFloat>) -> some View {
         BottomSheet(
             searchQuery: $searchQuery,
             isFocused: $searchFocused,
@@ -39,7 +39,7 @@ extension ContentView {
             onResumeRoute: resumeActiveRoute,
             onStopRoute: stopActiveRoute,
             onOpenSettings: { showSettings = true },
-            scrollOffset: $scrollOffset,
+            scrollOffset: scrollOffset,
             sheetDetent: $sheetDetent,
             collapsedHeight: collapsedSheetHeight,
             onCollapsedHeightChange: updateCollapsedSheetHeight

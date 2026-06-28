@@ -22,7 +22,7 @@ enum SheetDetent: CaseIterable, Equatable {
 ///   - how the full-panel drag arbitrates with long scrollable content.
 struct FloatingSheet<Content: View>: View {
     @Binding var detent: SheetDetent
-    @Binding var scrollOffset: CGFloat
+    @State private var scrollOffset: CGFloat = 0
     /// Measured height of the panel's collapsed content (the search capsule),
     /// reported by the content via its header preference.
     let collapsedContentHeight: CGFloat
@@ -30,20 +30,18 @@ struct FloatingSheet<Content: View>: View {
     /// GeometryReader in the parent).
     let availableHeight: CGFloat
     var onHeightChange: (CGFloat) -> Void = { _ in }
-    @ViewBuilder var content: () -> Content
+    @ViewBuilder var content: (Binding<CGFloat>) -> Content
 
     init(
         detent: Binding<SheetDetent>,
         collapsedContentHeight: CGFloat,
         availableHeight: CGFloat,
-        scrollOffset: Binding<CGFloat>,
         onHeightChange: @escaping (CGFloat) -> Void = { _ in },
-        @ViewBuilder content: @escaping () -> Content
+        @ViewBuilder content: @escaping (Binding<CGFloat>) -> Content
     ) {
         self._detent = detent
         self.collapsedContentHeight = collapsedContentHeight
         self.availableHeight = availableHeight
-        self._scrollOffset = scrollOffset
         self.onHeightChange = onHeightChange
         self.content = content
     }
@@ -90,7 +88,7 @@ struct FloatingSheet<Content: View>: View {
                 .accessibilityHint("Faites glisser pour agrandir ou réduire")
                 .accessibilityAddTraits(.isButton)
 
-            content()
+            content($scrollOffset)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         }
         .frame(height: resolvedHeight, alignment: .top)
@@ -102,9 +100,12 @@ struct FloatingSheet<Content: View>: View {
         .padding(.horizontal, horizontalInset)
         .padding(.bottom, bottomInset)
         .sensoryFeedback(.selection, trigger: detent)
-        .onAppear { onHeightChange(resolvedHeight + bottomInset) }
-        .onChange(of: resolvedHeight) { height in
-            onHeightChange(height + bottomInset)
+        .onAppear { onHeightChange(height(for: detent) + bottomInset) }
+        .onChange(of: detent) { newDetent in
+            onHeightChange(height(for: newDetent) + bottomInset)
+        }
+        .onChange(of: collapsedContentHeight) { newHeight in
+            onHeightChange(height(for: detent) + bottomInset)
         }
     }
 

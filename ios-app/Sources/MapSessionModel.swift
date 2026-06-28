@@ -185,12 +185,25 @@ final class MapSessionModel {
     /// demo server, no network) so estimates degrade rather than vanish.
     func recomputeLegEstimates(_ stops: [RouteStop], profile: String) {
         estimatesTask?.cancel()
-        guard stops.count > 1 else {
+        guard !stops.isEmpty else {
             legEstimates = [:]
             return
         }
         estimatesTask = Task {
             var results: [UUID: LegEstimate] = [:]
+
+            // First leg: from current location to stops[0]
+            if let currentCoordinate = await MainActor.run(body: { location.lastLocation?.coordinate }) {
+                guard !Task.isCancelled else { return }
+                let destination = stops[0]
+                if let route = await OSRMClient.fetchRoute(from: currentCoordinate, to: destination.coordinate, profile: profile) {
+                    results[destination.id] = LegEstimate(distanceMeters: route.distanceMeters, travelTime: route.durationSeconds)
+                } else if let fallback = await fetchMapKitEstimate(from: currentCoordinate, to: destination.coordinate, profile: profile) {
+                    results[destination.id] = fallback
+                }
+            }
+
+            // Remaining legs: stops[i-1] to stops[i]
             for index in 1..<stops.count {
                 guard !Task.isCancelled else { return }
                 let origin = stops[index - 1]

@@ -128,13 +128,13 @@ extension ContentView {
     func sequenceLegs(for stops: [RouteStop], speed: Double, profile: String) -> [[String: Any]] {
         guard !stops.isEmpty else { return [] }
         let legType = profile == "walking" ? "walk" : "drive"
+        let startingCoordinate = session.location.lastLocation?.coordinate ?? stops[0].coordinate
         var legs: [[String: Any]] = []
-        var previousCoordinate = stops[0].coordinate
-        for (index, stop) in stops.enumerated() {
-            let start = index == 0 ? stop.coordinate : previousCoordinate
+        var previousCoordinate = startingCoordinate
+        for stop in stops {
             legs.append([
                 "type": legType,
-                "start": ["lat": start.latitude, "lon": start.longitude],
+                "start": ["lat": previousCoordinate.latitude, "lon": previousCoordinate.longitude],
                 "end": ["lat": stop.coordinate.latitude, "lon": stop.coordinate.longitude],
                 "speed": speed
             ])
