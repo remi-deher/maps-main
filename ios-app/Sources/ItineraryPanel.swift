@@ -37,11 +37,11 @@ struct ItineraryHeader: View {
         VStack(spacing: 8) {
             LazyVStack(alignment: .leading, spacing: 0) {
                 startingPointRow
-                
+
                 ForEach(Array(stops.enumerated()), id: \.element.id) { index, stop in
                     VStack(alignment: .leading, spacing: 0) {
                         routeLegConnector(for: stop)
-                        
+
                         stopRow(index: index, stop: stop)
                     }
                     .onDrag {
@@ -116,7 +116,7 @@ struct ItineraryHeader: View {
             if let estimate = legEstimates[stop.id] {
                 let distance = Measurement(value: estimate.distanceMeters, unit: UnitLength.meters)
                 let duration = durationFormatter.string(from: estimate.travelTime) ?? ""
-                
+
                 Text("\(duration) (\(estimateFormatter.string(from: distance)))")
                     .font(.system(size: 10, weight: .medium))
                     .foregroundStyle(.secondary)
@@ -207,7 +207,7 @@ struct ItineraryOptions: View {
                         .foregroundStyle(.secondary)
                         .monospacedDigit()
                 }
-                
+
                 Slider(value: $speed, in: 5...130, step: 5)
                     .accessibilityValue("\(Int(speed)) kilomètres heure")
             }
@@ -224,10 +224,10 @@ struct ItineraryOptions: View {
                 .buttonStyle(.glass)
                 .disabled(stops.isEmpty)
 
-                Button(action: {
+                Button {
                     launchFeedback += 1
                     onLaunch()
-                }) {
+                } label: {
                     Text("Lancer l'itinéraire")
                         .font(.subheadline.weight(.bold))
                         .frame(maxWidth: .infinity, minHeight: 44)
@@ -236,7 +236,7 @@ struct ItineraryOptions: View {
                 .tint(.accentColor)
                 .disabled(stops.isEmpty)
             }
-            
+
             if let gpxExportError {
                 Text(gpxExportError)
                     .font(.caption)

@@ -107,9 +107,9 @@ struct BottomSheet: View {
                         .padding(.bottom, hasActiveRouteControls ? 8 : 24)
                         .background(
                             GeometryReader { proxy in
-                                let y = proxy.frame(in: .named("scroll")).minY
+                                let offsetY = proxy.frame(in: .named("scroll")).minY
                                 Color.clear
-                                    .preference(key: ScrollOffsetKey.self, value: y)
+                                    .preference(key: ScrollOffsetKey.self, value: offsetY)
                             }
                         )
                 }
@@ -362,11 +362,11 @@ struct BottomSheet: View {
                 Text("Itinéraire")
                     .font(.title3.weight(.bold))
                 Spacer()
-                Button(action: {
+                Button {
                     withAnimation {
                         itineraryStops = []
                     }
-                }) {
+                } label: {
                     Image(systemName: "xmark.circle.fill")
                         .font(.title3)
                         .foregroundStyle(.secondary)

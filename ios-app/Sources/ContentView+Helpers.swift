@@ -169,10 +169,10 @@ extension ContentView {
     func syncActiveRouteState(oldState: String?, newState: String?) {
         guard activeRoute != nil else { return }
         guard let newState = newState else { return }
-        
+
         let wasActive = (oldState == "moving" || oldState == "paused")
         let isNowActive = (newState == "moving" || newState == "paused")
-        
+
         if wasActive && !isNowActive {
             activeRoute = nil
         }

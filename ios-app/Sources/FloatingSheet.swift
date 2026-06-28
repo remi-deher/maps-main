@@ -101,7 +101,7 @@ struct FloatingSheet<Content: View>: View {
                     let isAtTop = scrollOffset >= -1
                     let canDragInContent = isDraggingDown && isAtTop
                     dragStartedInHeader = (detent != .large) || (value.startLocation.y <= headerHeight) || canDragInContent
-                    
+
                     let horizontalAmount = abs(value.translation.width)
                     let verticalAmount = abs(value.translation.height)
                     if horizontalAmount > 2 || verticalAmount > 2 {
@@ -109,9 +109,9 @@ struct FloatingSheet<Content: View>: View {
                         dragDirectionDetermined = true
                     }
                 }
-                
+
                 guard dragStartedInHeader && isDraggingVertically else { return }
-                
+
                 if detent == .large {
                     let isDraggingDown = value.translation.height > 0
                     let isAtTop = scrollOffset >= -1
@@ -119,19 +119,19 @@ struct FloatingSheet<Content: View>: View {
                         return
                     }
                 }
-                
+
                 dragOffset = -value.translation.height
             }
             .onEnded { value in
                 let wasDragging = dragStartedInHeader && isDraggingVertically
-                
+
                 // Reset state immediately
                 dragDirectionDetermined = false
                 isDraggingVertically = false
                 dragStartedInHeader = false
-                
+
                 guard wasDragging else { return }
-                
+
                 guard abs(value.predictedEndTranslation.height) >= abs(value.predictedEndTranslation.width) else {
                     withAnimation(.interactiveSpring(response: 0.32, dampingFraction: 0.85)) {
                         dragOffset = 0
