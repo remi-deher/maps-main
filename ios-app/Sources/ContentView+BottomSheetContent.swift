@@ -83,7 +83,10 @@ extension ContentView {
     }
 
     func updateCollapsedSheetHeight(_ newHeight: CGFloat) {
-        collapsedSheetHeight = newHeight
+        let roundedHeight = newHeight.rounded(.toNearestOrAwayFromZero)
+        if abs(roundedHeight - collapsedSheetHeight) > 1 {
+            collapsedSheetHeight = roundedHeight
+        }
     }
 
     func teleportSelectedPlace() {

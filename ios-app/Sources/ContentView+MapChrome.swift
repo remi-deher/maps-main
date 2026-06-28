@@ -48,6 +48,7 @@ extension ContentView {
             safeArea: safeArea,
             availableHeight: availableHeight
         )
+        let isHiddenForKeyboard = searchFocused
 
         GlassEffectContainer(spacing: 12) {
             VStack(alignment: .trailing, spacing: 10) {
@@ -68,15 +69,31 @@ extension ContentView {
             }
             .padding(.trailing, max(safeArea.trailing + 16, 16))
             .padding(.bottom, bottomPadding)
+            .opacity(isHiddenForKeyboard ? 0 : 1)
+            .scaleEffect(isHiddenForKeyboard ? 0.96 : 1, anchor: .bottomTrailing)
+            .allowsHitTesting(!isHiddenForKeyboard)
+            .accessibilityHidden(isHiddenForKeyboard)
             .animation(.interactiveSpring(response: 0.28, dampingFraction: 0.88), value: bottomPadding)
+            .animation(.easeOut(duration: 0.12), value: isHiddenForKeyboard)
         }
     }
 
     func mapControlsBottomPadding(safeArea: EdgeInsets, availableHeight: CGFloat) -> CGFloat {
-        let desiredPadding = sheetVisibleHeight + 18
+        let desiredPadding = restingSheetVisibleHeight(availableHeight: availableHeight) + 18
         let deadzoneFloor = safeArea.bottom + 24
         let topLimit = max(120, availableHeight - safeArea.top - 150)
         return min(max(desiredPadding, deadzoneFloor), topLimit)
+    }
+
+    func restingSheetVisibleHeight(availableHeight: CGFloat) -> CGFloat {
+        switch sheetDetent {
+        case .collapsed:
+            return collapsedSheetHeight + 14 + 8
+        case .medium:
+            return availableHeight * 0.43 + 8
+        case .large:
+            return availableHeight * 0.92 + 8
+        }
     }
 
     func recenterOnUser() {

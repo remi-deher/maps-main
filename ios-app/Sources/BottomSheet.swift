@@ -143,7 +143,7 @@ struct BottomSheet: View {
     static let collapsedHeight: CGFloat = 52
 
     var body: some View {
-        VStack(spacing: 10) {
+        VStack(spacing: 0) {
             header
                 .background(
                     GeometryReader { proxy in
@@ -151,24 +151,13 @@ struct BottomSheet: View {
                     }
                 )
 
-            if !isCollapsed {
-                ScrollView {
-                    mainContent
-                        .padding(.bottom, hasActiveRouteControls ? 8 : 24)
-                        .background(
-                            GeometryReader { proxy in
-                                let offsetY = proxy.frame(in: .named("scroll")).minY
-                                Color.clear
-                                    .preference(key: ScrollOffsetKey.self, value: offsetY)
-                            }
-                        )
-                }
-                .coordinateSpace(name: "scroll")
-                .scrollDisabled(sheetDetent != .large)
-                .onPreferenceChange(ScrollOffsetKey.self) { value in
-                    scrollOffset = value
-                }
-            }
+            scrollableContent
+                .padding(.top, isCollapsed ? 0 : 10)
+                .frame(maxHeight: isCollapsed ? 0 : .infinity, alignment: .top)
+                .opacity(isCollapsed ? 0 : 1)
+                .allowsHitTesting(!isCollapsed)
+                .accessibilityHidden(isCollapsed)
+                .clipped()
 
             if !isCollapsed, hasActiveRouteControls {
                 BottomSheetActiveRouteControlDockView(
@@ -180,13 +169,35 @@ struct BottomSheet: View {
                     onShowActiveRouteDetails: onShowActiveRouteDetails,
                     onOpenSettings: onOpenSettings
                 )
+                .padding(.top, 10)
                 .padding(.bottom, 8)
             }
         }
         .onPreferenceChange(HeaderHeightKey.self) { measured in
-            if abs(measured - collapsedHeight) > 0.5 {
-                onCollapsedHeightChange(measured)
+            let rounded = measured.rounded(.toNearestOrAwayFromZero)
+            if abs(rounded - collapsedHeight) > 1 {
+                onCollapsedHeightChange(rounded)
             }
+        }
+    }
+
+    private var scrollableContent: some View {
+        ScrollView {
+            mainContent
+                .padding(.bottom, hasActiveRouteControls ? 8 : 24)
+                .background(
+                    GeometryReader { proxy in
+                        let offsetY = proxy.frame(in: .named("scroll")).minY
+                        Color.clear
+                            .preference(key: ScrollOffsetKey.self, value: offsetY)
+                    }
+                )
+        }
+        .coordinateSpace(name: "scroll")
+        .scrollDisabled(sheetDetent != .large)
+        .scrollDismissesKeyboard(.interactively)
+        .onPreferenceChange(ScrollOffsetKey.self) { value in
+            scrollOffset = value
         }
     }
 

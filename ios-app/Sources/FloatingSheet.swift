@@ -46,13 +46,20 @@ struct FloatingSheet<Content: View>: View {
         self.content = content
     }
 
-    /// Live finger offset during a drag (positive = taller). Reset to 0 on
-    /// release, when `detent` takes over.
-    @State private var dragOffset: CGFloat = 0
+    /// Live finger offset during a drag (positive = taller). Gesture state is
+    /// transient, so the committed panel state remains the selected detent.
+    @GestureState private var dragState = SheetDragState()
 
-    @State private var dragDirectionDetermined = false
-    @State private var isDraggingVertically = false
-    @State private var dragStartedInHeader = false
+    private struct SheetDragState {
+        var offset: CGFloat = 0
+        var directionDetermined = false
+        var isVertical = false
+        var startedInResizeRegion = false
+
+        var isResizing: Bool {
+            directionDetermined && isVertical && startedInResizeRegion
+        }
+    }
 
     /// Vertical space the drag handle occupies above the content.
     private let handleAreaHeight: CGFloat = 14
@@ -72,7 +79,7 @@ struct FloatingSheet<Content: View>: View {
     private var maxHeight: CGFloat { height(for: .large) }
 
     private var resolvedHeight: CGFloat {
-        min(max(height(for: detent) + dragOffset, minHeight), maxHeight)
+        min(max(height(for: detent) + dragState.offset, minHeight), maxHeight)
     }
 
     var body: some View {
@@ -89,10 +96,11 @@ struct FloatingSheet<Content: View>: View {
                 .accessibilityAddTraits(.isButton)
 
             content($scrollOffset)
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                .frame(maxWidth: .infinity, height: max(0, maxHeight - handleAreaHeight), alignment: .top)
         }
         .frame(height: resolvedHeight, alignment: .top)
         .frame(maxWidth: .infinity)
+        .clipped()
         .contentShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
         .simultaneousGesture(dragGesture)
         .adaptiveGlassEffect(in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
@@ -111,48 +119,33 @@ struct FloatingSheet<Content: View>: View {
 
     private var dragGesture: some Gesture {
         DragGesture(minimumDistance: 1)
-            .onChanged { value in
-                if !dragDirectionDetermined {
-                    let headerHeight = collapsedContentHeight + handleAreaHeight
-                    let isDraggingDown = value.translation.height > 0
-                    let isAtTop = scrollOffset >= -1
-                    let canDragInContent = isDraggingDown && isAtTop
-                    dragStartedInHeader = (detent != .large) || (value.startLocation.y <= headerHeight) || canDragInContent
+            .updating($dragState) { value, state, transaction in
+                transaction.disablesAnimations = true
+
+                var nextState = state
+                if !nextState.directionDetermined {
+                    nextState.startedInResizeRegion = dragStartedInResizeRegion(value)
 
                     let horizontalAmount = abs(value.translation.width)
                     let verticalAmount = abs(value.translation.height)
                     if horizontalAmount > 2 || verticalAmount > 2 {
-                        isDraggingVertically = verticalAmount > horizontalAmount
-                        dragDirectionDetermined = true
+                        nextState.isVertical = verticalAmount > horizontalAmount
+                        nextState.directionDetermined = true
                     }
                 }
 
-                guard dragStartedInHeader && isDraggingVertically else { return }
-
-                if detent == .large {
-                    let isDraggingDown = value.translation.height > 0
-                    let isAtTop = scrollOffset >= -1
-                    if isDraggingDown && !isAtTop {
-                        return
-                    }
+                guard nextState.isResizing, canResize(with: value) else {
+                    state = nextState
+                    return
                 }
 
-                dragOffset = -value.translation.height
+                nextState.offset = -value.translation.height
+                state = nextState
             }
             .onEnded { value in
-                let wasDragging = dragStartedInHeader && isDraggingVertically
-
-                // Reset state immediately
-                dragDirectionDetermined = false
-                isDraggingVertically = false
-                dragStartedInHeader = false
-
-                guard wasDragging else { return }
+                guard shouldCommitResize(value) else { return }
 
                 guard abs(value.predictedEndTranslation.height) >= abs(value.predictedEndTranslation.width) else {
-                    withAnimation(.interactiveSpring(response: 0.32, dampingFraction: 0.85)) {
-                        dragOffset = 0
-                    }
                     return
                 }
                 let projected = height(for: detent) - value.predictedEndTranslation.height
@@ -162,10 +155,33 @@ struct FloatingSheet<Content: View>: View {
                     predictedTranslation: value.predictedEndTranslation.height
                 )
                 withAnimation(.interactiveSpring(response: 0.28, dampingFraction: 0.88)) {
-                    dragOffset = 0
                     detent = target
                 }
             }
+    }
+
+    private func dragStartedInResizeRegion(_ value: DragGesture.Value) -> Bool {
+        let headerHeight = collapsedContentHeight + handleAreaHeight
+        let isDraggingDown = value.translation.height > 0
+        let isAtTop = scrollOffset >= -1
+        let canDragInContent = isDraggingDown && isAtTop
+        return (detent != .large) || (value.startLocation.y <= headerHeight) || canDragInContent
+    }
+
+    private func canResize(with value: DragGesture.Value) -> Bool {
+        guard detent == .large else { return true }
+
+        let isDraggingDown = value.translation.height > 0
+        let isAtTop = scrollOffset >= -1
+        return !isDraggingDown || isAtTop
+    }
+
+    private func shouldCommitResize(_ value: DragGesture.Value) -> Bool {
+        let horizontalAmount = abs(value.translation.width)
+        let verticalAmount = abs(value.translation.height)
+        return dragStartedInResizeRegion(value)
+            && verticalAmount > horizontalAmount
+            && canResize(with: value)
     }
 
     private func targetDetent(projectedHeight: CGFloat, translation: CGFloat, predictedTranslation: CGFloat) -> SheetDetent {
