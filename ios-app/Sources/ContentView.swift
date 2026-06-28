@@ -202,9 +202,22 @@ struct ContentView: View {
         .onChange(of: session.engine.state) { _ in
             session.handleEngineStateChange(notificationsEnabled: notificationsEnabled)
         }
-        .onChange(of: session.engine.status) { oldStatus, newStatus in
+        .onChange(of: session.engine.status?.state) { oldState, newState in
             session.handleSimulationStateChange(notificationsEnabled: notificationsEnabled)
-            syncActiveRouteState(oldStatus: oldStatus, newStatus: newStatus)
+            syncActiveRouteState(
+                oldEngineState: oldState,
+                newEngineState: newState,
+                oldNavigationState: session.engine.status?.navigation?.status?.state,
+                newNavigationState: session.engine.status?.navigation?.status?.state
+            )
+        }
+        .onChange(of: session.engine.status?.navigation?.status?.state) { oldState, newState in
+            syncActiveRouteState(
+                oldEngineState: session.engine.status?.state,
+                newEngineState: session.engine.status?.state,
+                oldNavigationState: oldState,
+                newNavigationState: newState
+            )
         }
         .onChange(of: discovery.state) { newState in
             guard case .found(let host, let port) = newState else { return }

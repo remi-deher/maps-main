@@ -181,12 +181,13 @@ extension ContentView {
         return isRouteSimulationState(status?.state)
     }
 
-    func syncActiveRouteState(oldStatus: EngineStatus?, newStatus: EngineStatus?) {
+    func syncActiveRouteState(
+        oldEngineState: String?,
+        newEngineState: String?,
+        oldNavigationState: String?,
+        newNavigationState: String?
+    ) {
         guard activeRoute != nil else { return }
-        guard let newStatus = newStatus else { return }
-
-        let oldNavigationState = oldStatus?.navigation?.status?.state
-        let newNavigationState = newStatus.navigation?.status?.state
 
         if newNavigationState == "running" || newNavigationState == "paused" {
             return
@@ -203,8 +204,8 @@ extension ContentView {
             return
         }
 
-        let wasActive = isRouteSimulationState(oldStatus?.state)
-        let isNowActive = isRouteSimulationState(newStatus.state)
+        let wasActive = isRouteSimulationState(oldEngineState)
+        let isNowActive = isRouteSimulationState(newEngineState)
         if wasActive && !isNowActive {
             activeRoute = nil
         }

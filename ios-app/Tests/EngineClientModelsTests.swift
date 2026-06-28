@@ -72,8 +72,7 @@ final class EngineClientModelsTests: XCTestCase {
             "status": {
               "state": "running",
               "index": 4,
-              "total": 42,
-              "destination": {"lat": 48.86, "lon": 2.35, "name": "Destination"}
+              "total": 42
             },
             "progress": {
               "index": 4,
