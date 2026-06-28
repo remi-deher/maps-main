@@ -304,8 +304,6 @@ struct BottomSheet: View {
         return .collapseSheet
     }
 
-
-
     /// Plans-style resting row: a search capsule plus a separate round
     /// settings/cancel control, instead of embedding that control in the field.
     private var itineraryPlanningHeader: some View {
@@ -404,6 +402,4 @@ struct BottomSheet: View {
         .accessibilityLabel(action == .settings ? "Réglages" : "Annuler")
         .animation(.snappy(duration: 0.2), value: action)
     }
-
-
 }
