@@ -28,6 +28,7 @@ struct FloatingSheet<Content: View>: View {
     /// Height available to the panel (the map's full height, from a
     /// GeometryReader in the parent).
     let availableHeight: CGFloat
+    var onHeightChange: (CGFloat) -> Void = { _ in }
     @ViewBuilder var content: () -> Content
 
     /// Live finger offset during a drag (positive = taller). Reset to 0 on
@@ -35,16 +36,16 @@ struct FloatingSheet<Content: View>: View {
     @State private var dragOffset: CGFloat = 0
 
     /// Vertical space the drag handle occupies above the content.
-    private let handleAreaHeight: CGFloat = 18
-    private let horizontalInset: CGFloat = 10
+    private let handleAreaHeight: CGFloat = 14
+    private let horizontalInset: CGFloat = 8
     private let bottomInset: CGFloat = 8
-    private let cornerRadius: CGFloat = 28
+    private let cornerRadius: CGFloat = 26
 
     private func height(for detent: SheetDetent) -> CGFloat {
         switch detent {
         case .collapsed: return collapsedContentHeight + handleAreaHeight
-        case .medium: return availableHeight * 0.5
-        case .large: return availableHeight * 0.92
+        case .medium: return availableHeight * 0.43
+        case .large: return availableHeight * 0.88
         }
     }
 
@@ -59,9 +60,9 @@ struct FloatingSheet<Content: View>: View {
         VStack(spacing: 0) {
             Capsule()
                 .fill(.secondary.opacity(0.72))
-                .frame(width: 38, height: 5)
-                .padding(.top, 9)
-                .padding(.bottom, 4)
+                .frame(width: 36, height: 5)
+                .padding(.top, 6)
+                .padding(.bottom, 3)
                 .frame(maxWidth: .infinity)
                 .contentShape(Rectangle())
                 .accessibilityLabel("Poignée du panneau")
@@ -80,6 +81,10 @@ struct FloatingSheet<Content: View>: View {
         .padding(.horizontal, horizontalInset)
         .padding(.bottom, bottomInset)
         .sensoryFeedback(.selection, trigger: detent)
+        .onAppear { onHeightChange(resolvedHeight + bottomInset) }
+        .onChange(of: resolvedHeight) { height in
+            onHeightChange(height + bottomInset)
+        }
     }
 
     private var dragGesture: some Gesture {
@@ -96,12 +101,52 @@ struct FloatingSheet<Content: View>: View {
                     return
                 }
                 let projected = height(for: detent) - value.predictedEndTranslation.height
-                let target = nearestDetent(to: projected)
-                withAnimation(.interactiveSpring(response: 0.32, dampingFraction: 0.85)) {
+                let target = targetDetent(
+                    projectedHeight: projected,
+                    translation: value.translation.height,
+                    predictedTranslation: value.predictedEndTranslation.height
+                )
+                withAnimation(.interactiveSpring(response: 0.28, dampingFraction: 0.88)) {
                     dragOffset = 0
                     detent = target
                 }
             }
+    }
+
+    private func targetDetent(projectedHeight: CGFloat, translation: CGFloat, predictedTranslation: CGFloat) -> SheetDetent {
+        let flickThreshold: CGFloat = 72
+        let shortPullThreshold: CGFloat = 34
+
+        if predictedTranslation < -flickThreshold {
+            return nextLargerDetent()
+        }
+        if predictedTranslation > flickThreshold {
+            return nextSmallerDetent()
+        }
+        if translation < -shortPullThreshold, detent == .collapsed {
+            return .medium
+        }
+        if translation > shortPullThreshold, detent == .medium {
+            return .collapsed
+        }
+
+        return nearestDetent(to: projectedHeight)
+    }
+
+    private func nextLargerDetent() -> SheetDetent {
+        switch detent {
+        case .collapsed: return .medium
+        case .medium: return .large
+        case .large: return .large
+        }
+    }
+
+    private func nextSmallerDetent() -> SheetDetent {
+        switch detent {
+        case .collapsed: return .collapsed
+        case .medium: return .collapsed
+        case .large: return .medium
+        }
     }
 
     private func nearestDetent(to target: CGFloat) -> SheetDetent {

@@ -28,8 +28,11 @@ struct BottomSheet: View {
     @Binding var itinerarySpeed: Double
     @Binding var itineraryProfile: String
     let legEstimates: [UUID: LegEstimate]
+    let activeRoute: ActiveRoute?
     var onAddStop: () -> Void
     var onLaunchItinerary: () -> Void
+    var onShowActiveRouteDetails: () -> Void
+    var onRecenterActiveRoute: () -> Void
 
     let favorites: [Favorite]
     var onSelectFavorite: (Favorite) -> Void
@@ -78,10 +81,10 @@ struct BottomSheet: View {
 
     /// Fallback used only until the header's first layout pass reports its
     /// real height — never the value actually rendered against.
-    static let collapsedHeight: CGFloat = 66
+    static let collapsedHeight: CGFloat = 52
 
     var body: some View {
-        VStack(spacing: 14) {
+        VStack(spacing: 10) {
             header
                 .background(
                     GeometryReader { proxy in
@@ -92,8 +95,13 @@ struct BottomSheet: View {
             if !isCollapsed {
                 ScrollView {
                     mainContent
-                        .padding(.bottom, 24)
+                        .padding(.bottom, hasActiveRouteControls ? 8 : 24)
                 }
+            }
+
+            if !isCollapsed, hasActiveRouteControls {
+                activeRouteControlDock
+                    .padding(.bottom, 8)
             }
         }
         .onPreferenceChange(HeaderHeightKey.self) { measured in
@@ -114,7 +122,7 @@ struct BottomSheet: View {
             // Persistent like Plans' "navigation active" banner — visible
             // regardless of what else is on screen, since pausing/
             // stopping a running simulation is a system-level action.
-            if simulationState == "moving" || simulationState == "paused" {
+            if hasGenericSimulationControls {
                 simulationControlBar
             }
 
@@ -124,7 +132,9 @@ struct BottomSheet: View {
                 patrolActiveBar
             }
 
-            if patrol.isSettingUp {
+            if hasActiveRouteControls, let activeRoute = activeRoute {
+                activeRouteOverview(activeRoute)
+            } else if patrol.isSettingUp {
                 // Defining a zone takes over the sheet like the place card —
                 // the live dashed preview is drawn on the map underneath.
                 PatrolPanel(
@@ -166,6 +176,7 @@ struct BottomSheet: View {
                         speed: $itinerarySpeed,
                         profile: $itineraryProfile,
                         legEstimates: legEstimates,
+                        totalEstimate: itineraryTotalEstimate,
                         onAddStop: onAddStop,
                         onLaunch: onLaunchItinerary,
                         onCancel: { itineraryStops = [] }
@@ -324,12 +335,18 @@ struct BottomSheet: View {
     /// Plans-style resting row: a search capsule plus a separate round
     /// settings/cancel control, instead of embedding that control in the field.
     private var header: some View {
-        HStack(spacing: 10) {
-            searchField
-            trailingButton
+        Group {
+            if hasActiveRouteControls, let activeRoute = activeRoute {
+                activeRouteCompactHeader(activeRoute)
+            } else {
+                HStack(spacing: 10) {
+                    searchField
+                    trailingButton
+                }
+            }
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 8)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 4)
     }
 
     private var searchField: some View {
@@ -342,9 +359,9 @@ struct BottomSheet: View {
                 .focused(isFocused)
                 .submitLabel(.search)
         }
-        .padding(.horizontal, 15)
-        .padding(.vertical, 12)
-        .frame(minHeight: 50)
+        .padding(.horizontal, 13)
+        .padding(.vertical, 8)
+        .frame(minHeight: 44)
         .frame(maxWidth: .infinity, alignment: .leading)
         .glassEffect(.regular.interactive(), in: .capsule)
     }
@@ -368,7 +385,7 @@ struct BottomSheet: View {
             Image(systemName: action == .settings ? "gearshape.fill" : "xmark.circle.fill")
                 .font(action == .settings ? .body.weight(.semibold) : .title3.weight(.semibold))
                 .foregroundStyle(.secondary)
-                .frame(width: 50, height: 50)
+                .frame(width: 44, height: 44)
                 .contentShape(Circle())
                 .contentTransition(.symbolEffect(.replace))
         }

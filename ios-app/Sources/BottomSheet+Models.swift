@@ -15,6 +15,26 @@ struct RecentPlace: Codable, Identifiable, Equatable {
     }
 }
 
+/// Local UI snapshot of the route that is currently being simulated. The
+/// engine only reports a generic moving/paused state, so the app keeps this
+/// lightweight copy to present a Plans-style active route card after launch.
+struct ActiveRoute: Identifiable {
+    let id = UUID()
+    let stops: [RouteStop]
+    let speed: Double
+    let profile: String
+    let legEstimates: [UUID: LegEstimate]
+    let startedAt = Date()
+
+    var destinationName: String {
+        stops.last?.name ?? "Destination"
+    }
+
+    var stepCount: Int {
+        stops.count
+    }
+}
+
 /// The five actions the place card (PlaceCard) can trigger, grouped into one
 /// value instead of five separate closure parameters on BottomSheet's
 /// initializer — ContentView builds this once from `selectedPlace`'s

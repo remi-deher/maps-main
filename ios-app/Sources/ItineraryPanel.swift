@@ -32,6 +32,7 @@ struct ItineraryPanel: View {
     @Binding var speed: Double
     @Binding var profile: String
     let legEstimates: [UUID: LegEstimate]
+    let totalEstimate: LegEstimate?
     var onAddStop: () -> Void
     var onLaunch: () -> Void
     var onCancel: () -> Void
@@ -55,6 +56,8 @@ struct ItineraryPanel: View {
                         .frame(width: 44, height: 44)
                 }
             }
+
+            routePreviewCard
 
             // Plain LazyVStack instead of a List, so this doesn't nest a
             // second independently-scrolling list inside BottomSheet's outer
@@ -143,6 +146,47 @@ struct ItineraryPanel: View {
                 gpxExportError = error.localizedDescription
             }
         }
+    }
+
+    @ViewBuilder
+    private var routePreviewCard: some View {
+        if let destination = stops.last {
+            HStack(spacing: 12) {
+                Image(systemName: profile == "walking" ? "figure.walk.circle.fill" : "car.circle.fill")
+                    .font(.title2.weight(.semibold))
+                    .foregroundStyle(Color.accentColor)
+                    .frame(width: 42, height: 42)
+
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("Vers \(destination.name)")
+                        .font(.subheadline.weight(.semibold))
+                        .lineLimit(1)
+                    Text(routePreviewSubtitle)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+
+                Spacer()
+            }
+            .padding(14)
+            .frame(maxWidth: .infinity, minHeight: 68, alignment: .leading)
+            .background(Color(.secondarySystemFill), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        }
+    }
+
+    private var routePreviewSubtitle: String {
+        var parts: [String] = []
+        if let totalEstimate = totalEstimate {
+            let distance = Measurement(value: totalEstimate.distanceMeters, unit: UnitLength.meters)
+            parts.append(estimateFormatter.string(from: distance))
+            if let duration = durationFormatter.string(from: totalEstimate.travelTime), !duration.isEmpty {
+                parts.append(duration)
+            }
+        }
+        parts.append(profile == "walking" ? "Marche" : "Voiture")
+        parts.append("\(Int(speed)) km/h")
+        return parts.joined(separator: " Â· ")
     }
 
     @ViewBuilder

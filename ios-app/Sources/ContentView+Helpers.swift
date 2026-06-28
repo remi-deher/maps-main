@@ -70,21 +70,108 @@ extension ContentView {
         saveLastItinerary()
         guard requireConnection() else { return }
 
-        let legType = itineraryProfile == "walking" ? "walk" : "drive"
+        let route = ActiveRoute(
+            stops: itineraryStops,
+            speed: itinerarySpeed,
+            profile: itineraryProfile,
+            legEstimates: session.legEstimates
+        )
+        playActiveRoute(route)
+        activeRoute = route
+        itineraryStops = []
+        selectedPlace = nil
+        searchFocused = false
+        fitItinerary(route.stops)
+        withAnimation { sheetDetent = .medium }
+    }
+
+    func startRoute(to place: SelectedPlace) {
+        guard requireConnection() else { return }
+        let stop = RouteStop(coordinate: place.coordinate, name: place.title)
+        let route = ActiveRoute(stops: [stop], speed: defaultSpeed, profile: defaultProfile, legEstimates: [:])
+        session.engine.playRoute(
+            endLat: place.coordinate.latitude,
+            endLon: place.coordinate.longitude,
+            speed: defaultSpeed,
+            profile: defaultProfile
+        )
+        activeRoute = route
+        selectedPlace = nil
+        searchFocused = false
+        focus(on: place.coordinate)
+        withAnimation { sheetDetent = .medium }
+    }
+
+    func addSelectedPlaceToActiveRoute() {
+        guard let place = selectedPlace, let activeRoute = activeRoute, requireConnection() else { return }
+        let stop = RouteStop(coordinate: place.coordinate, name: place.title)
+        var updatedStops = activeRoute.stops
+        updatedStops.insert(stop, at: 0)
+        let updatedRoute = ActiveRoute(
+            stops: updatedStops,
+            speed: activeRoute.speed,
+            profile: activeRoute.profile,
+            legEstimates: [:]
+        )
+        playActiveRoute(updatedRoute)
+        self.activeRoute = updatedRoute
+        selectedPlace = nil
+        searchFocused = false
+        fitItinerary(updatedRoute.stops)
+        withAnimation { sheetDetent = .medium }
+    }
+
+    func playActiveRoute(_ route: ActiveRoute) {
+        session.engine.playSequence(legs: sequenceLegs(for: route.stops, speed: route.speed, profile: route.profile), looping: false)
+    }
+
+    func sequenceLegs(for stops: [RouteStop], speed: Double, profile: String) -> [[String: Any]] {
+        guard !stops.isEmpty else { return [] }
+        let legType = profile == "walking" ? "walk" : "drive"
         var legs: [[String: Any]] = []
-        var previousCoordinate = itineraryStops[0].coordinate
-        for (index, stop) in itineraryStops.enumerated() {
+        var previousCoordinate = stops[0].coordinate
+        for (index, stop) in stops.enumerated() {
             let start = index == 0 ? stop.coordinate : previousCoordinate
             legs.append([
                 "type": legType,
                 "start": ["lat": start.latitude, "lon": start.longitude],
                 "end": ["lat": stop.coordinate.latitude, "lon": stop.coordinate.longitude],
-                "speed": itinerarySpeed
+                "speed": speed
             ])
             previousCoordinate = stop.coordinate
         }
-        session.engine.playSequence(legs: legs, looping: false)
-        itineraryStops = []
+        return legs
+    }
+
+    func pauseActiveRoute() {
+        session.engine.pauseRoute()
+    }
+
+    func resumeActiveRoute() {
+        session.engine.resumeRoute()
+    }
+
+    func stopActiveRoute() {
+        session.engine.stopRoute()
+        activeRoute = nil
+        withAnimation { sheetDetent = .medium }
+    }
+
+    func showActiveRouteDetails() {
+        withAnimation { sheetDetent = .large }
+    }
+
+    func recenterActiveRoute() {
+        guard let activeRoute = activeRoute else { return }
+        fitItinerary(activeRoute.stops)
+    }
+
+    func syncActiveRouteState(_ state: String?) {
+        guard activeRoute != nil else { return }
+        guard let state = state else { return }
+        if state != "moving" && state != "paused" {
+            activeRoute = nil
+        }
     }
 
     /// Centralizes the "is the engine actually usable" check before any
