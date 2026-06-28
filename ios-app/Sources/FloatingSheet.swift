@@ -104,7 +104,7 @@ struct FloatingSheet<Content: View>: View {
         .onChange(of: detent) { newDetent in
             onHeightChange(height(for: newDetent) + bottomInset)
         }
-        .onChange(of: collapsedContentHeight) { newHeight in
+        .onChange(of: collapsedContentHeight) { _ in
             onHeightChange(height(for: detent) + bottomInset)
         }
     }
