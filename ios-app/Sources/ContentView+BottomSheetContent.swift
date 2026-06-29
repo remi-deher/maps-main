@@ -55,7 +55,7 @@ extension ContentView {
             ),
             presentation: BottomSheetPresentationContext(
                 scrollOffset: scrollOffset,
-                coordinator.sheetDetent: $coordinator.sheetDetent,
+                sheetDetent: $coordinator.sheetDetent,
                 collapsedHeight: coordinator.collapsedSheetHeight,
                 onCollapsedHeightChange: updateCollapsedSheetHeight
             )
