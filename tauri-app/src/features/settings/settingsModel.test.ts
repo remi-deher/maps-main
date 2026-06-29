@@ -5,6 +5,7 @@ import {
   normalizeRoutingPriority,
   moveRoutingProviderPriority,
   buildSettingsPayload,
+  type RoutingProviderId,
 } from "./settingsModel";
 import type { NetworkInterfaceInfo } from "../../types/engine";
 
@@ -87,7 +88,7 @@ describe("settingsModel", () => {
         osrmBaseUrl: " http://router.project-osrm.org ",
         routingMode: "auto" as const,
         routingProvider: "osrm" as const,
-        routingPriority: ["osrm", "google", "mapbox"] as const,
+        routingPriority: ["osrm", "google", "mapbox"] as RoutingProviderId[],
         googleRoutesApiKey: "  test_key  ",
         mapboxAccessToken: "",
         clusterHeartbeat: "3",

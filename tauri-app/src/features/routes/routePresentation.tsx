@@ -12,4 +12,6 @@ export const MODE_META: Record<
   flight: { label: "Avion", icon: Plane, color: "#38bdf8", dashed: true },
 };
 
+export const MODE_ORDER: LegMode[] = ["drive", "walk", "train", "flight"];
+
 export const autoModeToast = (mode: LegMode): string => `Mode ${MODE_META[mode].label} detecte - modifiable`;

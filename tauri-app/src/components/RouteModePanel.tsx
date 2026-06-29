@@ -8,7 +8,6 @@ import {
   Plane,
   MapPin,
   X,
-  GripVertical,
   Search,
   MousePointerClick,
   Hash,

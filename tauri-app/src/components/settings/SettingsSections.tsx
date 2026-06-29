@@ -1,8 +1,7 @@
-import React from "react";
 import { Activity, RefreshCw, Save, Smartphone, Square, Play, Pause } from "lucide-react";
 import { ROUTING_PROVIDER_LABELS, type RoutingProviderId, DEFAULT_ROUTING_PRIORITY } from "../../features/settings/settingsModel";
-import { persistRailRouterUrl } from "../../lib/osrm";
-import { persistTransitEnabled } from "../../lib/transit";
+import { setRailRouterUrl } from "../../lib/osrm";
+import { setTransitEnabled } from "../../lib/transit";
 
 export const ConnectionSettingsSection = ({
   engineStatus, connectionUrl, enginePortInput, setEnginePortInput, enginePortError, handleApplyEnginePort,
@@ -418,7 +417,7 @@ export const RoutingSection = ({
             placeholder="https://mon-osrm-rail.exemple"
             onChange={(e) => {
               setRailRouterUrlState(e.target.value);
-              persistRailRouterUrl(e.target.value);
+              setRailRouterUrl(e.target.value);
             }}
           />
           <small className="form-hint">
@@ -437,7 +436,7 @@ export const RoutingSection = ({
                 checked={transitEnabled}
                 onChange={(e) => {
                   setTransitEnabledState(e.target.checked);
-                  persistTransitEnabled(e.target.checked);
+                  setTransitEnabled(e.target.checked);
                 }}
               />
               <span className="switch-slider"></span>

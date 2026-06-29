@@ -72,7 +72,7 @@ export function StopRow({
               onChange={(e) => onSetMode(index, e.target.value as LegMode)}
               aria-label={`Mode de l'étape ${index + 1}`}
             >
-              {MODE_ORDER.map((m) => (
+              {MODE_ORDER.map((m: LegMode) => (
                 <option key={m} value={m}>
                   {MODE_META[m].label}
                 </option>

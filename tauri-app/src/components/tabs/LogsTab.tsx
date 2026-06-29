@@ -1,6 +1,7 @@
 import React, { useMemo, useState } from "react";
 import { Clipboard, ListFilter, RotateCw, ScrollText, X } from "lucide-react";
-import { LogEntry, useEngine } from "../../context/websocket";
+import { useEngine } from "../../context/websocket";
+import type { LogEntry } from "../../types/engine";
 import { useLogs } from "../../context/logsContext";
 
 type LevelFilter = "all" | "info" | "warn" | "error";

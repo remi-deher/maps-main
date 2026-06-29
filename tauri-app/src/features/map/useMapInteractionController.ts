@@ -7,7 +7,7 @@ import { reverseGeocode } from "../../lib/geocoding";
 import { osrmBaseUrl, snapToRoad } from "../../lib/osrm";
 import { autoModeToast } from "../routes/routePresentation";
 
-export function useMapInteractionController(status: any, canSend: boolean, setLocation: any, addFavorite: any, updatePatrolZone: any) {
+export function useMapInteractionController(status: any, canSend: boolean, setLocation: any, addFavorite: any) {
   const [mapMode, setMapMode] = useState<MapMode>("explore");
   const [routeWaypoints, setRouteWaypoints] = useState<Waypoint[]>([]);
   const [routeAddMethod, setRouteAddMethod] = useState<AddMethod>("search");

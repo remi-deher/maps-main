@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
 import { AlertTriangle, AlertCircle, X } from "lucide-react";
-import { LogEntry } from "../context/websocket";
+import { LogEntry } from "../types/engine";
 import { useLogs } from "../context/logsContext";
 
 interface Banner extends LogEntry {

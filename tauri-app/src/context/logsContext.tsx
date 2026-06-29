@@ -1,21 +1,21 @@
 import React, { createContext, useContext, useState, useCallback, useEffect } from "react";
-import type { LogEntryPayload } from "../types/engine";
+import type { LogEntry } from "../types/engine";
 import { engineEvents } from "../lib/events";
 
 export interface LogsContextValue {
-  logs: LogEntryPayload[];
-  appendLog: (log: LogEntryPayload) => void;
-  setLogs: (logs: LogEntryPayload[]) => void;
+  logs: LogEntry[];
+  appendLog: (log: LogEntry) => void;
+  setLogs: (logs: LogEntry[]) => void;
   clearLogs: () => void;
 }
 
 const LogsContext = createContext<LogsContextValue | null>(null);
 
 export const LogsProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [logs, setLogsState] = useState<LogEntryPayload[]>([]);
+  const [logs, setLogsState] = useState<LogEntry[]>([]);
   const MAX_LOGS = 200;
 
-  const appendLog = useCallback((log: LogEntryPayload) => {
+  const appendLog = useCallback((log: LogEntry) => {
     setLogsState((prev) => {
       const next = [...prev, log];
       if (next.length > MAX_LOGS) return next.slice(next.length - MAX_LOGS);
@@ -23,7 +23,7 @@ export const LogsProvider: React.FC<{ children: React.ReactNode }> = ({ children
     });
   }, []);
 
-  const setLogs = useCallback((newLogs: LogEntryPayload[]) => {
+  const setLogs = useCallback((newLogs: LogEntry[]) => {
     setLogsState(newLogs);
   }, []);
 
@@ -32,8 +32,8 @@ export const LogsProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, []);
 
   useEffect(() => {
-    const handleLog = (log: LogEntryPayload) => appendLog(log);
-    const handleLogs = (logsList: LogEntryPayload[]) => setLogs(logsList);
+    const handleLog = (log: LogEntry) => appendLog(log);
+    const handleLogs = (logsList: LogEntry[]) => setLogs(logsList);
     
     engineEvents.on("log", handleLog);
     engineEvents.on("logs", handleLogs);
