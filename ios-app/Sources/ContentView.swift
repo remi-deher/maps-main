@@ -192,8 +192,9 @@ struct ContentView: View {
             coordinator.estimator.recomputeLegEstimates(
                 stops: newStops,
                 profile: coordinator.itineraryProfile,
-                currentLocation: session.location.lastLocation
-            ) { coordinator.estimator.legEstimates = $0 }
+                currentLocation: session.location.lastLocation,
+                onComplete: { coordinator.estimator.legEstimates = $0 }
+            )
             if !newStops.isEmpty {
                 withAnimation { coordinator.sheetDetent = .medium }
             }
@@ -202,8 +203,9 @@ struct ContentView: View {
             coordinator.estimator.recomputeLegEstimates(
                 stops: coordinator.itineraryStops,
                 profile: coordinator.itineraryProfile,
-                currentLocation: session.location.lastLocation
-            ) { coordinator.estimator.legEstimates = $0 }
+                currentLocation: session.location.lastLocation,
+                onComplete: { coordinator.estimator.legEstimates = $0 }
+            )
         }
         .onChange(of: liveActivityKey) { key in
             liveActivity.sync(state: key.state, locationName: key.name, enabled: liveActivityEnabled)
