@@ -103,7 +103,7 @@ struct SettingsSheet: View {
                     selectedDriver = usbDriver
                 }
             }
-            .onChange(of: engine.status) { _, status in
+            .onChange(of: engine.status, perform: { status in
                 if let status {
                     if let value = status.jitterEnabled {
                         jitterEnabled = value
@@ -115,7 +115,7 @@ struct SettingsSheet: View {
                     }
                 }
             }
-            .onChange(of: selectedDriver) { _, newValue in
+            .onChange(of: selectedDriver, perform: { newValue in
                 let current = engine.status?.deviceInfo?.driver ?? engine.status?.usbDriver ?? "go-ios"
                 if newValue != current {
                     engine.switchDriver(driverId: newValue, transport: wifiAddress.isEmpty ? "auto" : "wifi", wifiAddress: wifiAddress)

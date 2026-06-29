@@ -17,10 +17,10 @@ struct GpsMockCompanionApp: App {
         WindowGroup {
             ContentView()
         }
-        .onChange(of: scenePhase) { _, phase in
+        .onChange(of: scenePhase, perform: { phase in
             // Arm the safety-net refresh when leaving the foreground; it's a
             // no-op unless keep-alive is on and an engine address is known.
             if phase == .background { BackgroundRefreshManager.schedule() }
-        }
+        })
     }
 }

@@ -199,7 +199,7 @@ struct ContentView: View {
                 withAnimation { coordinator.sheetDetent = .medium }
             }
         }
-        .onChange(of: coordinator.itineraryProfile) { _ in
+        .onChange(of: coordinator.itineraryProfile, perform: { _ in
             coordinator.estimator.recomputeLegEstimates(
                 stops: coordinator.itineraryStops,
                 profile: coordinator.itineraryProfile,
@@ -225,7 +225,7 @@ struct ContentView: View {
                 withAnimation { coordinator.sheetDetent = .medium }
             }
         }
-        .onChange(of: coordinator.selectedFeature) { _, feature in
+        .onChange(of: coordinator.selectedFeature, perform: { feature in
             // Tapping a system POI resolves into the same SelectedPlace flow as
             // a long-press, so the user gets the identical action card
             // (Teleporter / Itineraire / Etape / Favori). Cleared immediately so
