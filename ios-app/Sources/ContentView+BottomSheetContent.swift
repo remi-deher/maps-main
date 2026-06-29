@@ -19,7 +19,7 @@ extension ContentView {
                 speed: $coordinator.itinerarySpeed,
                 profile: $coordinator.itineraryProfile,
                 legEstimates: session.legEstimates,
-                coordinator.activeRoute: coordinator.activeRoute,
+                activeRoute: coordinator.activeRoute,
                 onAddStop: { searchFocused = true },
                 onLaunch: { coordinator.launchItinerary(session: session) },
                 onShowActiveRouteDetails: coordinator.showActiveRouteDetails,
@@ -31,14 +31,14 @@ extension ContentView {
                 onDeleteFavorite: { favorite in
                     session.engine.removeFavorite(lat: favorite.lat, lon: favorite.lon)
                 },
-                coordinator.recentPlaces: coordinator.recentPlaces,
+                recentPlaces: coordinator.recentPlaces,
                 onSelectRecentPlace: coordinator.selectRecentPlace,
                 onClearRecentPlaces: coordinator.clearRecentPlaces,
-                coordinator.hasSavedItinerary: coordinator.hasSavedItinerary,
+                hasSavedItinerary: coordinator.hasSavedItinerary,
                 onLoadLastItinerary: coordinator.loadLastItinerary
             ),
             place: BottomSheetPlaceContext(
-                coordinator.selectedPlace: coordinator.selectedPlace,
+                selectedPlace: coordinator.selectedPlace,
                 actions: placeActions
             ),
             patrol: patrolControls,

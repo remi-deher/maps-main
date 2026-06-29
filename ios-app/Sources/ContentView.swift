@@ -201,7 +201,11 @@ struct ContentView: View {
             liveActivity.sync(state: key.state, locationName: key.name, enabled: liveActivityEnabled)
         }
         .onChange(of: liveActivityEnabled) { enabled in
-            liveActivity.sync(state: coordinator.engineStatusState(session: session), locationName: coordinator.lastInjectedLocationName(session: session), enabled: enabled)
+            liveActivity.sync(
+                state: coordinator.engineStatusState(session: session),
+                locationName: coordinator.lastInjectedLocationName(session: session),
+                enabled: enabled
+            )
         }
         .onChange(of: coordinator.selectedPlace) { place in
             // The place card now lives inside the bottom sheet (it used to

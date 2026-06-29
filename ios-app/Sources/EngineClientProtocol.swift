@@ -1,6 +1,5 @@
 import Foundation
 import CoreLocation
-import CoreLocation
 
 protocol EngineClientProtocol: AnyObject {
     var state: EngineConnectionState { get set }
@@ -31,7 +30,13 @@ protocol EngineClientProtocol: AnyObject {
     func clearHistory()
     func relance()
     func switchDriver(driverId: String, transport: String, wifiAddress: String)
-    func updatePatrolZone(type: String, center: CLLocationCoordinate2D?, radius: Double?, bounds: (southWest: CLLocationCoordinate2D, northEast: CLLocationCoordinate2D)?, active: Bool)
+    func updatePatrolZone(
+        type: String,
+        center: CLLocationCoordinate2D?,
+        radius: Double?,
+        bounds: (southWest: CLLocationCoordinate2D, northEast: CLLocationCoordinate2D)?,
+        active: Bool
+    )
     func saveSettings(_ settings: [String: Any])
 
     func addFavorite(lat: Double, lon: Double, name: String)
