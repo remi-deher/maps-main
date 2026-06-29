@@ -41,13 +41,34 @@ func (e *Engine) SaveSettings(ctx context.Context, payload api.SaveSettingsPaylo
 	}
 	if payload.OsrmBaseURL != nil {
 		url := strings.TrimSuffix(strings.TrimSpace(*payload.OsrmBaseURL), "/")
-		e.osrmBaseURL = url
 		if url == "" {
 			e.st.OsrmBaseURL = defaultOsrmBaseURL()
 		} else {
 			e.st.OsrmBaseURL = url
 		}
 	}
+
+	routingCfg := e.routingRegistry.Config()
+	routingCfg.OSRMBaseURL = e.st.OsrmBaseURL
+	if payload.RoutingMode != nil {
+		routingCfg.Mode = *payload.RoutingMode
+	}
+	if payload.RoutingProvider != nil {
+		routingCfg.Provider = *payload.RoutingProvider
+	}
+	if payload.RoutingProviderPriority != nil {
+		routingCfg.ProviderPriority = payload.RoutingProviderPriority
+	}
+	if payload.GoogleRoutesAPIKey != nil {
+		routingCfg.GoogleRoutesAPIKey = *payload.GoogleRoutesAPIKey
+	}
+	if payload.MapboxAccessToken != nil {
+		routingCfg.MapboxAccessToken = *payload.MapboxAccessToken
+	}
+	e.routingRegistry.UpdateConfig(routingCfg)
+	routingCfg = e.routingRegistry.Config()
+	e.st.OsrmBaseURL = routingCfg.OSRMBaseURL
+	e.st.Routing = apiRoutingInfo(e.routingRegistry.Info())
 
 	// Cluster heartbeat/failover tuning — apply live (cluster.SetTuning) and
 	// mirror into the status so the UI reflects the running values.
@@ -97,6 +118,9 @@ func (e *Engine) SaveSettings(ctx context.Context, payload api.SaveSettingsPaylo
 
 	e.emitStatusLocked()
 	e.persist()
+	if payload.GoogleRoutesAPIKey != nil || payload.MapboxAccessToken != nil {
+		e.persistSecrets()
+	}
 	e.LogEvent("info", "admin", "settings", "save", "Réglages sauvegardés", nil)
 	return nil
 }

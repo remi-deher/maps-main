@@ -59,6 +59,15 @@ func main() {
 		log.Printf("settings: %v (using defaults)", err)
 		def = settings.Default()
 	}
+	var secrets settings.Secrets
+	var secretStore settings.SecretStore
+	if s, ok := store.(settings.SecretStore); ok {
+		secretStore = s
+		secrets, err = secretStore.LoadSecrets()
+		if err != nil {
+			log.Printf("secrets: %v (using environment/default empty secrets)", err)
+		}
+	}
 
 	driverFlag := flag.String("driver", envOr("GPSMOCK_DRIVER", string(def.PreferredDriver)), "tunnel driver: pymobiledevice | go-ios")
 	transportFlag := flag.String("transport", envOr("GPSMOCK_TRANSPORT", "auto"), "transport: auto | usb | wifi")
@@ -116,7 +125,9 @@ func main() {
 		actionTimeout:      *actionTimeout,
 		telemetryInterval:  *telemetryInterval,
 		settingsCfg:        def,
+		secrets:            secrets,
 		store:              store,
+		secretStore:        secretStore,
 		authStore:          authStore,
 	}
 

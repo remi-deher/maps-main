@@ -5,6 +5,8 @@ import (
 	"fmt"
 
 	"github.com/remi-deher/maps-main/engine/internal/domain"
+	"github.com/remi-deher/maps-main/engine/internal/routing"
+	sim "github.com/remi-deher/maps-main/engine/internal/simulation"
 )
 
 // stopActiveSimulation terminates any running routing/navigation or patrol goroutines
@@ -87,14 +89,15 @@ func (e *Engine) isPaused() bool {
 	return e.simPaused
 }
 
-// PlayRoute fetches a route from OSRM and runs the movement simulation
+// PlayRoute fetches a route from the configured routing provider and runs the
+// movement simulation.
 func (e *Engine) PlayRoute(ctx context.Context, endLat, lon float64, speed float64, profile string) error {
 	e.stopActiveSimulation()
-	e.LogEvent("info", "simulation", "route", "play", "Démarrage d'un trajet OSRM", map[string]string{
+	e.LogEvent("info", "simulation", "route", "play", "Démarrage d'un trajet", map[string]string{
 		"endLat":  fmt.Sprintf("%.6f", endLat),
 		"endLon":  fmt.Sprintf("%.6f", lon),
 		"speed":   fmt.Sprintf("%.2f", speed),
-		"profile": profile,
+		"profile": routing.NormalizeProfile(profile),
 	})
 
 	e.mu.RLock()
@@ -107,15 +110,20 @@ func (e *Engine) PlayRoute(ctx context.Context, endLat, lon float64, speed float
 	e.mu.RUnlock()
 
 	end := domain.LatLon{Lat: endLat, Lon: lon}
-	rawPoints, err := fetchOSRMRoute(e.osrmURL(), start, end, profile)
+	result, err := e.routingRegistry.Route(ctx, routing.Request{Start: start, End: end, Profile: profile})
 	if err != nil {
-		e.LogEvent("warn", "simulation", "route", "fallback", fmt.Sprintf("OSRM indisponible, trajet direct utilisé : %v", err), map[string]string{"error": err.Error()})
-		rawPoints = []domain.LatLon{start, end}
+		e.LogEvent("warn", "simulation", "route", "fallback", fmt.Sprintf("Aucun provider de routage disponible, trajet direct utilisé : %v", err), map[string]string{"error": err.Error()})
+		result.Points = []domain.LatLon{start, end}
+	} else {
+		e.LogEvent("info", "routing", "provider", "selected", "Provider de routage selectionne", map[string]string{"provider": result.ProviderID})
 	}
 
-	points := interpolatePoints(rawPoints, speed)
-	e.LogEvent("info", "simulation", "route", "prepared", fmt.Sprintf("Trajet prêt (%d points)", len(points)), map[string]string{
-		"points": fmt.Sprintf("%d", len(points)),
+	plan, err := (sim.RoutePath{RawPoints: result.Points, SpeedKmh: speed}).Plan()
+	if err != nil {
+		return err
+	}
+	e.LogEvent("info", "simulation", "route", "prepared", fmt.Sprintf("Trajet prêt (%d points)", len(plan.Points)), map[string]string{
+		"points": fmt.Sprintf("%d", len(plan.Points)),
 	})
 
 	simCtx, cancel := context.WithCancel(context.Background())
@@ -123,7 +131,7 @@ func (e *Engine) PlayRoute(ctx context.Context, endLat, lon float64, speed float
 	e.cancelSim = cancel
 	e.simMu.Unlock()
 
-	go e.startRouteSimulation(simCtx, points, false, speed)
+	go e.startRouteSimulation(simCtx, plan)
 	return nil
 }
 
@@ -141,19 +149,30 @@ func (e *Engine) PlaySequence(ctx context.Context, legs []domain.RouteLeg, loopi
 		case domain.LegDrive, domain.LegWalk:
 			profile := "driving"
 			if leg.Type == domain.LegWalk {
-				profile = "foot"
+				profile = "walking"
 			}
-			rawPoints, err := fetchOSRMRoute(e.osrmURL(), leg.Start, leg.End, profile)
+			result, err := e.routingRegistry.Route(ctx, routing.Request{Start: leg.Start, End: leg.End, Profile: profile})
 			if err != nil {
-				e.LogEvent("warn", "simulation", "sequence", "fallback", fmt.Sprintf("OSRM indisponible sur un segment, ligne directe utilisée : %v", err), map[string]string{"error": err.Error()})
-				rawPoints = []domain.LatLon{leg.Start, leg.End}
+				e.LogEvent("warn", "simulation", "sequence", "fallback", fmt.Sprintf("Aucun provider de routage disponible sur un segment, ligne directe utilisée : %v", err), map[string]string{"error": err.Error()})
+				result.Points = []domain.LatLon{leg.Start, leg.End}
+			} else {
+				e.LogEvent("info", "routing", "provider", "selected", "Provider de routage selectionne pour un segment", map[string]string{
+					"provider": result.ProviderID,
+					"profile":  profile,
+				})
 			}
-			points := interpolatePoints(rawPoints, leg.Speed)
-			allPoints = append(allPoints, points...)
+			plan, err := (sim.RoutePath{RawPoints: result.Points, SpeedKmh: leg.Speed}).Plan()
+			if err != nil {
+				return err
+			}
+			allPoints = append(allPoints, plan.Points...)
 		case domain.LegFlight:
 			rawPoints := []domain.LatLon{leg.Start, leg.End}
-			points := interpolatePoints(rawPoints, leg.Speed)
-			allPoints = append(allPoints, points...)
+			plan, err := (sim.RoutePath{RawPoints: rawPoints, SpeedKmh: leg.Speed}).Plan()
+			if err != nil {
+				return err
+			}
+			allPoints = append(allPoints, plan.Points...)
 		}
 	}
 
@@ -171,7 +190,7 @@ func (e *Engine) PlaySequence(ctx context.Context, legs []domain.RouteLeg, loopi
 	e.cancelSim = cancel
 	e.simMu.Unlock()
 
-	go e.startRouteSimulation(simCtx, allPoints, looping, 0) // speed per-leg, not uniform
+	go e.startRouteSimulation(simCtx, sim.Plan{Points: allPoints, Looping: looping, Speed: 0}) // speed per-leg, not uniform
 	return nil
 }
 
@@ -182,17 +201,20 @@ func (e *Engine) PlayCustomGpx(ctx context.Context, gpxContent string, speedKmh 
 		"speed": fmt.Sprintf("%.2f", speedKmh),
 	})
 
-	points := parseGPXCoordinates(gpxContent)
-	if len(points) == 0 {
+	rawPoints := sim.ParseGPXCoordinates(gpxContent)
+	plan, err := (sim.GPX{Content: gpxContent, SpeedKmh: speedKmh}).Plan()
+	if err != nil {
+		return err
+	}
+	if len(rawPoints) == 0 {
 		err := fmt.Errorf("no GPX points parsed")
 		e.LogEvent("error", "simulation", "gpx", "parse", "Aucun point GPX lisible", map[string]string{"error": err.Error()})
 		return err
 	}
 
-	interpolated := interpolatePoints(points, speedKmh)
-	e.LogEvent("info", "simulation", "gpx", "prepared", fmt.Sprintf("GPX prêt (%d points)", len(interpolated)), map[string]string{
-		"rawPoints": fmt.Sprintf("%d", len(points)),
-		"points":    fmt.Sprintf("%d", len(interpolated)),
+	e.LogEvent("info", "simulation", "gpx", "prepared", fmt.Sprintf("GPX prêt (%d points)", len(plan.Points)), map[string]string{
+		"rawPoints": fmt.Sprintf("%d", len(rawPoints)),
+		"points":    fmt.Sprintf("%d", len(plan.Points)),
 	})
 
 	simCtx, cancel := context.WithCancel(context.Background())
@@ -200,7 +222,7 @@ func (e *Engine) PlayCustomGpx(ctx context.Context, gpxContent string, speedKmh 
 	e.cancelSim = cancel
 	e.simMu.Unlock()
 
-	go e.startRouteSimulation(simCtx, interpolated, false, speedKmh)
+	go e.startRouteSimulation(simCtx, plan)
 	return nil
 }
 

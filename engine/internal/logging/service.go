@@ -1,4 +1,4 @@
-package engine
+package logging
 
 import (
 	"sync"
@@ -7,25 +7,25 @@ import (
 	"github.com/remi-deher/maps-main/engine/internal/api"
 )
 
-// LogService buffers log entries in-memory and handles normalized formatting.
-type LogService struct {
+// Service buffers structured log entries in memory.
+type Service struct {
 	mu      sync.Mutex
 	logs    []api.LogEntryPayload
 	maxLogs int
 }
 
-// NewLogService creates a new LogService with a defined log buffer limit.
-func NewLogService(maxLogs int) *LogService {
-	return &LogService{
+// NewService creates a new log buffer with a defined limit.
+func NewService(maxLogs int) *Service {
+	return &Service{
 		maxLogs: maxLogs,
 	}
 }
 
 // Add appends a new structured log entry to the buffer and returns it.
-func (s *LogService) Add(level, source, category, action, message string, fields map[string]string) api.LogEntryPayload {
+func (s *Service) Add(level, source, category, action, message string, fields map[string]string) api.LogEntryPayload {
 	entry := api.LogEntryPayload{
 		Timestamp: time.Now().UnixMilli(),
-		Level:     normalizeLogLevel(level),
+		Level:     normalizeLevel(level),
 		Source:    source,
 		Category:  category,
 		Action:    action,
@@ -43,7 +43,7 @@ func (s *LogService) Add(level, source, category, action, message string, fields
 }
 
 // Get returns a copy of the log buffer.
-func (s *LogService) Get() []api.LogEntryPayload {
+func (s *Service) Get() []api.LogEntryPayload {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	out := make([]api.LogEntryPayload, len(s.logs))
@@ -51,7 +51,7 @@ func (s *LogService) Get() []api.LogEntryPayload {
 	return out
 }
 
-func normalizeLogLevel(level string) string {
+func normalizeLevel(level string) string {
 	switch level {
 	case "warn", "error":
 		return level

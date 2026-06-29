@@ -47,7 +47,9 @@ type runConfig struct {
 	// settings.Default() if nothing was persisted yet); store is the open
 	// handle used to persist further changes made via SaveSettings.
 	settingsCfg settings.Settings
+	secrets     settings.Secrets
 	store       settings.Store
+	secretStore settings.SecretStore
 
 	// authStore backs remote-access pairing (TOTP code + paired-device tokens).
 	// May be nil if it failed to open, in which case only loopback/API-key
@@ -97,10 +99,13 @@ func runEngine(ctx context.Context, cfg runConfig) error {
 	}
 	log.Printf("driver: %s (transport=%s)", drv.ID(), transport)
 
-	eng := engine.New(drv, cfg.settingsCfg)
+	eng := engine.NewWithSecrets(drv, cfg.settingsCfg, cfg.secrets)
 	eng.SetDriverConfigBase(dcfg)
 	if cfg.store != nil {
 		eng.SetStore(cfg.store)
+	}
+	if cfg.secretStore != nil {
+		eng.SetSecretStore(cfg.secretStore)
 	}
 
 	_, portStr, _ := net.SplitHostPort(cfg.addr)

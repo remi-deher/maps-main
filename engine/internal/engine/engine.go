@@ -17,7 +17,10 @@ import (
 	"github.com/remi-deher/maps-main/engine/internal/cluster"
 	"github.com/remi-deher/maps-main/engine/internal/domain"
 	"github.com/remi-deher/maps-main/engine/internal/driver"
+	"github.com/remi-deher/maps-main/engine/internal/logging"
+	"github.com/remi-deher/maps-main/engine/internal/routing"
 	"github.com/remi-deher/maps-main/engine/internal/settings"
+	sim "github.com/remi-deher/maps-main/engine/internal/simulation"
 )
 
 // EmitFunc publishes an outbound event (type + data) to connected clients.
@@ -45,7 +48,7 @@ type Engine struct {
 	lastReinjection time.Time
 
 	// logService manages the in-memory log buffer.
-	logService *LogService
+	logService *logging.Service
 
 	// driverCfgBase holds the resolved binary paths/manual address from
 	// startup (cmd/headless), so SwitchDriver can rebuild a driver.Config at
@@ -56,15 +59,15 @@ type Engine struct {
 	// enabled, nil otherwise (Status() then omits the Cluster field).
 	clusterMgr *cluster.Manager
 
-	// osrmBaseURL is the routing server used for PlayRoute/PlaySequence,
-	// editable at runtime from the web interface (SaveSettings). Empty means
-	// fall back to defaultOsrmBaseURL().
-	osrmBaseURL string
+	// routingRegistry owns route-provider config, availability, priority and
+	// fallback selection. Engine only asks it for normalized route geometry.
+	routingRegistry *routing.Registry
 
 	// store persists settings to disk (SQLite) so they survive a restart
 	// instead of resetting to settings.Default() every time. Nil disables
 	// persistence (e.g. in tests).
-	store settings.Store
+	store       settings.Store
+	secretStore settings.SecretStore
 }
 
 // SetClusterManager attaches the HA cluster manager so Status() reports its
@@ -109,6 +112,12 @@ func (e *Engine) GetLogs() []api.LogEntryPayload {
 
 // New builds an Engine seeded from settings.
 func New(drv driver.Driver, cfg settings.Settings) *Engine {
+	return NewWithSecrets(drv, cfg, settings.Secrets{})
+}
+
+// NewWithSecrets builds an Engine seeded from settings plus server-only
+// secrets loaded from a SecretStore.
+func NewWithSecrets(drv driver.Driver, cfg settings.Settings, secrets settings.Secrets) *Engine {
 	// Seed cluster tuning from persisted settings (falling back to the env/
 	// built-in defaults the cluster package already holds) so the live values
 	// and the broadcast status agree from the first STATUS.
@@ -125,12 +134,21 @@ func New(drv driver.Driver, cfg settings.Settings) *Engine {
 	if osrm == "" {
 		osrm = defaultOsrmBaseURL()
 	}
+	routingRegistry := routing.NewRegistry(routing.Config{
+		OSRMBaseURL:        osrm,
+		Mode:               cfg.RoutingMode,
+		Provider:           cfg.RoutingProvider,
+		ProviderPriority:   cfg.RoutingProviderPriority,
+		GoogleRoutesAPIKey: firstNonEmpty(secrets.GoogleRoutesAPIKey, os.Getenv("GOOGLE_MAPS_API_KEY"), os.Getenv("GOOGLE_ROUTES_API_KEY")),
+		MapboxAccessToken:  firstNonEmpty(secrets.MapboxAccessToken, os.Getenv("MAPBOX_ACCESS_TOKEN")),
+	})
+	routingInfo := apiRoutingInfo(routingRegistry.Info())
 
 	return &Engine{
-		drv:         drv,
-		emit:        func(string, any) {}, // no-op until the server wires OnEvent
-		osrmBaseURL: osrm,
-		logService:  NewLogService(maxLogEntries),
+		drv:             drv,
+		emit:            func(string, any) {}, // no-op until the server wires OnEvent
+		routingRegistry: routingRegistry,
+		logService:      logging.NewService(maxLogEntries),
 		st: api.Status{
 			State:                     "idle",
 			ConnectionType:            domain.ConnUnknown,
@@ -144,6 +162,7 @@ func New(drv driver.Driver, cfg settings.Settings) *Engine {
 			RecentHistory:             cfg.RecentHistory,
 			Navigation:                domain.Navigation{},
 			OsrmBaseURL:               osrm,
+			Routing:                   routingInfo,
 			ClusterHeartbeatSeconds:   int(hb / time.Second),
 			ClusterMasterDeadSeconds:  int(dead / time.Second),
 			ClusterPeerTimeoutSeconds: int(peer / time.Second),
@@ -303,7 +322,7 @@ func (e *Engine) ReportRealLocation(ctx context.Context, lat, lon float64) {
 		return
 	}
 
-	dist := haversineDistance(domain.LatLon{Lat: lat, Lon: lon}, domain.LatLon{Lat: target.Lat, Lon: target.Lon})
+	dist := sim.Distance(domain.LatLon{Lat: lat, Lon: lon}, domain.LatLon{Lat: target.Lat, Lon: target.Lon})
 	now := nowMs()
 	e.st.LastRealLocation = &api.RealLocation{Lat: lat, Lon: lon, Drift: dist, Timestamp: now}
 

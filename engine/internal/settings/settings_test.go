@@ -1,7 +1,9 @@
 package settings
 
 import (
+	"database/sql"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/remi-deher/maps-main/engine/internal/domain"
@@ -48,6 +50,60 @@ func TestDefault(t *testing.T) {
 
 	if !def.JitterEnabled {
 		t.Errorf("expected JitterEnabled to be true by default")
+	}
+}
+
+func TestSQLStoreSecretsAreSeparateFromSettings(t *testing.T) {
+	tmpDir := t.TempDir()
+	dbPath := filepath.Join(tmpDir, "test_settings.db")
+
+	store, err := OpenStore(dbPath)
+	if err != nil {
+		t.Fatalf("failed to open store: %v", err)
+	}
+	defer func() {
+		if s, ok := store.(*sqlStore); ok {
+			_ = s.Close()
+		}
+	}()
+
+	secretStore, ok := store.(SecretStore)
+	if !ok {
+		t.Fatalf("expected store to implement SecretStore")
+	}
+
+	if err := store.Save(Default()); err != nil {
+		t.Fatalf("save settings: %v", err)
+	}
+	if err := secretStore.SaveSecrets(Secrets{
+		GoogleRoutesAPIKey: "google-secret",
+		MapboxAccessToken:  "mapbox-secret",
+	}); err != nil {
+		t.Fatalf("save secrets: %v", err)
+	}
+
+	secrets, err := secretStore.LoadSecrets()
+	if err != nil {
+		t.Fatalf("load secrets: %v", err)
+	}
+	if secrets.GoogleRoutesAPIKey != "google-secret" || secrets.MapboxAccessToken != "mapbox-secret" {
+		t.Fatalf("unexpected secrets: %+v", secrets)
+	}
+
+	sqlStore := store.(*sqlStore)
+	var settingsJSON string
+	if err := sqlStore.db.QueryRow(`SELECT data FROM settings WHERE id = 1`).Scan(&settingsJSON); err != nil {
+		t.Fatalf("load settings json: %v", err)
+	}
+	if strings.Contains(settingsJSON, "google-secret") || strings.Contains(settingsJSON, "mapbox-secret") {
+		t.Fatalf("settings json leaked secrets: %s", settingsJSON)
+	}
+
+	if err := secretStore.SaveSecrets(Secrets{MapboxAccessToken: "mapbox-secret"}); err != nil {
+		t.Fatalf("clear google secret: %v", err)
+	}
+	if err := sqlStore.db.QueryRow(`SELECT value FROM secrets WHERE key = 'googleRoutesApiKey'`).Scan(new(string)); err != sql.ErrNoRows {
+		t.Fatalf("expected google secret to be deleted, got %v", err)
 	}
 }
 

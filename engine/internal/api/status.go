@@ -27,6 +27,27 @@ type ClusterInfo struct {
 	Peers []ClusterPeer `json:"peers"`
 }
 
+// RoutingProviderInfo is a sanitized provider registry entry. It deliberately
+// exposes only availability/configuration state, never API keys.
+type RoutingProviderInfo struct {
+	ID         string   `json:"id"`
+	Name       string   `json:"name"`
+	Available  bool     `json:"available"`
+	Configured bool     `json:"configured"`
+	Profiles   []string `json:"profiles"`
+}
+
+// RoutingInfo is the server-side routing registry and selection policy exposed
+// to clients for settings UIs.
+type RoutingInfo struct {
+	Mode               string                `json:"mode"` // auto | manual
+	Provider           string                `json:"provider"`
+	ActiveProvider     string                `json:"activeProvider"`
+	Priority           []string              `json:"priority"`
+	AvailableProviders []string              `json:"availableProviders"`
+	Providers          []RoutingProviderInfo `json:"providers"`
+}
+
 // LocationStamp is an injected/verified location with a timestamp.
 type LocationStamp struct {
 	Lat       float64 `json:"lat"`
@@ -80,8 +101,9 @@ type Status struct {
 
 	// Web-managed config that used to be env-only, broadcast so the UI can show
 	// and edit the live values.
-	OsrmBaseURL               string `json:"osrmBaseUrl,omitempty"`
-	ClusterHeartbeatSeconds   int    `json:"clusterHeartbeatSeconds,omitempty"`
-	ClusterMasterDeadSeconds  int    `json:"clusterMasterDeadSeconds,omitempty"`
-	ClusterPeerTimeoutSeconds int    `json:"clusterPeerTimeoutSeconds,omitempty"`
+	OsrmBaseURL               string      `json:"osrmBaseUrl,omitempty"`
+	Routing                   RoutingInfo `json:"routing"`
+	ClusterHeartbeatSeconds   int         `json:"clusterHeartbeatSeconds,omitempty"`
+	ClusterMasterDeadSeconds  int         `json:"clusterMasterDeadSeconds,omitempty"`
+	ClusterPeerTimeoutSeconds int         `json:"clusterPeerTimeoutSeconds,omitempty"`
 }

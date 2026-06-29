@@ -62,7 +62,17 @@ func (d *Driver) pyCommand() (string, error) {
 	return py, err
 }
 
-func init() { driver.Register(domain.DriverPmd3, New) }
+func init() {
+	driver.RegisterWithInfo(driver.ProviderInfo{
+		ID:   domain.DriverPmd3,
+		Name: "pymobiledevice3",
+		Capabilities: []driver.Capability{
+			driver.CapabilityTunnelReresolve,
+			driver.CapabilityNetworkDevices,
+			driver.CapabilityPairing,
+		},
+	}, New)
+}
 
 func (d *Driver) ID() domain.DriverID { return domain.DriverPmd3 }
 

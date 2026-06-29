@@ -39,6 +39,11 @@ export interface Settings {
   clusterMasterDeadSeconds?: number;
   clusterPeerTimeoutSeconds?: number;
   osrmBaseUrl?: string;
+  routingMode?: "auto" | "manual";
+  routingProvider?: "google" | "mapbox" | "osrm";
+  routingProviderPriority?: Array<"google" | "mapbox" | "osrm">;
+  googleRoutesApiKey?: string;
+  mapboxAccessToken?: string;
   logLevel?: string;
   notificationsEnabled?: boolean;
   dynamicIslandEnabled?: boolean;
@@ -116,6 +121,23 @@ export interface Navigation {
   status: NavigationStatus | null;
 }
 
+export interface RoutingProviderInfo {
+  id: "google" | "mapbox" | "osrm";
+  name: string;
+  available: boolean;
+  configured: boolean;
+  profiles: Array<"driving" | "walking" | "cycling">;
+}
+
+export interface RoutingInfo {
+  mode: "auto" | "manual";
+  provider: "google" | "mapbox" | "osrm";
+  activeProvider: "google" | "mapbox" | "osrm";
+  priority: Array<"google" | "mapbox" | "osrm">;
+  availableProviders: Array<"google" | "mapbox" | "osrm">;
+  providers: RoutingProviderInfo[];
+}
+
 export interface PatrolZone {
   type: "circle" | "rectangle";
   center: LatLon;
@@ -149,6 +171,7 @@ export interface Status {
   lastInjectedLocation?: { lat: number; lon: number; name?: string; timestamp?: number } | null;
   lastRealLocation?: { lat: number; lon: number; drift?: number; timestamp?: number } | null;
   osrmBaseUrl?: string;
+  routing?: RoutingInfo;
   clusterHeartbeatSeconds?: number;
   clusterMasterDeadSeconds?: number;
   clusterPeerTimeoutSeconds?: number;

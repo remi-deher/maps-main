@@ -34,17 +34,46 @@ type Config struct {
 // Factory builds a Driver from a Config.
 type Factory func(Config) (Driver, error)
 
+type Capability string
+
+const (
+	CapabilityTunnelReresolve Capability = "tunnel-reresolve"
+	CapabilityDeviceInfo      Capability = "device-info"
+	CapabilityNetworkDevices  Capability = "network-devices"
+	CapabilityPairing         Capability = "pairing"
+)
+
+type ProviderInfo struct {
+	ID           domain.DriverID
+	Name         string
+	Capabilities []Capability
+}
+
 var (
 	regMu     sync.RWMutex
 	factories = map[domain.DriverID]Factory{}
+	infos     = map[domain.DriverID]ProviderInfo{}
 )
 
 // Register makes a driver available under id. Called from init() by each
 // backend.
 func Register(id domain.DriverID, f Factory) {
+	RegisterWithInfo(ProviderInfo{ID: id, Name: string(id)}, f)
+}
+
+// RegisterWithInfo makes a driver available and records its static metadata.
+func RegisterWithInfo(info ProviderInfo, f Factory) {
 	regMu.Lock()
 	defer regMu.Unlock()
-	factories[id] = f
+	if info.Name == "" {
+		info.Name = string(info.ID)
+	}
+	factories[info.ID] = f
+	infos[info.ID] = ProviderInfo{
+		ID:           info.ID,
+		Name:         info.Name,
+		Capabilities: append([]Capability(nil), info.Capabilities...),
+	}
 }
 
 // New instantiates the driver registered under id. This is the runtime "menu":
@@ -69,4 +98,17 @@ func Available() []domain.DriverID {
 	}
 	sort.Slice(ids, func(i, j int) bool { return ids[i] < ids[j] })
 	return ids
+}
+
+// AvailableInfo lists registered driver metadata, sorted for stable output.
+func AvailableInfo() []ProviderInfo {
+	regMu.RLock()
+	defer regMu.RUnlock()
+	out := make([]ProviderInfo, 0, len(infos))
+	for _, info := range infos {
+		info.Capabilities = append([]Capability(nil), info.Capabilities...)
+		out = append(out, info)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
+	return out
 }

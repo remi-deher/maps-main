@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/remi-deher/maps-main/engine/internal/api"
-	"github.com/remi-deher/maps-main/engine/internal/engine"
+	"github.com/remi-deher/maps-main/engine/internal/discovery"
 )
 
 // dispatchUnmarshal decodes env.Data into a fresh T and, on success, runs fn
@@ -235,7 +235,7 @@ func (s *Server) dispatchGetNetworkDevices(ctx context.Context, c *client) error
 }
 
 func (s *Server) dispatchScanMdns(ctx context.Context, c *client) error {
-	devices, err := engine.ScanMdnsAll(ctx, 5*time.Second)
+	devices, err := discovery.ScanMDNSAll(ctx, 5*time.Second)
 	if err != nil {
 		slog.Error("SCAN_MDNS", "error", err)
 		c.send <- encode(api.EventMdnsDevices, api.MdnsDevicesPayload{Error: err.Error()})
@@ -257,7 +257,7 @@ func (s *Server) dispatchProbeRsdPorts(ctx context.Context, c *client, env api.E
 		c.send <- encode(api.EventRsdPorts, api.RsdPortsPayload{Error: "host manquant ou invalide"})
 		return
 	}
-	openPorts := engine.ProbeRSDPorts(ctx, p.Host, 400*time.Millisecond)
+	openPorts := discovery.ProbeRSDPorts(ctx, p.Host, 400*time.Millisecond)
 	c.send <- encode(api.EventRsdPorts, api.RsdPortsPayload{Host: p.Host, OpenPorts: openPorts})
 }
 

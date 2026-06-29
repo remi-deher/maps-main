@@ -2,30 +2,23 @@ package engine
 
 import (
 	"context"
-	"encoding/json"
-	"encoding/xml"
 	"fmt"
 	"math"
 	"math/rand"
-	"net/http"
 	"os"
 	"strings"
 	"time"
 
 	"github.com/remi-deher/maps-main/engine/internal/api"
 	"github.com/remi-deher/maps-main/engine/internal/domain"
+	sim "github.com/remi-deher/maps-main/engine/internal/simulation"
 )
-
-// osrmHTTPClient is the HTTP client used for OSRM route requests. It is a
-// package-level variable so tests can swap in an httptest.Server transport
-// without touching real network endpoints.
-var osrmHTTPClient = &http.Client{Timeout: 10 * time.Second}
 
 // defaultOsrmBaseURL is the OSRM routing server used for PlayRoute/
 // PlaySequence previews when no value has been set from the web interface.
 // Seeded from env for anyone self-hosting OSRM (rate limits / privacy /
-// offline use); the live value is now stored per-engine (Engine.osrmBaseURL)
-// and editable at runtime via SaveSettings.
+// offline use); the live value is owned by the routing registry and editable
+// at runtime via SaveSettings.
 func defaultOsrmBaseURL() string {
 	return strings.TrimSuffix(envOr("GPSMOCK_OSRM_BASE_URL", "http://router.project-osrm.org"), "/")
 }
@@ -37,111 +30,10 @@ func envOr(key, fallback string) string {
 	return fallback
 }
 
-// OSRM response wrapper
-type osrmResponse struct {
-	Routes []struct {
-		Geometry struct {
-			Coordinates [][]float64 `json:"coordinates"`
-		} `json:"geometry"`
-	} `json:"routes"`
-}
-
-// fetchOSRMRoute queries the OSRM routing API at baseURL.
-// It uses the package-level osrmHTTPClient so tests can inject an httptest transport.
-func fetchOSRMRoute(baseURL string, start, end domain.LatLon, profile string) ([]domain.LatLon, error) {
-	if profile == "" {
-		profile = "driving"
-	}
-	if baseURL == "" {
-		baseURL = defaultOsrmBaseURL()
-	}
-	url := fmt.Sprintf("%s/route/v1/%s/%f,%f;%f,%f?overview=full&geometries=geojson",
-		baseURL, profile, start.Lon, start.Lat, end.Lon, end.Lat)
-
-	resp, err := osrmHTTPClient.Get(url)
-	if err != nil {
-		return nil, err
-	}
-	defer func() { _ = resp.Body.Close() }()
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("bad status code: %d", resp.StatusCode)
-	}
-
-	var data osrmResponse
-	if err := json.NewDecoder(resp.Body).Decode(&data); err != nil {
-		return nil, err
-	}
-
-	if len(data.Routes) == 0 || len(data.Routes[0].Geometry.Coordinates) == 0 {
-		return nil, fmt.Errorf("no routes found")
-	}
-
-	var points []domain.LatLon
-	for _, coord := range data.Routes[0].Geometry.Coordinates {
-		if len(coord) >= 2 {
-			points = append(points, domain.LatLon{Lat: coord[1], Lon: coord[0]})
-		}
-	}
-
-	return points, nil
-}
-
-// haversineDistance returns distance in meters between two coordinates
-func haversineDistance(p1, p2 domain.LatLon) float64 {
-	const earthRadius = 6371000.0 // meters
-	dLat := (p2.Lat - p1.Lat) * math.Pi / 180.0
-	dLon := (p2.Lon - p1.Lon) * math.Pi / 180.0
-	lat1 := p1.Lat * math.Pi / 180.0
-	lat2 := p2.Lat * math.Pi / 180.0
-
-	a := math.Sin(dLat/2)*math.Sin(dLat/2) +
-		math.Sin(dLon/2)*math.Sin(dLon/2)*math.Cos(lat1)*math.Cos(lat2)
-	c := 2 * math.Atan2(math.Sqrt(a), math.Sqrt(1-a))
-	return earthRadius * c
-}
-
-// interpolatePoints builds intermediate points along a route to match speed
-func interpolatePoints(rawPoints []domain.LatLon, speedKmh float64) []domain.LatLon {
-	if len(rawPoints) < 2 {
-		return rawPoints
-	}
-	if speedKmh <= 0 {
-		speedKmh = 15.0
-	}
-
-	// 1 second tick interval speed in meters
-	speedMs := speedKmh / 3.6
-
-	var interpolated []domain.LatLon
-	interpolated = append(interpolated, rawPoints[0])
-
-	for i := 0; i < len(rawPoints)-1; i++ {
-		p1 := rawPoints[i]
-		p2 := rawPoints[i+1]
-		dist := haversineDistance(p1, p2)
-
-		if dist <= speedMs {
-			interpolated = append(interpolated, p2)
-			continue
-		}
-
-		steps := int(math.Floor(dist / speedMs))
-		for s := 1; s <= steps; s++ {
-			fraction := float64(s) / (dist / speedMs)
-			lat := p1.Lat + (p2.Lat-p1.Lat)*fraction
-			lon := p1.Lon + (p2.Lon-p1.Lon)*fraction
-			interpolated = append(interpolated, domain.LatLon{Lat: lat, Lon: lon})
-		}
-		interpolated = append(interpolated, p2)
-	}
-
-	return interpolated
-}
-
 // startRouteSimulation starts a loop updating coordinates along a generated route path.
 // speed is the km/h value used during interpolation, passed through to NavigationProgress.
-func (e *Engine) startRouteSimulation(ctx context.Context, points []domain.LatLon, looping bool, speed float64) {
+func (e *Engine) startRouteSimulation(ctx context.Context, plan sim.Plan) {
+	points := plan.Points
 	if len(points) == 0 {
 		return
 	}
@@ -174,7 +66,7 @@ func (e *Engine) startRouteSimulation(ctx context.Context, points []domain.LatLo
 				continue
 			}
 			if index >= len(points) {
-				if looping {
+				if plan.Looping {
 					index = 0
 				} else {
 					e.mu.Lock()
@@ -223,7 +115,7 @@ func (e *Engine) startRouteSimulation(ctx context.Context, points []domain.LatLo
 				Total: len(points),
 				Lat:   p.Lat,
 				Lon:   p.Lon,
-				Speed: speed, // actual interpolated speed in km/h
+				Speed: plan.Speed, // actual interpolated speed in km/h
 			}
 			// simSetLocation above can block for several seconds (a slow/stuck
 			// driver call) — if StopRoute ran concurrently while we were inside
@@ -313,7 +205,7 @@ func (e *Engine) startPatrolSimulation(ctx context.Context, zone domain.PatrolZo
 			}
 
 			// Move step towards targetPos
-			dist := haversineDistance(currentPos, targetPos)
+			dist := sim.Distance(currentPos, targetPos)
 			speedMs := 5.0 / 3.6 // 5 km/h patrol speed
 			if dist <= speedMs {
 				currentPos = targetPos
@@ -346,40 +238,4 @@ func (e *Engine) startPatrolSimulation(ctx context.Context, zone domain.PatrolZo
 			}
 		}
 	}
-}
-
-// gpxTrkpt is the XML struct for a GPX <trkpt> element.
-type gpxTrkpt struct {
-	Lat float64 `xml:"lat,attr"`
-	Lon float64 `xml:"lon,attr"`
-}
-
-// gpxDoc is a minimal GPX document structure for XML unmarshalling.
-// It handles the <gpx><trk><trkseg><trkpt> hierarchy and ignores every
-// other element, making it robust to namespaces and unknown tags.
-type gpxDoc struct {
-	Tracks []struct {
-		Segments []struct {
-			Points []gpxTrkpt `xml:"trkpt"`
-		} `xml:"trkseg"`
-	} `xml:"trk"`
-}
-
-// parseGPXCoordinates extracts track points from a GPX document using the
-// standard encoding/xml decoder. This correctly handles namespaces, multi-line
-// attributes, and any attribute ordering — unlike the previous regex approach.
-func parseGPXCoordinates(gpxContent string) []domain.LatLon {
-	var doc gpxDoc
-	if err := xml.Unmarshal([]byte(gpxContent), &doc); err != nil {
-		return nil
-	}
-	var points []domain.LatLon
-	for _, trk := range doc.Tracks {
-		for _, seg := range trk.Segments {
-			for _, pt := range seg.Points {
-				points = append(points, domain.LatLon{Lat: pt.Lat, Lon: pt.Lon})
-			}
-		}
-	}
-	return points
 }

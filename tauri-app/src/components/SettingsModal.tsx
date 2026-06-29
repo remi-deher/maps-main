@@ -12,6 +12,16 @@ interface SettingsModalProps {
   onClose: () => void;
 }
 
+type RoutingProviderId = "google" | "mapbox" | "osrm";
+
+const ROUTING_PROVIDER_LABELS: Record<RoutingProviderId, string> = {
+  google: "Google Routes",
+  mapbox: "Mapbox",
+  osrm: "OSRM",
+};
+
+const DEFAULT_ROUTING_PRIORITY: RoutingProviderId[] = ["google", "mapbox", "osrm"];
+
 /// Réglages avancés du moteur (connexion, appareil, tunnel/driver, diagnostics),
 /// regroupés dans une modale à sections plutôt qu'un onglet permanent de la sidebar.
 export const SettingsModal: React.FC<SettingsModalProps> = ({ open, onClose }) => {
@@ -65,6 +75,11 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ open, onClose }) =
   const [eveilInterval, setEveilInterval] = useState("15");
   const [jitterEnabled, setJitterEnabled] = useState(true);
   const [osrmBaseUrl, setOsrmBaseUrl] = useState("");
+  const [routingMode, setRoutingMode] = useState<"auto" | "manual">("auto");
+  const [routingProvider, setRoutingProvider] = useState<RoutingProviderId>("osrm");
+  const [routingPriority, setRoutingPriority] = useState<RoutingProviderId[]>(DEFAULT_ROUTING_PRIORITY);
+  const [googleRoutesApiKey, setGoogleRoutesApiKey] = useState("");
+  const [mapboxAccessToken, setMapboxAccessToken] = useState("");
   // Frontend-only (localStorage): the engine never uses the rail router.
   const [railRouterUrl, setRailRouterUrlState] = useState(getRailRouterUrl());
   const [transitEnabled, setTransitEnabledState] = useState(isTransitEnabled());
@@ -89,6 +104,11 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ open, onClose }) =
   useEffect(() => {
     if (!status) return;
     if (status.osrmBaseUrl !== undefined) setOsrmBaseUrl(status.osrmBaseUrl);
+    if (status.routing) {
+      setRoutingMode(status.routing.mode);
+      setRoutingProvider(status.routing.provider);
+      setRoutingPriority(status.routing.priority?.length ? status.routing.priority : DEFAULT_ROUTING_PRIORITY);
+    }
     if (status.clusterHeartbeatSeconds) setClusterHeartbeat(String(status.clusterHeartbeatSeconds));
     if (status.clusterMasterDeadSeconds) setClusterMasterDead(String(status.clusterMasterDeadSeconds));
     if (status.clusterPeerTimeoutSeconds) setClusterPeerTimeout(String(status.clusterPeerTimeoutSeconds));
@@ -125,6 +145,14 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ open, onClose }) =
       showToast("Moteur hors ligne: réglages non envoyés.");
       return;
     }
+    const routingSettings: Record<string, unknown> = {
+      routingMode,
+      routingProvider,
+      routingProviderPriority: routingPriority,
+    };
+    if (googleRoutesApiKey.trim()) routingSettings.googleRoutesApiKey = googleRoutesApiKey.trim();
+    if (mapboxAccessToken.trim()) routingSettings.mapboxAccessToken = mapboxAccessToken.trim();
+
     saveSettings({
       companionPort: parseInt(companionPort),
       preferredDriver: preferredDriver as any,
@@ -132,11 +160,44 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ open, onClose }) =
       eveilInterval: parseInt(eveilInterval),
       jitterEnabled,
       osrmBaseUrl: osrmBaseUrl.trim(),
+      ...routingSettings,
       clusterHeartbeatSeconds: parseInt(clusterHeartbeat) || 0,
       clusterMasterDeadSeconds: parseInt(clusterMasterDead) || 0,
       clusterPeerTimeoutSeconds: parseInt(clusterPeerTimeout) || 0,
     } as any);
+    setGoogleRoutesApiKey("");
+    setMapboxAccessToken("");
     showToast("Réglages envoyés au moteur.");
+  };
+
+  const clearRoutingSecret = (provider: "google" | "mapbox") => {
+    if (!canSend) {
+      showToast("Moteur hors ligne: cle non modifiee.");
+      return;
+    }
+    if (provider === "google") {
+      saveSettings({ googleRoutesApiKey: "" } as any);
+      setGoogleRoutesApiKey("");
+    } else {
+      saveSettings({ mapboxAccessToken: "" } as any);
+      setMapboxAccessToken("");
+    }
+    showToast("Cle supprimee du moteur.");
+  };
+
+  const moveRoutingProvider = (provider: RoutingProviderId, direction: -1 | 1) => {
+    setRoutingPriority((current) => {
+      const normalized = [...current];
+      for (const id of DEFAULT_ROUTING_PRIORITY) {
+        if (!normalized.includes(id)) normalized.push(id);
+      }
+      const index = normalized.indexOf(provider);
+      const target = index + direction;
+      if (index < 0 || target < 0 || target >= normalized.length) return normalized;
+      const next = [...normalized];
+      [next[index], next[target]] = [next[target], next[index]];
+      return next;
+    });
   };
 
   const connectionSection = (
@@ -407,6 +468,16 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ open, onClose }) =
     </div>
   );
 
+  const routingProviderInfos = status?.routing?.providers ?? DEFAULT_ROUTING_PRIORITY.map((id) => ({
+    id,
+    name: ROUTING_PROVIDER_LABELS[id],
+    available: id === "osrm",
+    configured: id === "osrm",
+    profiles: ["driving", "walking", "cycling"] as const,
+  }));
+  const routingProviderInfoById = Object.fromEntries(routingProviderInfos.map((provider) => [provider.id, provider]));
+  const activeRoutingProvider = status?.routing?.activeProvider ?? "osrm";
+
   const routingSection = (
     <div className="ui-card">
       <fieldset className="field-group">
@@ -419,6 +490,105 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ open, onClose }) =
             placeholder="http://router.project-osrm.org"
             onChange={(e) => setOsrmBaseUrl(e.target.value)}
           />
+          <div style={{ marginTop: 12, display: "flex", flexDirection: "column", gap: 12 }}>
+            <div>
+              <label className="form-label">Provider utilise actuellement</label>
+              <div className="info-grid">
+                <div className="info-item">
+                  <span className="info-label">Actif</span>
+                  <span className="info-value green">{ROUTING_PROVIDER_LABELS[activeRoutingProvider]}</span>
+                </div>
+                {routingProviderInfos.map((provider) => (
+                  <div className="info-item" key={provider.id}>
+                    <span className="info-label">{provider.name}</span>
+                    <span className={`info-value ${provider.available ? "green" : "warning"}`}>
+                      {provider.available ? "Disponible" : provider.configured ? "Configure" : "Cle absente"}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div>
+              <label className="form-label">Mode de selection</label>
+              <select value={routingMode} onChange={(e) => setRoutingMode(e.target.value as "auto" | "manual")}>
+                <option value="auto">Auto - ordre de priorite serveur</option>
+                <option value="manual">Manuel - provider force</option>
+              </select>
+              <small className="form-hint">
+                En auto, le moteur essaie les providers disponibles selon l'ordre ci-dessous.
+              </small>
+            </div>
+
+            {routingMode === "manual" && (
+              <div>
+                <label className="form-label">Provider manuel</label>
+                <select value={routingProvider} onChange={(e) => setRoutingProvider(e.target.value as RoutingProviderId)}>
+                  {DEFAULT_ROUTING_PRIORITY.map((id) => (
+                    <option key={id} value={id}>
+                      {ROUTING_PROVIDER_LABELS[id]}{routingProviderInfoById[id]?.available ? "" : " (indisponible)"}
+                    </option>
+                  ))}
+                </select>
+                {!routingProviderInfoById[routingProvider]?.available && (
+                  <small className="field-error">
+                    Ce provider n'est pas disponible: le moteur retombera sur l'ordre auto.
+                  </small>
+                )}
+              </div>
+            )}
+
+            <div>
+              <label className="form-label">Priorite du mode auto</label>
+              <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                {routingPriority.map((id, index) => (
+                  <div key={id} className="info-item" style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <span className="info-label" style={{ minWidth: 24 }}>{index + 1}</span>
+                    <span className="info-value compact" style={{ flex: 1 }}>
+                      {ROUTING_PROVIDER_LABELS[id]}
+                      {!routingProviderInfoById[id]?.available ? " - indisponible tant que la cle est absente" : ""}
+                    </span>
+                    <button className="btn btn-secondary" type="button" disabled={index === 0} onClick={() => moveRoutingProvider(id, -1)}>
+                      Haut
+                    </button>
+                    <button className="btn btn-secondary" type="button" disabled={index === routingPriority.length - 1} onClick={() => moveRoutingProvider(id, 1)}>
+                      Bas
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div>
+              <label className="form-label">Cle API Google Routes</label>
+              <div style={{ display: "flex", gap: 6 }}>
+                <input
+                  type="password"
+                  value={googleRoutesApiKey}
+                  placeholder={routingProviderInfoById.google?.configured ? "Cle deja configuree - laisser vide pour conserver" : "GOOGLE_MAPS_API_KEY"}
+                  onChange={(e) => setGoogleRoutesApiKey(e.target.value)}
+                />
+                <button className="btn btn-secondary" type="button" disabled={!canSend || !routingProviderInfoById.google?.configured} onClick={() => clearRoutingSecret("google")}>
+                  Effacer
+                </button>
+              </div>
+            </div>
+
+            <div>
+              <label className="form-label">Token Mapbox</label>
+              <div style={{ display: "flex", gap: 6 }}>
+                <input
+                  type="password"
+                  value={mapboxAccessToken}
+                  placeholder={routingProviderInfoById.mapbox?.configured ? "Token deja configure - laisser vide pour conserver" : "MAPBOX_ACCESS_TOKEN"}
+                  onChange={(e) => setMapboxAccessToken(e.target.value)}
+                />
+                <button className="btn btn-secondary" type="button" disabled={!canSend || !routingProviderInfoById.mapbox?.configured} onClick={() => clearRoutingSecret("mapbox")}>
+                  Effacer
+                </button>
+              </div>
+            </div>
+          </div>
           <small className="form-hint">
             Serveur OSRM utilisé pour calculer les itinéraires. Laissez vide pour
             l'instance publique par défaut, ou indiquez votre serveur auto-hébergé

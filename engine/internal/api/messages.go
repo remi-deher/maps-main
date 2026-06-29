@@ -161,6 +161,11 @@ type SaveSettingsPayload struct {
 	DynamicIslandEnabled      *bool    `json:"dynamicIslandEnabled,omitempty"`
 	JitterEnabled             *bool    `json:"jitterEnabled,omitempty"`
 	OsrmBaseURL               *string  `json:"osrmBaseUrl,omitempty"`
+	RoutingMode               *string  `json:"routingMode,omitempty"`
+	RoutingProvider           *string  `json:"routingProvider,omitempty"`
+	RoutingProviderPriority   []string `json:"routingProviderPriority,omitempty"`
+	GoogleRoutesAPIKey        *string  `json:"googleRoutesApiKey,omitempty"`
+	MapboxAccessToken         *string  `json:"mapboxAccessToken,omitempty"`
 	ClusterHeartbeatSeconds   *int     `json:"clusterHeartbeatSeconds,omitempty"`
 	ClusterMasterDeadSeconds  *int     `json:"clusterMasterDeadSeconds,omitempty"`
 	ClusterPeerTimeoutSeconds *int     `json:"clusterPeerTimeoutSeconds,omitempty"`

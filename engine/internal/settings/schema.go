@@ -43,7 +43,10 @@ type Settings struct {
 	ClusterPeerTimeoutSeconds int `json:"clusterPeerTimeoutSeconds,omitempty"`
 
 	// Routing
-	OsrmBaseURL string `json:"osrmBaseUrl,omitempty"` // OSRM routing server; empty = built-in default
+	OsrmBaseURL             string   `json:"osrmBaseUrl,omitempty"`             // OSRM routing server; empty = built-in default
+	RoutingMode             string   `json:"routingMode,omitempty"`             // auto | manual
+	RoutingProvider         string   `json:"routingProvider,omitempty"`         // provider forced when RoutingMode=manual
+	RoutingProviderPriority []string `json:"routingProviderPriority,omitempty"` // ordered provider ids used by auto mode
 
 	// Misc / iOS prefs
 	LogLevel             string `json:"logLevel"`
@@ -78,6 +81,9 @@ func Default() Settings {
 		ClusterHeartbeatSeconds:   10,
 		ClusterMasterDeadSeconds:  30,
 		ClusterPeerTimeoutSeconds: 3,
+		RoutingMode:               "auto",
+		RoutingProvider:           "osrm",
+		RoutingProviderPriority:   []string{"google", "mapbox", "osrm"},
 		LogLevel:                  "info",
 		NotificationsEnabled:      true,
 		DynamicIslandEnabled:      true,
