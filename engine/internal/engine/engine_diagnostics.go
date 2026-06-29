@@ -10,10 +10,6 @@ import (
 type PairingRecord = diagnostics.PairingRecord
 type Diagnostics = diagnostics.Diagnostics
 
-func isPaired(udid string) bool {
-	return diagnostics.IsPaired(udid)
-}
-
 func (e *Engine) pairingHint(ctx context.Context, drv driver.Driver) string {
 	return diagnostics.PairingHint(ctx, drv)
 }
