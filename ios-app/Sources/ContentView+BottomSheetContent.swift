@@ -18,7 +18,7 @@ extension ContentView {
                 stops: $coordinator.itineraryStops,
                 speed: $coordinator.itinerarySpeed,
                 profile: $coordinator.itineraryProfile,
-                legEstimates: session.legEstimates,
+                legEstimates: coordinator.estimator.legEstimates,
                 activeRoute: coordinator.activeRoute,
                 onAddStop: { searchFocused = true },
                 onLaunch: { coordinator.launchItinerary(session: session) },
