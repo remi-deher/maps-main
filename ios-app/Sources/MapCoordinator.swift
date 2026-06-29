@@ -7,7 +7,7 @@ import MapKit
 final class MapCoordinator {
     // MARK: - EngineClient Abstractions (Decoupling SwiftUI)
 
-    func engineState(session: MapSessionModel) -> EngineClient.State { session.engine.state }
+    func engineState(session: MapSessionModel) -> EngineConnectionState { session.engine.state }
     func engineStatusState(session: MapSessionModel) -> String? { session.engine.status?.state }
     func navigationState(session: MapSessionModel) -> String? { session.engine.status?.navigation?.status?.state }
     func lastInjectedLocationName(session: MapSessionModel) -> String? { session.engine.status?.lastInjectedLocation?.name }
