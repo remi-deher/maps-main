@@ -30,13 +30,16 @@ extension ContentView {
     }
 
     var mapPitchButton: some View {
-        Button(action: { toggleMapPitch() }) {
-            Text(coordinator.isMapTilted ? "2D" : "3D")
-                .font(.subheadline.weight(.bold))
-                .monospacedDigit()
-                .frame(width: 44, height: 44)
-                .contentShape(Circle())
-        }
+        Button(
+            action: { toggleMapPitch() },
+            label: {
+                Text(coordinator.isMapTilted ? "2D" : "3D")
+                    .font(.subheadline.weight(.bold))
+                    .monospacedDigit()
+                    .frame(width: 44, height: 44)
+                    .contentShape(Circle())
+            }
+        )
         .buttonStyle(.glass)
         .buttonBorderShape(.circle)
         .accessibilityLabel(coordinator.isMapTilted ? "Revenir en vue 2D" : "Passer en vue 3D")
