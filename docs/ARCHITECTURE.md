@@ -73,7 +73,13 @@ Le **registre** (`registry.go`) mappe `DriverID → Factory` ; `New(id, cfg)` es
   openapi.yaml               # REST
   asyncapi.yaml              # WebSocket (JSON brut, enveloppe {type,data})
 /tauri-app                   # UI web + shell Tauri
+  src/components             # UI components (pure presentational)
+  src/features               # Domain logic & smart components (routePlanner, settingsModel, etc.)
+  src/context                # React contexts (WebSocket, map state, etc.)
+  src/styles                 # CSS modules (fractioned tokens, map, forms, etc.)
 /ios-app                     # App Swift compagnon
+  Sources/                   # UI (SwiftUI), Coordinators, Network (EngineClient, WebSocket)
+  Widgets/                   # Live Activity & Lock Screen widgets
 /docker                      # images Linux / Windows-WSL (Phase 4)
 /docs                        # cette doc + ALTSTORE.md
 ```
