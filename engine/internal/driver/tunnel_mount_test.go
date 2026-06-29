@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"os/exec"
+	"strings"
 	"testing"
 	"time"
 
@@ -22,6 +23,13 @@ func TestHelperProcess(t *testing.T) {
 	_ = args
 	switch scenario {
 	case "sleep":
+		time.Sleep(time.Minute)
+	case "noisy-sleep":
+		for i := 0; i < 5; i++ {
+			os.Stdout.WriteString(`INFO:     127.0.0.1:53298 - "GET / HTTP/1.1" 200 OK` + "\n")
+			os.Stdout.WriteString("real daemon warning\n")
+			time.Sleep(10 * time.Millisecond)
+		}
 		time.Sleep(time.Minute)
 	}
 	os.Exit(0)
@@ -63,5 +71,40 @@ func TestStopWaitsForDaemonReap(t *testing.T) {
 	case <-m.exited:
 	default:
 		t.Fatal("Stop() returned before the daemon was reaped")
+	}
+}
+
+func TestStartTimeoutFiltersDaemonNoiseAndAddsHint(t *testing.T) {
+	m := &TunnelMount{}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	_, err := m.Start(ctx, TunnelMountConfig{
+		DriverName:   "test",
+		StartTimeout: 80 * time.Millisecond,
+		PollInterval: 10 * time.Millisecond,
+		TimeoutHint:  "actionable hint",
+		StartDaemon: func(context.Context) (*exec.Cmd, error) {
+			return exectest.FakeCommand("noisy-sleep")("sleep"), nil
+		},
+		OutputLineFilter: func(line string) bool {
+			return !strings.Contains(line, `"GET / HTTP/1.1" 200 OK`)
+		},
+		Resolve: func(context.Context) (TunnelEndpoint, bool) {
+			return TunnelEndpoint{}, false
+		},
+	})
+	if err == nil {
+		t.Fatal("expected timeout")
+	}
+	msg := err.Error()
+	if strings.Contains(msg, "GET / HTTP/1.1") {
+		t.Fatalf("timeout error kept filtered polling noise:\n%s", msg)
+	}
+	if !strings.Contains(msg, "actionable hint") {
+		t.Fatalf("timeout error missing hint:\n%s", msg)
+	}
+	if !strings.Contains(msg, "real daemon warning") {
+		t.Fatalf("timeout error should keep non-noise daemon output:\n%s", msg)
 	}
 }

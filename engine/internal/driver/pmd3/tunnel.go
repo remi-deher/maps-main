@@ -3,6 +3,7 @@ package pmd3
 import (
 	"context"
 	"os/exec"
+	"strings"
 	"time"
 
 	"github.com/remi-deher/maps-main/engine/internal/driver"
@@ -27,6 +28,7 @@ func (d *Driver) StartTunnel(ctx context.Context) (driver.TunnelInfo, error) {
 		ManualAddress: d.manual,
 		StartTimeout:  d.tunnelStartTimeout,
 		PollInterval:  tunnelPollInterval,
+		TimeoutHint:   pmd3TunneldTimeoutHint,
 		BeforeStart: func(ctx context.Context) error {
 			py, err := d.pyCommand()
 			if err != nil {
@@ -43,8 +45,19 @@ func (d *Driver) StartTunnel(ctx context.Context) (driver.TunnelInfo, error) {
 			}
 			return execCommand(py, d.args("remote", "tunneld")...), nil
 		},
-		Resolve: d.queryTunneld,
+		OutputLineFilter: keepPmd3TunneldOutput,
+		Resolve:          d.queryTunneld,
 	})
+}
+
+const pmd3TunneldTimeoutHint = "le serveur tunneld répond, mais aucun tunnel RSD n'a été publié. Vérifiez que l'iPhone est déverrouillé, approuvé, en mode développeur, et lancez l'application/serveur avec les droits administrateur si l'adaptateur tunnel ne peut pas être créé."
+
+func keepPmd3TunneldOutput(line string) bool {
+	trimmed := strings.TrimSpace(line)
+	if strings.HasPrefix(trimmed, "INFO:") && strings.Contains(trimmed, `"GET / HTTP/1.1" 200 OK`) {
+		return false
+	}
+	return true
 }
 
 func (d *Driver) StopTunnel(ctx context.Context) error {

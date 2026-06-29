@@ -25,15 +25,17 @@ const stopReapTimeout = 5 * time.Second
 // TunnelMountConfig describes the backend-specific parts of bringing up an RSD
 // tunnel. TunnelMount owns the shared daemon lifecycle around it.
 type TunnelMountConfig struct {
-	DriverName    string
-	StartLabel    string
-	DaemonLabel   string
-	ManualAddress string
-	StartTimeout  time.Duration
-	PollInterval  time.Duration
-	BeforeStart   func(ctx context.Context) error
-	StartDaemon   func(ctx context.Context) (*exec.Cmd, error)
-	Resolve       TunnelEndpointResolver
+	DriverName       string
+	StartLabel       string
+	DaemonLabel      string
+	ManualAddress    string
+	StartTimeout     time.Duration
+	PollInterval     time.Duration
+	TimeoutHint      string
+	BeforeStart      func(ctx context.Context) error
+	StartDaemon      func(ctx context.Context) (*exec.Cmd, error)
+	OutputLineFilter func(line string) bool
+	Resolve          TunnelEndpointResolver
 }
 
 // TunnelMount keeps the common active-tunnel state and daemon process. Concrete
@@ -127,6 +129,9 @@ func (m *TunnelMount) Start(ctx context.Context, cfg TunnelMountConfig) (TunnelI
 	var tailMu sync.Mutex
 	var tail []string
 	appendTail := func(line string) {
+		if cfg.OutputLineFilter != nil && !cfg.OutputLineFilter(line) {
+			return
+		}
 		tailMu.Lock()
 		tail = append(tail, line)
 		if len(tail) > tunnelTailLines {
@@ -174,15 +179,23 @@ func (m *TunnelMount) Start(ctx context.Context, cfg TunnelMountConfig) (TunnelI
 		case <-deadline:
 			_ = killProcess(cmd)
 			if out := tailSnapshot(); out != "" {
-				return TunnelInfo{}, fmt.Errorf("%s: tunnel not established within %s, last output:\n%s", cfg.DriverName, cfg.StartTimeout, out)
+				return TunnelInfo{}, fmt.Errorf("%s: tunnel not established within %s%s, last output:\n%s", cfg.DriverName, cfg.StartTimeout, timeoutHintSuffix(cfg.TimeoutHint), out)
 			}
-			return TunnelInfo{}, fmt.Errorf("%s: tunnel not established within %s", cfg.DriverName, cfg.StartTimeout)
+			return TunnelInfo{}, fmt.Errorf("%s: tunnel not established within %s%s", cfg.DriverName, cfg.StartTimeout, timeoutHintSuffix(cfg.TimeoutHint))
 		case <-ctx.Done():
 			_ = killProcess(cmd)
 			return TunnelInfo{}, ctx.Err()
 		case <-ticker.C:
 		}
 	}
+}
+
+func timeoutHintSuffix(hint string) string {
+	hint = strings.TrimSpace(hint)
+	if hint == "" {
+		return ""
+	}
+	return ": " + hint
 }
 
 // Stop tears down the active tunnel. After issuing the kill it waits (up to
