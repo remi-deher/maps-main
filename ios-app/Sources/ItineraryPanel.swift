@@ -251,12 +251,13 @@ struct ItineraryOptions: View {
             isPresented: $showGpxExporter,
             document: GPXFile(content: GPX.document(name: "Itinéraire GPS-Mock", points: stops.map(\.coordinate))),
             contentType: .gpx,
-            defaultFilename: "gpsmock_route"
-        ) { result in
-            if case .failure(let error) = result {
-                gpxExportError = error.localizedDescription
+            defaultFilename: "gpsmock_route",
+            onCompletion: { result in
+                if case .failure(let error) = result {
+                    gpxExportError = error.localizedDescription
+                }
             }
-        }
+        )
     }
 
     @ViewBuilder
