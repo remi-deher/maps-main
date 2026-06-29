@@ -113,7 +113,7 @@ struct ContentView: View {
             coordinator.updateKeepAlive(session: session, enabled: keepAliveEnabled, interval: keepAliveInterval)
             // updated above
             coordinator.loadRecentPlaces()
-            startDiscovery()
+            discovery.start()
         }
         .onChange(of: locationAccuracyMode) { mode in
             session.location.setAccuracyMode(mode)
@@ -167,7 +167,7 @@ struct ContentView: View {
                 engineAddress = "\(host):\(port)"
             }
             if coordinator.engineState(session: session) != .connected && coordinator.engineState(session: session) != .connecting {
-                toggleConnection()
+                session.toggleConnection(engineAddress: engineAddress, keepAliveEnabled: keepAliveEnabled)
             }
         }
         .onChange(of: coordinator.searchQuery) { newValue in
@@ -189,13 +189,21 @@ struct ContentView: View {
             // Plans-style: adding (or removing/reordering) a stop reframes
             // the camera to show the whole itinerary, not just the new point.
             coordinator.fitItinerary(newStops, session: session)
-            session.recomputeLegEstimates(newStops, profile: coordinator.itineraryProfile)
+            coordinator.estimator.recomputeLegEstimates(
+                stops: newStops,
+                profile: coordinator.itineraryProfile,
+                currentLocation: session.location.lastLocation
+            ) { coordinator.estimator.legEstimates = $0 }
             if !newStops.isEmpty {
                 withAnimation { coordinator.sheetDetent = .medium }
             }
         }
         .onChange(of: coordinator.itineraryProfile) { _ in
-            session.recomputeLegEstimates(coordinator.itineraryStops, profile: coordinator.itineraryProfile)
+            coordinator.estimator.recomputeLegEstimates(
+                stops: coordinator.itineraryStops,
+                profile: coordinator.itineraryProfile,
+                currentLocation: session.location.lastLocation
+            ) { coordinator.estimator.legEstimates = $0 }
         }
         .onChange(of: liveActivityKey) { key in
             liveActivity.sync(state: key.state, locationName: key.name, enabled: liveActivityEnabled)

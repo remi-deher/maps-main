@@ -30,8 +30,8 @@ extension ContentView {
     }
 
     var mapPitchButton: some View {
-        Button(action: toggleMapPitch) {
-            Text(isMapTilted ? "2D" : "3D")
+        Button(action: { toggleMapPitch() }) {
+            Text(coordinator.isMapTilted ? "2D" : "3D")
                 .font(.subheadline.weight(.bold))
                 .monospacedDigit()
                 .frame(width: 44, height: 44)
@@ -39,7 +39,7 @@ extension ContentView {
         }
         .buttonStyle(.glass)
         .buttonBorderShape(.circle)
-        .accessibilityLabel(isMapTilted ? "Revenir en vue 2D" : "Passer en vue 3D")
+        .accessibilityLabel(coordinator.isMapTilted ? "Revenir en vue 2D" : "Passer en vue 3D")
     }
 
     @ViewBuilder
@@ -86,7 +86,7 @@ extension ContentView {
     }
 
     func restingSheetVisibleHeight(availableHeight: CGFloat) -> CGFloat {
-        switch sheetDetent {
+        switch coordinator.sheetDetent {
         case .collapsed:
             return collapsedPresentationDetentHeight
         case .medium:
@@ -98,23 +98,23 @@ extension ContentView {
 
     func recenterOnUser() {
         withAnimation {
-            cameraPosition = .userLocation(fallback: .automatic)
-            isMapTilted = false
+            coordinator.cameraPosition = .userLocation(fallback: .automatic)
+            coordinator.isMapTilted = false
         }
     }
 
     func toggleMapPitch() {
-        guard let visibleRegion = visibleRegion else {
+        guard let visibleRegion = coordinator.visibleRegion else {
             recenterOnUser()
             return
         }
 
         withAnimation(.interactiveSpring(response: 0.28, dampingFraction: 0.88)) {
-            if isMapTilted {
-                cameraPosition = .region(visibleRegion)
-                isMapTilted = false
+            if coordinator.isMapTilted {
+                coordinator.cameraPosition = .region(visibleRegion)
+                coordinator.isMapTilted = false
             } else {
-                cameraPosition = .camera(
+                coordinator.cameraPosition = .camera(
                     MapCamera(
                         centerCoordinate: visibleRegion.center,
                         distance: cameraDistance(for: visibleRegion),
@@ -122,7 +122,7 @@ extension ContentView {
                         pitch: 55
                     )
                 )
-                isMapTilted = true
+                coordinator.isMapTilted = true
             }
         }
     }
