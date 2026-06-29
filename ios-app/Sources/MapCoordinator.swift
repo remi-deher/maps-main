@@ -6,18 +6,18 @@ import MapKit
 @Observable
 final class MapCoordinator {
     // MARK: - EngineClient Abstractions (Decoupling SwiftUI)
-    
+
     func engineState(session: MapSessionModel) -> EngineClient.State { session.engine.state }
     func engineStatusState(session: MapSessionModel) -> String? { session.engine.status?.state }
     func navigationState(session: MapSessionModel) -> String? { session.engine.status?.navigation?.status?.state }
     func lastInjectedLocationName(session: MapSessionModel) -> String? { session.engine.status?.lastInjectedLocation?.name }
     func patrolZone(session: MapSessionModel) -> PatrolZone? { session.engine.status?.patrolZone }
-    
+
     func updateKeepAlive(session: MapSessionModel, enabled: Bool, interval: Double) {
         session.engine.keepAliveEnabled = enabled
         session.engine.keepAliveInterval = interval
     }
-    
+
     func isDisconnected(session: MapSessionModel) -> Bool {
         session.engine.state != .connected && session.engine.state != .connecting
     }
@@ -33,7 +33,7 @@ final class MapCoordinator {
 
     var searchQuery = ""
     var searchCompleter = SearchCompleter()
-    
+
     var itineraryStops: [RouteStop] = []
     var itinerarySpeed: Double = 30
     var itineraryProfile: String = "driving"

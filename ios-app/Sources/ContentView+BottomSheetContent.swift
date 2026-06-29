@@ -112,7 +112,7 @@ extension ContentView {
         }
     }
 
-    func coordinator.sheetDetent(for presentationDetent: PresentationDetent) -> SheetDetent {
+    func sheetDetent(for presentationDetent: PresentationDetent) -> SheetDetent {
         if presentationDetent == .large {
             return .large
         }

@@ -6,17 +6,17 @@ import MapKit
 /// and falling back to MKDirections.
 @MainActor
 final class ItineraryEstimator {
-    
+
     private var estimatesTask: Task<Void, Never>?
     private(set) var legEstimates: [UUID: LegEstimate] = [:]
-    
+
     func recomputeLegEstimates(stops: [RouteStop], profile: String, currentLocation: CLLocation?, onComplete: @escaping ([UUID: LegEstimate]) -> Void) {
         estimatesTask?.cancel()
         guard !stops.isEmpty else {
             onComplete([:])
             return
         }
-        
+
         estimatesTask = Task {
             var results: [UUID: LegEstimate] = [:]
 

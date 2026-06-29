@@ -21,7 +21,6 @@ final class MapSessionModel {
         self.engine = engine
     }
 
-
     private var reportTask: Task<Void, Never>?
     private var keepAliveTask: Task<Void, Never>?
 
