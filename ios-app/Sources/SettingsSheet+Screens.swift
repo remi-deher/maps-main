@@ -125,7 +125,7 @@ extension SettingsSheet {
                 Toggle("Bruit GPS (jitter)", isOn: $jitterEnabled)
                     .onChange(of: jitterEnabled, perform: { newValue in
                         engine.saveSettings(["jitterEnabled": newValue])
-                    }
+                    })
                 Text("Ajoute une légère variation aléatoire à la position injectée, pour imiter le bruit naturel d'un vrai GPS.")
                     .font(.caption)
                     .foregroundStyle(.secondary)

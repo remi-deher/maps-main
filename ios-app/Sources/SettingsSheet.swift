@@ -114,13 +114,13 @@ struct SettingsSheet: View {
                         selectedDriver = usbDriver
                     }
                 }
-            }
+            })
             .onChange(of: selectedDriver, perform: { newValue in
                 let current = engine.status?.deviceInfo?.driver ?? engine.status?.usbDriver ?? "go-ios"
                 if newValue != current {
                     engine.switchDriver(driverId: newValue, transport: wifiAddress.isEmpty ? "auto" : "wifi", wifiAddress: wifiAddress)
                 }
-            }
+            })
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
                     // "Terminé" (not "Fermer") matches the HIG convention for

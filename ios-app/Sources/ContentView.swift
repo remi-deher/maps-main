@@ -206,7 +206,7 @@ struct ContentView: View {
                 currentLocation: session.location.lastLocation,
                 onComplete: { coordinator.estimator.legEstimates = $0 }
             )
-        }
+        })
         .onChange(of: liveActivityKey) { key in
             liveActivity.sync(state: key.state, locationName: key.name, enabled: liveActivityEnabled)
         }
@@ -241,7 +241,7 @@ struct ContentView: View {
             coordinator.rememberRecentPlace(place)
             coordinator.selectedPlace = place
             coordinator.selectedFeature = nil
-        }
+        })
     }
 
 }
