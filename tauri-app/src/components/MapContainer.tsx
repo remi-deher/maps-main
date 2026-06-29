@@ -5,7 +5,7 @@ import L from "leaflet";
 // (default-src 'self') blocks external stylesheets, which left the map
 // mis-sized/offset in the packaged app.
 import "leaflet/dist/leaflet.css";
-import { useWebSocket, LatLon } from "../context/websocket";
+import { LatLon, useEngine } from "../context/websocket";
 import { SearchBox } from "./SearchBox";
 import { MapActionSheet } from "./MapActionSheet";
 import { SettingsModal } from "./SettingsModal";
@@ -132,7 +132,7 @@ const MapEventsHandler: React.FC<MapEventsHandlerProps> = ({ onMapClick }) => {
 };
 
 export const InteractiveMap: React.FC = () => {
-  const { status, setLocation, addFavorite, updatePatrolZone, canSend } = useWebSocket();
+  const { status, setLocation, addFavorite, updatePatrolZone, canSend } = useEngine();
   const [selectedCoords, setSelectedCoords] = useState<LatLon | null>(null);
   const [selectedPlaceName, setSelectedPlaceName] = useState<string | null>(null);
   const [favName, setFavName] = useState("");

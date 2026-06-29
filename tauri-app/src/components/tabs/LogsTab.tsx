@@ -1,6 +1,7 @@
 import React, { useMemo, useState } from "react";
 import { Clipboard, ListFilter, RotateCw, ScrollText, X } from "lucide-react";
-import { LogEntry, useWebSocket } from "../../context/websocket";
+import { LogEntry, useEngine } from "../../context/websocket";
+import { useLogs } from "../../context/logsContext";
 
 type LevelFilter = "all" | "info" | "warn" | "error";
 
@@ -18,7 +19,8 @@ const fieldsText = (entry: LogEntry) => {
 };
 
 export const LogsTab: React.FC = () => {
-  const { logs, sendMessage, canSend } = useWebSocket();
+  const { sendMessage, canSend } = useEngine();
+      const { logs } = useLogs();
   const [level, setLevel] = useState<LevelFilter>("all");
   const [source, setSource] = useState("all");
   const [category, setCategory] = useState("all");

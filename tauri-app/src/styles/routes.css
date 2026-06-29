@@ -1,0 +1,435 @@
+/* Travel-mode icon toggle (Google Maps-style segmented control) */
+.mode-toggle {
+  display: flex;
+  gap: 6px;
+}
+
+.mode-toggle-btn {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  color: #94a3b8;
+  padding: 8px 4px;
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  box-shadow: none;
+  transition: all 0.2s ease;
+}
+
+.mode-toggle-btn:hover {
+  color: #f8fafc;
+  border-color: rgba(148, 163, 184, 0.3);
+}
+
+.mode-toggle-btn.active {
+  background: rgba(20, 184, 166, 0.16);
+  border-color: rgba(20, 184, 166, 0.4);
+  color: #5eead4;
+}
+
+/* Inline geocoding search (DestinationSearchInput) — same look as the
+   floating SearchBox but positioned relative to its own card, not the map. */
+.inline-search-container {
+  position: relative;
+  width: 100%;
+}
+
+/* Destination/waypoint list (Itinéraire search builder) */
+.waypoint-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.waypoint-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: var(--radius-sm);
+  cursor: grab;
+}
+
+.waypoint-item.dragging {
+  opacity: 0.4;
+}
+
+.waypoint-item.selected {
+  border-color: rgba(20, 184, 166, 0.45);
+  background: rgba(20, 184, 166, 0.1);
+}
+
+.waypoint-grip {
+  flex-shrink: 0;
+  color: #475569;
+}
+
+.waypoint-check {
+  flex-shrink: 0;
+  width: 16px;
+  height: 16px;
+  accent-color: #14b8a6;
+  cursor: pointer;
+}
+
+/* Per-leg travel-mode picker on each stop row (icon + compact select) */
+.waypoint-mode-picker {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  color: #5eead4;
+}
+
+.waypoint-mode-select {
+  padding: 4px 6px;
+  font-size: var(--fs-xs);
+  background: rgba(9, 9, 11, 0.6);
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  border-radius: var(--radius-sm);
+  color: #f8fafc;
+  cursor: pointer;
+}
+
+/* Stop-list toolbar (count + select toggle) and bulk-apply bar */
+.waypoint-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.waypoint-bulk-bar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  font-size: var(--fs-xs);
+  color: #94a3b8;
+  padding: 6px 8px;
+  background: rgba(20, 184, 166, 0.08);
+  border: 1px solid rgba(20, 184, 166, 0.2);
+  border-radius: var(--radius-sm);
+}
+
+.mini-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  color: #cbd5e1;
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  padding: 4px 8px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  box-shadow: none;
+  transition: all 0.2s ease;
+}
+
+.mini-btn:hover {
+  color: #f8fafc;
+  border-color: rgba(148, 163, 184, 0.4);
+}
+
+.mini-btn.active {
+  background: rgba(20, 184, 166, 0.16);
+  border-color: rgba(20, 184, 166, 0.4);
+  color: #5eead4;
+}
+
+.waypoint-estimate {
+  display: flex;
+  justify-content: space-between;
+  font-size: var(--fs-xs);
+  color: #94a3b8;
+  padding: 2px 2px 0;
+}
+
+/* Per-stop row wrapper (stop line + schedule line) */
+.waypoint-row {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.waypoint-schedule {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding: 0 4px 2px 26px;
+  font-size: var(--fs-2xs);
+  color: #94a3b8;
+}
+
+.waypoint-dwell {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.schedule-train {
+  color: #c4b5fd;
+  font-weight: 600;
+}
+
+.waypoint-dwell-input {
+  width: 44px;
+  padding: 1px 4px;
+  font-size: var(--fs-2xs);
+  background: rgba(9, 9, 11, 0.6);
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  border-radius: var(--radius-sm);
+  color: #f8fafc;
+}
+
+.waypoint-arrival {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  color: #5eead4;
+  padding: 2px 4px;
+}
+
+/* Alternative route chips (single-mode) */
+.alt-routes {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.alt-route-chip {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 10px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  box-shadow: none;
+  transition: all 0.2s ease;
+  text-align: left;
+}
+
+.alt-route-chip:hover {
+  border-color: rgba(148, 163, 184, 0.35);
+}
+
+.alt-route-chip.active {
+  background: rgba(20, 184, 166, 0.14);
+  border-color: rgba(20, 184, 166, 0.4);
+}
+
+.alt-route-label {
+  font-size: var(--fs-sm);
+  font-weight: 700;
+  color: #f1f5f9;
+}
+
+.alt-route-chip.active .alt-route-label {
+  color: #5eead4;
+}
+
+.alt-route-meta {
+  font-size: var(--fs-xs);
+  color: #94a3b8;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Avoid (OSRM exclude) toggle chips */
+.avoid-toggles {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.avoid-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  border-radius: var(--radius-pill);
+  font-size: var(--fs-xs);
+  color: #cbd5e1;
+  cursor: pointer;
+  user-select: none;
+}
+
+.avoid-chip input {
+  accent-color: #14b8a6;
+  cursor: pointer;
+}
+
+.estimate-tag {
+  margin-left: 6px;
+  padding: 1px 6px;
+  border-radius: var(--radius-pill);
+  background: rgba(245, 158, 11, 0.15);
+  border: 1px solid rgba(245, 158, 11, 0.3);
+  color: #fbbf24;
+  font-size: var(--fs-2xs);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  cursor: help;
+}
+
+.waypoint-badge {
+  flex-shrink: 0;
+  width: 20px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(20, 184, 166, 0.16);
+  color: #5eead4;
+  font-size: var(--fs-xs);
+  font-weight: 700;
+  border-radius: 50%;
+}
+
+.waypoint-name {
+  flex: 1;
+  min-width: 0;
+  font-size: var(--fs-base);
+  color: #f1f5f9;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Favorites/History List */
+.list-container {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 250px;
+  overflow-y: auto;
+}
+
+.list-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 12px;
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid rgba(255, 255, 255, 0.04);
+  border-radius: var(--radius-md);
+  transition: all 0.2s ease;
+}
+
+.list-item:hover {
+  background: rgba(255, 255, 255, 0.05);
+  border-color: rgba(20, 184, 166, 0.28);
+}
+
+.list-item-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  cursor: pointer;
+  flex: 1;
+  /* button reset so a native <button> keeps the original look */
+  text-align: left;
+  background: none;
+  border: none;
+  color: inherit;
+  font: inherit;
+  padding: 0;
+}
+
+.list-item-name {
+  font-size: var(--fs-base);
+  font-weight: 600;
+  color: #f1f5f9;
+}
+
+.list-item-coords {
+  font-size: var(--fs-sm);
+  color: #64748b;
+}
+
+.list-item-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.icon-btn {
+  background: none;
+  border: none;
+  color: #64748b;
+  padding: 8px;
+  min-width: 32px;
+  min-height: 32px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease;
+  box-shadow: none;
+}
+
+.icon-btn:hover {
+  color: #ef4444;
+  background: rgba(239, 68, 68, 0.1);
+}
+
+.icon-btn.edit:hover {
+  color: #14b8a6;
+  background: rgba(20, 184, 166, 0.1);
+}
+
+/* Legs Sequence Builder */
+.legs-container {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.leg-item {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px;
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  border-radius: var(--radius-md);
+  position: relative;
+}
+
+.leg-item-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.leg-badge {
+  font-size: var(--fs-2xs);
+  font-weight: 700;
+  padding: 2px 6px;
+  border-radius: 4px;
+  text-transform: uppercase;
+}
+
+.leg-badge.start { background: rgba(16, 185, 129, 0.1); color: #10b981; }
+.leg-badge.drive { background: rgba(59, 130, 246, 0.1); color: #3b82f6; }
+.leg-badge.walk { background: rgba(245, 158, 11, 0.1); color: #f59e0b; }
+.leg-badge.flight { background: rgba(14, 165, 233, 0.1); color: #38bdf8; }
+.leg-badge.wait { background: rgba(107, 114, 128, 0.1); color: #6b7280; }

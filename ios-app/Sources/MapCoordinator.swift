@@ -2,30 +2,93 @@ import SwiftUI
 import CoreLocation
 import MapKit
 
-// MARK: - Helper Structs
-struct SavedStop: Codable {
-    let lat: Double
-    let lon: Double
-    let name: String
-}
+@MainActor
+@Observable
+final class MapCoordinator {
+    // MARK: - EngineClient Abstractions (Decoupling SwiftUI)
+    
+    func engineState(session: MapSessionModel) -> EngineClient.State { session.engine.state }
+    func engineStatusState(session: MapSessionModel) -> String? { session.engine.status?.state }
+    func navigationState(session: MapSessionModel) -> String? { session.engine.status?.navigation?.status?.state }
+    func lastInjectedLocationName(session: MapSessionModel) -> String? { session.engine.status?.lastInjectedLocation?.name }
+    func patrolZone(session: MapSessionModel) -> PatrolZone? { session.engine.status?.patrolZone }
+    
+    func updateKeepAlive(session: MapSessionModel, enabled: Bool, interval: Double) {
+        session.engine.keepAliveEnabled = enabled
+        session.engine.keepAliveInterval = interval
+    }
+    
+    func isDisconnected(session: MapSessionModel) -> Bool {
+        session.engine.state != .connected && session.engine.state != .connecting
+    }
 
-struct SavedItinerary: Codable {
-    let stops: [SavedStop]
-    let speed: Double
-    let profile: String
-}
+    let estimator = ItineraryEstimator()
+    var legEstimates: [UUID: LegEstimate] = [:]
 
-let lastItineraryKey = "lastItinerary"
-let recentPlacesKey = "recentPlaces"
-private let recentPlacesLimit = 10
+    var selectedPlace: SelectedPlace?
+    var selectedFeature: MapFeature?
+    var cameraPosition: MapCameraPosition = .userLocation(fallback: .automatic)
+    var visibleRegion: MKCoordinateRegion?
+    var recentPlaces: [RecentPlace] = []
 
-// MARK: - ContentView Helpers Extension
-extension ContentView {
+    var searchQuery = ""
+    var searchCompleter = SearchCompleter()
+    
+    var itineraryStops: [RouteStop] = []
+    var itinerarySpeed: Double = 30
+    var itineraryProfile: String = "driving"
+    var activeRoute: ActiveRoute?
 
-    /// Reverse-geocodes a long-press coordinate into a place name, so it
-    /// reads the same as picking a search result instead of showing raw
-    /// coordinates whenever a name is available — falls back to the
-    /// coordinates only when geocoding fails (no network, ocean, etc).
+    var patrolMode = false
+    var patrolType = "circle"
+    var patrolRadius: Double = 200
+
+    var showGpxImporter = false
+    var gpxContent = ""
+    var gpxFileName = ""
+    var gpxSpeed: Double = 25
+    var gpxError: String?
+
+    var sheetDetent: SheetDetent = .collapsed
+    var collapsedSheetHeight: CGFloat = BottomSheet.collapsedHeight
+    var nativeSheetPresented = true
+    var nativeSheetDetent: PresentationDetent = .height(72)
+    var sheetScrollOffset: CGFloat = 0
+    var isMapTilted = false
+    var showSettings = false
+    var hasSavedItinerary = UserDefaults.standard.data(forKey: lastItineraryKey) != nil
+
+    // Derived from session (passed in where needed)
+    func spoofedCoordinate(session: MapSessionModel) -> CLLocationCoordinate2D? {
+        guard let loc = session.engine.status?.lastInjectedLocation else { return nil }
+        return CLLocationCoordinate2D(latitude: loc.lat, longitude: loc.lon)
+    }
+
+    func routePreview(session: MapSessionModel) -> [CLLocationCoordinate2D] {
+        if activeRoute != nil, isActiveRouteStatus(session: session) {
+            let enginePreview = (session.engine.status?.currentSequencePreview ?? []).map {
+                CLLocationCoordinate2D(latitude: $0.lat, longitude: $0.lon)
+            }
+            if !enginePreview.isEmpty {
+                return enginePreview
+            }
+        }
+        return activeRoute?.stops.map(\.coordinate) ?? []
+    }
+
+    var displayedItineraryStops: [RouteStop] {
+        activeRoute?.stops ?? itineraryStops
+    }
+
+    func patrolCenter(session: MapSessionModel) -> CLLocationCoordinate2D? {
+        spoofedCoordinate(session: session) ?? session.location.lastLocation?.coordinate
+    }
+
+    func patrolPreview(session: MapSessionModel) -> (center: CLLocationCoordinate2D, radius: Double)? {
+        guard patrolMode, patrolType == "circle", let center = patrolCenter(session: session) else { return nil }
+        return (center: center, radius: patrolRadius)
+    }
+
     func reverseGeocode(_ coordinate: CLLocationCoordinate2D) async -> SelectedPlace {
         let coordsText = String(format: "%.5f, %.5f", coordinate.latitude, coordinate.longitude)
         let location = CLLocation(latitude: coordinate.latitude, longitude: coordinate.longitude)
@@ -36,18 +99,8 @@ extension ContentView {
         return SelectedPlace(coordinate: coordinate, title: title.isEmpty ? coordsText : title, subtitle: coordsText)
     }
 
-    func startDiscovery() {
-        discovery.start()
-    }
-
-    /// Picking a suggestion resolves it to a placemark (one `MKLocalSearch`
-    /// call, only now — not on every keystroke) and opens the same action
-    /// menu as a long-press on the map (Téléporter / Itinéraire / Étape /
-    /// Favori) instead of silently committing to an itinerary stop — the
-    /// user decides what to do with the place once it's found.
     func selectSearchSuggestion(_ completion: MKLocalSearchCompletion) {
         searchQuery = ""
-        searchFocused = false
         Task {
             guard let item = await searchCompleter.resolve(completion),
                   let coordinate = item.placemark.location?.coordinate else { return }
@@ -59,16 +112,10 @@ extension ContentView {
         }
     }
 
-    /// Mirrors tauri-app's handlePlaySequence: each leg's start is the
-    /// previous leg's end, chaining the stops into one continuous itinerary.
-    /// Saves the itinerary before attempting to send it — if the engine
-    /// isn't connected, the stops stay on screen (not cleared) and the user
-    /// can retry, or reload this same snapshot later via "Charger le dernier
-    /// itinéraire" even after leaving the screen.
-    func launchItinerary() {
+    func launchItinerary(session: MapSessionModel) {
         guard !itineraryStops.isEmpty else { return }
         saveLastItinerary()
-        guard requireConnection() else { return }
+        guard requireConnection(session: session) else { return }
 
         let route = ActiveRoute(
             stops: itineraryStops,
@@ -76,17 +123,16 @@ extension ContentView {
             profile: itineraryProfile,
             legEstimates: session.legEstimates
         )
-        playActiveRoute(route)
+        playActiveRoute(route, session: session)
         activeRoute = route
         itineraryStops = []
         selectedPlace = nil
-        searchFocused = false
-        fitItinerary(route.stops)
+        fitItinerary(route.stops, session: session)
         withAnimation { sheetDetent = .medium }
     }
 
-    func startRoute(to place: SelectedPlace) {
-        guard requireConnection() else { return }
+    func startRoute(to place: SelectedPlace, session: MapSessionModel, defaultSpeed: Double, defaultProfile: String) {
+        guard requireConnection(session: session) else { return }
         let stop = RouteStop(coordinate: place.coordinate, name: place.title)
         let route = ActiveRoute(stops: [stop], speed: defaultSpeed, profile: defaultProfile, legEstimates: [:])
         session.engine.playRoute(
@@ -97,13 +143,12 @@ extension ContentView {
         )
         activeRoute = route
         selectedPlace = nil
-        searchFocused = false
         focus(on: place.coordinate)
         withAnimation { sheetDetent = .medium }
     }
 
-    func addSelectedPlaceToActiveRoute() {
-        guard let place = selectedPlace, let activeRoute = activeRoute, requireConnection() else { return }
+    func addSelectedPlaceToActiveRoute(session: MapSessionModel) {
+        guard let place = selectedPlace, let activeRoute = activeRoute, requireConnection(session: session) else { return }
         let stop = RouteStop(coordinate: place.coordinate, name: place.title)
         var updatedStops = activeRoute.stops
         updatedStops.insert(stop, at: 0)
@@ -113,19 +158,18 @@ extension ContentView {
             profile: activeRoute.profile,
             legEstimates: [:]
         )
-        playActiveRoute(updatedRoute)
+        playActiveRoute(updatedRoute, session: session)
         self.activeRoute = updatedRoute
         selectedPlace = nil
-        searchFocused = false
-        fitItinerary(updatedRoute.stops)
+        fitItinerary(updatedRoute.stops, session: session)
         withAnimation { sheetDetent = .medium }
     }
 
-    func playActiveRoute(_ route: ActiveRoute) {
-        session.engine.playSequence(legs: sequenceLegs(for: route.stops, speed: route.speed, profile: route.profile), looping: false)
+    func playActiveRoute(_ route: ActiveRoute, session: MapSessionModel) {
+        session.engine.playSequence(legs: sequenceLegs(for: route.stops, speed: route.speed, profile: route.profile, session: session), looping: false)
     }
 
-    func sequenceLegs(for stops: [RouteStop], speed: Double, profile: String) -> [[String: Any]] {
+    func sequenceLegs(for stops: [RouteStop], speed: Double, profile: String, session: MapSessionModel) -> [[String: Any]] {
         guard !stops.isEmpty else { return [] }
         let legType = profile == "walking" ? "walk" : "drive"
         let startingCoordinate = session.location.lastLocation?.coordinate ?? stops[0].coordinate
@@ -143,15 +187,15 @@ extension ContentView {
         return legs
     }
 
-    func pauseActiveRoute() {
+    func pauseActiveRoute(session: MapSessionModel) {
         session.engine.pauseRoute()
     }
 
-    func resumeActiveRoute() {
+    func resumeActiveRoute(session: MapSessionModel) {
         session.engine.resumeRoute()
     }
 
-    func stopActiveRoute() {
+    func stopActiveRoute(session: MapSessionModel) {
         session.engine.stopRoute()
         activeRoute = nil
         withAnimation { sheetDetent = .medium }
@@ -161,24 +205,24 @@ extension ContentView {
         withAnimation { sheetDetent = .large }
     }
 
-    func recenterActiveRoute() {
+    func recenterActiveRoute(session: MapSessionModel) {
         guard let activeRoute = activeRoute else { return }
-        fitItinerary(activeRoute.stops)
+        fitItinerary(activeRoute.stops, session: session)
     }
 
     func isRouteSimulationState(_ state: String?) -> Bool {
         state == "moving" || state == "paused" || state == "running"
     }
 
-    func isActiveRouteStatus(_ status: EngineStatus?) -> Bool {
-        let navigationState = status?.navigation?.status?.state
+    func isActiveRouteStatus(session: MapSessionModel) -> Bool {
+        let navigationState = session.engine.status?.navigation?.status?.state
         if navigationState == "running" || navigationState == "paused" {
             return true
         }
         if navigationState == "stopped" {
             return false
         }
-        return isRouteSimulationState(status?.state)
+        return isRouteSimulationState(session.engine.status?.state)
     }
 
     func syncActiveRouteState(
@@ -197,9 +241,6 @@ extension ContentView {
             return
         }
 
-        // Older engines may not expose navigation.status. In that case, fall
-        // back to the global state. If navigation.status existed previously,
-        // avoid treating a transient global "ready" as route completion.
         if oldNavigationState != nil {
             return
         }
@@ -211,12 +252,7 @@ extension ContentView {
         }
     }
 
-    /// Centralizes the "is the engine actually usable" check before any
-    /// pilot action. Connection status now lives only in Réglages (the "État"
-    /// row) to keep the search sheet as clean as Plans' — no inline banner and
-    /// no modal alert on top of every blocked action (see §3.9 of
-    /// docs/UI_UX_BASELINE.md), so a blocked action is a silent no-op here.
-    func requireConnection() -> Bool {
+    func requireConnection(session: MapSessionModel) -> Bool {
         session.engine.state == .connected
     }
 
@@ -241,7 +277,7 @@ extension ContentView {
         itineraryProfile = saved.profile
     }
 
-    func selectFavorite(_ fav: Favorite) {
+    func selectFavorite(_ fav: Favorite, session: MapSessionModel) {
         let coordinate = CLLocationCoordinate2D(latitude: fav.lat, longitude: fav.lon)
         rememberRecentPlace(SelectedPlace(coordinate: coordinate, title: fav.name ?? "Favori", subtitle: nil))
         session.engine.setLocation(lat: fav.lat, lon: fav.lon, name: fav.name ?? "Favori")
@@ -272,7 +308,7 @@ extension ContentView {
         )
         var updated = recentPlaces.filter { $0.id != recent.id }
         updated.insert(recent, at: 0)
-        recentPlaces = Array(updated.prefix(recentPlacesLimit))
+        recentPlaces = Array(updated.prefix(10))
         saveRecentPlaces()
     }
 
@@ -292,10 +328,7 @@ extension ContentView {
         }
     }
 
-    /// Reframes the camera so every stop (plus the device's real position,
-    /// when known — itineraries start from wherever the phone actually is)
-    /// fits on screen, instead of just zooming in on the latest addition.
-    func fitItinerary(_ stops: [RouteStop]) {
+    func fitItinerary(_ stops: [RouteStop], session: MapSessionModel) {
         guard !stops.isEmpty else { return }
         var coordinates = stops.map(\.coordinate)
         if let real = session.location.lastLocation?.coordinate {
@@ -322,8 +355,6 @@ extension ContentView {
         }
 
         let center = CLLocationCoordinate2D(latitude: (minLat + maxLat) / 2, longitude: (minLon + maxLon) / 2)
-        // 1.6x padding so stops near the edge aren't flush against the screen
-        // border, with a floor so two very close stops don't over-zoom.
         let span = MKCoordinateSpan(
             latitudeDelta: max((maxLat - minLat) * 1.6, 0.01),
             longitudeDelta: max((maxLon - minLon) * 1.6, 0.01)
@@ -331,13 +362,7 @@ extension ContentView {
         return MKCoordinateRegion(center: center, span: span)
     }
 
-    /// Starts a circle patrol centered on the current spoofed/real position, or
-    /// a rectangle patrol using the map's current visible bounds — moved out of
-    /// SettingsSheet so the zone is defined against the map (with the live
-    /// dashed preview) instead of blind in a settings form. A missing center or
-    /// region is a silent no-op (center almost always resolves via the real
-    /// location fallback in `patrolCenter`).
-    func startPatrol() {
+    func startPatrol(session: MapSessionModel) {
         if patrolType == "rectangle" {
             guard let region = visibleRegion else { return }
             let southWest = CLLocationCoordinate2D(
@@ -350,15 +375,11 @@ extension ContentView {
             )
             session.engine.updatePatrolZone(type: "rectangle", center: nil, radius: nil, bounds: (southWest: southWest, northEast: northEast), active: true)
         } else {
-            guard let center = patrolCenter else { return }
+            guard let center = patrolCenter(session: session) else { return }
             session.engine.updatePatrolZone(type: "circle", center: center, radius: patrolRadius, bounds: nil, active: true)
         }
     }
 
-    /// Reads a picked .gpx file into `gpxContent` so the sheet can show the
-    /// GpxPanel (file + speed + launch). Moved out of SettingsSheet so GPX
-    /// import lives with the other "start a simulation" actions. Expands the
-    /// sheet so the just-loaded panel is actually visible.
     func loadGpx(from url: URL) {
         gpxError = nil
         guard url.startAccessingSecurityScopedResource() else {
@@ -374,16 +395,20 @@ extension ContentView {
         gpxFileName = url.lastPathComponent
         withAnimation { sheetDetent = .medium }
     }
-
-    func toggleConnection() {
-        session.toggleConnection(engineAddress: engineAddress, keepAliveEnabled: keepAliveEnabled)
-    }
-
-    /// Drops the current connection and reopens it against the (possibly
-    /// just-edited) `engineAddress` — used when the user changes the port in
-    /// settings, mirroring tauri-app's "Appliquer" button for its engine
-    /// port field (Sidebar.tsx's handleApplyEnginePort).
-    func reconnect() {
-        session.reconnect(engineAddress: engineAddress)
-    }
 }
+
+// Ensure these exist if they were only in ContentView+Helpers.swift
+struct SavedStop: Codable {
+    let lat: Double
+    let lon: Double
+    let name: String
+}
+
+struct SavedItinerary: Codable {
+    let stops: [SavedStop]
+    let speed: Double
+    let profile: String
+}
+
+let lastItineraryKey = "lastItinerary"
+let recentPlacesKey = "recentPlaces"

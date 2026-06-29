@@ -255,7 +255,7 @@ components:
     Status:
       type: object
       properties:
-        state: { type: string, enum: [idle, ready, starting, running, moving] }
+        state: { type: string, enum: [idle, ready, starting, running, moving, paused] }
         tunnelActive: { type: boolean }
         rsdAddress: { type: [string, "null"] }
         rsdPort: { type: [integer, "null"] }

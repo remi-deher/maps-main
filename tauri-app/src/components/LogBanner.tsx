@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import { AlertTriangle, AlertCircle, X } from "lucide-react";
-import { useWebSocket, LogEntry } from "../context/websocket";
+import { LogEntry } from "../context/websocket";
+import { useLogs } from "../context/logsContext";
 
 interface Banner extends LogEntry {
   id: number;
@@ -12,7 +13,7 @@ const AUTO_DISMISS_MS = 8000;
 // app-wide regardless of which modal/panel is open — previously these events
 // only reached the browser console (C2, server UX audit).
 export const LogBanner: React.FC = () => {
-  const { logs } = useWebSocket();
+  const { logs } = useLogs();
   const [banners, setBanners] = useState<Banner[]>([]);
   const seenCount = useRef(0);
   const nextId = useRef(0);

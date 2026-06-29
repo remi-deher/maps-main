@@ -1,0 +1,9 @@
+{
+  "type": "PLAY_ROUTE",
+  "data": {
+    "endLat": 48.8,
+    "endLon": 2.3,
+    "speed": 50,
+    "profile": "driving"
+  }
+}

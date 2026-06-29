@@ -4,11 +4,11 @@ import { listen } from "@tauri-apps/api/event";
 import {
   isTauri,
   sameOriginWsUrl,
-  sameOriginHttpUrl,
   getStoredToken,
-  setStoredToken,
-  clearStoredToken,
 } from "../lib/runtime";
+import { engineEvents } from "../lib/events";
+import { useLogs } from "./logsContext";
+import { usePairing } from "./pairingContext";
 
 const DEFAULT_PORT = 8080;
 
@@ -89,16 +89,7 @@ export interface Diagnostics {
   pairingRecords: PairingRecord[] | null;
   usbDevices: DiagnosticsDevice[] | null;
   usbDevicesError?: string;
-  // UDIDs of USB-connected devices with no Lockdown trust certificate yet —
-  // the iOS 17+ WiFi RSD tunnel cannot come up for them until paired over
-  // USB (see docs/IOS_PAIRING_TUNNEL.md). null/undefined on older engines
-  // that predate this field.
   unpairedUsbDevices?: string[] | null;
-  error?: string;
-}
-
-export interface PairResult {
-  ok: boolean;
   error?: string;
 }
 
@@ -200,28 +191,6 @@ export interface Telemetry {
   throughput: number;
 }
 
-export interface LogEntry {
-  timestamp: number;
-  level: "info" | "warn" | "error";
-  source: string;
-  category?: string;
-  action?: string;
-  message: string;
-  fields?: Record<string, string>;
-}
-
-export interface PairedDevice {
-  id: string;
-  label: string;
-  createdAt: number;
-  lastSeen: number;
-}
-
-export interface RemotePairCode {
-  code: string;
-  secondsRemaining: number;
-}
-
 interface WebSocketContextType {
   isConnected: boolean;
   connectionStatus: "connecting" | "connected" | "reconnecting" | "disconnected";
@@ -237,7 +206,6 @@ interface WebSocketContextType {
   status: Status | null;
   telemetry: Telemetry | null;
   deviceDetails: DeviceDetails | null;
-  logs: LogEntry[];
   getDeviceInfo: () => void;
   sendMessage: (type: string, data?: any) => boolean;
   setLocation: (lat: number, lon: number, name?: string) => void;
@@ -258,37 +226,27 @@ interface WebSocketContextType {
   getDiagnostics: () => void;
   networkDevices: NetworkDevicesResult | null;
   getNetworkDevices: () => void;
-  pairResult: PairResult | null;
-  pairing: boolean;
-  pairDevice: () => void;
-  // Remote-access pairing (browser mode): when the engine is reached from
-  // another machine, the client must redeem the desktop's rotating code once to
-  // obtain a durable token. needsPairing is true until that happens; submitCode
-  // performs the exchange; forgetPairing drops the stored token to start over.
-  needsPairing: boolean;
-  pairCodeError: string | null;
-  prefillCode: string | null;
-  submitCode: (code: string, label?: string) => Promise<boolean>;
-  forgetPairing: () => void;
-  // Desktop-only remote-access management, served over the loopback WebSocket
-  // (the Tauri webview can't fetch the engine's REST API cross-origin). The
-  // engine answers GET_PAIR_CODE / LIST_PAIRED_DEVICES only for loopback
-  // clients, so these are inert in a remote browser.
-  remotePairCode: RemotePairCode | null;
-  pairedDevices: PairedDevice[];
-  requestPairCode: () => void;
-  requestPairedDevices: () => void;
-  revokePairedDevice: (id: string) => void;
 }
 
 const WebSocketContext = createContext<WebSocketContextType | null>(null);
 
-export const useWebSocket = () => {
+export const useEngine = () => {
   const context = useContext(WebSocketContext);
   if (!context) {
-    throw new Error("useWebSocket must be used within a WebSocketProvider");
+    throw new Error("useEngine must be used within a WebSocketProvider");
   }
   return context;
+};
+
+export const useWebSocket = () => {
+  const ws = useEngine();
+  const logs = useLogs();
+  const pairing = usePairing();
+  return {
+    ...ws,
+    ...logs,
+    ...pairing,
+  };
 };
 
 export const WebSocketProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -296,19 +254,8 @@ export const WebSocketProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   const [engineStatus, setEngineStatus] = useState<WebSocketContextType["engineStatus"]>("unknown");
   const [mdnsInterface, setMdnsInterfaceState] = useState<string | null>(null);
   const [networkInterfaces, setNetworkInterfaces] = useState<NetworkInterfaceInfo[]>([]);
-  // Remote-access pairing state (browser mode only). In Tauri the window talks
-  // to its sidecar over loopback, which the engine always trusts, so pairing is
-  // never required there.
   const [deviceToken, setDeviceToken] = useState<string | null>(() => (isTauri ? null : getStoredToken()));
-  const [needsPairing, setNeedsPairing] = useState(false);
-  const [pairCodeError, setPairCodeError] = useState<string | null>(null);
-  const [prefillCode, setPrefillCode] = useState<string | null>(null);
-  const [remotePairCode, setRemotePairCode] = useState<RemotePairCode | null>(null);
-  const [pairedDevices, setPairedDevices] = useState<PairedDevice[]>([]);
 
-  // Tauri: the engine runs as a localhost sidecar on the configured port (no
-  // token — loopback is trusted). Browser: same origin as the served page, with
-  // the durable device token appended so the engine authorizes the connection.
   const connectionUrl = isTauri
     ? `ws://localhost:${enginePort}/ws`
     : sameOriginWsUrl("/ws") + (deviceToken ? `?token=${encodeURIComponent(deviceToken)}` : "");
@@ -318,12 +265,8 @@ export const WebSocketProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   const [status, setStatus] = useState<Status | null>(null);
   const [telemetry, setTelemetry] = useState<Telemetry | null>(null);
   const [deviceDetails, setDeviceDetails] = useState<DeviceDetails | null>(null);
-  const [logs, setLogs] = useState<LogEntry[]>([]);
   const [diagnostics, setDiagnostics] = useState<Diagnostics | null>(null);
   const [networkDevices, setNetworkDevices] = useState<NetworkDevicesResult | null>(null);
-  const [pairResult, setPairResult] = useState<PairResult | null>(null);
-  const [pairing, setPairing] = useState(false);
-  const maxLogEntries = 200;
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectTimeoutRef = useRef<any>(null);
 
@@ -333,9 +276,6 @@ export const WebSocketProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       reconnectTimeoutRef.current = null;
     }
     if (wsRef.current) {
-      // Detach handlers before closing: otherwise the replaced socket's own
-      // onclose fires and schedules an orphaned reconnect that later closes
-      // the new, healthy connection — a self-sustaining reconnect loop.
       wsRef.current.onclose = null;
       wsRef.current.onerror = null;
       wsRef.current.onmessage = null;
@@ -353,12 +293,9 @@ export const WebSocketProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       setIsConnected(true);
       setConnectionStatus("connected");
       setLastError(null);
-      // In browser mode there's no sidecar lifecycle to listen to, so a live
-      // WebSocket is our proof the engine is up.
       if (!isTauri) {
         setEngineStatus("running");
       }
-      // Request initial status and log buffer
       ws.send(JSON.stringify({ type: "GET_STATUS" }));
       ws.send(JSON.stringify({ type: "GET_LOGS" }));
     };
@@ -380,10 +317,7 @@ export const WebSocketProvider: React.FC<{ children: React.ReactNode }> = ({ chi
             setDeviceDetails(data);
             break;
           case "LOG":
-            setLogs((prev) => {
-              const next = [...prev, data as LogEntry];
-              return next.length > maxLogEntries ? next.slice(next.length - maxLogEntries) : next;
-            });
+            engineEvents.emit("log", data);
             break;
           case "DIAGNOSTICS":
             setDiagnostics(data);
@@ -392,46 +326,38 @@ export const WebSocketProvider: React.FC<{ children: React.ReactNode }> = ({ chi
             setNetworkDevices(data);
             break;
           case "PAIR_RESULT":
-            setPairResult(data);
-            setPairing(false);
+            engineEvents.emit("pair_result", data);
             break;
           case "PAIR_CODE":
-            if (data?.error) {
-              setRemotePairCode(null);
-            } else {
-              setRemotePairCode({ code: data.code, secondsRemaining: data.secondsRemaining });
-            }
+            engineEvents.emit("pair_code", data);
             break;
           case "PAIRED_DEVICES":
-            setPairedDevices(Array.isArray(data?.devices) ? data.devices : []);
+            engineEvents.emit("paired_devices", data);
             break;
           case "LOGS":
-            setLogs((Array.isArray(data) ? data : []) as LogEntry[]);
+            engineEvents.emit("logs", data);
             break;
           case "LOCATION":
-            // Can update location inside status if necessary
-            if (status) {
-              setStatus((prev) => {
-                if (!prev) return null;
-                return {
-                  ...prev,
-                  navigation: {
-                    ...prev.navigation,
-                    progress: prev.navigation.progress ? {
-                      ...prev.navigation.progress,
-                      lat: data.lat,
-                      lon: data.lon,
-                    } : {
-                      index: 0,
-                      total: 1,
-                      lat: data.lat,
-                      lon: data.lon,
-                      speed: 0,
-                    }
+            setStatus((prev) => {
+              if (!prev) return null;
+              return {
+                ...prev,
+                navigation: {
+                  ...prev.navigation,
+                  progress: prev.navigation.progress ? {
+                    ...prev.navigation.progress,
+                    lat: data.lat,
+                    lon: data.lon,
+                  } : {
+                    index: 0,
+                    total: 1,
+                    lat: data.lat,
+                    lon: data.lon,
+                    speed: 0,
                   }
-                };
-              });
-            }
+                }
+              };
+            });
             break;
           default:
             break;
@@ -457,43 +383,25 @@ export const WebSocketProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     };
   };
 
-  // Resolve the actual engine port chosen by the Rust side (persisted config,
-  // defaults to DEFAULT_PORT) before opening the first WebSocket connection.
   useEffect(() => {
-    // These commands manage the Tauri-spawned sidecar; in browser mode the
-    // engine is whatever served this page, so there's nothing to resolve.
     if (!isTauri) {
       return;
     }
     invoke<number>("get_engine_port")
       .then((port) => setEnginePortState(port))
-      .catch(() => {
-        // Not running inside Tauri (e.g. `vite dev` in a browser): keep the default port.
-      });
+      .catch(() => {});
     invoke<string | null>("get_mdns_interface")
       .then((iface) => setMdnsInterfaceState(iface))
-      .catch(() => {
-        // Not running inside Tauri: no interface to restrict.
-      });
+      .catch(() => {});
     invoke<NetworkInterfaceInfo[]>("list_network_interfaces")
       .then((interfaces) => setNetworkInterfaces(interfaces))
-      .catch(() => {
-        // Not running inside Tauri: nothing to list.
-      });
+      .catch(() => {});
   }, []);
 
   useEffect(() => {
-    // Sidecar lifecycle events only exist under Tauri; browser mode derives
-    // engine status from the WebSocket connection instead.
     if (!isTauri) {
       return;
     }
-    // `listen()` resolves asynchronously; if cleanup already ran by the time
-    // it does (StrictMode double-effect, fast remount), `cancelled` skips
-    // registering a handler that would otherwise never get unsubscribed —
-    // the bare `unlistenStatus.then((fn) => fn())` below still unsubscribes
-    // once the promise resolves, but only after a window where two listeners
-    // could briefly coexist.
     let cancelled = false;
     let unsubscribe: (() => void) | null = null;
     listen<string>("engine-status", (event) => {
@@ -519,42 +427,17 @@ export const WebSocketProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     };
   }, []);
 
-  // Browser mode bootstrap: capture credentials handed in via the URL (the QR
-  // encodes the engine origin plus ?pair=<rotating-code>, or a ?token= for a
-  // pre-provisioned client), then decide whether we can connect or must pair.
   useEffect(() => {
-    if (isTauri) {
-      return;
-    }
-    const params = new URLSearchParams(window.location.search);
-
-    const urlToken = params.get("token");
-    if (urlToken) {
-      setStoredToken(urlToken);
-      setDeviceToken(urlToken);
-    }
-    const pair = params.get("pair");
-    if (pair) {
-      setPrefillCode(pair);
-    }
-    // Strip credentials from the address bar so they aren't bookmarked/shared.
-    if (urlToken || pair) {
-      params.delete("token");
-      params.delete("pair");
-      const qs = params.toString();
-      window.history.replaceState({}, "", window.location.pathname + (qs ? `?${qs}` : ""));
-    }
-
-    // No durable token (and none just provided) ⇒ this remote client must pair
-    // before it can open the WebSocket.
-    if (!urlToken && !getStoredToken()) {
-      setNeedsPairing(true);
-    }
+    const handleReconnect = (token: string | null) => {
+      setDeviceToken(token);
+    };
+    engineEvents.on("reconnect", handleReconnect);
+    return () => {
+      engineEvents.off("reconnect", handleReconnect);
+    };
   }, []);
 
   useEffect(() => {
-    // Browser mode without a token: don't dial (the engine would reject a
-    // tokenless remote handshake); wait for the user to pair instead.
     if (!isTauri && !deviceToken) {
       return;
     }
@@ -574,8 +457,6 @@ export const WebSocketProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   }, [enginePort, deviceToken]);
 
   const setEnginePort = async (port: number) => {
-    // Restarting the engine on a new port is a Tauri-sidecar concern; in
-    // browser mode the engine's port is fixed by however it was launched.
     if (!isTauri) {
       return;
     }
@@ -605,6 +486,16 @@ export const WebSocketProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       return false;
     }
   };
+
+  useEffect(() => {
+    const handleSend = (type: string, data?: any) => {
+      sendMessage(type, data);
+    };
+    engineEvents.on("send", handleSend);
+    return () => {
+      engineEvents.off("send", handleSend);
+    };
+  }, [isConnected]);
 
   const setLocation = (lat: number, lon: number, name = "Point Injecté") => {
     sendMessage("SET_LOCATION", { lat, lon, name });
@@ -677,67 +568,6 @@ export const WebSocketProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     sendMessage("GET_NETWORK_DEVICES");
   };
 
-  // Runs the active driver's Lockdown pairing handshake against a
-  // USB-connected device (the "Faire confiance ?" prompt) — see
-  // docs/IOS_PAIRING_TUNNEL.md. `pairing` stays true until PAIR_RESULT
-  // arrives, since the user has to physically accept the prompt on their
-  // phone before the engine's reply comes back (up to ~45s).
-  const pairDevice = () => {
-    setPairResult(null);
-    setPairing(true);
-    sendMessage("PAIR_DEVICE");
-  };
-
-  // submitCode redeems the desktop's rotating pairing code for a durable token
-  // (browser mode). On success the token is stored and the connection effect
-  // re-runs to open the now-authorized WebSocket.
-  const submitCode = async (code: string, label?: string): Promise<boolean> => {
-    setPairCodeError(null);
-    try {
-      const resp = await fetch(sameOriginHttpUrl("/api/pair"), {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ code: code.trim(), label: label || navigator.userAgent.slice(0, 60) }),
-      });
-      if (!resp.ok) {
-        setPairCodeError(resp.status === 401 ? "Code invalide ou expiré." : `Échec de l'appairage (${resp.status}).`);
-        return false;
-      }
-      const data = (await resp.json()) as { token?: string };
-      if (!data.token) {
-        setPairCodeError("Réponse d'appairage invalide.");
-        return false;
-      }
-      setStoredToken(data.token);
-      setPrefillCode(null);
-      setNeedsPairing(false);
-      setDeviceToken(data.token); // triggers the connect effect
-      return true;
-    } catch {
-      setPairCodeError("Impossible de joindre le moteur.");
-      return false;
-    }
-  };
-
-  // Desktop remote-access management (loopback WebSocket). These are no-ops in
-  // a remote browser — the engine refuses the actions for non-loopback clients.
-  const requestPairCode = () => sendMessage("GET_PAIR_CODE");
-  const requestPairedDevices = () => sendMessage("LIST_PAIRED_DEVICES");
-  const revokePairedDevice = (id: string) => sendMessage("REVOKE_PAIRED_DEVICE", { id });
-
-  // forgetPairing drops the durable token so this client can re-pair from
-  // scratch (e.g. after the desktop revoked it, leaving the WS unable to
-  // reconnect).
-  const forgetPairing = () => {
-    clearStoredToken();
-    setDeviceToken(null);
-    setNeedsPairing(true);
-    if (wsRef.current) {
-      wsRef.current.onclose = null;
-      wsRef.current.close();
-    }
-  };
-
   return (
     <WebSocketContext.Provider
       value={{
@@ -755,7 +585,6 @@ export const WebSocketProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         status,
         telemetry,
         deviceDetails,
-        logs,
         getDeviceInfo,
         sendMessage,
         setLocation,
@@ -776,19 +605,6 @@ export const WebSocketProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         getDiagnostics,
         networkDevices,
         getNetworkDevices,
-        pairResult,
-        pairing,
-        pairDevice,
-        needsPairing,
-        pairCodeError,
-        prefillCode,
-        submitCode,
-        forgetPairing,
-        remotePairCode,
-        pairedDevices,
-        requestPairCode,
-        requestPairedDevices,
-        revokePairedDevice,
       }}
     >
       {children}

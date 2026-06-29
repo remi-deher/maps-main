@@ -2,6 +2,8 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, act, waitFor } from "@testing-library/react";
 import React from "react";
 import { WebSocketProvider, useWebSocket } from "./websocket";
+import { LogsProvider } from "./logsContext";
+import { PairingProvider } from "./pairingContext";
 
 const TestConsumer: React.FC = () => {
   const ws = useWebSocket();
@@ -40,9 +42,13 @@ describe("WebSocketContext Unit Tests", () => {
   it("provides default state and connects to mock websocket", async () => {
     await act(async () => {
       render(
-        <WebSocketProvider>
-          <TestConsumer />
-        </WebSocketProvider>
+        <LogsProvider>
+          <PairingProvider>
+            <WebSocketProvider>
+              <TestConsumer />
+            </WebSocketProvider>
+          </PairingProvider>
+        </LogsProvider>
       );
     });
 
@@ -60,9 +66,13 @@ describe("WebSocketContext Unit Tests", () => {
 
     await act(async () => {
       render(
-        <WebSocketProvider>
-          <TestConsumer />
-        </WebSocketProvider>
+        <LogsProvider>
+          <PairingProvider>
+            <WebSocketProvider>
+              <TestConsumer />
+            </WebSocketProvider>
+          </PairingProvider>
+        </LogsProvider>
       );
     });
 
@@ -115,9 +125,13 @@ describe("WebSocketContext — remote pairing (browser mode)", () => {
   it("requires pairing when no token is stored and does not connect", async () => {
     await act(async () => {
       render(
-        <WebSocketProvider>
-          <PairingConsumer />
-        </WebSocketProvider>
+        <LogsProvider>
+          <PairingProvider>
+            <WebSocketProvider>
+              <PairingConsumer />
+            </WebSocketProvider>
+          </PairingProvider>
+        </LogsProvider>
       );
     });
 
@@ -138,9 +152,13 @@ describe("WebSocketContext — remote pairing (browser mode)", () => {
 
     await act(async () => {
       render(
-        <WebSocketProvider>
-          <PairingConsumer />
-        </WebSocketProvider>
+        <LogsProvider>
+          <PairingProvider>
+            <WebSocketProvider>
+              <PairingConsumer />
+            </WebSocketProvider>
+          </PairingProvider>
+        </LogsProvider>
       );
     });
 

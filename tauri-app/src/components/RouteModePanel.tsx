@@ -17,7 +17,7 @@ import {
   Wand2,
   Clock,
 } from "lucide-react";
-import { useWebSocket, LatLon } from "../context/websocket";
+import { LatLon, useEngine } from "../context/websocket";
 import { parseCoordinate } from "../lib/parse";
 import { reverseGeocodeDetailed, autoLegMode, PlaceKind } from "../lib/geocoding";
 import { planTransitJourney, isTransitEnabled } from "../lib/transit";
@@ -33,6 +33,8 @@ import {
   haversineMeters,
 } from "../lib/osrm";
 import { DestinationSearchInput } from "./DestinationSearchInput";
+import { StopRow } from "./routes/StopRow";
+import { useRouteDragAndDrop } from "../features/routes/useRouteDragAndDrop";
 
 export type LegMode = "drive" | "walk" | "train" | "flight";
 
@@ -207,7 +209,7 @@ export const RouteModePanel: React.FC<RouteModePanelProps> = ({
   setStart,
   onRouteSegmentsChange,
 }) => {
-  const { canSend, status, playCustomGpx, playSequence } = useWebSocket();
+  const { canSend, status, playCustomGpx, playSequence } = useEngine();
 
   // PlaySequence (unlike PlayRoute) has no server-side default for a missing
   // leg start, so the first leg is seeded with the actual current position.
@@ -228,7 +230,16 @@ export const RouteModePanel: React.FC<RouteModePanelProps> = ({
     const d = new Date(Date.now() - new Date().getTimezoneOffset() * 60000);
     return d.toISOString().slice(0, 16);
   });
-  const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
+
+  const reorderWaypoint = (from: number, to: number) => {
+    if (from === to) return;
+    const next = [...waypoints];
+    const [moved] = next.splice(from, 1);
+    next.splice(to, 0, moved);
+    setWaypoints(next);
+  };
+  const { draggedIndex, getDragHandlers } = useRouteDragAndDrop(reorderWaypoint);
+
   const [osrmLoading, setOsrmLoading] = useState(false);
   const [optimizing, setOptimizing] = useState(false);
   // Resolved route options: road alternatives (single road mode), or a single
@@ -297,14 +308,6 @@ export const RouteModePanel: React.FC<RouteModePanelProps> = ({
       });
       return next;
     });
-  };
-
-  const reorderWaypoint = (from: number, to: number) => {
-    if (from === to) return;
-    const next = [...waypoints];
-    const [moved] = next.splice(from, 1);
-    next.splice(to, 0, moved);
-    setWaypoints(next);
   };
 
   const setLegMode = (index: number, mode: LegMode) => {
@@ -801,99 +804,22 @@ export const RouteModePanel: React.FC<RouteModePanelProps> = ({
 
             <div className="waypoint-list">
               {waypoints.map((wp, index) => (
-                <div className="waypoint-row" key={index}>
-                <div
-                  className={`waypoint-item ${draggedIndex === index ? "dragging" : ""} ${
-                    selecting && selected.has(index) ? "selected" : ""
-                  }`}
-                  draggable={!selecting}
-                  onDragStart={() => setDraggedIndex(index)}
-                  onDragEnd={() => setDraggedIndex(null)}
-                  onDragOver={(e) => e.preventDefault()}
-                  onDrop={(e) => {
-                    e.preventDefault();
-                    if (draggedIndex !== null) reorderWaypoint(draggedIndex, index);
-                    setDraggedIndex(null);
-                  }}
-                >
-                  {selecting ? (
-                    <input
-                      type="checkbox"
-                      className="waypoint-check"
-                      checked={selected.has(index)}
-                      onChange={() => toggleSelected(index)}
-                      aria-label={`Sélectionner l'étape ${index + 1}`}
-                    />
-                  ) : (
-                    <GripVertical size={14} className="waypoint-grip" aria-hidden="true" />
-                  )}
-                  <span className="waypoint-badge">{index + 1}</span>
-                  <span className="waypoint-name">{wp.name}</span>
-
-                  {/* Per-leg mode picker (hidden while bulk-selecting to keep the
-                      row focused on selection). */}
-                  {!selecting && (
-                    <span className="waypoint-mode-picker">
-                      {React.createElement(MODE_META[wp.mode].icon, { size: 14 })}
-                      <select
-                        className="waypoint-mode-select"
-                        value={wp.mode}
-                        onChange={(e) => setLegMode(index, e.target.value as LegMode)}
-                        aria-label={`Mode de l'étape ${index + 1}`}
-                      >
-                        {MODE_ORDER.map((m) => (
-                          <option key={m} value={m}>
-                            {MODE_META[m].label}
-                          </option>
-                        ))}
-                      </select>
-                    </span>
-                  )}
-
-                  <button
-                    className="icon-btn"
-                    onClick={() => removeWaypoint(index)}
-                    aria-label={`Retirer l'étape ${index + 1} (${wp.name})`}
-                  >
-                    <X size={14} />
-                  </button>
-                </div>
-
-                {/* Computed schedule + dwell for this stop. When the NEXT leg is
-                    a real train, the wait is the timetable wait (read-only). */}
-                {!selecting && schedule[index] && (() => {
-                  const nextIsTrain = !!segs?.[index + 1]?.transit;
-                  const trainHere = schedule[index].label; // train arriving at this stop
-                  return (
-                    <div className="waypoint-schedule">
-                      <Clock size={11} />
-                      <span title="Heure d'arrivée">arr {fmtClock(schedule[index].arrival)}</span>
-                      {trainHere && <span className="schedule-train">🚆 {trainHere}</span>}
-                      {index < waypoints.length - 1 &&
-                        (nextIsTrain ? (
-                          <span title="Attente du prochain train">
-                            · attente {schedule[index].wait} min · dép {fmtClock(schedule[index].departure)}
-                          </span>
-                        ) : (
-                          <span className="waypoint-dwell">
-                            ·
-                            <input
-                              type="number"
-                              className="waypoint-dwell-input"
-                              min={0}
-                              max={600}
-                              value={wp.waitMinutes ?? 0}
-                              onChange={(e) => setLegWait(index, parseInt(e.target.value) || 0)}
-                              aria-label={`Temps d'attente à l'étape ${index + 1} (minutes)`}
-                            />
-                            min d'attente
-                            {(wp.waitMinutes ?? 0) > 0 && <> · dép {fmtClock(schedule[index].departure)}</>}
-                          </span>
-                        ))}
-                    </div>
-                  );
-                })()}
-                </div>
+                <StopRow
+                  key={wp.id}
+                  wp={wp}
+                  index={index}
+                  isLast={index === waypoints.length - 1}
+                  draggedIndex={draggedIndex}
+                  selecting={selecting}
+                  isSelected={selected.has(index)}
+                  scheduleEntry={schedule[index]}
+                  nextIsTrain={!!segs?.[index + 1]?.transit}
+                  dragHandlers={getDragHandlers(index, selecting)}
+                  onToggleSelect={toggleSelected}
+                  onRemove={removeWaypoint}
+                  onSetMode={setLegMode}
+                  onSetWaitMinutes={setLegWait}
+                />
               ))}
             </div>
           </>

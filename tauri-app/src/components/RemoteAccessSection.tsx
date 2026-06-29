@@ -2,7 +2,8 @@ import React, { useEffect, useState } from "react";
 import { QRCodeSVG } from "qrcode.react";
 import { RefreshCw, Trash2, Wifi } from "lucide-react";
 import { isTauri } from "../lib/runtime";
-import { useWebSocket } from "../context/websocket";
+import { useEngine } from "../context/websocket";
+import { usePairing } from "../context/pairingContext";
 
 interface RemoteAccessSectionProps {
   // Engine sidecar port (loopback), used to build the QR target URL.
@@ -23,14 +24,8 @@ interface RemoteAccessSectionProps {
 // WebSocket the app already uses isn't. The engine answers these actions only
 // for loopback clients, so this stays desktop-only.
 export const RemoteAccessSection: React.FC<RemoteAccessSectionProps> = ({ enginePort, qrPairingHost }) => {
-  const {
-    isConnected,
-    remotePairCode,
-    pairedDevices,
-    requestPairCode,
-    requestPairedDevices,
-    revokePairedDevice,
-  } = useWebSocket();
+  const { isConnected } = useEngine();
+      const { remotePairCode, pairedDevices, requestPairCode, requestPairedDevices, revokePairedDevice } = usePairing();
   const [secondsLeft, setSecondsLeft] = useState(30);
 
   // Once connected, ask for the current code and device list, then keep the

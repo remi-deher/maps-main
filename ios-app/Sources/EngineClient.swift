@@ -2,114 +2,6 @@ import Foundation
 import CoreLocation
 import Observation
 
-enum EngineConnectionState: String {
-    case disconnected = "Déconnecté"
-    case connecting = "Connexion..."
-    case connected = "Connecté"
-    case reconnecting = "Reconnexion..."
-}
-
-struct Favorite: Codable, Identifiable, Equatable {
-    let lat: Double
-    let lon: Double
-    var name: String?
-    var timestamp: Int64?
-    var id: String { "\(lat),\(lon)" }
-}
-
-struct LocationStamp: Codable, Equatable {
-    let lat: Double
-    let lon: Double
-    let name: String?
-    let timestamp: Int64?
-}
-
-struct RealLocationStamp: Codable, Equatable {
-    let lat: Double
-    let lon: Double
-    let drift: Double?
-    let timestamp: Int64?
-}
-
-struct RoutePoint: Codable, Equatable {
-    let lat: Double
-    let lon: Double
-}
-
-/// One entry from the engine's in-memory log buffer (LOG/LOGS events) — lets
-/// the app show what the engine is doing without terminal/SSH access, which
-/// matters when piloting from the phone alone.
-struct LogEntryPayload: Codable, Equatable {
-    let timestamp: Int64
-    let level: String // info | warn | error
-    let source: String
-    let category: String?
-    let action: String?
-    let message: String
-    let fields: [String: String]?
-}
-
-struct PatrolBounds: Codable, Equatable {
-    let northEast: RoutePoint
-    let southWest: RoutePoint
-
-    private enum CodingKeys: String, CodingKey {
-        case northEast = "ne"
-        case southWest = "sw"
-    }
-}
-
-/// Mirrors engine/internal/domain.PatrolZone — a circle (center+radius) or
-/// rectangle (bounds) the engine wanders the spoofed position around.
-struct PatrolZone: Codable, Equatable {
-    let type: String // "circle" | "rectangle"
-    let center: RoutePoint?
-    let radius: Double?
-    let bounds: PatrolBounds?
-    let active: Bool
-}
-
-struct NavigationProgressPayload: Codable, Equatable {
-    let index: Int?
-    let total: Int?
-    let lat: Double?
-    let lon: Double?
-    let speed: Double?
-}
-
-struct NavigationStatusPayload: Codable, Equatable {
-    let state: String?
-    let index: Int?
-    let total: Int?
-    let destination: RoutePoint?
-}
-
-struct NavigationPayload: Codable, Equatable {
-    let progress: NavigationProgressPayload?
-    let status: NavigationStatusPayload?
-}
-
-struct DeviceInfo: Codable, Equatable {
-    let udid: String
-    let name: String
-    let driver: String
-}
-
-struct EngineStatus: Codable, Equatable {
-    let state: String?
-    let favorites: [Favorite]?
-    let lastInjectedLocation: LocationStamp?
-    let lastRealLocation: RealLocationStamp?
-    let currentSequencePreview: [RoutePoint]?
-    let jitterEnabled: Bool?
-    let patrolZone: PatrolZone?
-    let navigation: NavigationPayload?
-    let usbDriver: String?
-    let wifiDriver: String?
-    let connectionType: String?
-    let deviceInfo: DeviceInfo?
-}
-
 /// Talks the same {type, data} WebSocket envelope as the desktop app
 /// (engine/internal/api/messages.go). Reports the device's real GPS position
 /// as REAL_LOCATION so the engine's anti-drift shield can detect when the
@@ -119,7 +11,7 @@ struct EngineStatus: Codable, Equatable {
 /// (desktop, iOS, headless) sees the same STATUS broadcasts and stays in sync
 /// for free.
 @Observable
-final class EngineClient: NSObject, URLSessionWebSocketDelegate {
+final class EngineClient: NSObject, URLSessionWebSocketDelegate, EngineClientProtocol {
     /// The live client, so App Intents (Siri / Shortcuts / Spotlight) can reach
     /// the active connection without a view. The app keeps one instance alive
     /// (ContentView @State), so this weak reference stays valid while running.

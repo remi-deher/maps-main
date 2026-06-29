@@ -5,7 +5,7 @@
 // (car-only, no exclude/foot guarantees). https so the Tauri webview's secure
 // context doesn't block it as mixed content.
 
-import { LatLon } from "../context/websocket";
+import type { LatLon } from "../types/engine";
 
 const PUBLIC_OSRM_FALLBACK = "https://router.project-osrm.org";
 

@@ -24,7 +24,7 @@ Objectif identique au projet d'origine, architecture neuve et multi-cibles.
                  HTTP/WS ─────────┼───────── HTTP/WS
         ┌────────────────────┐    │    ┌────────────────────┐
         │ CLIENT LOURD PC     │   │    │ APP iOS COMPAGNON   │
-        │ Tauri OU natif (TBD) │  │    │ Swift / SwiftUI      │
+        │ Tauri               │  │    │ Swift / SwiftUI      │
         │ UI web partagée      │  │    │ keep-alive · AltStore│
         └────────────────────┘    │    └────────────────────┘
 ```
@@ -72,8 +72,8 @@ Le **registre** (`registry.go`) mappe `DriverID → Factory` ; `New(id, cfg)` es
 /spec                        # SOURCE DE VÉRITÉ du contrat
   openapi.yaml               # REST
   asyncapi.yaml              # WebSocket (JSON brut, enveloppe {type,data})
-/desktop                     # (à venir) UI web + shell Tauri/natif
-/ios                         # (à venir) app Swift compagnon
+/tauri-app                   # UI web + shell Tauri
+/ios-app                     # App Swift compagnon
 /docker                      # images Linux / Windows-WSL (Phase 4)
 /docs                        # cette doc + ALTSTORE.md
 ```
@@ -106,9 +106,9 @@ Les détails de construction et d'exécution sont documentés dans le [README Do
 
 ## Roadmap
 
-1. **Contrats & squelette** — interfaces, types, specs, stubs.
-2. Engine Go + `GoIosDriver` USB — 1er flux d'injection bout-en-bout.
-3. `Pmd3Driver` + transport WiFi/RSD — le menu complet.
-4. **Dockerisation (Linux USB+WiFi, Windows-WSL WiFi)** (cette phase).
-5. UI web sur l'API, puis packaging Tauri/natif.
+1. **Contrats & squelette** — interfaces, types, specs, stubs (fait).
+2. Engine Go + `GoIosDriver` USB — 1er flux d'injection bout-en-bout (fait).
+3. `Pmd3Driver` + transport WiFi/RSD — le menu complet (fait).
+4. **Dockerisation** (Linux USB+WiFi, Windows-WSL WiFi) (fait).
+5. UI web sur l'API, puis packaging Tauri (fait).
 6. App iOS Swift (keep-alive background, AltStore). Suppression de `/legacy` à parité — fait.

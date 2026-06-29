@@ -8,53 +8,67 @@ extension ContentView {
     /// long dependency-wiring block.
     func bottomSheetContent(scrollOffset: Binding<CGFloat>) -> some View {
         BottomSheet(
-            searchQuery: $searchQuery,
-            isFocused: $searchFocused,
-            searchSuggestions: searchCompleter.results,
-            onSelectSuggestion: selectSearchSuggestion,
-            itineraryStops: $itineraryStops,
-            itinerarySpeed: $itinerarySpeed,
-            itineraryProfile: $itineraryProfile,
-            legEstimates: session.legEstimates,
-            activeRoute: activeRoute,
-            onAddStop: { searchFocused = true },
-            onLaunchItinerary: launchItinerary,
-            onShowActiveRouteDetails: showActiveRouteDetails,
-            onRecenterActiveRoute: recenterActiveRoute,
-            favorites: session.engine.status?.favorites ?? [],
-            onSelectFavorite: selectFavorite,
-            onDeleteFavorite: { favorite in
-                session.engine.removeFavorite(lat: favorite.lat, lon: favorite.lon)
-            },
-            recentPlaces: recentPlaces,
-            onSelectRecentPlace: selectRecentPlace,
-            onClearRecentPlaces: clearRecentPlaces,
-            hasSavedItinerary: hasSavedItinerary,
-            onLoadLastItinerary: loadLastItinerary,
-            selectedPlace: selectedPlace,
-            placeActions: placeActions,
+            search: BottomSheetSearchContext(
+                query: $coordinator.searchQuery,
+                isFocused: $searchFocused,
+                suggestions: coordinator.searchCompleter.results,
+                onSelectSuggestion: coordinator.selectSearchSuggestion
+            ),
+            itinerary: BottomSheetItineraryContext(
+                stops: $coordinator.itineraryStops,
+                speed: $coordinator.itinerarySpeed,
+                profile: $coordinator.itineraryProfile,
+                legEstimates: session.legEstimates,
+                coordinator.activeRoute: coordinator.activeRoute,
+                onAddStop: { searchFocused = true },
+                onLaunch: { coordinator.launchItinerary(session: session) },
+                onShowActiveRouteDetails: coordinator.showActiveRouteDetails,
+                onRecenterActiveRoute: { coordinator.recenterActiveRoute(session: session) }
+            ),
+            library: BottomSheetLibraryContext(
+                favorites: session.engine.status?.favorites ?? [],
+                onSelectFavorite: { fav in coordinator.selectFavorite(fav, session: session) },
+                onDeleteFavorite: { favorite in
+                    session.engine.removeFavorite(lat: favorite.lat, lon: favorite.lon)
+                },
+                coordinator.recentPlaces: coordinator.recentPlaces,
+                onSelectRecentPlace: coordinator.selectRecentPlace,
+                onClearRecentPlaces: coordinator.clearRecentPlaces,
+                coordinator.hasSavedItinerary: coordinator.hasSavedItinerary,
+                onLoadLastItinerary: coordinator.loadLastItinerary
+            ),
+            place: BottomSheetPlaceContext(
+                coordinator.selectedPlace: coordinator.selectedPlace,
+                actions: placeActions
+            ),
             patrol: patrolControls,
             gpx: gpxImport,
-            simulationState: session.engine.status?.state,
-            onPauseRoute: pauseActiveRoute,
-            onResumeRoute: resumeActiveRoute,
-            onStopRoute: stopActiveRoute,
-            onOpenSettings: { showSettings = true },
-            onCollapseSheet: collapseBottomSheet,
-            scrollOffset: scrollOffset,
-            sheetDetent: $sheetDetent,
-            collapsedHeight: collapsedSheetHeight,
-            onCollapsedHeightChange: updateCollapsedSheetHeight
+            simulation: BottomSheetSimulationContext(
+                state: session.engine.status?.state,
+                onPauseRoute: { coordinator.pauseActiveRoute(session: session) },
+                onResumeRoute: { coordinator.resumeActiveRoute(session: session) },
+                onStopRoute: { coordinator.stopActiveRoute(session: session) }
+            ),
+            chrome: BottomSheetChromeContext(
+                onOpenSettings: { coordinator.showSettings = true },
+                onCollapseSheet: collapseBottomSheet
+            ),
+            presentation: BottomSheetPresentationContext(
+                scrollOffset: scrollOffset,
+                coordinator.sheetDetent: $coordinator.sheetDetent,
+                collapsedHeight: coordinator.collapsedSheetHeight,
+                onCollapsedHeightChange: updateCollapsedSheetHeight
+            )
         )
-        .fileImporter(isPresented: $showGpxImporter, allowedContentTypes: [.gpx, .xml]) { result in
+        .fileImporter(isPresented: $coordinator.showGpxImporter, allowedContentTypes: [.gpx, .xml]) { result in
             switch result {
             case .success(let url):
-                loadGpx(from: url)
+                coordinator.loadGpx(from: url)
             case .failure(let error):
-                gpxError = error.localizedDescription
+                coordinator.gpxError = error.localizedDescription
             }
         }
-        .fullScreenCover(isPresented: $showSettings) {
+        .fullScreenCover(isPresented: $coordinator.showSettings) {
             SettingsSheet(
                 engineAddress: $engineAddress,
                 engine: session.engine,
@@ -72,7 +86,7 @@ extension ContentView {
     }
 
     var collapsedPresentationDetentHeight: CGFloat {
-        max(72, collapsedSheetHeight + 14)
+        max(72, coordinator.collapsedSheetHeight + 14)
     }
 
     var mediumPresentationDetent: PresentationDetent {
@@ -98,7 +112,7 @@ extension ContentView {
         }
     }
 
-    func sheetDetent(for presentationDetent: PresentationDetent) -> SheetDetent {
+    func coordinator.sheetDetent(for presentationDetent: PresentationDetent) -> SheetDetent {
         if presentationDetent == .large {
             return .large
         }
@@ -110,22 +124,22 @@ extension ContentView {
 
     func syncNativeSheetDetent(to detent: SheetDetent) {
         let target = presentationDetent(for: detent)
-        if nativeSheetDetent != target {
-            nativeSheetDetent = target
+        if coordinator.nativeSheetDetent != target {
+            coordinator.nativeSheetDetent = target
         }
     }
 
     func syncSheetDetent(to presentationDetent: PresentationDetent) {
-        let target = sheetDetent(for: presentationDetent)
-        if sheetDetent != target {
-            sheetDetent = target
+        let target = coordinator.sheetDetent(for: presentationDetent)
+        if coordinator.sheetDetent != target {
+            coordinator.sheetDetent = target
         }
     }
 
     func collapseBottomSheet() {
         withAnimation(.interactiveSpring(response: 0.28, dampingFraction: 0.88)) {
-            sheetDetent = .collapsed
-            nativeSheetDetent = collapsedPresentationDetent
+            coordinator.sheetDetent = .collapsed
+            coordinator.nativeSheetDetent = collapsedPresentationDetent
         }
     }
 
@@ -136,29 +150,29 @@ extension ContentView {
             onAddStop: addSelectedPlaceAsStop,
             onFavorite: favoriteSelectedPlace,
             onCopyCoordinates: copySelectedPlaceCoordinates,
-            onDismiss: { selectedPlace = nil }
+            onDismiss: { coordinator.selectedPlace = nil }
         )
     }
 
     var patrolControls: PatrolControls {
         PatrolControls(
-            isSettingUp: patrolMode,
+            isSettingUp: coordinator.patrolMode,
             isActive: session.engine.status?.patrolZone?.active == true,
-            type: $patrolType,
-            radius: $patrolRadius,
+            type: $coordinator.patrolType,
+            radius: $coordinator.patrolRadius,
             onBegin: beginPatrolSetup,
             onStart: commitPatrolSetup,
-            onCancel: { patrolMode = false },
+            onCancel: { coordinator.patrolMode = false },
             onStop: stopPatrol
         )
     }
 
     var gpxImport: GpxImport {
         GpxImport(
-            isLoaded: !gpxContent.isEmpty,
-            fileName: gpxFileName,
-            errorMessage: gpxError,
-            speed: $gpxSpeed,
+            isLoaded: !coordinator.gpxContent.isEmpty,
+            fileName: coordinator.gpxFileName,
+            errorMessage: coordinator.gpxError,
+            speed: $coordinator.gpxSpeed,
             onPick: pickGpxFile,
             onLaunch: launchGpxTrack,
             onCancel: clearGpxTrack
@@ -167,37 +181,37 @@ extension ContentView {
 
     func updateCollapsedSheetHeight(_ newHeight: CGFloat) {
         let roundedHeight = newHeight.rounded(.toNearestOrAwayFromZero)
-        if abs(roundedHeight - collapsedSheetHeight) > 1 {
-            collapsedSheetHeight = roundedHeight
-            if sheetDetent == .collapsed {
-                nativeSheetDetent = collapsedPresentationDetent
+        if abs(roundedHeight - coordinator.collapsedSheetHeight) > 1 {
+            coordinator.collapsedSheetHeight = roundedHeight
+            if coordinator.sheetDetent == .collapsed {
+                coordinator.nativeSheetDetent = collapsedPresentationDetent
             }
         }
     }
 
     func teleportSelectedPlace() {
-        guard let place = selectedPlace, requireConnection() else { return }
+        guard let place = coordinator.selectedPlace, coordinator.requireConnection(session: session) else { return }
         session.engine.setLocation(lat: place.coordinate.latitude, lon: place.coordinate.longitude)
-        selectedPlace = nil
+        coordinator.selectedPlace = nil
     }
 
     func routeToSelectedPlace() {
-        guard let place = selectedPlace else { return }
-        startRoute(to: place)
+        guard let place = coordinator.selectedPlace else { return }
+        coordinator.startRoute(to: place, session: session, defaultSpeed: defaultSpeed, defaultProfile: defaultProfile)
     }
 
     func addSelectedPlaceAsStop() {
-        guard let place = selectedPlace else { return }
-        if activeRoute != nil {
-            addSelectedPlaceToActiveRoute()
+        guard let place = coordinator.selectedPlace else { return }
+        if coordinator.activeRoute != nil {
+            coordinator.addSelectedPlaceToActiveRoute(session: session)
             return
         }
-        itineraryStops.append(RouteStop(coordinate: place.coordinate, name: place.title))
-        selectedPlace = nil
+        coordinator.itineraryStops.append(RouteStop(coordinate: place.coordinate, name: place.title))
+        coordinator.selectedPlace = nil
     }
 
     func favoriteSelectedPlace() {
-        guard let place = selectedPlace, requireConnection() else { return }
+        guard let place = coordinator.selectedPlace, coordinator.requireConnection(session: session) else { return }
         session.engine.addFavorite(
             lat: place.coordinate.latitude,
             lon: place.coordinate.longitude,
@@ -206,7 +220,7 @@ extension ContentView {
     }
 
     func copySelectedPlaceCoordinates() {
-        guard let place = selectedPlace else { return }
+        guard let place = coordinator.selectedPlace else { return }
         UIPasteboard.general.string = String(
             format: "%.6f, %.6f",
             place.coordinate.latitude,
@@ -215,18 +229,18 @@ extension ContentView {
     }
 
     func beginPatrolSetup() {
-        patrolMode = true
-        withAnimation { sheetDetent = .medium }
+        coordinator.patrolMode = true
+        withAnimation { coordinator.sheetDetent = .medium }
     }
 
     func commitPatrolSetup() {
-        startPatrol()
-        patrolMode = false
+        coordinator.startPatrol(session: session)
+        coordinator.patrolMode = false
     }
 
     func stopPatrol() {
         session.engine.updatePatrolZone(
-            type: patrolType,
+            type: coordinator.patrolType,
             center: nil,
             radius: nil,
             bounds: nil,
@@ -235,17 +249,17 @@ extension ContentView {
     }
 
     func pickGpxFile() {
-        gpxError = nil
-        showGpxImporter = true
+        coordinator.gpxError = nil
+        coordinator.showGpxImporter = true
     }
 
     func launchGpxTrack() {
-        session.engine.playCustomGpx(gpxContent: gpxContent, speed: gpxSpeed)
+        session.engine.playCustomGpx(gpxContent: coordinator.gpxContent, speed: coordinator.gpxSpeed)
         clearGpxTrack()
     }
 
     func clearGpxTrack() {
-        gpxContent = ""
-        gpxFileName = ""
+        coordinator.gpxContent = ""
+        coordinator.gpxFileName = ""
     }
 }

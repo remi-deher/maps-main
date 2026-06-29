@@ -1,11 +1,12 @@
 import React, { useEffect, useState } from "react";
 import { Activity, Cable, Pause, Play, Plug, Save, RefreshCw, Route, Server, Settings, Smartphone, Square, Wifi } from "lucide-react";
-import { useWebSocket } from "../context/websocket";
 import { RemoteAccessSection } from "./RemoteAccessSection";
 import { parseCoordinate } from "../lib/parse";
 import { getRailRouterUrl, setRailRouterUrl as persistRailRouterUrl } from "../lib/osrm";
 import { isTransitEnabled, setTransitEnabled as persistTransitEnabled } from "../lib/transit";
 import { Modal } from "./ui/Modal";
+import { useEngine } from "../context/websocket";
+import { usePairing } from "../context/pairingContext";
 
 interface SettingsModalProps {
   open: boolean;
@@ -25,33 +26,8 @@ const DEFAULT_ROUTING_PRIORITY: RoutingProviderId[] = ["google", "mapbox", "osrm
 /// Réglages avancés du moteur (connexion, appareil, tunnel/driver, diagnostics),
 /// regroupés dans une modale à sections plutôt qu'un onglet permanent de la sidebar.
 export const SettingsModal: React.FC<SettingsModalProps> = ({ open, onClose }) => {
-  const {
-    enginePort,
-    engineStatus,
-    setEnginePort,
-    mdnsInterface,
-    setMdnsInterface,
-    networkInterfaces,
-    connectionUrl,
-    canSend,
-    status,
-    deviceDetails,
-    getDeviceInfo,
-    saveSettings,
-    sendMessage,
-    diagnostics,
-    getDiagnostics,
-    networkDevices,
-    getNetworkDevices,
-    pairResult,
-    pairing,
-    pairDevice,
-    relance,
-    clearLocation,
-    pauseRoute,
-    resumeRoute,
-    stopRoute,
-  } = useWebSocket();
+  const { enginePort, engineStatus, setEnginePort, mdnsInterface, setMdnsInterface, networkInterfaces, connectionUrl, canSend, status, deviceDetails, getDeviceInfo, saveSettings, sendMessage, diagnostics, getDiagnostics, networkDevices, getNetworkDevices, relance, clearLocation, pauseRoute, resumeRoute, stopRoute } = useEngine();
+      const { pairResult, pairing, pairDevice } = usePairing();
 
   const [toast, setToast] = useState<string | null>(null);
   const showToast = (message: string) => {

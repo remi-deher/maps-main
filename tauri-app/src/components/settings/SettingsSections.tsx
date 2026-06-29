@@ -1,0 +1,628 @@
+import React from "react";
+import { Activity, RefreshCw, Save, Smartphone, Square, Play, Pause } from "lucide-react";
+import { ROUTING_PROVIDER_LABELS, type RoutingProviderId, DEFAULT_ROUTING_PRIORITY } from "../../features/settings/settingsModel";
+import { persistRailRouterUrl } from "../../lib/osrm";
+import { persistTransitEnabled } from "../../lib/transit";
+
+export const ConnectionSettingsSection = ({
+  engineStatus, connectionUrl, enginePortInput, setEnginePortInput, enginePortError, handleApplyEnginePort,
+  mdnsInterface, setMdnsInterface, networkInterfaces
+}: any) => (
+  <div className="ui-card">
+    <div className="info-grid">
+      <div className="info-item">
+        <span className="info-label">État du sidecar</span>
+        <span className={`info-value ${engineStatus === "running" ? "green" : engineStatus === "crashed" ? "warning" : ""}`}>
+          {engineStatus === "running" ? "En cours" : engineStatus === "starting" ? "Démarrage" : engineStatus === "crashed" ? "Planté" : "Inconnu"}
+        </span>
+      </div>
+      <div className="info-item">
+        <span className="info-label">Endpoint actuel</span>
+        <span className="info-value compact">{connectionUrl}</span>
+      </div>
+    </div>
+    <fieldset className="field-group">
+      <legend className="field-group-legend">Port du moteur</legend>
+      <div className="form-group">
+        <label className="form-label">Port d'écoute du moteur</label>
+        <input type="number" value={enginePortInput} onChange={(e) => setEnginePortInput(e.target.value)} />
+        {enginePortError && <span className="field-error">{enginePortError}</span>}
+        <button className="btn btn-secondary" style={{ marginTop: 8 }} onClick={handleApplyEnginePort}>
+          <RefreshCw size={14} /> Redémarrer le moteur sur ce port
+        </button>
+      </div>
+    </fieldset>
+    <fieldset className="field-group">
+      <legend className="field-group-legend">Découverte réseau (iOS)</legend>
+      <div className="form-group">
+        <label className="form-label">Carte réseau annoncée (découverte iOS)</label>
+        <select value={mdnsInterface ?? ""} onChange={(e) => setMdnsInterface(e.target.value || null)}>
+          <option value="">Toutes les interfaces (auto)</option>
+          {networkInterfaces.map((iface: any) => (
+            <option key={iface.name} value={iface.name}>
+              {iface.name} ({iface.ip})
+            </option>
+          ))}
+        </select>
+        <p style={{ fontSize: "0.78rem", color: "#94a3b8", margin: "6px 0 0" }}>
+          Restreint l'adresse annoncée en mDNS à cette carte réseau — utile si plusieurs
+          interfaces (Wi-Fi, Ethernet, VPN) sont actives et que l'app iOS découvre la
+          mauvaise IP.
+        </p>
+      </div>
+      <div className="form-group">
+        <label className="form-label">Appairage (iPhone / autre PC)</label>
+        <p style={{ fontSize: "0.78rem", color: "#94a3b8", margin: 0 }}>
+          L'appairage se fait désormais depuis la section <strong>Accès distant</strong> :
+          elle affiche un code à 6 chiffres et un QR Code à scanner depuis l'app iOS ou le
+          navigateur d'un autre ordinateur.
+        </p>
+      </div>
+    </fieldset>
+  </div>
+);
+
+export const DeviceSection = ({ getDeviceInfo, canSend, deviceDetails }: any) => (
+  <div className="ui-card">
+    <p style={{ fontSize: "0.8rem", color: "#94a3b8", margin: 0 }}>
+      Disponible uniquement avec le driver go-ios pour le moment.
+    </p>
+    <button className="btn btn-secondary" style={{ marginTop: 8 }} onClick={getDeviceInfo} disabled={!canSend}>
+      <RefreshCw size={14} /> Récupérer les infos
+    </button>
+    {deviceDetails && (
+      deviceDetails.error ? (
+        <div className="inline-alert" style={{ marginTop: 8 }}>{deviceDetails.error}</div>
+      ) : (
+        <div className="info-grid" style={{ marginTop: 8 }}>
+          <div className="info-item">
+            <span className="info-label">Nom</span>
+            <span className="info-value compact">{deviceDetails.name || "—"}</span>
+          </div>
+          <div className="info-item">
+            <span className="info-label">Modèle</span>
+            <span className="info-value compact">{deviceDetails.productType || "—"}</span>
+          </div>
+          <div className="info-item">
+            <span className="info-label">iOS</span>
+            <span className="info-value compact">{deviceDetails.productVersion || "—"}</span>
+          </div>
+          <div className="info-item">
+            <span className="info-label">Numéro de série</span>
+            <span className="info-value compact">{deviceDetails.serialNumber || "—"}</span>
+          </div>
+          <div className="info-item">
+            <span className="info-label">Adresse WiFi</span>
+            <span className="info-value compact">{deviceDetails.wifiAddress || "—"}</span>
+          </div>
+          <div className="info-item">
+            <span className="info-label">Adresse tunnel</span>
+            <span className="info-value compact">{deviceDetails.tunnelAddress || "—"}</span>
+          </div>
+        </div>
+      )
+    )}
+  </div>
+);
+
+export const SimulationSection = ({
+  status, relance, clearLocation, canSend, resumeRoute, pauseRoute, stopRoute,
+  isEveilMode, setIsEveilMode, jitterEnabled, setJitterEnabled, eveilInterval, setEveilInterval, handleSaveSettings
+}: any) => {
+  const isSimRunning = status?.state === "moving" || status?.state === "paused";
+  return (
+    <div className="ui-card">
+      <h3 className="ui-card-title">
+        <Activity size={16} /> Contrôle simulation
+      </h3>
+      <div className="control-actionbar">
+        <button className="btn btn-secondary" onClick={relance} disabled={!canSend}>
+          <RefreshCw size={14} /> Relancer
+        </button>
+        <button className="btn btn-danger" onClick={clearLocation} disabled={!canSend}>
+          <Square size={14} /> Arrêter GPS
+        </button>
+      </div>
+      {isSimRunning && (
+        <div className="control-actionbar" style={{ marginTop: 8 }}>
+          {status?.state === "paused" ? (
+            <button className="btn btn-success" onClick={resumeRoute} disabled={!canSend}>
+              <Play size={14} /> Reprendre
+            </button>
+          ) : (
+            <button className="btn btn-secondary" onClick={pauseRoute} disabled={!canSend}>
+              <Pause size={14} /> Pause
+            </button>
+          )}
+          <button className="btn btn-danger" onClick={stopRoute} disabled={!canSend}>
+            <Square size={14} /> Stop
+          </button>
+        </div>
+      )}
+
+      <fieldset className="field-group" style={{ marginTop: 12 }}>
+        <legend className="field-group-legend">Comportement de simulation</legend>
+
+        <label className="switch-label">
+          <span className="form-label">Mode Éveil</span>
+          <span className="switch-control">
+            <input type="checkbox" checked={isEveilMode} onChange={(e) => setIsEveilMode(e.target.checked)} />
+            <span className="switch-slider"></span>
+          </span>
+        </label>
+
+        <label className="switch-label">
+          <span className="form-label">Variation de vitesse (jitter)</span>
+          <span className="switch-control">
+            <input type="checkbox" checked={jitterEnabled} onChange={(e) => setJitterEnabled(e.target.checked)} />
+            <span className="switch-slider"></span>
+          </span>
+        </label>
+
+        {isEveilMode && (
+          <div className="form-group">
+            <label className="form-label">Intervalle Éveil (secondes)</label>
+            <input type="number" value={eveilInterval} onChange={(e) => setEveilInterval(e.target.value)} />
+          </div>
+        )}
+      </fieldset>
+
+      <button className="btn" onClick={handleSaveSettings} style={{ marginTop: "10px" }} disabled={!canSend}>
+        <Save size={14} /> Enregistrer
+      </button>
+    </div>
+  );
+};
+
+export const DriverSection = ({
+  companionPort, setCompanionPort, preferredDriver, setPreferredDriver, selectedNetworkDeviceUdid,
+  setSelectedNetworkDeviceUdid, networkDevices, setWifiAddress, getNetworkDevices, canSend,
+  wifiAddress, rsdAddressValid, sendMessage, showToast
+}: any) => (
+  <div className="ui-card">
+    <fieldset className="field-group">
+      <legend className="field-group-legend">Pilote &amp; tunnel</legend>
+
+      <div className="form-group">
+        <label className="form-label">Port RSD (annoté dans le statut)</label>
+        <input type="number" value={companionPort} onChange={(e) => setCompanionPort(e.target.value)} />
+      </div>
+
+      <div className="form-group">
+        <label className="form-label">Driver préféré</label>
+        <select value={preferredDriver} onChange={(e) => setPreferredDriver(e.target.value)}>
+          <option value="go-ios">go-ios (Natif)</option>
+          <option value="pymobiledevice">pymobiledevice3 (Python)</option>
+        </select>
+      </div>
+
+      <div className="form-group">
+        <label className="form-label">Appareils découverts (mDNS / tunnel actif)</label>
+        <div style={{ display: "flex", gap: "6px" }}>
+          <select
+            value={selectedNetworkDeviceUdid}
+            disabled={!networkDevices?.devices?.length}
+            onChange={(e) => {
+              setSelectedNetworkDeviceUdid(e.target.value);
+              setWifiAddress("");
+            }}
+          >
+            <option value="">
+              {networkDevices?.devices?.length ? "Choisir un appareil…" : "Aucun appareil découvert"}
+            </option>
+            {networkDevices?.devices?.map((d: any) => (
+              <option key={d.udid} value={d.udid}>
+                {d.udid.slice(0, 8)}… — {d.address}:{d.port}
+              </option>
+            ))}
+          </select>
+          <button className="btn" type="button" disabled={!canSend} onClick={getNetworkDevices} title="Rechercher à nouveau">
+            <RefreshCw size={14} />
+          </button>
+        </div>
+        {networkDevices?.error && (
+          <small className="form-hint">
+            Découverte indisponible avec ce driver : {networkDevices.error}
+          </small>
+        )}
+        <small className="form-hint">
+          Découverts automatiquement (USB ou réseau mDNS/Bonjour) par le démon.
+          Choisir un appareil l'épingle par UDID : le tunnel le suit ensuite
+          automatiquement quand il passe de l'USB au WiFi.
+        </small>
+      </div>
+
+      <div className="form-group">
+        <label className="form-label">Adresse RSD manuelle (optionnel)</label>
+        <input
+          type="text"
+          value={wifiAddress}
+          placeholder="192.168.1.42:62078 — vide = auto"
+          aria-invalid={wifiAddress.trim() !== "" && !rsdAddressValid}
+          onChange={(e) => {
+            setWifiAddress(e.target.value);
+            setSelectedNetworkDeviceUdid("");
+          }}
+        />
+        {wifiAddress.trim() !== "" && !rsdAddressValid && (
+          <span className="field-error">Format attendu : adresse_ip:port (ex. 192.168.1.42:62078).</span>
+        )}
+        <small className="form-hint">
+          Adresse RSD figée (pas de suivi dynamique), pour un endpoint réseau
+          que le démon ne découvre pas seul. Laissez vide pour le mode auto.
+        </small>
+      </div>
+
+      <button
+        className="btn btn-secondary"
+        disabled={!canSend || !rsdAddressValid}
+        onClick={() => {
+          const trimmed = wifiAddress.trim();
+          sendMessage("SWITCH_DRIVER", {
+            driverId: preferredDriver,
+            transport: trimmed ? "wifi" : "auto",
+            wifiAddress: trimmed,
+            targetUdid: trimmed ? "" : selectedNetworkDeviceUdid,
+          });
+          showToast("Changement de driver demandé, redémarrage du tunnel...");
+        }}
+      >
+        <RefreshCw size={14} /> Appliquer et relancer le tunnel
+      </button>
+    </fieldset>
+  </div>
+);
+
+export const RoutingSection = ({
+  status, osrmBaseUrl, setOsrmBaseUrl, routingMode, setRoutingMode, routingProvider, setRoutingProvider,
+  routingPriority, moveRoutingProvider, googleRoutesApiKey, setGoogleRoutesApiKey, clearRoutingSecret,
+  mapboxAccessToken, setMapboxAccessToken, railRouterUrl, setRailRouterUrlState, transitEnabled, setTransitEnabledState,
+  handleSaveSettings, canSend
+}: any) => {
+  const routingProviderInfos = status?.routing?.providers ?? DEFAULT_ROUTING_PRIORITY.map((id) => ({
+    id,
+    name: ROUTING_PROVIDER_LABELS[id],
+    available: id === "osrm",
+    configured: id === "osrm",
+    profiles: ["driving", "walking", "cycling"] as const,
+  }));
+  const routingProviderInfoById = Object.fromEntries(routingProviderInfos.map((provider: any) => [provider.id, provider]));
+  const activeRoutingProvider = status?.routing?.activeProvider ?? "osrm";
+
+  return (
+    <div className="ui-card">
+      <fieldset className="field-group">
+        <legend className="field-group-legend">Routage</legend>
+        <div className="form-group">
+          <label className="form-label">Serveur de routage (OSRM)</label>
+          <input
+            type="text"
+            value={osrmBaseUrl}
+            placeholder="http://router.project-osrm.org"
+            onChange={(e) => setOsrmBaseUrl(e.target.value)}
+          />
+          <div style={{ marginTop: 12, display: "flex", flexDirection: "column", gap: 12 }}>
+            <div>
+              <label className="form-label">Provider utilise actuellement</label>
+              <div className="info-grid">
+                <div className="info-item">
+                  <span className="info-label">Actif</span>
+                  <span className="info-value green">{ROUTING_PROVIDER_LABELS[activeRoutingProvider as RoutingProviderId] || activeRoutingProvider}</span>
+                </div>
+                {routingProviderInfos.map((provider: any) => (
+                  <div className="info-item" key={provider.id}>
+                    <span className="info-label">{provider.name}</span>
+                    <span className={`info-value ${provider.available ? "green" : "warning"}`}>
+                      {provider.available ? "Disponible" : provider.configured ? "Configure" : "Cle absente"}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div>
+              <label className="form-label">Mode de selection</label>
+              <select value={routingMode} onChange={(e) => setRoutingMode(e.target.value as "auto" | "manual")}>
+                <option value="auto">Auto - ordre de priorite serveur</option>
+                <option value="manual">Manuel - provider force</option>
+              </select>
+              <small className="form-hint">
+                En auto, le moteur essaie les providers disponibles selon l'ordre ci-dessous.
+              </small>
+            </div>
+
+            {routingMode === "manual" && (
+              <div>
+                <label className="form-label">Provider manuel</label>
+                <select value={routingProvider} onChange={(e) => setRoutingProvider(e.target.value as RoutingProviderId)}>
+                  {DEFAULT_ROUTING_PRIORITY.map((id) => (
+                    <option key={id} value={id}>
+                      {ROUTING_PROVIDER_LABELS[id]}{routingProviderInfoById[id]?.available ? "" : " (indisponible)"}
+                    </option>
+                  ))}
+                </select>
+                {!routingProviderInfoById[routingProvider]?.available && (
+                  <small className="field-error">
+                    Ce provider n'est pas disponible: le moteur retombera sur l'ordre auto.
+                  </small>
+                )}
+              </div>
+            )}
+
+            <div>
+              <label className="form-label">Priorite du mode auto</label>
+              <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                {routingPriority.map((id: RoutingProviderId, index: number) => (
+                  <div key={id} className="info-item" style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <span className="info-label" style={{ minWidth: 24 }}>{index + 1}</span>
+                    <span className="info-value compact" style={{ flex: 1 }}>
+                      {ROUTING_PROVIDER_LABELS[id]}
+                      {!routingProviderInfoById[id]?.available ? " - indisponible tant que la cle est absente" : ""}
+                    </span>
+                    <button className="btn btn-secondary" type="button" disabled={index === 0} onClick={() => moveRoutingProvider(id, -1)}>
+                      Haut
+                    </button>
+                    <button className="btn btn-secondary" type="button" disabled={index === routingPriority.length - 1} onClick={() => moveRoutingProvider(id, 1)}>
+                      Bas
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div>
+              <label className="form-label">Cle API Google Routes</label>
+              <div style={{ display: "flex", gap: 6 }}>
+                <input
+                  type="password"
+                  value={googleRoutesApiKey}
+                  placeholder={routingProviderInfoById.google?.configured ? "Cle deja configuree - laisser vide pour conserver" : "GOOGLE_MAPS_API_KEY"}
+                  onChange={(e) => setGoogleRoutesApiKey(e.target.value)}
+                />
+                <button className="btn btn-secondary" type="button" disabled={!canSend || !routingProviderInfoById.google?.configured} onClick={() => clearRoutingSecret("google")}>
+                  Effacer
+                </button>
+              </div>
+            </div>
+
+            <div>
+              <label className="form-label">Token Mapbox</label>
+              <div style={{ display: "flex", gap: 6 }}>
+                <input
+                  type="password"
+                  value={mapboxAccessToken}
+                  placeholder={routingProviderInfoById.mapbox?.configured ? "Token deja configure - laisser vide pour conserver" : "MAPBOX_ACCESS_TOKEN"}
+                  onChange={(e) => setMapboxAccessToken(e.target.value)}
+                />
+                <button className="btn btn-secondary" type="button" disabled={!canSend || !routingProviderInfoById.mapbox?.configured} onClick={() => clearRoutingSecret("mapbox")}>
+                  Effacer
+                </button>
+              </div>
+            </div>
+          </div>
+          <small className="form-hint">
+            Serveur OSRM utilisé pour calculer les itinéraires. Laissez vide pour
+            l'instance publique par défaut, ou indiquez votre serveur auto-hébergé
+            (confidentialité, hors-ligne, limites de débit).
+          </small>
+        </div>
+      </fieldset>
+
+      <fieldset className="field-group">
+        <legend className="field-group-legend">Train — réglages locaux (navigateur)</legend>
+        <div className="form-group">
+          <label className="form-label">Routeur ferroviaire (optionnel)</label>
+          <input
+            type="text"
+            value={railRouterUrl}
+            placeholder="https://mon-osrm-rail.exemple"
+            onChange={(e) => {
+              setRailRouterUrlState(e.target.value);
+              persistRailRouterUrl(e.target.value);
+            }}
+          />
+          <small className="form-hint">
+            Service compatible OSRM (ex. OSRM avec profil rail, ou BRouter) pour faire
+            suivre les voies aux étapes en mode Train. Vide = train en ligne droite.
+            Réglage local au navigateur (non transmis au moteur).
+          </small>
+        </div>
+
+        <div className="form-group">
+          <label className="switch-label">
+            <span className="form-label">Horaires de train réels (Transitous)</span>
+            <span className="switch-control">
+              <input
+                type="checkbox"
+                checked={transitEnabled}
+                onChange={(e) => {
+                  setTransitEnabledState(e.target.checked);
+                  persistTransitEnabled(e.target.checked);
+                }}
+              />
+              <span className="switch-slider"></span>
+            </span>
+          </label>
+          <small className="form-hint">
+            Récupère vrais horaires, voies et nom du train pour les tronçons gare→gare
+            (service public gratuit). Repli sur l'estimation si indisponible.
+          </small>
+        </div>
+      </fieldset>
+
+      <button className="btn" onClick={handleSaveSettings} style={{ marginTop: "10px" }} disabled={!canSend}>
+        <Save size={14} /> Enregistrer
+      </button>
+    </div>
+  );
+};
+
+export const ClusterSection = ({ clusterHeartbeat, setClusterHeartbeat, clusterMasterDead, setClusterMasterDead, clusterPeerTimeout, setClusterPeerTimeout, handleSaveSettings, canSend }: any) => (
+  <div className="ui-card">
+    <fieldset className="field-group">
+      <legend className="field-group-legend">Cluster — réglages avancés</legend>
+      <div className="form-group">
+        <label className="form-label">Battement de cœur (s)</label>
+        <input type="number" min={1} value={clusterHeartbeat} onChange={(e) => setClusterHeartbeat(e.target.value)} />
+        <label className="form-label" style={{ marginTop: "8px" }}>
+          Délai avant bascule maître (s)
+        </label>
+        <input type="number" min={1} value={clusterMasterDead} onChange={(e) => setClusterMasterDead(e.target.value)} />
+        <label className="form-label" style={{ marginTop: "8px" }}>
+          Timeout requête pair (s)
+        </label>
+        <input type="number" min={1} value={clusterPeerTimeout} onChange={(e) => setClusterPeerTimeout(e.target.value)} />
+        <small className="form-hint">
+          Cadence de surveillance et seuil de reprise en haute disponibilité.
+          Les valeurs par défaut conviennent à un réseau local ; augmentez-les
+          pour un lien distant à forte latence.
+        </small>
+      </div>
+    </fieldset>
+
+    <button className="btn" onClick={handleSaveSettings} style={{ marginTop: "10px" }} disabled={!canSend}>
+      <Save size={14} /> Enregistrer
+    </button>
+  </div>
+);
+
+export const DiagnosticsSection = ({ diagnostics, getDiagnostics, canSend, pairDevice, pairing, pairResult }: any) => (
+  <div className="ui-card">
+    <p style={{ fontSize: "0.8rem", color: "#94a3b8", margin: "0 0 12px 0" }}>
+      Informations de dépannage pour la détection USB et la communication avec l'appareil.
+    </p>
+
+    <button
+      className="btn btn-secondary"
+      onClick={getDiagnostics}
+      disabled={!canSend}
+      style={{ marginBottom: "16px" }}
+    >
+      <RefreshCw size={14} /> Rafraîchir les diagnostics
+    </button>
+
+    {diagnostics ? (
+      <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+        <fieldset className="field-group">
+          <legend className="field-group-legend">Chemins des pilotes (PC)</legend>
+          <div className="info-grid">
+            <div className="info-item">
+              <span className="info-label">
+                go-ios (Natif){diagnostics.goIosVersion ? ` — v${diagnostics.goIosVersion}` : ""}
+              </span>
+              <span className="info-value compact" style={{ color: diagnostics.goIosError ? "#f87171" : "#4ade80" }}>
+                {diagnostics.goIosError ? "Non trouvé dans le PATH" : diagnostics.goIosPath || "Trouvé"}
+              </span>
+            </div>
+            <div className="info-item">
+              <span className="info-label">
+                pymobiledevice3{diagnostics.pmd3Version ? ` — v${diagnostics.pmd3Version}` : ""}
+              </span>
+              <span className="info-value compact" style={{ color: diagnostics.pmd3Error ? "#f87171" : "#4ade80" }}>
+                {diagnostics.pmd3Error ? "Non trouvé dans le PATH" : diagnostics.pmd3Path || "Trouvé"}
+              </span>
+            </div>
+          </div>
+        </fieldset>
+
+        <fieldset className="field-group">
+          <legend className="field-group-legend">Périphériques USB détectés</legend>
+          {diagnostics.usbDevices && diagnostics.usbDevices.length > 0 ? (
+            <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+              {diagnostics.usbDevices.map((dev: any, i: number) => (
+                <div key={i} className="info-grid" style={{ background: "rgba(30, 41, 59, 0.5)", padding: "8px", borderRadius: "6px" }}>
+                  <div className="info-item">
+                    <span className="info-label">Nom</span>
+                    <span className="info-value compact">{dev.Name || "Appareil iOS"}</span>
+                  </div>
+                  <div className="info-item">
+                    <span className="info-label">UDID</span>
+                    <span className="info-value compact" style={{ fontFamily: "monospace" }}>{dev.UDID}</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p style={{ fontSize: "0.78rem", color: "#94a3b8", margin: 0 }}>
+              {diagnostics.usbDevicesError ? `Erreur: ${diagnostics.usbDevicesError}` : "Aucun périphérique détecté en USB."}
+            </p>
+          )}
+        </fieldset>
+
+        <fieldset className="field-group">
+          <legend className="field-group-legend">Certificats d'appairage locaux (Lockdown)</legend>
+          <p style={{ fontSize: "0.75rem", color: "#94a3b8", margin: "0 0 8px 0" }}>
+            Dossier : <code style={{ fontFamily: "monospace" }}>{diagnostics.lockdownDir || "Inconnu"}</code>
+          </p>
+          {diagnostics.pairingRecords && diagnostics.pairingRecords.length > 0 ? (
+            <div style={{ maxHeight: "150px", overflowY: "auto", display: "flex", flexDirection: "column", gap: "6px", border: "1px solid rgba(255, 255, 255, 0.05)", padding: "6px", borderRadius: "6px" }}>
+              {diagnostics.pairingRecords.map((rec: any, i: number) => (
+                <div key={i} style={{ display: "flex", flexDirection: "column", padding: "6px", background: "rgba(30, 41, 59, 0.3)", borderRadius: "4px" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                    <span style={{ fontSize: "0.8rem", color: "#cbd5e1", fontWeight: "bold" }}>
+                      {rec.deviceName || "Nom inconnu"}
+                    </span>
+                    <span style={{ fontSize: "0.7rem", color: "#94a3b8" }}>
+                      {new Date(rec.modTime).toLocaleDateString()}
+                    </span>
+                  </div>
+                  <span style={{ fontSize: "0.7rem", color: "#64748b", fontFamily: "monospace" }}>
+                    {rec.udid}
+                  </span>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p style={{ fontSize: "0.78rem", color: "#94a3b8", margin: 0 }}>
+              Aucun certificat d'appairage trouvé dans le dossier Lockdown.
+            </p>
+          )}
+        </fieldset>
+
+        {diagnostics.unpairedUsbDevices && diagnostics.unpairedUsbDevices.length > 0 && (
+          <div
+            style={{
+              border: "1px solid rgba(251, 191, 36, 0.3)",
+              background: "rgba(251, 191, 36, 0.08)",
+              borderRadius: "8px",
+              padding: "10px",
+            }}
+          >
+            <p style={{ fontSize: "0.8rem", color: "#fbbf24", margin: "0 0 8px 0" }}>
+              Appareil(s) branché(s) en USB sans certificat d'appairage :{" "}
+              <code style={{ fontFamily: "monospace" }}>{diagnostics.unpairedUsbDevices.join(", ")}</code>.
+              Le tunnel WiFi (iOS 17+) ne peut pas s'établir tant qu'il n'est pas pairé une
+              première fois en USB.
+            </p>
+            <button
+              className="btn btn-secondary"
+              onClick={pairDevice}
+              disabled={!canSend || pairing}
+              aria-busy={pairing}
+            >
+              {pairing ? <RefreshCw size={14} className="spin-icon" /> : <Smartphone size={14} />}{" "}
+              {pairing ? "En attente du prompt sur l'iPhone..." : "Pairer l'iPhone (USB)"}
+            </button>
+            {pairResult && (
+              <p
+                style={{
+                  fontSize: "0.78rem",
+                  margin: "8px 0 0 0",
+                  color: pairResult.ok ? "#4ade80" : "#f87171",
+                }}
+              >
+                {pairResult.ok
+                  ? "Pairing réussi — le tunnel WiFi devrait maintenant pouvoir s'établir."
+                  : `Échec : ${pairResult.error || "erreur inconnue"}`}
+              </p>
+            )}
+          </div>
+        )}
+      </div>
+    ) : (
+      <p style={{ fontSize: "0.78rem", color: "#94a3b8", margin: 0 }}>
+        {canSend ? "Récupération des diagnostics en cours..." : "Moteur hors ligne."}
+      </p>
+    )}
+  </div>
+);

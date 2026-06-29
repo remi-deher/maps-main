@@ -1,8 +1,8 @@
 import React from "react";
 import { Smartphone, Send, CheckCircle2, AlertTriangle, Loader2 } from "lucide-react";
-import { useWebSocket } from "../context/websocket";
 import { Modal } from "./ui/Modal";
 import { invoke } from "@tauri-apps/api/core";
+import { useEngine } from "../context/websocket";
 
 interface DeviceModalProps {
   open: boolean;
@@ -11,7 +11,7 @@ interface DeviceModalProps {
 
 /// Device status and remote enroller utility.
 export const DeviceModal: React.FC<DeviceModalProps> = ({ open, onClose }) => {
-  const { status } = useWebSocket();
+  const { status } = useEngine();
   const [targetServer, setTargetServer] = React.useState("");
   const [exporting, setExporting] = React.useState(false);
   const [exportError, setExportError] = React.useState<string | null>(null);

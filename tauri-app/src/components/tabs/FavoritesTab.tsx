@@ -1,6 +1,6 @@
 import React, { useRef } from "react";
 import { Star, Save, Plus, Trash, Activity } from "lucide-react";
-import { useWebSocket } from "../../context/websocket";
+import { useEngine } from "../../context/websocket";
 
 interface FavoritesTabProps {
   showToast: (message: string) => void;
@@ -10,7 +10,7 @@ interface FavoritesTabProps {
 /// its own import/export logic; engine data comes straight from the
 /// WebSocket context.
 export const FavoritesTab: React.FC<FavoritesTabProps> = ({ showToast }) => {
-  const { status, addFavorite, removeFavorite, setLocation } = useWebSocket();
+  const { status, addFavorite, removeFavorite, setLocation } = useEngine();
   const importFileInputRef = useRef<HTMLInputElement>(null);
 
   const handleExportFavorites = () => {

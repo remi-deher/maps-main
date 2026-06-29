@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { Play, ShieldCheck, Square, Search, MousePointerClick, Circle, Square as SquareIcon, X } from "lucide-react";
-import { useWebSocket, LatLon } from "../context/websocket";
+import { LatLon, useEngine } from "../context/websocket";
 import { reverseGeocode } from "../lib/geocoding";
 import { DestinationSearchInput } from "./DestinationSearchInput";
 
@@ -41,7 +41,7 @@ const SegmentedToggle: React.FC<{
 /// (one block, not just click), then zone type / radius / launch follow.
 /// `patrolCenter` is shared with the parent InteractiveMap for the live preview.
 export const PatrolModePanel: React.FC<PatrolModePanelProps> = ({ patrolCenter, setPatrolCenter }) => {
-  const { canSend, status, updatePatrolZone } = useWebSocket();
+  const { canSend, status, updatePatrolZone } = useEngine();
 
   const [centerMethod, setCenterMethod] = useState<"search" | "map">("search");
   const [patrolType, setPatrolType] = useState<"circle" | "rectangle">("circle");

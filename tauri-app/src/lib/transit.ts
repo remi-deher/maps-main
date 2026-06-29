@@ -5,7 +5,7 @@
 // Frontend-only: like the rail-router URL, the engine never calls this — the
 // frontend fetches the journey for preview + schedule + playback expansion.
 
-import { LatLon } from "../context/websocket";
+import type { LatLon } from "../types/engine";
 
 const DEFAULT_BASE = "https://api.transitous.org";
 const ENABLED_KEY = "gpsmock.transitEnabled";

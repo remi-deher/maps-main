@@ -72,45 +72,6 @@ type Engine struct {
 
 // SetClusterManager attaches the HA cluster manager so Status() reports its
 // state and SaveSettings can push live config changes to it.
-func (e *Engine) SetClusterManager(m *cluster.Manager) {
-	e.mu.Lock()
-	e.clusterMgr = m
-	e.mu.Unlock()
-}
-
-// ClusterManager returns the attached cluster manager, or nil if cluster mode
-// is off (used by the server to wire the peer-to-peer HTTP routes).
-func (e *Engine) ClusterManager() *cluster.Manager {
-	e.mu.RLock()
-	defer e.mu.RUnlock()
-	return e.clusterMgr
-}
-
-const maxLogEntries = 200
-
-// Log appends an entry to the in-memory buffer and broadcasts it immediately.
-// level is "info" | "warn" | "error"; source identifies what produced it
-// (e.g. "simulation", "anti-drift", "ios-client" for client-relayed DEBUG_LOG).
-func (e *Engine) Log(level, source, message string) {
-	e.LogEvent(level, source, "", "", message, nil)
-}
-
-// LogEvent appends a structured entry to the in-memory buffer and broadcasts it.
-func (e *Engine) LogEvent(level, source, category, action, message string, fields map[string]string) {
-	entry := e.logService.Add(level, source, category, action, message, fields)
-
-	e.mu.RLock()
-	emit := e.emit
-	e.mu.RUnlock()
-	emit(api.EventLog, entry)
-}
-
-// GetLogs returns a snapshot of the current log buffer, oldest first.
-func (e *Engine) GetLogs() []api.LogEntryPayload {
-	return e.logService.Get()
-}
-
-// New builds an Engine seeded from settings.
 func New(drv driver.Driver, cfg settings.Settings) *Engine {
 	return NewWithSecrets(drv, cfg, settings.Secrets{})
 }
@@ -118,27 +79,28 @@ func New(drv driver.Driver, cfg settings.Settings) *Engine {
 // NewWithSecrets builds an Engine seeded from settings plus server-only
 // secrets loaded from a SecretStore.
 func NewWithSecrets(drv driver.Driver, cfg settings.Settings, secrets settings.Secrets) *Engine {
+	runtimeCfg := cfg.RuntimeConfig()
 	// Seed cluster tuning from persisted settings (falling back to the env/
 	// built-in defaults the cluster package already holds) so the live values
 	// and the broadcast status agree from the first STATUS.
-	if cfg.ClusterHeartbeatSeconds > 0 || cfg.ClusterMasterDeadSeconds > 0 || cfg.ClusterPeerTimeoutSeconds > 0 {
+	if runtimeCfg.ClusterHeartbeatSeconds > 0 || runtimeCfg.ClusterMasterDeadSeconds > 0 || runtimeCfg.ClusterPeerTimeoutSeconds > 0 {
 		cluster.SetTuning(
-			time.Duration(cfg.ClusterHeartbeatSeconds)*time.Second,
-			time.Duration(cfg.ClusterMasterDeadSeconds)*time.Second,
-			time.Duration(cfg.ClusterPeerTimeoutSeconds)*time.Second,
+			time.Duration(runtimeCfg.ClusterHeartbeatSeconds)*time.Second,
+			time.Duration(runtimeCfg.ClusterMasterDeadSeconds)*time.Second,
+			time.Duration(runtimeCfg.ClusterPeerTimeoutSeconds)*time.Second,
 		)
 	}
 	hb, dead, peer := cluster.GetTuning()
 
-	osrm := cfg.OsrmBaseURL
+	osrm := runtimeCfg.OsrmBaseURL
 	if osrm == "" {
 		osrm = defaultOsrmBaseURL()
 	}
 	routingRegistry := routing.NewRegistry(routing.Config{
 		OSRMBaseURL:        osrm,
-		Mode:               cfg.RoutingMode,
-		Provider:           cfg.RoutingProvider,
-		ProviderPriority:   cfg.RoutingProviderPriority,
+		Mode:               runtimeCfg.RoutingMode,
+		Provider:           runtimeCfg.RoutingProvider,
+		ProviderPriority:   runtimeCfg.RoutingProviderPriority,
 		GoogleRoutesAPIKey: firstNonEmpty(secrets.GoogleRoutesAPIKey, os.Getenv("GOOGLE_MAPS_API_KEY"), os.Getenv("GOOGLE_ROUTES_API_KEY")),
 		MapboxAccessToken:  firstNonEmpty(secrets.MapboxAccessToken, os.Getenv("MAPBOX_ACCESS_TOKEN")),
 	})
@@ -152,14 +114,14 @@ func NewWithSecrets(drv driver.Driver, cfg settings.Settings, secrets settings.S
 		st: api.Status{
 			State:                     "idle",
 			ConnectionType:            domain.ConnUnknown,
-			UsbDriver:                 cfg.UsbDriver,
-			WifiDriver:                cfg.WifiDriver,
-			FallbackEnabled:           cfg.FallbackEnabled,
-			NotificationsEnabled:      cfg.NotificationsEnabled,
-			DynamicIslandEnabled:      cfg.DynamicIslandEnabled,
-			JitterEnabled:             cfg.JitterEnabled,
-			Favorites:                 cfg.Favorites,
-			RecentHistory:             cfg.RecentHistory,
+			UsbDriver:                 runtimeCfg.UsbDriver,
+			WifiDriver:                runtimeCfg.WifiDriver,
+			FallbackEnabled:           runtimeCfg.FallbackEnabled,
+			NotificationsEnabled:      runtimeCfg.NotificationsEnabled,
+			DynamicIslandEnabled:      runtimeCfg.DynamicIslandEnabled,
+			JitterEnabled:             runtimeCfg.JitterEnabled,
+			Favorites:                 runtimeCfg.Favorites,
+			RecentHistory:             runtimeCfg.RecentHistory,
 			Navigation:                domain.Navigation{},
 			OsrmBaseURL:               osrm,
 			Routing:                   routingInfo,
@@ -174,33 +136,6 @@ func NewWithSecrets(drv driver.Driver, cfg settings.Settings, secrets settings.S
 			},
 		},
 	}
-}
-
-// OnEvent registers the outbound event sink (called by the server).
-func (e *Engine) OnEvent(f EmitFunc) {
-	e.mu.Lock()
-	e.emit = f
-	e.mu.Unlock()
-}
-
-// statusSnapshotLocked must be called while holding e.mu, typically right
-// after mutating e.st. It captures the emit func and a status snapshot, then
-// releases the lock, so the caller can emit one or more events afterwards
-// without holding e.mu — emit is a callback into client code (the server's
-// hub broadcast), and calling it while locked risks a deadlock if it ever
-// re-enters the engine.
-func (e *Engine) statusSnapshotLocked() (EmitFunc, api.Status) {
-	emit, st := e.emit, e.st
-	e.mu.Unlock()
-	return emit, st
-}
-
-// emitStatusLocked is the common case of statusSnapshotLocked: snapshot,
-// unlock, and immediately broadcast STATUS. Must be called while holding
-// e.mu; unlocks it as a side effect.
-func (e *Engine) emitStatusLocked() {
-	emit, st := e.statusSnapshotLocked()
-	emit(api.EventStatus, st)
 }
 
 // SetLocation injects a spoofed position and broadcasts ACK/LOCATION/STATUS.
@@ -350,24 +285,6 @@ func (e *Engine) ReportRealLocation(ctx context.Context, lat, lon float64) {
 		})
 		_ = e.SetLocation(ctx, reinjectTarget.Lat, reinjectTarget.Lon, reinjectTarget.Name)
 	}
-}
-
-// Status returns a snapshot of the current state.
-func (e *Engine) Status() api.Status {
-	e.mu.RLock()
-	st := e.st
-	mgr := e.clusterMgr
-	e.mu.RUnlock()
-
-	if mgr != nil {
-		info := mgr.Status()
-		peers := make([]api.ClusterPeer, len(info.Peers))
-		for i, p := range info.Peers {
-			peers[i] = api.ClusterPeer{Address: p.Address, Port: p.Port, Online: p.Online, Role: p.Role, Name: p.Name, Discovered: p.Discovered}
-		}
-		st.Cluster = &api.ClusterInfo{Role: info.Role, Mode: info.Mode, Peers: peers}
-	}
-	return st
 }
 
 // GetDeviceInfo asks the driver for rich device metadata, if it supports it

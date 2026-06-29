@@ -1,13 +1,13 @@
 import React, { useState } from "react";
 import { ChevronDown } from "lucide-react";
-import { useWebSocket } from "../context/websocket";
+import { useEngine } from "../context/websocket";
 
 /// Compact connection pill that expands on demand. Collapsed it shows just the
 /// connection state (+ latency when available) so it stays glanceable without
 /// permanently occupying a 220px panel; expanded it reveals the full engine,
 /// tunnel and telemetry metrics.
 export const EngineStatusFrame: React.FC = () => {
-  const { connectionStatus, connectionUrl, canSend, status, telemetry, lastError } = useWebSocket();
+  const { connectionStatus, connectionUrl, canSend, status, telemetry, lastError } = useEngine();
   const [expanded, setExpanded] = useState(false);
 
   const label =

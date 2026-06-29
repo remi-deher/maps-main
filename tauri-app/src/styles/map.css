@@ -1,0 +1,659 @@
+/* Map area */
+.map-viewport {
+  flex: 1;
+  height: 100%;
+  position: relative;
+  z-index: 1;
+}
+
+/* Leaflet dark theme tweaks */
+.leaflet-container {
+  width: 100%;
+  height: 100%;
+  background: #09090b !important;
+}
+
+.leaflet-bar {
+  border: 1px solid rgba(255, 255, 255, 0.1) !important;
+  box-shadow: 0 4px 30px rgba(0, 0, 0, 0.5) !important;
+}
+
+.leaflet-bar a {
+  background-color: rgba(15, 23, 42, 0.8) !important;
+  color: #f8fafc !important;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1) !important;
+}
+
+.leaflet-bar a:hover {
+  background-color: rgba(20, 184, 166, 0.16) !important;
+  color: #14b8a6 !important;
+}
+
+.status-badge {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: var(--fs-base);
+  font-weight: 700;
+  padding: 6px 12px;
+  border-radius: var(--radius-pill);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  transition: all 0.3s ease;
+}
+
+.status-badge.connected {
+  background: rgba(16, 185, 129, 0.15);
+  color: #10b981;
+  border: 1px solid rgba(16, 185, 129, 0.3);
+}
+
+.status-badge.disconnected {
+  background: rgba(239, 68, 68, 0.15);
+  color: #ef4444;
+  border: 1px solid rgba(239, 68, 68, 0.3);
+}
+
+.status-badge.moving {
+  background: rgba(59, 130, 246, 0.15);
+  color: #3b82f6;
+  border: 1px solid rgba(59, 130, 246, 0.3);
+}
+
+.pulse-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background-color: currentColor;
+  animation: pulse 1.8s infinite;
+}
+
+@keyframes pulse {
+  0% { transform: scale(0.9); opacity: 0.6; }
+  50% { transform: scale(1.2); opacity: 1; }
+  100% { transform: scale(0.9); opacity: 0.6; }
+}
+
+
+/* Cards & Section containers */
+.ui-card {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  border-radius: var(--radius-lg);
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+/* Floating tool-panel cards sit directly over the map, where a 3%-opacity
+   fill is illegible — give them a solid dark surface (matching the other
+   floating chrome) plus a subtle blur. */
+.map-tool-content .ui-card {
+  background: rgba(13, 18, 30, 0.97);
+  border-color: rgba(148, 163, 184, 0.18);
+  backdrop-filter: blur(12px) saturate(180%);
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.34);
+}
+
+.ui-card-title {
+  font-size: var(--fs-md);
+  font-weight: 700;
+  color: #cbd5e1;
+  margin: 0 0 4px 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+/* Collapsible tool sections (RouteModePanel) — only the primary one starts
+   open, the rest stay tucked away until needed (less "wall of forms"). */
+.tool-section > .tool-section-summary {
+  margin-bottom: 0;
+}
+
+.tool-section[open] > .tool-section-summary {
+  margin-bottom: 4px;
+}
+
+.tool-section-summary {
+  cursor: pointer;
+  list-style: none;
+}
+
+.tool-section-summary::-webkit-details-marker {
+  display: none;
+}
+
+.tool-section-summary::after {
+  content: "";
+  width: 7px;
+  height: 7px;
+  margin-left: auto;
+  border-right: 2px solid #64748b;
+  border-bottom: 2px solid #64748b;
+  transform: rotate(45deg);
+  transition: transform 0.2s ease;
+}
+
+.tool-section[open] > .tool-section-summary::after {
+  transform: rotate(-135deg);
+}
+
+/* Quick Teleport Search Group */
+.search-group {
+  display: flex;
+  gap: 8px;
+}
+
+.search-group input {
+  flex: 1;
+}
+
+/* SearchBox styles */
+.search-box-container {
+  position: absolute;
+  top: 16px;
+  left: 540px;
+  z-index: 1000;
+  width: 320px;
+}
+
+.search-input-wrapper {
+  display: flex;
+  align-items: center;
+  background: rgba(10, 15, 28, 0.97);
+  backdrop-filter: blur(12px);
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  border-radius: var(--radius-md);
+  padding: 4px 12px;
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.34);
+}
+
+.search-input-wrapper input {
+  background: transparent !important;
+  border: none !important;
+  color: #f8fafc !important;
+  font-size: var(--fs-md);
+  padding: 8px 4px !important;
+  width: 100%;
+  box-shadow: none !important;
+}
+
+.search-icon {
+  color: #94a3b8;
+  margin-right: 6px;
+}
+
+.clear-search-btn {
+  background: none;
+  border: none;
+  color: #94a3b8;
+  cursor: pointer;
+  padding: 4px;
+  box-shadow: none;
+}
+
+.clear-search-btn:hover {
+  color: #f8fafc;
+}
+
+.search-results-dropdown {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  margin-top: 8px;
+  background: rgba(15, 23, 42, 0.95);
+  backdrop-filter: blur(16px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: var(--radius-lg);
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.5);
+  max-height: 250px;
+  overflow-y: auto;
+}
+
+.search-dropdown-loading {
+  padding: 12px;
+  font-size: var(--fs-base);
+  color: #94a3b8;
+  text-align: center;
+}
+
+.search-result-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  cursor: pointer;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  transition: background 0.2s ease;
+  /* button reset so a native <button> keeps the original row look */
+  width: 100%;
+  text-align: left;
+  background: none;
+  border-left: none;
+  border-right: none;
+  border-top: none;
+  color: inherit;
+  font: inherit;
+}
+
+.search-result-item:hover {
+  background: rgba(20, 184, 166, 0.12);
+}
+
+.result-marker-icon {
+  color: #14b8a6;
+  flex-shrink: 0;
+  margin-top: 2px;
+  align-self: flex-start;
+}
+
+.result-text {
+  font-size: var(--fs-base);
+  color: #e2e8f0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Two-line geocoding result: primary name + secondary address */
+.result-text-block {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+  flex: 1;
+}
+
+.result-primary {
+  font-size: var(--fs-base);
+  font-weight: 600;
+  color: #f1f5f9;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.result-secondary {
+  font-size: var(--fs-xs);
+  color: #94a3b8;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.map-style-control {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  z-index: 1000;
+  display: flex;
+  gap: 4px;
+  background: rgba(10, 15, 28, 0.97);
+  backdrop-filter: blur(12px);
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  border-radius: var(--radius-md);
+  padding: 4px;
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.34);
+}
+
+/* Engine status — a compact connection pill that expands on demand, floating
+   at the top of the map between the search box and the map style selector. */
+.engine-status-frame {
+  position: absolute;
+  top: 16px;
+  left: 880px;
+  z-index: 1000;
+  width: auto;
+  max-width: 240px;
+  background: rgba(10, 15, 28, 0.97);
+  backdrop-filter: blur(12px) saturate(180%);
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  border-radius: var(--radius-md);
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.34);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.engine-status-pill {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: none;
+  border: none;
+  color: #f8fafc;
+  cursor: pointer;
+  padding: 6px 10px;
+  box-shadow: none;
+}
+
+.engine-pill-metric {
+  font-size: var(--fs-xs);
+  color: #94a3b8;
+  font-variant-numeric: tabular-nums;
+}
+
+.engine-pill-chevron {
+  margin-left: auto;
+  color: #64748b;
+  transition: transform 0.2s ease;
+}
+
+.engine-status-frame.expanded .engine-pill-chevron {
+  transform: rotate(180deg);
+}
+
+.engine-status-details {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 0 10px 10px;
+  animation: slideInPanel 0.16s ease forwards;
+}
+
+.status-badge-row {
+  display: flex;
+}
+
+/* Tools entry button (shown in explore mode) */
+.map-tools-toggle {
+  position: absolute;
+  top: 16px;
+  left: 16px;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(10, 15, 28, 0.97);
+  backdrop-filter: blur(12px);
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  color: #f8fafc;
+  padding: 8px 14px;
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.34);
+  transition: all 0.2s ease;
+}
+
+.map-tools-toggle:hover {
+  background: #0f766e;
+}
+
+/* Contextual tool frame (Itinéraire / Patrouille) */
+.map-tool-panel {
+  position: absolute;
+  top: 16px;
+  left: 16px;
+  z-index: 1000;
+  width: 320px;
+  max-height: calc(100% - 48px);
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  animation: slideInPanel 0.18s ease forwards;
+}
+
+/* Segmented header that swaps the frame's content by context */
+.map-tool-header {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(10, 15, 28, 0.97);
+  backdrop-filter: blur(12px);
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  border-radius: var(--radius-md);
+  padding: 4px;
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.34);
+}
+
+.map-tool-tabs {
+  display: flex;
+  gap: 4px;
+  flex: 1;
+}
+
+.map-tool-tab {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  flex: 1;
+  background: none;
+  border: none;
+  color: #94a3b8;
+  padding: 7px 12px;
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  box-shadow: none;
+  transition: all 0.2s ease;
+}
+
+.map-tool-tab:hover {
+  color: #f8fafc;
+}
+
+.map-tool-tab.active {
+  background: #0f766e;
+  color: #ffffff;
+}
+
+.map-tool-content {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+@keyframes slideInPanel {
+  from { transform: translateX(-8px); opacity: 0; }
+  to { transform: translateX(0); opacity: 1; }
+}
+
+.map-style-btn {
+  background: none;
+  border: none;
+  color: #94a3b8;
+  padding: 6px 12px;
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  border-radius: 14px;
+  cursor: pointer;
+  box-shadow: none;
+  transition: all 0.2s ease;
+}
+
+.map-style-btn:hover {
+  color: #f8fafc;
+}
+
+.map-style-btn.active {
+  background: #0f766e;
+  color: #ffffff;
+}
+
+/* GPX upload area */
+.gpx-dropzone {
+  border: 2px dashed rgba(255, 255, 255, 0.15);
+  border-radius: var(--radius-md);
+  padding: 16px;
+  text-align: center;
+  cursor: pointer;
+  background: rgba(255, 255, 255, 0.01);
+  transition: all 0.2s ease;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+
+.gpx-dropzone:hover {
+  border-color: #14b8a6;
+  background: rgba(20, 184, 166, 0.06);
+}
+
+.gpx-file-info {
+  font-size: var(--fs-sm);
+  color: #10b981;
+  font-weight: 600;
+}
+
+.gpx-dropzone.drag-over {
+  border-color: #10b981;
+  background: rgba(16, 185, 129, 0.1);
+}
+
+.map-recenter-btn {
+  position: absolute;
+  top: 76px;
+  right: 16px;
+  z-index: 1000;
+  background: rgba(10, 15, 28, 0.97);
+  backdrop-filter: blur(12px) saturate(180%);
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  color: #f8fafc;
+  width: 40px;
+  height: 40px;
+  border-radius: var(--radius-md);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.map-recenter-btn:hover {
+  background: #0f766e;
+  color: #ffffff;
+}
+
+.map-recenter-btn:active {
+  transform: scale(0.95);
+}
+
+/* Telemetry widget — collapsed to a status pill (state + speed), expands on
+   click to reveal coordinates / progress / drift, mirroring the engine pill. */
+.map-telemetry-widget {
+  position: absolute;
+  bottom: 24px;
+  right: 24px;
+  z-index: 1000;
+  width: auto;
+  max-width: 280px;
+  background: rgba(10, 15, 28, 0.97);
+  backdrop-filter: blur(12px) saturate(180%);
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  border-radius: var(--radius-md);
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.34);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  animation: slideIn 0.3s ease forwards;
+}
+
+.widget-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 0 12px 12px;
+  animation: slideInPanel 0.16s ease forwards;
+}
+
+.widget-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: var(--fs-base);
+}
+
+.widget-row .label {
+  color: #64748b;
+}
+
+.widget-row .value {
+  font-weight: 600;
+  color: #f1f5f9;
+}
+
+.widget-row .value.coords {
+  font-size: var(--fs-sm);
+  color: #5eead4;
+}
+
+.widget-progress {
+  margin-top: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.progress-info {
+  display: flex;
+  justify-content: space-between;
+  font-size: var(--fs-sm);
+  color: #94a3b8;
+}
+
+.progress-bar-container {
+  width: 100%;
+  height: 6px;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.progress-bar-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #0f766e, #0ea5e9);
+  border-radius: 3px;
+  transition: width 0.3s ease;
+}
+
+/* Narrow: the top status frame doesn't fit next to the search box anymore;
+   stack it below it instead of overlapping the style selector. */
+@media (max-width: 1300px) {
+  .engine-status-frame {
+    left: 16px;
+    top: 70px;
+  }
+}
+
+@media (max-width: 760px) {
+  .search-box-container {
+    left: 12px;
+    right: 12px;
+    top: 12px;
+    width: auto;
+  }
+
+  .map-style-control {
+    top: auto;
+    right: 12px;
+    bottom: 16px;
+  }
+
+  .map-telemetry-widget {
+    left: 12px;
+    right: 12px;
+    bottom: 72px;
+    width: auto;
+  }
+
+  .engine-status-frame {
+    position: static;
+    width: auto;
+    margin: 60px 12px 0;
+  }
+}

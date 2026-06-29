@@ -6,7 +6,7 @@ info:
     Real-time channel of the Go engine (v3). Raw WebSocket, JSON messages.
     Every message is an envelope { "type": <string>, "data": <object> }.
     "send" = client -> engine (inbound actions); "receive" = engine -> client
-    (outbound events). Source of truth: engine/internal/api.
+    (outbound events). Source of truth: this AsyncAPI document plus openapi.yaml.
 
 servers:
   default:
@@ -53,7 +53,7 @@ channels:
       PAIR_DEVICE: { $ref: "#/components/messages/EMPTY" }
       GET_PAIR_CODE: { $ref: "#/components/messages/EMPTY" }
       LIST_PAIRED_DEVICES: { $ref: "#/components/messages/EMPTY" }
-      REVOKE_PAIRED_DEVICE: { $ref: "#/components/messages/EMPTY" }
+      REVOKE_PAIRED_DEVICE: { $ref: "#/components/messages/REVOKE_PAIRED_DEVICE" }
       # ── Outbound (engine -> client) ──
       STATUS: { $ref: "#/components/messages/STATUS" }
       STATUS_UPDATE: { $ref: "#/components/messages/STATUS_UPDATE" }
@@ -173,6 +173,8 @@ components:
       payload: { $ref: "#/components/schemas/Envelope_PairCode" }
     PAIRED_DEVICES:
       payload: { $ref: "#/components/schemas/Envelope_PairedDevices" }
+    REVOKE_PAIRED_DEVICE:
+      payload: { $ref: "#/components/schemas/Envelope_RevokePairedDevice" }
 
   schemas:
     Envelope_Empty:
@@ -453,7 +455,20 @@ components:
           properties:
             driverId: { type: string }
             transport: { type: string, enum: [auto, usb, wifi] }
+            wifiAddress: { type: string }
+            targetUdid: { type: string }
           required: [driverId]
+      required: [type, data]
+
+    Envelope_RevokePairedDevice:
+      type: object
+      properties:
+        type: { const: REVOKE_PAIRED_DEVICE }
+        data:
+          type: object
+          properties:
+            id: { type: string }
+          required: [id]
       required: [type, data]
 
     Envelope_Diagnostics:

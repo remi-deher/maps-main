@@ -6,7 +6,7 @@ import AppIntents
 // simulation intents, this acts on the live connection via EngineClient.shared;
 // if the engine isn't connected the underlying send is a no-op.
 
-/// One favorite, mirrored from `Favorite` (EngineClient.swift). The id is the
+/// One favorite, mirrored from `Favorite` (EngineProtocolModels.swift). The id is the
 /// same `"lat,lon"` string the engine status uses, so resolution stays stable.
 struct FavoriteEntity: AppEntity, Identifiable {
     let id: String

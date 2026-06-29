@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
-import { useWebSocket } from "../context/websocket";
+import { usePairing } from "../context/pairingContext";
 
 // PairingGate is shown (browser mode only) when a remote client has no durable
 // token yet. The user enters the 6-digit code displayed in the desktop app —
@@ -7,7 +7,7 @@ import { useWebSocket } from "../context/websocket";
 // automatically. After a successful exchange the gate disappears and the normal
 // WebSocket connection takes over.
 export const PairingGate: React.FC = () => {
-  const { needsPairing, submitCode, pairCodeError, prefillCode } = useWebSocket();
+  const { needsPairing, submitCode, pairCodeError, prefillCode } = usePairing();
   const [code, setCode] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const autoSubmitted = useRef(false);
