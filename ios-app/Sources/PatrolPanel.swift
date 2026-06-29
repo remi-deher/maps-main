@@ -1,11 +1,11 @@
 import SwiftUI
 
-/// Sheet panel for defining a patrol zone, promoted out of Réglages so the
-/// zone is set up *against the map* (with a live dashed preview drawn while you
-/// drag the radius) rather than blind in a settings form. A circle is centered
-/// on the current spoofed/real position; a rectangle uses whatever the map is
-/// currently showing — so the spatial choice is made by panning/zooming the
-/// map underneath this panel, exactly like framing a shot in Plans.
+// Sheet panel for defining a patrol zone, promoted out of Réglages so the
+// zone is set up *against the map* (with a live dashed preview drawn while you
+// drag the radius) rather than blind in a settings form. A circle is centered
+// on the current spoofed/real position; a rectangle uses whatever the map is
+// currently showing — so the spatial choice is made by panning/zooming the
+// map underneath this panel, exactly like framing a shot in Plans.
 struct PatrolPanel: View {
     @Binding var type: String
     @Binding var radius: Double

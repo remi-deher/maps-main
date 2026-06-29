@@ -1,7 +1,7 @@
 import SwiftUI
 
-/// Floating glass button (bottom-trailing, à la Plans) that recenters the
-/// camera on the device's real position.
+// Floating glass button (bottom-trailing, à la Plans) that recenters the
+// camera on the device's real position.
 struct RecenterButton: View {
     var onTap: () -> Void
 

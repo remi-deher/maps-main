@@ -2,19 +2,19 @@ import Foundation
 import CoreLocation
 import Observation
 
-/// Talks the same {type, data} WebSocket envelope as the desktop app
-/// (engine/internal/api/messages.go). Reports the device's real GPS position
-/// as REAL_LOCATION so the engine's anti-drift shield can detect when the
-/// spoofed position didn't "take" and re-inject it, and sends the same pilot
-/// actions (SET_LOCATION, PLAY_ROUTE, ADD_FAVORITE...) the desktop app uses —
-/// the engine is the single source of truth, so every connected client
-/// (desktop, iOS, headless) sees the same STATUS broadcasts and stays in sync
-/// for free.
+// Talks the same {type, data} WebSocket envelope as the desktop app
+// (engine/internal/api/messages.go). Reports the device's real GPS position
+// as REAL_LOCATION so the engine's anti-drift shield can detect when the
+// spoofed position didn't "take" and re-inject it, and sends the same pilot
+// actions (SET_LOCATION, PLAY_ROUTE, ADD_FAVORITE...) the desktop app uses —
+// the engine is the single source of truth, so every connected client
+// (desktop, iOS, headless) sees the same STATUS broadcasts and stays in sync
+// for free.
 @Observable
 final class EngineClient: NSObject, URLSessionWebSocketDelegate, EngineClientProtocol {
-    /// The live client, so App Intents (Siri / Shortcuts / Spotlight) can reach
-    /// the active connection without a view. The app keeps one instance alive
-    /// (ContentView @State), so this weak reference stays valid while running.
+    // The live client, so App Intents (Siri / Shortcuts / Spotlight) can reach
+    // the active connection without a view. The app keeps one instance alive
+    // (ContentView @State), so this weak reference stays valid while running.
     static weak var shared: EngineClient?
 
     var state: EngineConnectionState = .disconnected
@@ -38,17 +38,17 @@ final class EngineClient: NSObject, URLSessionWebSocketDelegate, EngineClientPro
     private var pingTimer: Timer?
     private var urlString: String = ""
 
-    /// Background keep-alive cadence, mirrored from the app's @AppStorage so
-    /// the location-callback path (which runs while suspended, where SwiftUI
-    /// state isn't readable) can throttle RELANCE without reaching back into
-    /// the view. Kept in sync by ContentView's onChange/onAppear.
+    // Background keep-alive cadence, mirrored from the app's @AppStorage so
+    // the location-callback path (which runs while suspended, where SwiftUI
+    // state isn't readable) can throttle RELANCE without reaching back into
+    // the view. Kept in sync by ContentView's onChange/onAppear.
     var keepAliveEnabled = true
     var keepAliveInterval: Double = 5
     private var lastRelanceAt = Date.distantPast
     private var lastRealLocationAt = Date.distantPast
-    /// Anti-drift report cadence — matches the foreground startReporting() loop
-    /// (10s) so the continuous background location stream is collapsed back to
-    /// the same rate instead of flooding the socket on every GPS tick.
+    // Anti-drift report cadence — matches the foreground startReporting() loop
+    // (10s) so the continuous background location stream is collapsed back to
+    // the same rate instead of flooding the socket on every GPS tick.
     private let realLocationMinInterval: TimeInterval = 10
 
     // Generation counter: every connect() bumps it. Closures capture the
@@ -79,21 +79,21 @@ final class EngineClient: NSObject, URLSessionWebSocketDelegate, EngineClientPro
         startSocket(generation: generation)
     }
 
-    /// Reopens the socket if it has dropped while keeping the same target —
-    /// called from the location callback on each background wake so a
-    /// connection that died during suspension is rebuilt without waiting for a
-    /// user action. A no-op while already connected/connecting or before any
-    /// address has been set.
+    // Reopens the socket if it has dropped while keeping the same target —
+    // called from the location callback on each background wake so a
+    // connection that died during suspension is rebuilt without waiting for a
+    // user action. A no-op while already connected/connecting or before any
+    // address has been set.
     func ensureConnected() {
         guard !urlString.isEmpty, state == .disconnected else { return }
         connect(to: urlString)
     }
 
-    /// Re-asserts the last injected position, but no more than once per
-    /// `keepAliveInterval` — the location callback can fire far more often
-    /// than the keep-alive cadence (every `distanceFilter` metres of real
-    /// movement), so this is where the cadence is actually enforced in the
-    /// background, replacing the suspended `Task.sleep` loop.
+    // Re-asserts the last injected position, but no more than once per
+    // `keepAliveInterval` — the location callback can fire far more often
+    // than the keep-alive cadence (every `distanceFilter` metres of real
+    // movement), so this is where the cadence is actually enforced in the
+    // background, replacing the suspended `Task.sleep` loop.
     func relanceIfDue() {
         guard keepAliveEnabled, state == .connected else { return }
         let now = Date()
@@ -245,8 +245,8 @@ final class EngineClient: NSObject, URLSessionWebSocketDelegate, EngineClientPro
         sendEnvelope(type: "REAL_LOCATION", data: ["latitude": lat, "longitude": lon])
     }
 
-    /// Throttled REAL_LOCATION for the high-frequency background location
-    /// stream — coalesces the ~1 Hz callbacks down to `realLocationMinInterval`.
+    // Throttled REAL_LOCATION for the high-frequency background location
+    // stream — coalesces the ~1 Hz callbacks down to `realLocationMinInterval`.
     func sendRealLocationIfDue(lat: Double, lon: Double) {
         guard state == .connected else { return }
         let now = Date()
@@ -263,9 +263,9 @@ final class EngineClient: NSObject, URLSessionWebSocketDelegate, EngineClientPro
         sendEnvelope(type: "PLAY_ROUTE", data: ["endLat": endLat, "endLon": endLon, "speed": speed, "profile": profile])
     }
 
-    /// Plays back a GPX track's raw text content — the engine parses the
-    /// `<trkpt>` tags itself (engine/internal/engine/simulation.go), so the
-    /// app just forwards the file content it read, same as tauri-app.
+    // Plays back a GPX track's raw text content — the engine parses the
+    // `<trkpt>` tags itself (engine/internal/engine/simulation.go), so the
+    // app just forwards the file content it read, same as tauri-app.
     func playCustomGpx(gpxContent: String, speed: Double) {
         sendEnvelope(type: "PLAY_CUSTOM_GPX", data: ["gpxContent": gpxContent, "speed": speed])
     }
@@ -309,10 +309,10 @@ final class EngineClient: NSObject, URLSessionWebSocketDelegate, EngineClientPro
         sendEnvelope(type: "SWITCH_DRIVER", data: data)
     }
 
-    /// Starts, updates, or stops a patrol zone — same PATROL_UPDATE envelope
-    /// as tauri-app's `updatePatrolZone` (engine/internal/api/messages.go's
-    /// PatrolUpdatePayload). Sending `active: false` stops it; the engine
-    /// requires `center`+`radius` for "circle" or `bounds` for "rectangle".
+    // Starts, updates, or stops a patrol zone — same PATROL_UPDATE envelope
+    // as tauri-app's `updatePatrolZone` (engine/internal/api/messages.go's
+    // PatrolUpdatePayload). Sending `active: false` stops it; the engine
+    // requires `center`+`radius` for "circle" or `bounds` for "rectangle".
     func updatePatrolZone(
         type: String,
         center: CLLocationCoordinate2D?,
@@ -336,10 +336,10 @@ final class EngineClient: NSObject, URLSessionWebSocketDelegate, EngineClientPro
         sendEnvelope(type: "PATROL_UPDATE", data: ["zone": zone])
     }
 
-    /// Pushes a partial settings update — same SAVE_SETTINGS envelope and
-    /// merge-by-key semantics as tauri-app's `saveSettings` (only the
-    /// provided keys are applied; see engine/internal/engine/engine.go's
-    /// SaveSettings).
+    // Pushes a partial settings update — same SAVE_SETTINGS envelope and
+    // merge-by-key semantics as tauri-app's `saveSettings` (only the
+    // provided keys are applied; see engine/internal/engine/engine.go's
+    // SaveSettings).
     func saveSettings(_ settings: [String: Any]) {
         sendEnvelope(type: "SAVE_SETTINGS", data: settings)
     }
@@ -352,11 +352,11 @@ final class EngineClient: NSObject, URLSessionWebSocketDelegate, EngineClientPro
         sendEnvelope(type: "REMOVE_FAVORITE", data: ["lat": lat, "lon": lon])
     }
 
-    /// Plays a multi-stop itinerary. Mirrors tauri-app's sequence builder:
-    /// each leg's `start` is the previous leg's `end` (or the first stop's own
-    /// coordinate when there's nothing before it — the engine just needs a
-    /// valid LatLon, the real starting point is wherever the device already
-    /// is when the leg begins).
+    // Plays a multi-stop itinerary. Mirrors tauri-app's sequence builder:
+    // each leg's `start` is the previous leg's `end` (or the first stop's own
+    // coordinate when there's nothing before it — the engine just needs a
+    // valid LatLon, the real starting point is wherever the device already
+    // is when the leg begins).
     func playSequence(legs: [[String: Any]], looping: Bool) {
         sendEnvelope(type: "PLAY_SEQUENCE", data: ["legs": legs, "looping": looping])
     }

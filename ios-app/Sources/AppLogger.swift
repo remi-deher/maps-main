@@ -9,13 +9,13 @@ struct AppLogEntry: Identifiable, Equatable {
     let message: String
 }
 
-/// In-app, client-side log buffer — distinct from `LogEntryPayload` (the
-/// engine's own logs, fetched over the WebSocket via GET_LOGS/LOGS). Mirrors
-/// legacy's client-side console logging (routing/notifications/background
-/// services all logged locally), so diagnosing a connection/discovery/OSRM
-/// issue from the phone doesn't require a Mac + Console.app. Also forwards
-/// to os.Logger so entries still show up in Console.app/sysdiagnose when one
-/// is available.
+// In-app, client-side log buffer — distinct from `LogEntryPayload` (the
+// engine's own logs, fetched over the WebSocket via GET_LOGS/LOGS). Mirrors
+// legacy's client-side console logging (routing/notifications/background
+// services all logged locally), so diagnosing a connection/discovery/OSRM
+// issue from the phone doesn't require a Mac + Console.app. Also forwards
+// to os.Logger so entries still show up in Console.app/sysdiagnose when one
+// is available.
 @Observable
 final class AppLogger {
     static let shared = AppLogger()

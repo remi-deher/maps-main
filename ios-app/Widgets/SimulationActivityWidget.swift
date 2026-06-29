@@ -2,10 +2,10 @@ import ActivityKit
 import WidgetKit
 import SwiftUI
 
-/// Lock Screen + Dynamic Island presentation for the running simulation.
-/// Display-only (no buttons) to keep this widget-process view simple —
-/// pausing/stopping stays in the app, reachable via the Dynamic Island tap
-/// target which deep-links back into GpsMockCompanion.
+// Lock Screen + Dynamic Island presentation for the running simulation.
+// Display-only (no buttons) to keep this widget-process view simple —
+// pausing/stopping stays in the app, reachable via the Dynamic Island tap
+// target which deep-links back into GpsMockCompanion.
 struct SimulationActivityWidget: Widget {
     var body: some WidgetConfiguration {
         ActivityConfiguration(for: SimulationActivityAttributes.self) { context in

@@ -27,18 +27,18 @@ extension SettingsSheet {
         }
     }
 
-    /// A human label for this device in the desktop's paired-devices list.
+    // A human label for this device in the desktop's paired-devices list.
     var pairingLabel: String { UIDevice.current.name }
 
-    /// Handles a scanned QR payload. Two shapes are accepted (EnginePairing.parse):
-    ///   - The desktop's "Accès distant" QR — "http://host:port/?pair=<code>" —
-    ///     which carries the rotating code, so a single scan both targets the
-    ///     engine *and* pairs (redeeming the code for a durable token).
-    ///   - The legacy "host:port" QR — no code; we just point at the engine and
-    ///     connect (the user pairs separately via the code field if the engine
-    ///     now requires it).
-    /// Mistrusts the payload like a typed address: anything unparseable fails
-    /// the shape check rather than being used unvalidated.
+    // Handles a scanned QR payload. Two shapes are accepted (EnginePairing.parse):
+    //   - The desktop's "Accès distant" QR — "http://host:port/?pair=<code>" —
+    //     which carries the rotating code, so a single scan both targets the
+    //     engine *and* pairs (redeeming the code for a durable token).
+    //   - The legacy "host:port" QR — no code; we just point at the engine and
+    //     connect (the user pairs separately via the code field if the engine
+    //     now requires it).
+    // Mistrusts the payload like a typed address: anything unparseable fails
+    // the shape check rather than being used unvalidated.
     func applyScannedAddress(_ value: String) {
         guard let link = EnginePairing.parse(value) else {
             portError = "QR Code invalide — ce n'est pas une adresse de moteur GPS-Mock."
@@ -54,9 +54,9 @@ extension SettingsSheet {
         }
     }
 
-    /// Pairs using the 6-digit code typed manually against the current
-    /// `engineAddress`. Used when the camera isn't available or the user reads
-    /// the code off the desktop screen.
+    // Pairs using the 6-digit code typed manually against the current
+    // `engineAddress`. Used when the camera isn't available or the user reads
+    // the code off the desktop screen.
     func pairManually() {
         guard let link = EnginePairing.parse(engineAddress) else {
             pairingStatus = "Renseignez d'abord une adresse hôte valide."
@@ -70,9 +70,9 @@ extension SettingsSheet {
         redeem(code: code, host: link.host, port: link.port, address: link.address)
     }
 
-    /// Shared redemption path: POST the code, persist the returned token keyed
-    /// by engine address, then connect. On failure surface the reason and leave
-    /// any previously stored token untouched.
+    // Shared redemption path: POST the code, persist the returned token keyed
+    // by engine address, then connect. On failure surface the reason and leave
+    // any previously stored token untouched.
     private func redeem(code: String, host: String, port: Int, address: String) {
         pairingInProgress = true
         pairingStatus = "Appairage en cours…"
@@ -97,12 +97,12 @@ extension SettingsSheet {
         }
     }
 
-    /// Replaces the port suffix of `engineAddress` (host:port) and
-    /// reconnects — the closest iOS equivalent to tauri-app's dedicated
-    /// engine-port field: tauri restarts a locally-spawned sidecar process
-    /// on a new port, but iOS only ever talks to a *remote* engine, so
-    /// there's no process to restart — changing the port just means
-    /// reconnecting to the same host on a different one.
+    // Replaces the port suffix of `engineAddress` (host:port) and
+    // reconnects — the closest iOS equivalent to tauri-app's dedicated
+    // engine-port field: tauri restarts a locally-spawned sidecar process
+    // on a new port, but iOS only ever talks to a *remote* engine, so
+    // there's no process to restart — changing the port just means
+    // reconnecting to the same host on a different one.
     func applyPort() {
         guard let port = Int(portInput), (1...65535).contains(port) else {
             portError = "Port invalide (1-65535)."

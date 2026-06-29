@@ -1,11 +1,11 @@
 import SwiftUI
 
-/// Live view of two log sources: the engine's in-memory buffer (LOG/LOGS
-/// events over the WebSocket) and the app's own client-side buffer
-/// (`AppLogger` — connection, discovery, OSRM, notifications). Gives
-/// admin/debug visibility from the phone alone, no terminal/SSH access to
-/// the machine running the engine, or a Mac + Console.app for the client
-/// side, required.
+// Live view of two log sources: the engine's in-memory buffer (LOG/LOGS
+// events over the WebSocket) and the app's own client-side buffer
+// (`AppLogger` — connection, discovery, OSRM, notifications). Gives
+// admin/debug visibility from the phone alone, no terminal/SSH access to
+// the machine running the engine, or a Mac + Console.app for the client
+// side, required.
 struct LogsView: View {
     var engine: EngineClient
     private var appLogger = AppLogger.shared

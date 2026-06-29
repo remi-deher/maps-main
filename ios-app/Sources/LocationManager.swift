@@ -1,28 +1,28 @@
 import CoreLocation
 import Observation
 
-/// Wraps CLLocationManager and republishes the device's real position so
-/// EngineClient can forward it to the moteur as REAL_LOCATION — the data the
-/// anti-drift shield needs to confirm the spoof actually "took" on-device.
+// Wraps CLLocationManager and republishes the device's real position so
+// EngineClient can forward it to the moteur as REAL_LOCATION — the data the
+// anti-drift shield needs to confirm the spoof actually "took" on-device.
 @Observable
 final class LocationManager: NSObject, CLLocationManagerDelegate {
     var authorizationStatus: CLAuthorizationStatus = .notDetermined
     var lastLocation: CLLocation?
 
-    /// Called on every CoreLocation delivery — including the brief execution
-    /// windows iOS grants a backgrounded app holding Always auth + the
-    /// `location` background mode. This is the ONLY code path that runs while
-    /// suspended, so the keep-alive (REAL_LOCATION + RELANCE) must be driven
-    /// from here, not from a `Task.sleep` loop (which iOS freezes in the
-    /// background). Set by ContentView on connect, cleared on disconnect.
+    // Called on every CoreLocation delivery — including the brief execution
+    // windows iOS grants a backgrounded app holding Always auth + the
+    // `location` background mode. This is the ONLY code path that runs while
+    // suspended, so the keep-alive (REAL_LOCATION + RELANCE) must be driven
+    // from here, not from a `Task.sleep` loop (which iOS freezes in the
+    // background). Set by ContentView on connect, cleared on disconnect.
     var onLocationUpdate: ((CLLocation) -> Void)?
 
     private let manager = CLLocationManager()
 
-    /// Remembers the caller's intent so background updates can be (re)applied
-    /// the moment Always authorization is actually granted — the grant is
-    /// async, so `enableBackgroundUpdates(true)` is almost always called while
-    /// still only WhenInUse and would otherwise be silently dropped.
+    // Remembers the caller's intent so background updates can be (re)applied
+    // the moment Always authorization is actually granted — the grant is
+    // async, so `enableBackgroundUpdates(true)` is almost always called while
+    // still only WhenInUse and would otherwise be silently dropped.
     private var wantsBackgroundUpdates = false
 
     override init() {
@@ -34,14 +34,14 @@ final class LocationManager: NSObject, CLLocationManagerDelegate {
         authorizationStatus = manager.authorizationStatus
     }
 
-    /// Maps the user's accuracy/battery preference onto CoreLocation.
-    /// "high" uses `kCLDistanceFilterNone` so callbacks keep arriving even when
-    /// the device is perfectly still — the only way the standby keep-alive
-    /// stays alive while stationary (a distance filter would let iOS suspend
-    /// the app). "balanced"/"low" save battery but then rely on movement (or
-    /// the BGAppRefreshTask safety net) to wake the app. REAL_LOCATION /
-    /// RELANCE are throttled downstream, so even "high" doesn't flood the
-    /// socket.
+    // Maps the user's accuracy/battery preference onto CoreLocation.
+    // "high" uses `kCLDistanceFilterNone` so callbacks keep arriving even when
+    // the device is perfectly still — the only way the standby keep-alive
+    // stays alive while stationary (a distance filter would let iOS suspend
+    // the app). "balanced"/"low" save battery but then rely on movement (or
+    // the BGAppRefreshTask safety net) to wake the app. REAL_LOCATION /
+    // RELANCE are throttled downstream, so even "high" doesn't flood the
+    // socket.
     func setAccuracyMode(_ mode: String) {
         switch mode {
         case "high":
@@ -60,27 +60,27 @@ final class LocationManager: NSObject, CLLocationManagerDelegate {
         manager.requestWhenInUseAuthorization()
     }
 
-    /// Upgrades to "Always" so the keep-alive loop (relance périodique,
-    /// §EveilMode) can keep re-asserting the spoofed position while the app
-    /// is backgrounded — iOS only wakes a backgrounded process for location
-    /// work when it holds Always authorization + the `location` background
-    /// mode (project.yml) AND `allowsBackgroundLocationUpdates` is set.
+    // Upgrades to "Always" so the keep-alive loop (relance périodique,
+    // §EveilMode) can keep re-asserting the spoofed position while the app
+    // is backgrounded — iOS only wakes a backgrounded process for location
+    // work when it holds Always authorization + the `location` background
+    // mode (project.yml) AND `allowsBackgroundLocationUpdates` is set.
     func requestAlwaysPermission() {
         manager.requestAlwaysAuthorization()
     }
 
-    /// Records the desired background-update state and applies it as soon as
-    /// the authorization allows. Safe to call before Always is granted: the
-    /// intent is stored and re-applied from `didChangeAuthorization` once the
-    /// grant lands (see `applyBackgroundUpdates`).
+    // Records the desired background-update state and applies it as soon as
+    // the authorization allows. Safe to call before Always is granted: the
+    // intent is stored and re-applied from `didChangeAuthorization` once the
+    // grant lands (see `applyBackgroundUpdates`).
     func enableBackgroundUpdates(_ enabled: Bool) {
         wantsBackgroundUpdates = enabled
         applyBackgroundUpdates()
     }
 
-    /// Pushes `wantsBackgroundUpdates` onto the manager — but only once Always
-    /// authorization is in hand, since `allowsBackgroundLocationUpdates = true`
-    /// traps without it + the `location` background mode (project.yml).
+    // Pushes `wantsBackgroundUpdates` onto the manager — but only once Always
+    // authorization is in hand, since `allowsBackgroundLocationUpdates = true`
+    // traps without it + the `location` background mode (project.yml).
     private func applyBackgroundUpdates() {
         guard authorizationStatus == .authorizedAlways else { return }
         manager.allowsBackgroundLocationUpdates = wantsBackgroundUpdates
@@ -107,13 +107,13 @@ final class LocationManager: NSObject, CLLocationManagerDelegate {
         }
     }
 
-    /// CoreLocation's first delivery after a wake (unlock, foreground, tracking
-    /// restart) is often a cached fix it already had on hand — sometimes
-    /// minutes old and far from the device's actual current position — handed
-    /// out immediately while a fresh GPS fix is still being acquired. Forwarding
-    /// that straight to REAL_LOCATION can trip the engine's anti-drift shield
-    /// with a huge, entirely spurious distance. Apple's documented mitigation is
-    /// to check `timestamp`/`horizontalAccuracy` before trusting a fix.
+    // CoreLocation's first delivery after a wake (unlock, foreground, tracking
+    // restart) is often a cached fix it already had on hand — sometimes
+    // minutes old and far from the device's actual current position — handed
+    // out immediately while a fresh GPS fix is still being acquired. Forwarding
+    // that straight to REAL_LOCATION can trip the engine's anti-drift shield
+    // with a huge, entirely spurious distance. Apple's documented mitigation is
+    // to check `timestamp`/`horizontalAccuracy` before trusting a fix.
     private static let maxLocationAge: TimeInterval = 10
     private static let maxHorizontalAccuracy: CLLocationDistance = 200
 

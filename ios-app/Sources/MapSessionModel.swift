@@ -2,15 +2,15 @@ import CoreLocation
 import MapKit
 import Observation
 
-/// Owns the engine connection, the device's location feed, and every
-/// `Task<Void, Never>` whose lifecycle has to survive across ContentView body
-/// re-evaluations: the anti-drift reporter, the keep-alive loop, and the
-/// per-leg ETA computation. These used to live directly on ContentView as
-/// `@State` — fine for value-type state, but a `View` struct can be recreated
-/// at any time, so tasks and connection objects belong on a stable
-/// reference-type owner instead. ContentView holds exactly one of these via
-/// `@State`, which is enough: `@State` persists a reference type for the
-/// view's lifetime same as it would persist a value.
+// Owns the engine connection, the device's location feed, and every
+// `Task<Void, Never>` whose lifecycle has to survive across ContentView body
+// re-evaluations: the anti-drift reporter, the keep-alive loop, and the
+// per-leg ETA computation. These used to live directly on ContentView as
+// `@State` — fine for value-type state, but a `View` struct can be recreated
+// at any time, so tasks and connection objects belong on a stable
+// reference-type owner instead. ContentView holds exactly one of these via
+// `@State`, which is enough: `@State` persists a reference type for the
+// view's lifetime same as it would persist a value.
 @MainActor
 @Observable
 final class MapSessionModel {
@@ -50,10 +50,10 @@ final class MapSessionModel {
         }
     }
 
-    /// Drops the current connection and reopens it against the (possibly
-    /// just-edited) `engineAddress` — used when the user changes the port in
-    /// settings, mirroring tauri-app's "Appliquer" button for its engine
-    /// port field (Sidebar.tsx's handleApplyEnginePort).
+    // Drops the current connection and reopens it against the (possibly
+    // just-edited) `engineAddress` — used when the user changes the port in
+    // settings, mirroring tauri-app's "Appliquer" button for its engine
+    // port field (Sidebar.tsx's handleApplyEnginePort).
     func reconnect(engineAddress: String) {
         if engine.state == .connected || engine.state == .connecting {
             engine.disconnect()
@@ -63,20 +63,20 @@ final class MapSessionModel {
         bindBackgroundKeepAlive()
     }
 
-    /// Builds the engine WebSocket URL, attaching the durable device token
-    /// stored for this address (if the engine was paired) so a LAN connection
-    /// is authorized — the engine rejects tokenless remote clients.
+    // Builds the engine WebSocket URL, attaching the durable device token
+    // stored for this address (if the engine was paired) so a LAN connection
+    // is authorized — the engine rejects tokenless remote clients.
     static func webSocketURL(for address: String) -> String {
         EnginePairing.webSocketURL(address: address, token: EngineTokenStore.token(forAddress: address))
     }
 
-    /// Routes every CoreLocation delivery through the engine. This is the path
-    /// that survives suspension (the `Task.sleep` loops in startReporting/
-    /// startKeepAlive don't): on each callback it rebuilds a dropped socket,
-    /// reports the real position for the anti-drift shield, and re-asserts the
-    /// spoof at the keep-alive cadence. Engine is captured weakly — it owns no
-    /// reference back, so there's no cycle, and a torn-down engine just stops
-    /// the callback.
+    // Routes every CoreLocation delivery through the engine. This is the path
+    // that survives suspension (the `Task.sleep` loops in startReporting/
+    // startKeepAlive don't): on each callback it rebuilds a dropped socket,
+    // reports the real position for the anti-drift shield, and re-asserts the
+    // spoof at the keep-alive cadence. Engine is captured weakly — it owns no
+    // reference back, so there's no cycle, and a torn-down engine just stops
+    // the callback.
     func bindBackgroundKeepAlive() {
         location.onLocationUpdate = { [weak engine] loc in
             guard let engine else { return }
@@ -86,17 +86,17 @@ final class MapSessionModel {
         }
     }
 
-    /// Periodically re-sends RELANCE so the engine re-asserts the last
-    /// injected position — the "maintien" the legacy background task
-    /// (services/background.ts) achieved by posting to /api/relance on every
-    /// background location tick. Runs independently of REAL_LOCATION
-    /// reporting so it keeps the spoof alive even if the device's own GPS
-    /// briefly drifts or the anti-drift shield hasn't re-injected yet.
-    ///
-    /// `interval` is only the loop's polling cadence — the actual throttle is
-    /// enforced engine-side by `relanceIfDue()` reading `engine.keepAliveInterval`
-    /// (kept in sync separately), so a stale snapshot here doesn't desync the
-    /// real RELANCE cadence.
+    // Periodically re-sends RELANCE so the engine re-asserts the last
+    // injected position — the "maintien" the legacy background task
+    // (services/background.ts) achieved by posting to /api/relance on every
+    // background location tick. Runs independently of REAL_LOCATION
+    // reporting so it keeps the spoof alive even if the device's own GPS
+    // briefly drifts or the anti-drift shield hasn't re-injected yet.
+    //
+    // `interval` is only the loop's polling cadence — the actual throttle is
+    // enforced engine-side by `relanceIfDue()` reading `engine.keepAliveInterval`
+    // (kept in sync separately), so a stale snapshot here doesn't desync the
+    // real RELANCE cadence.
     func startKeepAlive(interval: Double) {
         keepAliveTask?.cancel()
         keepAliveTask = Task { [engine] in
@@ -115,11 +115,11 @@ final class MapSessionModel {
         keepAliveTask = nil
     }
 
-    /// Task-based instead of `Timer.scheduledTimer`: a Timer keeps firing
-    /// (and keeps a strong RunLoop reference alive) regardless of the view's
-    /// lifecycle, whereas this Task is owned by `reportTask` and is
-    /// cancelled explicitly in `stopReporting()` — see §3.22 of
-    /// docs/UI_UX_BASELINE.md.
+    // Task-based instead of `Timer.scheduledTimer`: a Timer keeps firing
+    // (and keeps a strong RunLoop reference alive) regardless of the view's
+    // lifecycle, whereas this Task is owned by `reportTask` and is
+    // cancelled explicitly in `stopReporting()` — see §3.22 of
+    // docs/UI_UX_BASELINE.md.
     func startReporting() {
         reportTask?.cancel()
         reportTask = Task { [engine, location] in
@@ -138,9 +138,9 @@ final class MapSessionModel {
 
     // MARK: - State-transition side effects (driven by ContentView onChange)
 
-    /// Tracks connection transitions and fires a single disconnect
-    /// notification when a previously-connected session drops. Idempotent —
-    /// safe to call on every `engine.state` change.
+    // Tracks connection transitions and fires a single disconnect
+    // notification when a previously-connected session drops. Idempotent —
+    // safe to call on every `engine.state` change.
     func handleEngineStateChange(notificationsEnabled: Bool) {
         if engine.state == .connected {
             wasConnected = true
@@ -150,9 +150,9 @@ final class MapSessionModel {
         }
     }
 
-    /// Fires an arrival notification when the simulation transitions from a
-    /// moving/running state to "ready" (destination reached). Tracks the
-    /// previous state internally so the view doesn't have to.
+    // Fires an arrival notification when the simulation transitions from a
+    // moving/running state to "ready" (destination reached). Tracks the
+    // previous state internally so the view doesn't have to.
     func handleSimulationStateChange(notificationsEnabled: Bool) {
         let previous = lastSimulationState
         let newState = engine.status?.state
@@ -163,9 +163,9 @@ final class MapSessionModel {
         }
     }
 
-    /// Mirrors the keep-alive toggle into the engine and starts/stops the
-    /// background loop, requesting the Always authorization the background
-    /// location callback needs when enabling.
+    // Mirrors the keep-alive toggle into the engine and starts/stops the
+    // background loop, requesting the Always authorization the background
+    // location callback needs when enabling.
     func applyKeepAliveEnabled(_ enabled: Bool, interval: Double) {
         engine.keepAliveEnabled = enabled
         location.enableBackgroundUpdates(enabled)
@@ -177,11 +177,11 @@ final class MapSessionModel {
         }
     }
 
-    /// Recomputes per-leg distance/ETA via OSRM, keyed by destination stop id
-    /// — mirrors the duration Plans shows under each leg of a trip, but uses
-    /// the same router the engine itself uses to actually drive the
-    /// simulation (engine/internal/engine/simulation.go), instead of
-    /// MapKit/Apple Maps routing which can disagree on which road it picks.
-    /// Falls back to MKDirections per-leg if OSRM is unreachable (offline
-    /// demo server, no network) so estimates degrade rather than vanish.
+    // Recomputes per-leg distance/ETA via OSRM, keyed by destination stop id
+    // — mirrors the duration Plans shows under each leg of a trip, but uses
+    // the same router the engine itself uses to actually drive the
+    // simulation (engine/internal/engine/simulation.go), instead of
+    // MapKit/Apple Maps routing which can disagree on which road it picks.
+    // Falls back to MKDirections per-leg if OSRM is unreachable (offline
+    // demo server, no network) so estimates degrade rather than vanish.
 }

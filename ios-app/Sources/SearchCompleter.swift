@@ -1,12 +1,12 @@
 import MapKit
 import Observation
 
-/// Wraps `MKLocalSearchCompleter` for instant address suggestions as the
-/// user types — Plans shows completions within a keystroke or two, whereas
-/// firing a full `MKLocalSearch` after a fixed debounce (the previous
-/// approach) only resolves once typing pauses. A completion is resolved into
-/// an `MKMapItem` (one `MKLocalSearch`) only once the user picks one. See
-/// §3.8 of docs/UI_UX_BASELINE.md.
+// Wraps `MKLocalSearchCompleter` for instant address suggestions as the
+// user types — Plans shows completions within a keystroke or two, whereas
+// firing a full `MKLocalSearch` after a fixed debounce (the previous
+// approach) only resolves once typing pauses. A completion is resolved into
+// an `MKMapItem` (one `MKLocalSearch`) only once the user picks one. See
+// §3.8 of docs/UI_UX_BASELINE.md.
 @MainActor
 @Observable
 final class SearchCompleter: NSObject, MKLocalSearchCompleterDelegate {

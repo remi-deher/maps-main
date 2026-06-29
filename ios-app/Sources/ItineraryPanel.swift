@@ -2,9 +2,9 @@ import SwiftUI
 import CoreLocation
 import UniformTypeIdentifiers
 
-/// Drive-time/distance for the leg ending at a given stop, computed via
-/// MKDirections (keyed by the destination RouteStop's id) — mirrors the ETA
-/// Plans shows under each leg of a multi-stop trip.
+// Drive-time/distance for the leg ending at a given stop, computed via
+// MKDirections (keyed by the destination RouteStop's id) — mirrors the ETA
+// Plans shows under each leg of a multi-stop trip.
 struct LegEstimate {
     let distanceMeters: CLLocationDistance
     let travelTime: TimeInterval
@@ -24,7 +24,7 @@ private let durationFormatter: DateComponentsFormatter = {
     return formatter
 }()
 
-/// Custom Apple Plans style header for itinerary route editor
+// Custom Apple Plans style header for itinerary route editor
 struct ItineraryHeader: View {
     @Binding var stops: [RouteStop]
     @Binding var profile: String
@@ -181,7 +181,7 @@ struct ItineraryHeader: View {
     }
 }
 
-/// Custom Apple Plans style options sheet for itinerary simulator details
+// Custom Apple Plans style options sheet for itinerary simulator details
 struct ItineraryOptions: View {
     let stops: [RouteStop]
     @Binding var speed: Double
@@ -301,7 +301,7 @@ struct ItineraryOptions: View {
     }
 }
 
-/// Drop delegate that reorders `stops` as a dragged row crosses another row's bounds.
+// Drop delegate that reorders `stops` as a dragged row crosses another row's bounds.
 private struct StopDropDelegate: DropDelegate {
     let target: RouteStop
     @Binding var stops: [RouteStop]

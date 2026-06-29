@@ -1,9 +1,9 @@
 import UserNotifications
 
-/// Local notifications mirroring legacy's services/notifications.ts
-/// (sendArrivalNotification / sendDisconnectNotification) — toggleable
-/// independently of the Live Activity, which already covers the
-/// "what's happening now" surface without needing a banner.
+// Local notifications mirroring legacy's services/notifications.ts
+// (sendArrivalNotification / sendDisconnectNotification) — toggleable
+// independently of the Live Activity, which already covers the
+// "what's happening now" surface without needing a banner.
 final class NotificationManager {
     static let shared = NotificationManager()
 

@@ -7,12 +7,12 @@ struct OSRMRoute {
     let durationSeconds: Double
 }
 
-/// Thin client for the public OSRM demo server, porting legacy's
-/// utils/routing.ts (fetchRoute / snapToRoad). Used for itinerary ETAs and
-/// previews so they agree with the routing the engine itself performs
-/// server-side (engine/internal/engine/simulation.go) instead of MapKit's
-/// own Apple Maps routing, which can pick a different road and disagree with
-/// what the simulation will actually drive.
+// Thin client for the public OSRM demo server, porting legacy's
+// utils/routing.ts (fetchRoute / snapToRoad). Used for itinerary ETAs and
+// previews so they agree with the routing the engine itself performs
+// server-side (engine/internal/engine/simulation.go) instead of MapKit's
+// own Apple Maps routing, which can pick a different road and disagree with
+// what the simulation will actually drive.
 enum OSRMClient {
     private static let baseURL = URL(string: "https://router.project-osrm.org")!
 
@@ -20,10 +20,10 @@ enum OSRMClient {
         transportProfile == "walking" ? "walking" : "driving"
     }
 
-    /// Rejects NaN/infinite or out-of-bounds coordinates before they ever
-    /// reach a URL — otherwise OSRM rejects the request and the caller's
-    /// catch block silently falls back to MapKit, masking a corrupted
-    /// coordinate upstream (e.g. a bad reverse-geocode or parse).
+    // Rejects NaN/infinite or out-of-bounds coordinates before they ever
+    // reach a URL — otherwise OSRM rejects the request and the caller's
+    // catch block silently falls back to MapKit, masking a corrupted
+    // coordinate upstream (e.g. a bad reverse-geocode or parse).
     private static func isValid(_ coordinate: CLLocationCoordinate2D) -> Bool {
         coordinate.latitude.isFinite && coordinate.longitude.isFinite
             && abs(coordinate.latitude) <= 90 && abs(coordinate.longitude) <= 180
@@ -68,9 +68,9 @@ enum OSRMClient {
         }
     }
 
-    /// Snaps a long-press/search coordinate onto the nearest road segment —
-    /// mirrors legacy's snapToRoad, used so a teleport/route target lands
-    /// where the engine's OSRM-based simulation can actually drive to.
+    // Snaps a long-press/search coordinate onto the nearest road segment —
+    // mirrors legacy's snapToRoad, used so a teleport/route target lands
+    // where the engine's OSRM-based simulation can actually drive to.
     static func snapToRoad(_ coordinate: CLLocationCoordinate2D, profile transportProfile: String) async -> CLLocationCoordinate2D? {
         guard isValid(coordinate) else {
             AppLogger.shared.warn("OSRM snapToRoad: coordonnée invalide (\(coordinate))")

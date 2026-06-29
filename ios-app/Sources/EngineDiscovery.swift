@@ -2,11 +2,11 @@ import Foundation
 import Network
 import Observation
 
-/// Browses for the engine advertising itself as `_gpsmock._tcp` on the LAN
-/// (see engine/cmd/headless/run.go, advertiseMdns) so the user never has to
-/// type an IP:port by hand. Falls back gracefully — manual entry in
-/// ContentView still works if discovery finds nothing or local-network
-/// permission is denied.
+// Browses for the engine advertising itself as `_gpsmock._tcp` on the LAN
+// (see engine/cmd/headless/run.go, advertiseMdns) so the user never has to
+// type an IP:port by hand. Falls back gracefully — manual entry in
+// ContentView still works if discovery finds nothing or local-network
+// permission is denied.
 @Observable
 final class EngineDiscovery {
     enum State: Equatable {

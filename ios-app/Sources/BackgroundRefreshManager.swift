@@ -1,27 +1,27 @@
 import BackgroundTasks
 import Foundation
 
-/// Opportunistic safety net for the standby keep-alive — NOT the primary
-/// mechanism. Continuous execution in standby comes from the `location`
-/// background mode (LocationManager + ContentView's location callback); this
-/// only covers the gaps where iOS has nonetheless suspended the app (Always
-/// authorization refused, or the GPS stream stalled after a long period of
-/// perfect stillness). When the system grants one of its ~15 min+ refresh
-/// windows, this reconnects to the engine and re-asserts the last injected
-/// position once, then reschedules itself.
-///
-/// Uses a transient EngineClient rather than the view's live instance: a
-/// BGAppRefreshTask wakes the app for ~30 s and suspends it again, so there's
-/// nothing to keep alive afterwards — a one-shot connect + RELANCE is enough,
-/// and the engine already accepts several concurrent clients (desktop + iOS +
-/// headless), so an extra short-lived one is harmless.
+// Opportunistic safety net for the standby keep-alive — NOT the primary
+// mechanism. Continuous execution in standby comes from the `location`
+// background mode (LocationManager + ContentView's location callback); this
+// only covers the gaps where iOS has nonetheless suspended the app (Always
+// authorization refused, or the GPS stream stalled after a long period of
+// perfect stillness). When the system grants one of its ~15 min+ refresh
+// windows, this reconnects to the engine and re-asserts the last injected
+// position once, then reschedules itself.
+//
+// Uses a transient EngineClient rather than the view's live instance: a
+// BGAppRefreshTask wakes the app for ~30 s and suspends it again, so there's
+// nothing to keep alive afterwards — a one-shot connect + RELANCE is enough,
+// and the engine already accepts several concurrent clients (desktop + iOS +
+// headless), so an extra short-lived one is harmless.
 enum BackgroundRefreshManager {
-    /// Must also appear in project.yml's BGTaskSchedulerPermittedIdentifiers,
-    /// or submit(_:) throws .notPermitted.
+    // Must also appear in project.yml's BGTaskSchedulerPermittedIdentifiers,
+    // or submit(_:) throws .notPermitted.
     static let taskIdentifier = "com.remi2.gpsmock.companion.keepalive"
 
-    /// Registered from the App initializer (before launch completes, as
-    /// BGTaskScheduler requires).
+    // Registered from the App initializer (before launch completes, as
+    // BGTaskScheduler requires).
     static func register() {
         BGTaskScheduler.shared.register(forTaskWithIdentifier: taskIdentifier, using: nil) { task in
             guard let refreshTask = task as? BGAppRefreshTask else {
@@ -32,9 +32,9 @@ enum BackgroundRefreshManager {
         }
     }
 
-    /// Schedules the next refresh. `earliestBeginDate` is only a hint — the
-    /// system picks the actual time based on usage and power. Called on entering
-    /// the background and again from inside the handler (re-schedule pattern).
+    // Schedules the next refresh. `earliestBeginDate` is only a hint — the
+    // system picks the actual time based on usage and power. Called on entering
+    // the background and again from inside the handler (re-schedule pattern).
     static func schedule() {
         guard keepAliveEnabled, !engineAddress.isEmpty else { return }
         let request = BGAppRefreshTaskRequest(identifier: taskIdentifier)

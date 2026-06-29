@@ -4,16 +4,16 @@ import CoreLocation
 import MapKit
 import UIKit
 
-/// Connection settings, moved out of the main map screen behind a gear icon
-/// so the primary UI stays just the map + omnibar.
-///
-/// The settings are organized as a top-level category menu (à la Réglages.app /
-/// Plans) that pushes focused sub-screens, rather than one flat 14-section wall
-/// where every concern — one-time setup, per-session operations, set-and-forget
-/// preferences — carried the same visual weight. Pushing each category as a
-/// `NavigationLink` also resolves §3.11 of docs/UI_UX_BASELINE.md: LogsView and
-/// the QR scanner now stack inside this sheet's own NavigationStack instead of
-/// opening a second simultaneous sheet on the same presenter.
+// Connection settings, moved out of the main map screen behind a gear icon
+// so the primary UI stays just the map + omnibar.
+//
+// The settings are organized as a top-level category menu (à la Réglages.app /
+// Plans) that pushes focused sub-screens, rather than one flat 14-section wall
+// where every concern — one-time setup, per-session operations, set-and-forget
+// preferences — carried the same visual weight. Pushing each category as a
+// `NavigationLink` also resolves §3.11 of docs/UI_UX_BASELINE.md: LogsView and
+// the QR scanner now stack inside this sheet's own NavigationStack instead of
+// opening a second simultaneous sheet on the same presenter.
 struct SettingsSheet: View {
     @Binding var engineAddress: String
     var engine: EngineClient

@@ -1,10 +1,10 @@
 import SwiftUI
 
-/// Sheet panel shown once a GPX file has been picked: confirms the file, lets
-/// the user set a playback speed, and launches the simulation. Promoted out of
-/// Réglages › Outils so importing a track is a peer of teleport / route /
-/// itinerary — a way to start a simulation — rather than an admin tool buried
-/// in settings.
+// Sheet panel shown once a GPX file has been picked: confirms the file, lets
+// the user set a playback speed, and launches the simulation. Promoted out of
+// Réglages › Outils so importing a track is a peer of teleport / route /
+// itinerary — a way to start a simulation — rather than an admin tool buried
+// in settings.
 struct GpxPanel: View {
     let fileName: String
     @Binding var speed: Double

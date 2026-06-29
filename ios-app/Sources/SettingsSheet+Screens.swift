@@ -9,8 +9,8 @@ import UIKit
 // file_length limit.
 
 extension SettingsSheet {
-    /// Engine address, port, QR pairing, driver/tunnel, and Bonjour discovery —
-    /// everything you set up once to point the app at a running engine.
+    // Engine address, port, QR pairing, driver/tunnel, and Bonjour discovery —
+    // everything you set up once to point the app at a running engine.
     @ViewBuilder
     var connexionScreen: some View {
         List {
@@ -115,9 +115,9 @@ extension SettingsSheet {
         }
     }
 
-    /// Simulation tuning that isn't tied to a specific run: default speed/profile
-    /// for new routes and GPS jitter. (The patrol zone moved to a map-driven
-    /// mode in the bottom sheet — see PatrolPanel.)
+    // Simulation tuning that isn't tied to a specific run: default speed/profile
+    // for new routes and GPS jitter. (The patrol zone moved to a map-driven
+    // mode in the bottom sheet — see PatrolPanel.)
     @ViewBuilder
     var simulationScreen: some View {
         List {
@@ -152,8 +152,8 @@ extension SettingsSheet {
         .navigationBarTitleDisplayMode(.inline)
     }
 
-    /// Set-and-forget preferences that govern how the app behaves while it isn't
-    /// in the foreground: keep-alive, location accuracy, Live Activity, notifs.
+    // Set-and-forget preferences that govern how the app behaves while it isn't
+    // in the foreground: keep-alive, location accuracy, Live Activity, notifs.
     @ViewBuilder
     var backgroundScreen: some View {
         List {
@@ -201,8 +201,8 @@ extension SettingsSheet {
         .navigationBarTitleDisplayMode(.inline)
     }
 
-    /// Occasional, one-off operations: engine admin actions and the engine log
-    /// viewer. (GPX import moved to the bottom sheet — see GpxPanel.)
+    // Occasional, one-off operations: engine admin actions and the engine log
+    // viewer. (GPX import moved to the bottom sheet — see GpxPanel.)
     @ViewBuilder
     var toolsScreen: some View {
         List {
@@ -236,8 +236,8 @@ extension SettingsSheet {
         .navigationBarTitleDisplayMode(.inline)
     }
 
-    /// App version, the engine it talks to, and the always-on location grant
-    /// the background keep-alive depends on.
+    // App version, the engine it talks to, and the always-on location grant
+    // the background keep-alive depends on.
     @ViewBuilder
     var aboutScreen: some View {
         List {

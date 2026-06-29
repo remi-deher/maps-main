@@ -1,11 +1,11 @@
 import SwiftUI
 import VisionKit
 
-/// Scans the QR code the desktop app displays for pairing. The payload is
-/// handed verbatim to the caller (`applyScannedAddress` → EnginePairing.parse),
-/// which accepts both the legacy "host:port" code and the newer "Accès distant"
-/// URL "http://host:port/?pair=<code>" that also carries the rotating pairing
-/// code for a one-scan pairing.
+// Scans the QR code the desktop app displays for pairing. The payload is
+// handed verbatim to the caller (`applyScannedAddress` → EnginePairing.parse),
+// which accepts both the legacy "host:port" code and the newer "Accès distant"
+// URL "http://host:port/?pair=<code>" that also carries the rotating pairing
+// code for a one-scan pairing.
 struct QRScannerView: UIViewControllerRepresentable {
     var onScan: (String) -> Void
 
@@ -53,10 +53,10 @@ struct QRScannerView: UIViewControllerRepresentable {
     }
 }
 
-/// Full-screen scanner sheet with a fallback message on devices/simulators
-/// that don't support VisionKit's live text/barcode scanning (DataScanner
-/// needs a Neural Engine — unavailable on the Simulator and pre-A12
-/// devices), so the manual address field always remains the way in.
+// Full-screen scanner sheet with a fallback message on devices/simulators
+// that don't support VisionKit's live text/barcode scanning (DataScanner
+// needs a Neural Engine — unavailable on the Simulator and pre-A12
+// devices), so the manual address field always remains the way in.
 struct QRScannerSheet: View {
     var onScan: (String) -> Void
     @Environment(\.dismiss) private var dismiss

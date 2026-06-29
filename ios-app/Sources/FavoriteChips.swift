@@ -1,8 +1,8 @@
 import SwiftUI
 
-/// Horizontal row of pill-shaped favorites under the omnibar — like Plans'
-/// "Maison"/"Travail" quick-access chips. Each chip is its own glass capsule
-/// rather than rows in a card, to match that look. Long-press to delete.
+// Horizontal row of pill-shaped favorites under the omnibar — like Plans'
+// "Maison"/"Travail" quick-access chips. Each chip is its own glass capsule
+// rather than rows in a card, to match that look. Long-press to delete.
 struct FavoriteChips: View {
     let favorites: [Favorite]
     var onSelect: (Favorite) -> Void
@@ -34,8 +34,8 @@ struct FavoriteChips: View {
         }
     }
 
-    /// Mirrors Plans' "Maison"/"Travail" iconography by sniffing the
-    /// favorite's name, falling back to a plain star for everything else.
+    // Mirrors Plans' "Maison"/"Travail" iconography by sniffing the
+    // favorite's name, falling back to a plain star for everything else.
     private func icon(for favorite: Favorite) -> String {
         let name = (favorite.name ?? "").lowercased()
         let homeKeywords = ["maison", "domicile", "home"]

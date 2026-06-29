@@ -2,8 +2,8 @@ import Foundation
 import CoreLocation
 import MapKit
 
-/// Pure async actor to handle fetching estimates from OSRMClient
-/// and falling back to MKDirections.
+// Pure async actor to handle fetching estimates from OSRMClient
+// and falling back to MKDirections.
 @MainActor
 final class ItineraryEstimator {
 

@@ -6,8 +6,8 @@ import AppIntents
 // simulation intents, this acts on the live connection via EngineClient.shared;
 // if the engine isn't connected the underlying send is a no-op.
 
-/// One favorite, mirrored from `Favorite` (EngineProtocolModels.swift). The id is the
-/// same `"lat,lon"` string the engine status uses, so resolution stays stable.
+// One favorite, mirrored from `Favorite` (EngineProtocolModels.swift). The id is the
+// same `"lat,lon"` string the engine status uses, so resolution stays stable.
 struct FavoriteEntity: AppEntity, Identifiable {
     let id: String
     let lat: Double
@@ -23,9 +23,9 @@ struct FavoriteEntity: AppEntity, Identifiable {
     static var defaultQuery = FavoriteQuery()
 }
 
-/// Resolves favorites from the live engine status. There's no local store —
-/// favorites live engine-side and arrive via STATUS broadcasts — so an empty
-/// list (engine disconnected) simply yields no suggestions.
+// Resolves favorites from the live engine status. There's no local store —
+// favorites live engine-side and arrive via STATUS broadcasts — so an empty
+// list (engine disconnected) simply yields no suggestions.
 struct FavoriteQuery: EntityQuery {
     @MainActor
     func entities(for identifiers: [String]) async throws -> [FavoriteEntity] {

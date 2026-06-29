@@ -3,9 +3,9 @@ import UIKit
 import UniformTypeIdentifiers
 
 extension ContentView {
-    /// The persistent panel's content, hosted by the system sheet. Kept out of
-    /// ContentView.swift so the root view reads as the app shell instead of a
-    /// long dependency-wiring block.
+    // The persistent panel's content, hosted by the system sheet. Kept out of
+    // ContentView.swift so the root view reads as the app shell instead of a
+    // long dependency-wiring block.
     func bottomSheetContent(scrollOffset: Binding<CGFloat>) -> some View {
         BottomSheet(
             search: BottomSheetSearchContext(

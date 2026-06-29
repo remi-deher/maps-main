@@ -25,8 +25,8 @@ struct ContentView: View {
     @AppStorage("defaultProfile") var defaultProfile: String = "driving"
     @AppStorage("locationAccuracyMode") var locationAccuracyMode: String = "balanced"
 
-    /// The system POI the user tapped on the map, if any. Resolved into a
-    /// `coordinator.selectedPlace` (and cleared) by an onChange below.
+    // The system POI the user tapped on the map, if any. Resolved into a
+    // `coordinator.selectedPlace` (and cleared) by an onChange below.
 
     // Patrol-zone setup, promoted out of Reglages: `coordinator.patrolMode` shows the
     // setup panel in the sheet and draws a live dashed preview on the map;

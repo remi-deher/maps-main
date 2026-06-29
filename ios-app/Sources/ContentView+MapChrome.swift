@@ -8,9 +8,9 @@ extension ContentView {
         MapStyleChoice(rawValue: mapStyleChoiceRaw) ?? .standard
     }
 
-    /// Plans-style layers control: a glass capsule menu to switch the map look
-    /// (plan/satellite/hybride). Lives in the same GlassEffectContainer as the
-    /// recenter button so the two share one lensing pass.
+    // Plans-style layers control: a glass capsule menu to switch the map look
+    // (plan/satellite/hybride). Lives in the same GlassEffectContainer as the
+    // recenter button so the two share one lensing pass.
     var mapStyleMenu: some View {
         Menu {
             Picker("Style de carte", selection: $mapStyleChoiceRaw) {

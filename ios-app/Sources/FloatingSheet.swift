@@ -1,4 +1,4 @@
-/// The three resting states of the persistent bottom sheet.
+// The three resting states of the persistent bottom sheet.
 enum SheetDetent: CaseIterable, Equatable {
     case collapsed  // just the search capsule
     case medium     // partial height - results / itinerary / place card

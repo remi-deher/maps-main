@@ -1,22 +1,22 @@
 import Foundation
 import Security
 
-/// Remote-access pairing for the companion, mirroring the engine's auth model
-/// (engine/internal/auth + server/pair.go). A remote client — which the iPhone
-/// always is, talking to the engine over Wi-Fi — must redeem the desktop's
-/// rotating 6-digit code once to obtain a durable "<deviceID>.<secret>" token,
-/// then present that token on every later connection. The engine trusts
-/// loopback without a token, but never a LAN peer, so without this the socket
-/// is rejected.
-///
-/// The pieces here are split so the parsing/URL logic stays pure and unit-
-/// testable, while the Keychain and network calls live behind thin wrappers.
+// Remote-access pairing for the companion, mirroring the engine's auth model
+// (engine/internal/auth + server/pair.go). A remote client — which the iPhone
+// always is, talking to the engine over Wi-Fi — must redeem the desktop's
+// rotating 6-digit code once to obtain a durable "<deviceID>.<secret>" token,
+// then present that token on every later connection. The engine trusts
+// loopback without a token, but never a LAN peer, so without this the socket
+// is rejected.
+//
+// The pieces here are split so the parsing/URL logic stays pure and unit-
+// testable, while the Keychain and network calls live behind thin wrappers.
 enum EnginePairing {
-    /// A scanned QR payload (or pasted link) resolved to its parts. Two shapes
-    /// are accepted:
-    ///   - Legacy "host:port" — the old iOS-pairing QR; carries no code.
-    ///   - "http://host:port/?pair=<code>" — the desktop's "Accès distant" QR,
-    ///     which also embeds the rotating code so a scan can pair in one step.
+    // A scanned QR payload (or pasted link) resolved to its parts. Two shapes
+    // are accepted:
+    //   - Legacy "host:port" — the old iOS-pairing QR; carries no code.
+    //   - "http://host:port/?pair=<code>" — the desktop's "Accès distant" QR,
+    //     which also embeds the rotating code so a scan can pair in one step.
     struct ParsedLink: Equatable {
         let host: String
         let port: Int
@@ -25,9 +25,9 @@ enum EnginePairing {
         var address: String { "\(host):\(port)" }
     }
 
-    /// Parses a scanned/typed payload into a ParsedLink, or nil if it isn't a
-    /// recognizable engine address. Validation matches the desktop side: a
-    /// host and a port in 1...65535.
+    // Parses a scanned/typed payload into a ParsedLink, or nil if it isn't a
+    // recognizable engine address. Validation matches the desktop side: a
+    // host and a port in 1...65535.
     static func parse(_ raw: String) -> ParsedLink? {
         let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return nil }
@@ -50,18 +50,18 @@ enum EnginePairing {
         return ParsedLink(host: String(parts[0]), port: port, code: nil)
     }
 
-    /// Strips non-digits and keeps a code only if it's the expected 6 digits;
-    /// anything else collapses to nil so a malformed `?pair=` is ignored rather
-    /// than sent to the engine.
+    // Strips non-digits and keeps a code only if it's the expected 6 digits;
+    // anything else collapses to nil so a malformed `?pair=` is ignored rather
+    // than sent to the engine.
     static func normalizedCode(_ code: String?) -> String? {
         guard let code else { return nil }
         let digits = code.filter(\.isNumber)
         return digits.count == 6 ? digits : nil
     }
 
-    /// Builds the WebSocket URL for an engine address, appending the durable
-    /// token as a query param when present (browsers can't set headers on the
-    /// WS handshake, and the engine accepts ?token= for exactly this reason).
+    // Builds the WebSocket URL for an engine address, appending the durable
+    // token as a query param when present (browsers can't set headers on the
+    // WS handshake, and the engine accepts ?token= for exactly this reason).
     static func webSocketURL(address: String, token: String?) -> String {
         let base = "ws://\(address)/ws"
         guard let token, !token.isEmpty,
@@ -87,9 +87,9 @@ enum EnginePairing {
         }
     }
 
-    /// Redeems a pairing code for a durable token by POSTing it to the engine's
-    /// /api/pair endpoint. On success the caller should persist the token via
-    /// EngineTokenStore so every later connection reuses it without re-pairing.
+    // Redeems a pairing code for a durable token by POSTing it to the engine's
+    // /api/pair endpoint. On success the caller should persist the token via
+    // EngineTokenStore so every later connection reuses it without re-pairing.
     static func redeem(host: String, port: Int, code: String, label: String, session: URLSession = .shared) async throws -> String {
         guard let url = URL(string: "http://\(host):\(port)/api/pair") else {
             throw PairingError.unreachable
@@ -118,10 +118,10 @@ enum EnginePairing {
     }
 }
 
-/// Keychain-backed storage for durable device tokens, keyed by engine address
-/// ("host:port"). One token per engine: re-pairing a given engine overwrites
-/// its entry, and revoking from the desktop just makes the stored token stop
-/// working (the next connection fails and the user can re-pair).
+// Keychain-backed storage for durable device tokens, keyed by engine address
+// ("host:port"). One token per engine: re-pairing a given engine overwrites
+// its entry, and revoking from the desktop just makes the stored token stop
+// working (the next connection fails and the user can re-pair).
 enum EngineTokenStore {
     private static let service = "com.remi2.gpsmock.companion.engineToken"
 
@@ -138,14 +138,14 @@ enum EngineTokenStore {
         return token
     }
 
-    /// Returns whether the write actually succeeded. Callers in the app ignore
-    /// this (a failed save just means the next connection re-prompts pairing,
-    /// not a crash), but tests use it to tell a real regression apart from an
-    /// environment that can't grant Keychain access at all — e.g. CI/Simulator
-    /// runs of this app, which build every target unsigned
-    /// (CODE_SIGNING_ALLOWED=NO in project.yml, for AltStore's resign-on-install
-    /// flow) and securityd can refuse SecItemAdd for a fully unsigned binary
-    /// with errSecMissingEntitlement.
+    // Returns whether the write actually succeeded. Callers in the app ignore
+    // this (a failed save just means the next connection re-prompts pairing,
+    // not a crash), but tests use it to tell a real regression apart from an
+    // environment that can't grant Keychain access at all — e.g. CI/Simulator
+    // runs of this app, which build every target unsigned
+    // (CODE_SIGNING_ALLOWED=NO in project.yml, for AltStore's resign-on-install
+    // flow) and securityd can refuse SecItemAdd for a fully unsigned binary
+    // with errSecMissingEntitlement.
     @discardableResult
     static func save(token: String, forAddress address: String) -> Bool {
         guard !address.isEmpty else { return false }

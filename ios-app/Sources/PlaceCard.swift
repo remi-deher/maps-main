@@ -2,8 +2,8 @@ import SwiftUI
 import CoreLocation
 import MapKit
 
-/// A point selected on the map or from search — name/subtitle are nil for a
-/// raw map tap (no geocoded name available), populated for a search result.
+// A point selected on the map or from search — name/subtitle are nil for a
+// raw map tap (no geocoded name available), populated for a search result.
 struct SelectedPlace: Equatable {
     let coordinate: CLLocationCoordinate2D
     let title: String
@@ -16,9 +16,9 @@ struct SelectedPlace: Equatable {
     }
 }
 
-/// Floating bottom card (à la Plans) shown when a place is selected, with the
-/// same actions previously buried in a confirmationDialog — but visible and
-/// dismissible without a system sheet getting in the way.
+// Floating bottom card (à la Plans) shown when a place is selected, with the
+// same actions previously buried in a confirmationDialog — but visible and
+// dismissible without a system sheet getting in the way.
 struct PlaceCard: View {
     let place: SelectedPlace
     let isFavorite: Bool
@@ -30,9 +30,9 @@ struct PlaceCard: View {
     var onDismiss: () -> Void
 
     @State private var actionFeedback = 0
-    /// Look Around coverage for the selected place, fetched lazily. Nil when
-    /// the area has no Street-level imagery (oceans, remote spots) — the
-    /// preview is simply omitted then, never an error (§2 Plans parity).
+    // Look Around coverage for the selected place, fetched lazily. Nil when
+    // the area has no Street-level imagery (oceans, remote spots) — the
+    // preview is simply omitted then, never an error (§2 Plans parity).
     @State private var lookAroundScene: MKLookAroundScene?
     @State private var placemark: CLPlacemark?
 

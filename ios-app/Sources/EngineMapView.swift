@@ -1,9 +1,9 @@
 import SwiftUI
 import MapKit
 
-/// The three map looks offered by the style picker, mirroring Plans' layers
-/// button (plan / satellite / hybride). Raw values are persisted via
-/// @AppStorage in ContentView.
+// The three map looks offered by the style picker, mirroring Plans' layers
+// button (plan / satellite / hybride). Raw values are persisted via
+// @AppStorage in ContentView.
 enum MapStyleChoice: String, CaseIterable, Identifiable {
     case standard
     case hybrid
@@ -36,27 +36,27 @@ enum MapStyleChoice: String, CaseIterable, Identifiable {
     }
 }
 
-/// Full-screen map (à la Plans) using SwiftUI's native Map API: the device's
-/// real position (blue dot, via UserAnnotation), the engine's currently
-/// spoofed position as a marker, and the active route preview as a polyline.
-/// Long-pressing anywhere reports the coordinate so the caller can offer the
-/// same action menu as a search result (teleport, itinerary, favorite...) —
-/// like Plans' map-drop-pin gesture, not a plain tap (which is reserved for
-/// dismissing the keyboard/panning without side effects).
+// Full-screen map (à la Plans) using SwiftUI's native Map API: the device's
+// real position (blue dot, via UserAnnotation), the engine's currently
+// spoofed position as a marker, and the active route preview as a polyline.
+// Long-pressing anywhere reports the coordinate so the caller can offer the
+// same action menu as a search result (teleport, itinerary, favorite...) —
+// like Plans' map-drop-pin gesture, not a plain tap (which is reserved for
+// dismissing the keyboard/panning without side effects).
 struct EngineMapView: View {
     var spoofedLocation: CLLocationCoordinate2D?
     var routePreview: [CLLocationCoordinate2D]
     var itineraryStops: [RouteStop]
     var patrolZone: PatrolZone?
-    /// Dashed live preview drawn while the user is defining a circle patrol in
-    /// the sheet — lets them see the zone grow on the map as they drag the
-    /// radius, instead of committing blind. Only circles preview: a rectangle
-    /// zone is the visible region, which is already what's on screen.
+    // Dashed live preview drawn while the user is defining a circle patrol in
+    // the sheet — lets them see the zone grow on the map as they drag the
+    // radius, instead of committing blind. Only circles preview: a rectangle
+    // zone is the visible region, which is already what's on screen.
     var patrolPreview: (center: CLLocationCoordinate2D, radius: Double)?
     var mapStyleChoice: MapStyleChoice = .standard
-    /// System POI selection (restaurants, shops…). Binding so tapping a
-    /// built-in map feature surfaces it to ContentView, which turns it into
-    /// the same SelectedPlace a long-press produces — Plans' tap-a-POI flow.
+    // System POI selection (restaurants, shops…). Binding so tapping a
+    // built-in map feature surfaces it to ContentView, which turns it into
+    // the same SelectedPlace a long-press produces — Plans' tap-a-POI flow.
     @Binding var selectedFeature: MapFeature?
     @Binding var cameraPosition: MapCameraPosition
     var onLongPress: (CLLocationCoordinate2D) -> Void
@@ -142,10 +142,10 @@ struct EngineMapView: View {
     }
 }
 
-/// Pulsing indigo dot with a white ring, used in place of `Marker` for the
-/// spoofed position so it stays visually distinct from the system blue dot
-/// even when drift is near zero and the two would otherwise sit on top of
-/// each other.
+// Pulsing indigo dot with a white ring, used in place of `Marker` for the
+// spoofed position so it stays visually distinct from the system blue dot
+// even when drift is near zero and the two would otherwise sit on top of
+// each other.
 private struct SpoofedLocationMarker: View {
     @State private var isPulsing = false
 
