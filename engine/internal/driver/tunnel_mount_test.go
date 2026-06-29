@@ -26,13 +26,19 @@ func TestHelperProcess(t *testing.T) {
 		time.Sleep(time.Minute)
 	case "noisy-sleep":
 		for i := 0; i < 5; i++ {
-			os.Stdout.WriteString(`INFO:     127.0.0.1:53298 - "GET / HTTP/1.1" 200 OK` + "\n")
-			os.Stdout.WriteString("real daemon warning\n")
+			writeHelperLine(`INFO:     127.0.0.1:53298 - "GET / HTTP/1.1" 200 OK`)
+			writeHelperLine("real daemon warning")
 			time.Sleep(10 * time.Millisecond)
 		}
 		time.Sleep(time.Minute)
 	}
 	os.Exit(0)
+}
+
+func writeHelperLine(line string) {
+	if _, err := os.Stdout.WriteString(line + "\n"); err != nil {
+		os.Exit(2)
+	}
 }
 
 // TestStopWaitsForDaemonReap is a regression test for the tunnel-restart race:
