@@ -235,7 +235,7 @@ struct ContentView: View {
             stops: newStops,
             profile: coordinator.itineraryProfile,
             currentLocation: session.location.lastLocation,
-            onComplete: { estimates in coordinator.estimator.legEstimates = estimates }
+            onComplete: { estimates in coordinator.legEstimates = estimates }
         )
         if !newStops.isEmpty {
             withAnimation { coordinator.sheetDetent = .medium }
@@ -247,7 +247,7 @@ struct ContentView: View {
             stops: coordinator.itineraryStops,
             profile: newProfile,
             currentLocation: session.location.lastLocation,
-            onComplete: { estimates in coordinator.estimator.legEstimates = estimates }
+            onComplete: { estimates in coordinator.legEstimates = estimates }
         )
     }
 

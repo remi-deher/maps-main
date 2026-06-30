@@ -121,7 +121,7 @@ final class MapCoordinator {
             stops: itineraryStops,
             speed: itinerarySpeed,
             profile: itineraryProfile,
-            legEstimates: estimator.legEstimates
+            legEstimates: legEstimates
         )
         playActiveRoute(route, session: session)
         activeRoute = route

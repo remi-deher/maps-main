@@ -8,7 +8,7 @@ import MapKit
 final class ItineraryEstimator {
 
     private var estimatesTask: Task<Void, Never>?
-    private(set) var legEstimates: [UUID: LegEstimate] = [:]
+
 
     func recomputeLegEstimates(stops: [RouteStop], profile: String, currentLocation: CLLocation?, onComplete: @escaping ([UUID: LegEstimate]) -> Void) {
         estimatesTask?.cancel()
