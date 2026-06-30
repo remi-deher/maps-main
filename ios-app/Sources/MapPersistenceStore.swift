@@ -24,14 +24,22 @@ struct MapPersistenceStore {
         defaults.set(data, forKey: lastItineraryKey)
         return true
     }
+}
 
-    func loadLastItinerary() -> (stops: [RouteStop], speed: Double, profile: String)? {
+struct LastItinerary {
+    let stops: [RouteStop]
+    let speed: Double
+    let profile: String
+}
+
+extension MapPersistenceStore {
+    func loadLastItinerary() -> LastItinerary? {
         guard let data = defaults.data(forKey: lastItineraryKey),
               let saved = try? JSONDecoder().decode(SavedItinerary.self, from: data) else { return nil }
         let stops = saved.stops.map {
             RouteStop(coordinate: CLLocationCoordinate2D(latitude: $0.lat, longitude: $0.lon), name: $0.name)
         }
-        return (stops: stops, speed: saved.speed, profile: saved.profile)
+        return LastItinerary(stops: stops, speed: saved.speed, profile: saved.profile)
     }
 
     func loadRecentPlaces() -> [RecentPlace] {

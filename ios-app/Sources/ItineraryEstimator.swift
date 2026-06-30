@@ -9,7 +9,6 @@ final class ItineraryEstimator {
 
     private var estimatesTask: Task<Void, Never>?
 
-
     func recomputeLegEstimates(stops: [RouteStop], profile: String, currentLocation: CLLocation?, onComplete: @escaping ([UUID: LegEstimate]) -> Void) {
         estimatesTask?.cancel()
         guard !stops.isEmpty else {
