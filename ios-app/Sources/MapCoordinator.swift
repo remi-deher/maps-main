@@ -23,6 +23,8 @@ final class MapCoordinator {
     }
 
     let estimator = ItineraryEstimator()
+    private let persistence = MapPersistenceStore()
+    private let playbackBuilder = ItineraryPlaybackBuilder()
     var legEstimates: [UUID: LegEstimate] = [:]
 
     var selectedPlace: SelectedPlace?
@@ -56,7 +58,7 @@ final class MapCoordinator {
     var sheetScrollOffset: CGFloat = 0
     var isMapTilted = false
     var showSettings = false
-    var hasSavedItinerary = UserDefaults.standard.data(forKey: lastItineraryKey) != nil
+    var hasSavedItinerary = MapPersistenceStore().hasSavedItinerary
 
     // Derived from session (passed in where needed)
     func spoofedCoordinate(session: MapSessionModel) -> CLLocationCoordinate2D? {
@@ -166,25 +168,13 @@ final class MapCoordinator {
     }
 
     func playActiveRoute(_ route: ActiveRoute, session: MapSessionModel) {
-        session.engine.playSequence(legs: sequenceLegs(for: route.stops, speed: route.speed, profile: route.profile, session: session), looping: false)
-    }
-
-    func sequenceLegs(for stops: [RouteStop], speed: Double, profile: String, session: MapSessionModel) -> [[String: Any]] {
-        guard !stops.isEmpty else { return [] }
-        let legType = profile == "walking" ? "walk" : "drive"
-        let startingCoordinate = session.location.lastLocation?.coordinate ?? stops[0].coordinate
-        var legs: [[String: Any]] = []
-        var previousCoordinate = startingCoordinate
-        for stop in stops {
-            legs.append([
-                "type": legType,
-                "start": ["lat": previousCoordinate.latitude, "lon": previousCoordinate.longitude],
-                "end": ["lat": stop.coordinate.latitude, "lon": stop.coordinate.longitude],
-                "speed": speed
-            ])
-            previousCoordinate = stop.coordinate
-        }
-        return legs
+        let legs = playbackBuilder.sequenceLegs(
+            for: route.stops,
+            speed: route.speed,
+            profile: route.profile,
+            startingCoordinate: session.location.lastLocation?.coordinate
+        )
+        session.engine.playSequence(legs: legs, looping: false)
     }
 
     func pauseActiveRoute(session: MapSessionModel) {
@@ -257,22 +247,14 @@ final class MapCoordinator {
     }
 
     func saveLastItinerary() {
-        let saved = SavedItinerary(
-            stops: itineraryStops.map { SavedStop(lat: $0.coordinate.latitude, lon: $0.coordinate.longitude, name: $0.name) },
-            speed: itinerarySpeed,
-            profile: itineraryProfile
-        )
-        guard let data = try? JSONEncoder().encode(saved) else { return }
-        UserDefaults.standard.set(data, forKey: lastItineraryKey)
-        hasSavedItinerary = true
+        if persistence.saveLastItinerary(stops: itineraryStops, speed: itinerarySpeed, profile: itineraryProfile) {
+            hasSavedItinerary = true
+        }
     }
 
     func loadLastItinerary() {
-        guard let data = UserDefaults.standard.data(forKey: lastItineraryKey),
-              let saved = try? JSONDecoder().decode(SavedItinerary.self, from: data) else { return }
-        itineraryStops = saved.stops.map {
-            RouteStop(coordinate: CLLocationCoordinate2D(latitude: $0.lat, longitude: $0.lon), name: $0.name)
-        }
+        guard let saved = persistence.loadLastItinerary() else { return }
+        itineraryStops = saved.stops
         itinerarySpeed = saved.speed
         itineraryProfile = saved.profile
     }
@@ -290,12 +272,7 @@ final class MapCoordinator {
     }
 
     func loadRecentPlaces() {
-        guard let data = UserDefaults.standard.data(forKey: recentPlacesKey),
-              let decoded = try? JSONDecoder().decode([RecentPlace].self, from: data) else {
-            recentPlaces = []
-            return
-        }
-        recentPlaces = decoded
+        recentPlaces = persistence.loadRecentPlaces()
     }
 
     func rememberRecentPlace(_ place: SelectedPlace) {
@@ -318,8 +295,7 @@ final class MapCoordinator {
     }
 
     private func saveRecentPlaces() {
-        guard let data = try? JSONEncoder().encode(recentPlaces) else { return }
-        UserDefaults.standard.set(data, forKey: recentPlacesKey)
+        persistence.saveRecentPlaces(recentPlaces)
     }
 
     func focus(on coordinate: CLLocationCoordinate2D) {
@@ -396,19 +372,3 @@ final class MapCoordinator {
         withAnimation { sheetDetent = .medium }
     }
 }
-
-// Ensure these exist if they were only in ContentView+Helpers.swift
-struct SavedStop: Codable {
-    let lat: Double
-    let lon: Double
-    let name: String
-}
-
-struct SavedItinerary: Codable {
-    let stops: [SavedStop]
-    let speed: Double
-    let profile: String
-}
-
-let lastItineraryKey = "lastItinerary"
-let recentPlacesKey = "recentPlaces"

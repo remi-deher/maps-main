@@ -3,6 +3,7 @@ import { Clipboard, ListFilter, RotateCw, ScrollText, X } from "lucide-react";
 import { useEngine } from "../../context/websocket";
 import type { LogEntry } from "../../types/engine";
 import { useLogs } from "../../context/logsContext";
+import { EngineAction } from "../../types/engineMessages";
 
 type LevelFilter = "all" | "info" | "warn" | "error";
 
@@ -85,7 +86,7 @@ export const LogsTab: React.FC = () => {
           <button className="icon-btn" type="button" onClick={resetFilters} title="Réinitialiser les filtres">
             <X size={16} />
           </button>
-          <button className="icon-btn" type="button" onClick={() => sendMessage("GET_LOGS")} disabled={!canSend} title="Rafraîchir">
+          <button className="icon-btn" type="button" onClick={() => sendMessage(EngineAction.GetLogs)} disabled={!canSend} title="Rafraîchir">
             <RotateCw size={16} />
           </button>
         </div>

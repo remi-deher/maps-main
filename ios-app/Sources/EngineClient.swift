@@ -170,8 +170,8 @@ final class EngineClient: NSObject, URLSessionWebSocketDelegate, EngineClientPro
             }
             self.sendPing()
         }
-        sendEnvelope(type: "GET_STATUS", data: [:])
-        sendEnvelope(type: "GET_LOGS", data: [:])
+        sendAction(.getStatus)
+        sendAction(.getLogs)
     }
 
     func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
@@ -195,15 +195,20 @@ final class EngineClient: NSObject, URLSessionWebSocketDelegate, EngineClientPro
             payloadData = Data("{}".utf8)
         }
 
-        switch type {
-        case "STATUS", "STATUS_UPDATE":
+        guard let event = EngineEvent(rawValue: type) else {
+            AppLogger.shared.warn("Type de message inconnu ignorÃ©: \(type)")
+            return
+        }
+
+        switch event {
+        case .status, .statusUpdate:
             do {
                 let decoded = try JSONDecoder().decode(EngineStatus.self, from: payloadData)
                 DispatchQueue.main.async { self.status = decoded }
             } catch {
                 AppLogger.shared.error("Échec du décodage de STATUS: \(error)")
             }
-        case "PONG":
+        case .pong:
             // `lastPingSentAt` is written on the main queue (sendPing runs off
             // the Timer, scheduled on main); read it there too instead of from
             // this background receive-completion queue to avoid a data race.
@@ -212,7 +217,7 @@ final class EngineClient: NSObject, URLSessionWebSocketDelegate, EngineClientPro
                     self.pingLatency = Date().timeIntervalSince(sentAt) * 1000 // ms
                 }
             }
-        case "LOG":
+        case .log:
             do {
                 let entry = try JSONDecoder().decode(LogEntryPayload.self, from: payloadData)
                 DispatchQueue.main.async {
@@ -224,25 +229,20 @@ final class EngineClient: NSObject, URLSessionWebSocketDelegate, EngineClientPro
             } catch {
                 AppLogger.shared.error("Échec du décodage de LOG: \(error)")
             }
-        case "LOGS":
+        case .logs:
             do {
                 let entries = try JSONDecoder().decode([LogEntryPayload].self, from: payloadData)
                 DispatchQueue.main.async { self.logs = entries }
             } catch {
                 AppLogger.shared.error("Échec du décodage de LOGS: \(error)")
             }
-        default:
-            // Surface protocol drift (e.g. a new message type the desktop side
-            // started sending) instead of silently dropping it — this is the
-            // only place that would reveal a desktop/iOS protocol mismatch.
-            AppLogger.shared.warn("Type de message inconnu ignoré: \(type)")
         }
     }
 
     // ─── Outbound actions (same vocabulary as tauri-app's websocket.tsx) ────
 
     func sendRealLocation(lat: Double, lon: Double) {
-        sendEnvelope(type: "REAL_LOCATION", data: ["latitude": lat, "longitude": lon])
+        sendAction(.realLocation, data: ["latitude": lat, "longitude": lon])
     }
 
     // Throttled REAL_LOCATION for the high-frequency background location
@@ -256,48 +256,48 @@ final class EngineClient: NSObject, URLSessionWebSocketDelegate, EngineClientPro
     }
 
     func setLocation(lat: Double, lon: Double, name: String = "Point iPhone") {
-        sendEnvelope(type: "SET_LOCATION", data: ["lat": lat, "lon": lon, "name": name])
+        sendAction(.setLocation, data: ["lat": lat, "lon": lon, "name": name])
     }
 
     func playRoute(endLat: Double, endLon: Double, speed: Double, profile: String) {
-        sendEnvelope(type: "PLAY_ROUTE", data: ["endLat": endLat, "endLon": endLon, "speed": speed, "profile": profile])
+        sendAction(.playRoute, data: ["endLat": endLat, "endLon": endLon, "speed": speed, "profile": profile])
     }
 
     // Plays back a GPX track's raw text content — the engine parses the
     // `<trkpt>` tags itself (engine/internal/engine/simulation.go), so the
     // app just forwards the file content it read, same as tauri-app.
     func playCustomGpx(gpxContent: String, speed: Double) {
-        sendEnvelope(type: "PLAY_CUSTOM_GPX", data: ["gpxContent": gpxContent, "speed": speed])
+        sendAction(.playCustomGpx, data: ["gpxContent": gpxContent, "speed": speed])
     }
 
     func stopRoute() {
-        sendEnvelope(type: "STOP_ROUTE", data: [:])
+        sendAction(.stopRoute)
     }
 
     func pauseRoute() {
-        sendEnvelope(type: "PAUSE_ROUTE", data: [:])
+        sendAction(.pauseRoute)
     }
 
     func resumeRoute() {
-        sendEnvelope(type: "RESUME_ROUTE", data: [:])
+        sendAction(.resumeRoute)
     }
 
     func getLogs() {
-        sendEnvelope(type: "GET_LOGS", data: [:])
+        sendAction(.getLogs)
     }
 
     func clearHistory() {
-        sendEnvelope(type: "CLEAR_HISTORY", data: [:])
+        sendAction(.clearHistory)
     }
 
     func relance() {
-        sendEnvelope(type: "RELANCE", data: [:])
+        sendAction(.relance)
     }
 
     private func sendPing() {
         guard state == .connected else { return }
         lastPingSentAt = Date()
-        sendEnvelope(type: "HEARTBEAT", data: [:])
+        sendAction(.heartbeat)
     }
 
     func switchDriver(driverId: String, transport: String, wifiAddress: String = "") {
@@ -306,7 +306,7 @@ final class EngineClient: NSObject, URLSessionWebSocketDelegate, EngineClientPro
         if transport == "wifi" && !trimmed.isEmpty {
             data["wifiAddress"] = trimmed
         }
-        sendEnvelope(type: "SWITCH_DRIVER", data: data)
+        sendAction(.switchDriver, data: data)
     }
 
     // Starts, updates, or stops a patrol zone — same PATROL_UPDATE envelope
@@ -333,7 +333,7 @@ final class EngineClient: NSObject, URLSessionWebSocketDelegate, EngineClientPro
                 "ne": ["lat": bounds.northEast.latitude, "lon": bounds.northEast.longitude]
             ]
         }
-        sendEnvelope(type: "PATROL_UPDATE", data: ["zone": zone])
+        sendAction(.patrolUpdate, data: ["zone": zone])
     }
 
     // Pushes a partial settings update — same SAVE_SETTINGS envelope and
@@ -341,15 +341,15 @@ final class EngineClient: NSObject, URLSessionWebSocketDelegate, EngineClientPro
     // provided keys are applied; see engine/internal/engine/engine.go's
     // SaveSettings).
     func saveSettings(_ settings: [String: Any]) {
-        sendEnvelope(type: "SAVE_SETTINGS", data: settings)
+        sendAction(.saveSettings, data: settings)
     }
 
     func addFavorite(lat: Double, lon: Double, name: String) {
-        sendEnvelope(type: "ADD_FAVORITE", data: ["lat": lat, "lon": lon, "name": name])
+        sendAction(.addFavorite, data: ["lat": lat, "lon": lon, "name": name])
     }
 
     func removeFavorite(lat: Double, lon: Double) {
-        sendEnvelope(type: "REMOVE_FAVORITE", data: ["lat": lat, "lon": lon])
+        sendAction(.removeFavorite, data: ["lat": lat, "lon": lon])
     }
 
     // Plays a multi-stop itinerary. Mirrors tauri-app's sequence builder:
@@ -358,20 +358,24 @@ final class EngineClient: NSObject, URLSessionWebSocketDelegate, EngineClientPro
     // valid LatLon, the real starting point is wherever the device already
     // is when the leg begins).
     func playSequence(legs: [[String: Any]], looping: Bool) {
-        sendEnvelope(type: "PLAY_SEQUENCE", data: ["legs": legs, "looping": looping])
+        sendAction(.playSequence, data: ["legs": legs, "looping": looping])
     }
 
-    private func sendEnvelope(type: String, data: [String: Any]) {
+    private func sendAction(_ action: EngineAction, data: [String: Any] = [:]) {
+        sendEnvelope(EngineEnvelope(action: action, data: data))
+    }
+
+    private func sendEnvelope(_ envelope: EngineEnvelope) {
         guard let task else {
-            AppLogger.shared.warn("Action \(type) ignorée: non connecté au moteur")
-            DispatchQueue.main.async { self.lastError = "Non connecté au moteur — action ignorée." }
+            AppLogger.shared.warn("Action \(envelope.type) ignoree: non connecte au moteur")
+            DispatchQueue.main.async { self.lastError = "Non connecte au moteur - action ignoree." }
             return
         }
-        guard let payload = try? JSONSerialization.data(withJSONObject: ["type": type, "data": data]),
+        guard let payload = try? JSONSerialization.data(withJSONObject: envelope.jsonObject),
               let json = String(data: payload, encoding: .utf8) else { return }
         task.send(.string(json)) { [weak self] error in
             if let error {
-                AppLogger.shared.error("Envoi \(type) échoué: \(error.localizedDescription)")
+                AppLogger.shared.error("Envoi \(envelope.type) echoue: \(error.localizedDescription)")
                 DispatchQueue.main.async { self?.lastError = error.localizedDescription }
             }
         }

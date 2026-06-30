@@ -23,8 +23,9 @@ ROOT = Path(__file__).resolve().parent.parent
 
 SPEC = ROOT / "spec" / "asyncapi.yaml"
 ENGINE = ROOT / "engine" / "internal" / "api" / "messages.go"
-IOS = ROOT / "ios-app" / "Sources" / "EngineClient.swift"
-TAURI = ROOT / "tauri-app" / "src" / "context" / "websocket.tsx"
+IOS = ROOT / "ios-app" / "Sources"
+TAURI = ROOT / "tauri-app" / "src"
+TAURI_MESSAGES = TAURI / "types" / "engineMessages.ts"
 
 
 def read(path: Path) -> str:
@@ -33,6 +34,14 @@ def read(path: Path) -> str:
 
 def find(pattern: str, text: str) -> set[str]:
     return set(re.findall(pattern, text, flags=re.MULTILINE))
+
+
+def read_sources(root: Path, suffixes: set[str]) -> str:
+    chunks: list[str] = []
+    for path in sorted(root.rglob("*")):
+        if path.suffix in suffixes and "dist" not in path.parts:
+            chunks.append(read(path))
+    return "\n".join(chunks)
 
 
 def spec_types() -> set[str]:
@@ -46,18 +55,24 @@ def engine_types() -> set[str]:
 
 
 def ios_types() -> set[str]:
-    text = read(IOS)
+    text = read_sources(IOS, {".swift"})
     # Outgoing `type: "TYPE"` and incoming `case "TYPE"`.
-    return find(r'type:\s*"([A-Z_]+)"', text) | find(r'case\s+"([A-Z_]+)"', text)
+    return (
+        find(r'type:\s*"([A-Z_]+)"', text)
+        | find(r'case\s+"([A-Z_]+)"', text)
+        | find(r'case\s+\w+\s*=\s*"([A-Z_]+)"', text)
+    )
 
 
 def tauri_types() -> set[str]:
-    text = read(TAURI)
+    text = read_sources(TAURI, {".ts", ".tsx"})
+    message_constants = read(TAURI_MESSAGES)
     # Outgoing `sendMessage("TYPE"` / `type: "TYPE"`, incoming `case "TYPE"`.
     return (
         find(r'sendMessage\(\s*"([A-Z_]+)"', text)
         | find(r'type:\s*"([A-Z_]+)"', text)
         | find(r'case\s+"([A-Z_]+)"', text)
+        | find(r'\b[A-Z][A-Za-z0-9_]*:\s*"([A-Z_]+)"', message_constants)
     )
 
 
@@ -65,8 +80,8 @@ def main() -> int:
     spec = spec_types()
     impls = {
         "engine (messages.go)": engine_types(),
-        "iOS (EngineClient.swift)": ios_types(),
-        "tauri (websocket.tsx)": tauri_types(),
+        "iOS (Sources/*.swift)": ios_types(),
+        "tauri (src messages)": tauri_types(),
     }
 
     if not spec:

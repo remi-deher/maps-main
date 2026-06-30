@@ -1,13 +1,18 @@
-import { useState, useRef, useEffect } from "react";
-import type { LatLon } from "../../types/engine";
-import type { MapMode } from "../../components/MapContainer";
+import { useState, useRef, useEffect, type FormEvent } from "react";
+import type { EngineTransportContextType, LatLon, Status } from "../../types/engine";
+import type { MapMode } from "./mapModel";
 import { type Waypoint, type AddMethod, type RouteSegment, makeWaypointId } from "../routes/routeModel";
 import { patchWithNearestPlace } from "../routes/routeEffects";
 import { reverseGeocode } from "../../lib/geocoding";
 import { osrmBaseUrl, snapToRoad } from "../../lib/osrm";
 import { autoModeToast } from "../routes/routePresentation";
 
-export function useMapInteractionController(status: any, canSend: boolean, setLocation: any, addFavorite: any) {
+export function useMapInteractionController(
+  status: Status | null,
+  canSend: boolean,
+  setLocation: EngineTransportContextType["setLocation"],
+  addFavorite: EngineTransportContextType["addFavorite"]
+) {
   const [mapMode, setMapMode] = useState<MapMode>("explore");
   const [routeWaypoints, setRouteWaypoints] = useState<Waypoint[]>([]);
   const [routeAddMethod, setRouteAddMethod] = useState<AddMethod>("search");
@@ -95,7 +100,7 @@ export function useMapInteractionController(status: any, canSend: boolean, setLo
     setSelectedPlaceName(null);
   };
 
-  const handleAddFav = (e: React.FormEvent) => {
+  const handleAddFav = (e: FormEvent) => {
     e.preventDefault();
     if (selectedCoords && favName.trim() && canSend) {
       addFavorite(selectedCoords.lat, selectedCoords.lon, favName.trim());

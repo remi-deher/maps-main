@@ -225,7 +225,7 @@ export interface PlaySequenceLeg {
 
 export type EngineMessageData = unknown;
 
-export interface WebSocketContextType {
+export interface EngineTransportContextType {
   isConnected: boolean;
   connectionStatus: "connecting" | "connected" | "reconnecting" | "disconnected";
   connectionUrl: string;
@@ -240,7 +240,6 @@ export interface WebSocketContextType {
   status: Status | null;
   telemetry: Telemetry | null;
   deviceDetails: DeviceDetails | null;
-  logs: LogEntry[];
   getDeviceInfo: () => void;
   sendMessage: (type: string, data?: EngineMessageData) => boolean;
   setLocation: (lat: number, lon: number, name?: string) => void;
@@ -261,6 +260,10 @@ export interface WebSocketContextType {
   getDiagnostics: () => void;
   networkDevices: NetworkDevicesResult | null;
   getNetworkDevices: () => void;
+}
+
+export interface WebSocketContextType extends EngineTransportContextType {
+  logs: LogEntry[];
   pairResult: PairResult | null;
   pairing: boolean;
   pairDevice: () => void;

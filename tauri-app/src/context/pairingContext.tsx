@@ -2,6 +2,7 @@ import React, { createContext, useContext, useState, useEffect } from "react";
 import { getStoredToken, setStoredToken, clearStoredToken, sameOriginHttpUrl, isTauri } from "../lib/runtime";
 import { engineEvents } from "../lib/events";
 import type { PairedDevice, RemotePairCode, PairResult } from "../types/engine";
+import { EngineAction } from "../types/engineMessages";
 
 export interface PairingContextValue {
   needsPairing: boolean;
@@ -105,12 +106,12 @@ export const PairingProvider: React.FC<{ children: React.ReactNode }> = ({ child
   const pairDevice = () => {
     setPairResult(null);
     setPairing(true);
-    engineEvents.emit("send", "PAIR_DEVICE");
+    engineEvents.emit("send", EngineAction.PairDevice);
   };
 
-  const requestPairCode = () => engineEvents.emit("send", "GET_PAIR_CODE");
-  const requestPairedDevices = () => engineEvents.emit("send", "LIST_PAIRED_DEVICES");
-  const revokePairedDevice = (id: string) => engineEvents.emit("send", "REVOKE_PAIRED_DEVICE", { id });
+  const requestPairCode = () => engineEvents.emit("send", EngineAction.GetPairCode);
+  const requestPairedDevices = () => engineEvents.emit("send", EngineAction.ListPairedDevices);
+  const revokePairedDevice = (id: string) => engineEvents.emit("send", EngineAction.RevokePairedDevice, { id });
 
   useEffect(() => {
     const handlePairResult = (data: PairResult) => {

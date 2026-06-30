@@ -24,9 +24,19 @@ function resolveSelfIdentityPath() {
     return path.join(__dirname, '..', '..', 'selfIdentity.plist');
 }
 
+function resolveLockdownDir() {
+    if (process.platform === 'win32') {
+        const programData = process.env.ProgramData || 'C:\\ProgramData';
+        return path.join(programData, 'Apple', 'Lockdown');
+    } else if (process.platform === 'darwin') {
+        return '/var/db/lockdown';
+    }
+    return '/var/lib/lockdown';
+}
+
 module.exports = {
     publicDir,
     GOIOS_PATH: resolveGoIosPath(),
     SELF_IDENTITY_PATH: resolveSelfIdentityPath(),
-    LOCKDOWN_DIR: 'C:\\ProgramData\\Apple\\Lockdown',
+    LOCKDOWN_DIR: resolveLockdownDir(),
 };

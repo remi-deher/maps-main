@@ -56,7 +56,7 @@ export const RemoteAccessSection: React.FC<RemoteAccessSectionProps> = ({ engine
   if (!isTauri) {
     return (
       <div className="ui-card">
-        <p style={{ fontSize: "0.85rem", color: "#94a3b8", margin: 0 }}>
+        <p className="remote-access-desc" style={{ margin: 0 }}>
           La gestion de l'accès distant n'est disponible que depuis l'application de bureau.
         </p>
       </div>
@@ -70,15 +70,15 @@ export const RemoteAccessSection: React.FC<RemoteAccessSectionProps> = ({ engine
   const remoteUrl = qrPairingHost ? `http://${qrPairingHost}:${enginePort}/` : null;
 
   return (
-    <div className="ui-card" style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+    <div className="ui-card remote-access-card">
       <div>
-        <p style={{ fontSize: "0.85rem", color: "#94a3b8", margin: "0 0 8px" }}>
+        <p className="remote-access-desc">
           Contrôlez ce moteur depuis le navigateur d'un autre ordinateur. Sur l'autre machine,
           ouvrez l'adresse ci-dessous puis saisissez le code — ou scannez le QR Code pour vous
           connecter directement.
         </p>
         {remoteUrl ? (
-          <code style={{ fontSize: "0.9rem", wordBreak: "break-all" }}>{remoteUrl}</code>
+          <code className="remote-access-url">{remoteUrl}</code>
         ) : (
           <div className="inline-alert">
             <Wifi size={14} /> Connectez une interface réseau (Wi-Fi/Ethernet) pour activer l'accès distant.
@@ -90,32 +90,25 @@ export const RemoteAccessSection: React.FC<RemoteAccessSectionProps> = ({ engine
         <div className="inline-alert">Moteur hors ligne — le code apparaîtra une fois connecté.</div>
       )}
 
-      <div style={{ display: "flex", gap: 16, alignItems: "center", flexWrap: "wrap" }}>
-        <div style={{ textAlign: "center" }}>
-          <div
-            style={{
-              fontSize: "2.4rem",
-              fontVariantNumeric: "tabular-nums",
-              letterSpacing: "0.25em",
-              fontWeight: 600,
-            }}
-          >
+      <div className="remote-access-pairing-area">
+        <div className="remote-access-code-box">
+          <div className="remote-access-code">
             {code ?? "——————"}
           </div>
-          <div style={{ fontSize: "0.72rem", color: "#94a3b8" }}>
+          <div className="remote-access-countdown">
             {code ? `Nouveau code dans ${secondsLeft}s` : "…"}
           </div>
         </div>
         {qrValue && (
-          <div style={{ background: "#fff", padding: 8, borderRadius: 8 }}>
+          <div className="remote-access-qr-wrapper">
             <QRCodeSVG value={qrValue} size={132} />
           </div>
         )}
       </div>
 
       <div>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-          <span className="ui-card-title" style={{ margin: 0 }}>
+        <div className="remote-access-header">
+          <span className="ui-card-title remote-access-title">
             Appareils autorisés ({pairedDevices.length})
           </span>
           <button className="btn btn-secondary btn-sm" onClick={requestPairedDevices} disabled={!isConnected}>
@@ -123,19 +116,16 @@ export const RemoteAccessSection: React.FC<RemoteAccessSectionProps> = ({ engine
           </button>
         </div>
         {pairedDevices.length === 0 ? (
-          <p style={{ fontSize: "0.78rem", color: "#94a3b8", marginTop: 8 }}>
+          <p className="remote-access-empty-text">
             Aucun appareil appairé pour l'instant.
           </p>
         ) : (
-          <ul style={{ listStyle: "none", padding: 0, margin: "8px 0 0", display: "flex", flexDirection: "column", gap: 6 }}>
+          <ul className="remote-access-devices-list">
             {pairedDevices.map((d) => (
-              <li
-                key={d.id}
-                style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}
-              >
-                <span style={{ fontSize: "0.8rem", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+              <li key={d.id} className="remote-access-device-item">
+                <span className="remote-access-device-info">
                   {d.label || d.id.slice(0, 8)}
-                  <span style={{ color: "#64748b", marginLeft: 6 }}>
+                  <span className="remote-access-device-meta">
                     · vu {d.lastSeen ? new Date(d.lastSeen * 1000).toLocaleString() : "—"}
                   </span>
                 </span>

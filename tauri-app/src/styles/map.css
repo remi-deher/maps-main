@@ -657,3 +657,93 @@
     margin: 60px 12px 0;
   }
 }
+
+/* Remote Access Section styles */
+.remote-access-card {
+  gap: 16px !important;
+}
+
+.remote-access-desc {
+  font-size: var(--fs-base);
+  color: #94a3b8;
+  margin: 0 0 8px;
+}
+
+.remote-access-url {
+  font-size: var(--fs-md);
+  word-break: break-all;
+}
+
+.remote-access-pairing-area {
+  display: flex;
+  gap: 16px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.remote-access-code-box {
+  text-align: center;
+}
+
+.remote-access-code {
+  font-size: 2.4rem;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.25em;
+  font-weight: 600;
+}
+
+.remote-access-countdown {
+  font-size: var(--fs-xs);
+  color: #94a3b8;
+}
+
+.remote-access-qr-wrapper {
+  background: #fff;
+  padding: 8px;
+  border-radius: var(--radius-md);
+}
+
+.remote-access-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.remote-access-title {
+  margin: 0 !important;
+}
+
+.remote-access-empty-text {
+  font-size: var(--fs-sm);
+  color: #94a3b8;
+  margin-top: 8px;
+}
+
+.remote-access-devices-list {
+  list-style: none;
+  padding: 0;
+  margin: 8px 0 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.remote-access-device-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.remote-access-device-info {
+  font-size: var(--fs-sm);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.remote-access-device-meta {
+  color: #64748b;
+  margin-left: 6px;
+}
+

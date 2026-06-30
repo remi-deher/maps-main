@@ -1,11 +1,7 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import {
   Save,
   Play,
-  Car,
-  Footprints,
-  Train,
-  Plane,
   MapPin,
   X,
   Search,
@@ -18,106 +14,43 @@ import {
 } from "lucide-react";
 import { LatLon, useEngine } from "../context/websocket";
 import { parseCoordinate } from "../lib/parse";
-import { reverseGeocodeDetailed, autoLegMode, PlaceKind } from "../lib/geocoding";
-import { planTransitJourney, isTransitEnabled } from "../lib/transit";
+import { PlaceKind } from "../lib/geocoding";
 import {
   osrmBaseUrl,
-  fetchRoute,
-  fetchAlternatives,
   fetchOptimizedStopOrder,
-  straightLineRoute,
-  simplifyGeometry,
   getRailRouterUrl,
-  makeWaitLeg,
-  haversineMeters,
 } from "../lib/osrm";
 import { DestinationSearchInput } from "./DestinationSearchInput";
 import { StopRow } from "./routes/StopRow";
 import { useRouteDragAndDrop } from "../features/routes/useRouteDragAndDrop";
+import {
+  buildPlaybackLegs,
+  calculateFallbackDurationSeconds,
+  calculateHaversineTotal,
+  calculateStopSchedule,
+  resolveRouteOptions,
+} from "../features/routes/routePlanner";
+import {
+  defaultDwellMinutes,
+  formatDuration,
+  isRoadRoutable,
+  makeWaypointId,
+  MODE_ORDER,
+  OSRM_PROFILE,
+  suggestLegMode,
+  type AddMethod,
+  type LegMode,
+  type RouteOption,
+  type RouteSegment,
+  type Waypoint,
+} from "../features/routes/routeModel";
+import { autoModeToast, MODE_META } from "../features/routes/routePresentation";
+import { patchWithNearestPlace } from "../features/routes/routeEffects";
 
-export type LegMode = "drive" | "walk" | "train" | "flight";
-
-/// Stable per-stop identifier, generated once at creation — lets async
-/// patches (reverse-geocode resolution) target the exact stop they were
-/// fired for, even if the list is reordered/edited before they resolve.
-/// Matching by lat/lon/placeholder text alone could hit a different stop
-/// that happens to share the same coordinates and not-yet-resolved name.
-export const makeWaypointId = (): string =>
-  typeof crypto !== "undefined" && "randomUUID" in crypto
-    ? crypto.randomUUID()
-    : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
-
-export interface Waypoint extends LatLon {
-  id: string;
-  name: string;
-  /// Travel mode of the leg arriving at this stop (from the previous stop, or
-  /// the current position for the first one).
-  mode: LegMode;
-  /// Transport kind of the place (station/airport), used to auto-pick the mode
-  /// when two consecutive stops are the same kind.
-  kind?: PlaceKind;
-  /// Dwell/wait time at this stop, in minutes (boarding, transfer…).
-  waitMinutes?: number;
-}
-
-export type AddMethod = "search" | "map" | "coords";
-
-/// Default dwell (minutes) suggested for a stop based on its place kind.
-export const defaultDwellMinutes = (kind: PlaceKind): number =>
-  kind === "airport" ? 60 : kind === "station" ? 10 : 0;
-
-/// A resolved route as a list of typed segments (one per leg in mixed/non-road
-/// routes, or a single segment for a road alternative).
-export interface RouteSegment {
-  coords: LatLon[];
-  mode: LegMode;
-  /// Travel duration of this segment in seconds (for schedule computation).
-  duration?: number;
-  /// Real timetable info for a train leg resolved via the transit API.
-  transit?: { departureMs: number; arrivalMs: number; label?: string };
-}
-interface RouteOption {
-  distance: number; // meters
-  duration: number; // seconds
-  estimated: boolean; // includes a straight-line / non-router leg (not flight, which is exact)
-  segments: RouteSegment[];
-}
-
-// Only road-network modes have an OSRM profile. train/flight are resolved
-// without OSRM (straight line, or a pluggable rail router for train).
-const OSRM_PROFILE: Partial<Record<LegMode, string>> = { drive: "driving", walk: "foot" };
-
-const isRoadRoutable = (mode: LegMode): boolean => mode === "drive" || mode === "walk";
-
-// Realistic per-mode cruising speeds (km/h). Used for both the time estimate
-// and, multiplied by the playback factor, the actual simulated speed per leg.
-const MODE_DEFAULT_KMH: Record<LegMode, number> = { drive: 50, walk: 5, train: 120, flight: 800 };
-
-// Backend leg type each frontend mode maps to (no Go change needed): train and
-// flight both play as the engine's straight-line `flight` leg.
-const BACKEND_LEG_TYPE: Record<LegMode, string> = {
-  drive: "drive",
-  walk: "walk",
-  train: "flight",
-  flight: "flight",
-};
-
-// Display metadata (label, icon, map line style) per mode.
-export const MODE_META: Record<LegMode, { label: string; icon: React.ComponentType<{ size?: number }>; color: string; dashed: boolean }> = {
-  drive: { label: "Voiture", icon: Car, color: "#14b8a6", dashed: false },
-  walk: { label: "Marche", icon: Footprints, color: "#5eead4", dashed: false },
-  train: { label: "Train", icon: Train, color: "#a855f7", dashed: true },
-  flight: { label: "Avion", icon: Plane, color: "#38bdf8", dashed: true },
-};
-
-const MODE_ORDER: LegMode[] = ["drive", "walk", "train", "flight"];
-
-function formatDuration(seconds: number): string {
-  const minutes = seconds / 60;
-  if (minutes < 1) return "< 1 min";
-  if (minutes < 60) return `${Math.round(minutes)} min`;
-  return `${Math.floor(minutes / 60)} h ${Math.round(minutes % 60)} min`;
-}
+export type { AddMethod, LegMode, RouteSegment, Waypoint } from "../features/routes/routeModel";
+export { makeWaypointId } from "../features/routes/routeModel";
+export { MODE_META } from "../features/routes/routePresentation";
+export { patchWithNearestPlace } from "../features/routes/routeEffects";
 
 /// Compact icon-toggle row — mirrors Google Maps' segmented controls.
 const SegmentedToggle: React.FC<{
@@ -162,38 +95,6 @@ interface RouteModePanelProps {
   onRouteSegmentsChange?: (segments: RouteSegment[] | null) => void;
 }
 
-/// Names a freshly-added coordinate stop from its nearest place (reverse
-/// geocoding) and, if it's a station/airport matching the previous stop,
-/// auto-switches the leg's mode. Patches by the stop's stable `id` (not
-/// coords/placeholder text) so a reorder/removal/re-add at the same spot in
-/// between can't mislabel a different stop; an optional `signal` lets the
-/// caller cancel the geocode if the stop is removed before it resolves.
-export function patchWithNearestPlace(
-  setWaypoints: React.Dispatch<React.SetStateAction<Waypoint[]>>,
-  id: string,
-  lat: number,
-  lon: number,
-  onAuto?: (mode: LegMode) => void,
-  signal?: AbortSignal
-) {
-  reverseGeocodeDetailed(lat, lon, signal).then((res) => {
-    if (!res || signal?.aborted) return;
-    setWaypoints((prev) =>
-      prev.map((wp, i) => {
-        if (wp.id !== id) return wp;
-        const auto = autoLegMode(prev[i - 1]?.kind ?? null, res.kind) as LegMode | null;
-        if (auto && auto !== wp.mode) onAuto?.(auto);
-        // Suggest a dwell from the resolved kind unless the user already set one.
-        const waitMinutes = wp.waitMinutes ?? defaultDwellMinutes(res.kind);
-        return { ...wp, name: res.name, kind: res.kind, mode: auto ?? wp.mode, waitMinutes };
-      })
-    );
-  });
-}
-
-/// Toast message shown when a leg's transport mode is auto-detected.
-export const autoModeToast = (mode: LegMode): string => `Mode ${MODE_META[mode].label} détecté — modifiable`;
-
 /// Unified itinerary builder — one block where stops are added by search, map
 /// click or manual coordinates, sharing a single ordered list. Travel mode is
 /// set per leg (each row's toggle, or a multi-select bulk apply); speed/loop
@@ -220,6 +121,8 @@ export const RouteModePanel: React.FC<RouteModePanelProps> = ({
   // Its display name stays local — it's only set here when chosen by search.
   const [startName, setStartName] = useState<string | null>(null);
   const effectiveStart: LatLon = start ?? currentPos;
+  const effectiveStartLat = effectiveStart.lat;
+  const effectiveStartLon = effectiveStart.lon;
 
   const [speedFactor, setSpeedFactor] = useState("1");
   const [looping, setLooping] = useState(false);
@@ -250,11 +153,15 @@ export const RouteModePanel: React.FC<RouteModePanelProps> = ({
   const [excludeMotorway, setExcludeMotorway] = useState(false);
   const [excludeToll, setExcludeToll] = useState(false);
   const [excludeFerry, setExcludeFerry] = useState(false);
-  const excludeList = [
-    excludeMotorway ? "motorway" : null,
-    excludeToll ? "toll" : null,
-    excludeFerry ? "ferry" : null,
-  ].filter(Boolean) as string[];
+  const excludeList = useMemo(
+    () =>
+      [
+        excludeMotorway ? "motorway" : null,
+        excludeToll ? "toll" : null,
+        excludeFerry ? "ferry" : null,
+      ].filter(Boolean) as string[],
+    [excludeMotorway, excludeToll, excludeFerry]
+  );
   const excludeKey = excludeList.join(",");
 
   // Multi-select for bulk mode editing
@@ -285,7 +192,7 @@ export const RouteModePanel: React.FC<RouteModePanelProps> = ({
 
   const addWaypoint = (lat: number, lon: number, name: string, kind?: PlaceKind) => {
     const prevKind = waypoints[waypoints.length - 1]?.kind ?? null;
-    const auto = autoLegMode(prevKind, kind ?? null) as LegMode | null;
+    const auto = suggestLegMode(prevKind, kind ?? null);
     if (auto) showToast(autoModeToast(auto));
     setWaypoints([
       ...waypoints,
@@ -341,13 +248,8 @@ export const RouteModePanel: React.FC<RouteModePanelProps> = ({
     setCoordLon("");
   };
 
-  const singleMode = waypoints.length > 0 && waypoints.every((w) => w.mode === waypoints[0].mode);
-  // Road alternatives only make sense when the whole route is a single road mode.
-  const altEligible = singleMode && isRoadRoutable(waypoints[0]?.mode);
-
-  // Resolve the route. A single road mode → OSRM alternatives. Otherwise resolve
-  // each leg by its mode (OSRM for road, straight line for flight, the pluggable
-  // rail router or straight line for train) into one multi-segment option.
+  // Resolve the route through the shared route planner. The component owns
+  // only UI state; transport-specific resolution lives under features/routes.
   useEffect(() => {
     if (waypoints.length === 0) {
       setRouteOptions([]);
@@ -359,127 +261,23 @@ export const RouteModePanel: React.FC<RouteModePanelProps> = ({
     const controller = new AbortController();
     const debounce = setTimeout(async () => {
       setOsrmLoading(true);
-      const base = osrmBaseUrl(status?.osrmBaseUrl);
-      const railBase = getRailRouterUrl();
-      const exclude = excludeList;
-
-      // Resolves one leg to a typed segment + distance/duration. Never throws —
-      // failures fall back to a straight line flagged `estimated` (flight is the
-      // exception: its straight line is the correct great-circle path).
-      const resolveLeg = async (
-        from: LatLon,
-        to: LatLon,
-        mode: LegMode
-      ): Promise<{ coords: LatLon[]; distance: number; duration: number; estimated: boolean }> => {
-        const kmh = MODE_DEFAULT_KMH[mode];
-        try {
-          if (isRoadRoutable(mode)) {
-            const r = await fetchRoute(base, [from, to], OSRM_PROFILE[mode]!, { signal: controller.signal, exclude });
-            return { coords: r.geometry, distance: r.distance, duration: r.duration, estimated: false };
-          }
-          if (mode === "train" && railBase) {
-            const r = await fetchRoute(railBase, [from, to], "driving", { signal: controller.signal });
-            return { coords: r.geometry, distance: r.distance, duration: r.duration, estimated: false };
-          }
-          // flight (always) or train without a rail router → straight line.
-          const s = straightLineRoute(from, to, kmh);
-          return { coords: s.geometry, distance: s.distance, duration: s.duration, estimated: mode === "train" };
-        } catch (error) {
-          if ((error as Error).name === "AbortError") throw error;
-          const s = straightLineRoute(from, to, kmh);
-          return { coords: s.geometry, distance: s.distance, duration: s.duration, estimated: true };
-        }
-      };
-
       try {
-        if (altEligible) {
-          const mode = waypoints[0].mode;
-          const alts = await fetchAlternatives(base, [effectiveStart, ...waypoints], OSRM_PROFILE[mode]!, {
-            signal: controller.signal,
-            exclude,
-          });
-          if (controller.signal.aborted) return;
-          setRouteOptions(
-            alts.map((a) => ({
-              distance: a.distance,
-              duration: a.duration,
-              estimated: false,
-              segments: [{ coords: a.geometry, mode }],
-            }))
-          );
-          setSelectedAlt(0);
-        } else {
-          // Sequential resolution maintaining a wall-clock so train legs can ask
-          // the transit API for the next real departure after they're reached.
-          const legs = waypoints.map((wp, i) => ({
-            from: i === 0 ? effectiveStart : (waypoints[i - 1] as LatLon),
-            to: wp as LatLon,
-            mode: wp.mode,
-          }));
-          const depBase = (() => {
-            const t = new Date(departureTime);
-            return isNaN(t.getTime()) ? Date.now() : t.getTime();
-          })();
-          const transitOn = isTransitEnabled();
-
-          const segments: RouteSegment[] = [];
-          let totalDistance = 0;
-          let totalDuration = 0;
-          let anyEstimated = false;
-          let clock = depBase;
-
-          for (let i = 0; i < legs.length; i++) {
-            const { from, to, mode } = legs[i];
-            let coords: LatLon[];
-            let distance: number;
-            let duration: number;
-            let estimated = false;
-            let transit: RouteSegment["transit"];
-
-            if (mode === "train" && transitOn) {
-              const j = await planTransitJourney(from, to, new Date(clock), controller.signal);
-              if (controller.signal.aborted) return;
-              if (j) {
-                coords = j.geometry;
-                duration = Math.max(1, (j.arrivalMs - j.departureMs) / 1000);
-                distance = haversineMeters(from, to);
-                transit = { departureMs: j.departureMs, arrivalMs: j.arrivalMs, label: j.label };
-                clock = j.arrivalMs; // anchor to the real arrival
-              } else {
-                const r = await resolveLeg(from, to, mode);
-                if (controller.signal.aborted) return;
-                ({ coords, distance, duration } = r);
-                estimated = true;
-                clock += duration * 1000;
-              }
-            } else {
-              const r = await resolveLeg(from, to, mode);
-              if (controller.signal.aborted) return;
-              ({ coords, distance, duration, estimated } = r);
-              clock += duration * 1000;
-            }
-
-            // Manual dwell advances the clock for the NEXT leg's departAfter,
-            // except before a transit train (whose wait is the real train wait).
-            const nextIsTransitTrain = i + 1 < legs.length && legs[i + 1].mode === "train" && transitOn;
-            if (!nextIsTransitTrain) clock += (waypoints[i].waitMinutes ?? 0) * 60000;
-
-            segments.push({ coords, mode, duration, transit });
-            totalDistance += distance;
-            totalDuration += duration;
-            anyEstimated = anyEstimated || estimated;
-          }
-
-          setSelectedAlt(0);
-          setRouteOptions([{ distance: totalDistance, duration: totalDuration, estimated: anyEstimated, segments }]);
-        }
+        const options = await resolveRouteOptions({
+          waypoints,
+          effectiveStart: { lat: effectiveStartLat, lon: effectiveStartLon },
+          base: osrmBaseUrl(status?.osrmBaseUrl),
+          railBase: getRailRouterUrl(),
+          exclude: excludeList,
+          departureTime,
+          signal: controller.signal,
+        });
+        if (controller.signal.aborted) return;
+        setRouteOptions(options);
+        setSelectedAlt(0);
       } catch (error) {
         if ((error as Error).name === "AbortError") return;
-        setRouteOptions([]); // total failure → straight-line fallback below
+        setRouteOptions([]);
       } finally {
-        // `finally` runs even on the early `return`s above for an aborted/
-        // superseded request — guard so a stale request's cleanup can't
-        // flip loading back to false while a newer request is still in flight.
         if (!controller.signal.aborted) setOsrmLoading(false);
       }
     }, 500);
@@ -488,92 +286,23 @@ export const RouteModePanel: React.FC<RouteModePanelProps> = ({
       clearTimeout(debounce);
       controller.abort();
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [waypoints, effectiveStart.lat, effectiveStart.lon, excludeKey, departureTime]);
+  }, [waypoints, effectiveStartLat, effectiveStartLon, excludeList, excludeKey, departureTime, status?.osrmBaseUrl, onRouteSegmentsChange]);
 
   const selectedRoute: RouteOption | null = routeOptions[Math.min(selectedAlt, routeOptions.length - 1)] ?? null;
 
   // Push the selected route's typed segments to the map whenever they change.
   useEffect(() => {
     onRouteSegmentsChange?.(selectedRoute ? selectedRoute.segments : null);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedRoute]);
+  }, [selectedRoute, onRouteSegmentsChange]);
 
-  const haversineTotal = waypoints.reduce((total, wp, index) => {
-    const from = index === 0 ? effectiveStart : waypoints[index - 1];
-    return total + haversineMeters(from, wp);
-  }, 0);
-  // Instant transport-aware time estimate (per-leg distance ÷ that leg's mode
-  // speed) shown until OSRM's road-type-accurate duration arrives.
-  const fallbackDurationSeconds = waypoints.reduce((total, wp, index) => {
-    const from = index === 0 ? effectiveStart : waypoints[index - 1];
-    const dist = haversineMeters(from, wp);
-    return total + dist / ((MODE_DEFAULT_KMH[wp.mode] * 1000) / 3600);
-  }, 0);
+  const haversineTotal = calculateHaversineTotal(waypoints, effectiveStart);
+  const fallbackDurationSeconds = calculateFallbackDurationSeconds(waypoints, effectiveStart);
   const isRealDistance = selectedRoute !== null;
   const estimatedMeters = selectedRoute ? selectedRoute.distance : haversineTotal;
   const displayDurationSeconds = selectedRoute ? selectedRoute.duration : fallbackDurationSeconds;
-
-  // Travel duration (seconds) of the leg arriving at stop `index`. Uses the
-  // resolved per-leg segment duration when available (multi-segment routes);
-  // for a single road alternative, distributes the total by haversine share;
-  // otherwise falls back to a haversine/mode-speed estimate.
-  const legTravelSeconds = (index: number): number => {
-    const from = index === 0 ? effectiveStart : waypoints[index - 1];
-    const wp = waypoints[index];
-    if (selectedRoute && selectedRoute.segments.length === waypoints.length) {
-      return selectedRoute.segments[index].duration ?? 0;
-    }
-    if (selectedRoute && haversineTotal > 0) {
-      return selectedRoute.duration * (haversineMeters(from, wp) / haversineTotal);
-    }
-    return haversineMeters(from, wp) / ((MODE_DEFAULT_KMH[wp.mode] * 1000) / 3600);
-  };
-
-  // Per-stop computed schedule from the chosen departure time + leg durations
-  // (× speed factor) + dwell. The trailing stop's dwell is shown but not played.
-  const departureBase = (() => {
-    const t = new Date(departureTime);
-    return isNaN(t.getTime()) ? new Date() : t;
-  })();
-  // Realistic wall-clock schedule. Train legs resolved via the transit API
-  // anchor to real departure/arrival times; the dwell at a stop becomes the
-  // real wait for the next train when applicable, otherwise the manual dwell.
-  // Uses true durations (not the simulation speed factor).
-  interface StopSchedule {
-    arrival: Date;
-    departure: Date;
-    wait: number; // minutes
-    label?: string; // train name on the leg arriving here
-  }
   const segs = selectedRoute && selectedRoute.segments.length === waypoints.length ? selectedRoute.segments : null;
-  const schedule: StopSchedule[] = (() => {
-    let clock = departureBase.getTime();
-    const out: StopSchedule[] = [];
-    for (let i = 0; i < waypoints.length; i++) {
-      const seg = segs?.[i];
-      let arrivalMs: number;
-      if (seg?.transit) {
-        arrivalMs = seg.transit.arrivalMs;
-      } else {
-        arrivalMs = clock + legTravelSeconds(i) * 1000;
-      }
-      // Dwell at this stop depends on whether the NEXT leg is a real train.
-      const nextSeg = segs?.[i + 1];
-      let departureMs: number;
-      let waitMin: number;
-      if (i < waypoints.length - 1 && nextSeg?.transit) {
-        departureMs = nextSeg.transit.departureMs;
-        waitMin = Math.max(0, Math.round((departureMs - arrivalMs) / 60000));
-      } else {
-        waitMin = waypoints[i].waitMinutes ?? 0;
-        departureMs = arrivalMs + waitMin * 60000;
-      }
-      out.push({ arrival: new Date(arrivalMs), departure: new Date(departureMs), wait: waitMin, label: seg?.transit?.label });
-      clock = departureMs;
-    }
-    return out;
-  })();
+
+  const schedule = calculateStopSchedule(waypoints, effectiveStart, selectedRoute, departureTime, haversineTotal);
   const finalArrival = schedule.length > 0 ? schedule[schedule.length - 1].arrival : null;
   const fmtClock = (d: Date) => d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 
@@ -598,35 +327,7 @@ export const RouteModePanel: React.FC<RouteModePanelProps> = ({
       return;
     }
     const factor = parseFloat(speedFactor.replace(",", ".")) || 1;
-    // Per-leg segment geometry is available (and index-aligned) only in the
-    // multi-segment resolution path, which is exactly where train legs live.
-    const perLegSegments =
-      selectedRoute && selectedRoute.segments.length === waypoints.length ? selectedRoute.segments : null;
-
-    const lastIndex = waypoints.length - 1;
-    const legs = waypoints.flatMap((wp, index) => {
-      const from = index === 0 ? effectiveStart : { lat: waypoints[index - 1].lat, lon: waypoints[index - 1].lon };
-      const end = { lat: wp.lat, lon: wp.lon };
-      const legKmh = MODE_DEFAULT_KMH[wp.mode] * factor;
-      const base = { speed: legKmh, startTime: Date.now(), endTime: Date.now() + 60000 };
-
-      // Travel leg(s) to this stop. Train follows the resolved rail geometry (if
-      // a rail router gave one) by expanding into straight `flight` sub-legs.
-      let travel;
-      if (wp.mode === "train") {
-        const geom = perLegSegments?.[index]?.coords ?? [from, end];
-        const path = geom.length > 2 ? simplifyGeometry(geom, 60) : [from, end];
-        travel = path.slice(0, -1).map((p, k) => ({ type: "flight", start: p, end: path[k + 1], ...base }));
-      } else {
-        travel = [{ type: BACKEND_LEG_TYPE[wp.mode], start: from, end, ...base }];
-      }
-
-      // Dwell at this stop (boarding / waiting for the next train), played as a
-      // near-stationary wait — uses the computed schedule's wait (which already
-      // folds in the real train wait), skipped on the final stop.
-      const waitSeconds = index < lastIndex ? Math.round((schedule[index]?.wait ?? 0) * 60) : 0;
-      return waitSeconds > 0 ? [...travel, makeWaitLeg(end, waitSeconds)] : travel;
-    });
+    const legs = buildPlaybackLegs(waypoints, effectiveStart, selectedRoute, schedule, factor);
 
     playSequence(legs, looping);
     showToast("Itinéraire envoyé au moteur.");

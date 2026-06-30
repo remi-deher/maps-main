@@ -7,8 +7,9 @@ desktop.ini
 *.log
 logs/
 
-# --- AI assistants (local-only state; .claude/skills/ stays tracked) ---
+# --- AI assistants (local-only state) ---
 .claude/settings.local.json
+.claude/skills/
 .claude/scheduled_tasks.lock
 .claude/shell-snapshots/
 .claude/todos/

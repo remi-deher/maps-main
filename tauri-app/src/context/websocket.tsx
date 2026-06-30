@@ -9,226 +9,39 @@ import {
 import { engineEvents } from "../lib/events";
 import { useLogs } from "./logsContext";
 import { usePairing } from "./pairingContext";
+import type {
+  DeviceDetails,
+  Diagnostics,
+  EngineMessageData,
+  EngineTransportContextType,
+  NetworkDevicesResult,
+  NetworkInterfaceInfo,
+  PatrolZone,
+  PlaySequenceLeg,
+  RouteProfile,
+  Settings,
+  Status,
+  Telemetry,
+} from "../types/engine";
+import { EngineAction, EngineEvent } from "../types/engineMessages";
 
 const DEFAULT_PORT = 8080;
 
-export interface LatLon {
-  lat: number;
-  lon: number;
-}
+export type {
+  DeviceDetails,
+  Diagnostics,
+  LatLon,
+  NetworkDevicesResult,
+  NetworkInterfaceInfo,
+  PatrolZone,
+  PlaySequenceLeg,
+  RouteProfile,
+  Settings,
+  Status,
+  Telemetry,
+} from "../types/engine";
 
-export interface Favorite {
-  lat: number;
-  lon: number;
-  name: string;
-  timestamp?: number;
-}
-
-export interface Settings {
-  companionPort?: number;
-  connectionMode?: "usb" | "wifi" | "both";
-  operationMode?: "hybrid" | "client-server" | "autonomous";
-  isEveilMode?: boolean;
-  eveilInterval?: number;
-  preferredDriver?: string;
-  usbDriver?: string;
-  wifiDriver?: string;
-  fallbackEnabled?: boolean;
-  clusterMode?: "off" | "manual" | "auto";
-  clusterHeartbeatSeconds?: number;
-  clusterMasterDeadSeconds?: number;
-  clusterPeerTimeoutSeconds?: number;
-  osrmBaseUrl?: string;
-  routingMode?: "auto" | "manual";
-  routingProvider?: "google" | "mapbox" | "osrm";
-  routingProviderPriority?: Array<"google" | "mapbox" | "osrm">;
-  googleRoutesApiKey?: string;
-  mapboxAccessToken?: string;
-  logLevel?: string;
-  notificationsEnabled?: boolean;
-  dynamicIslandEnabled?: boolean;
-}
-
-export interface DeviceDetails {
-  udid?: string;
-  name?: string;
-  productType?: string;
-  productVersion?: string;
-  serialNumber?: string;
-  wifiAddress?: string;
-  tunnelAddress?: string;
-  error?: string;
-}
-
-export interface DeviceInfo {
-  udid: string;
-  name: string;
-  driver: string;
-}
-
-export interface PairingRecord {
-  udid: string;
-  deviceName: string;
-  modTime: number;
-}
-
-export interface DiagnosticsDevice {
-  UDID: string;
-  Name: string;
-  Source: string;
-}
-
-export interface Diagnostics {
-  goIosPath: string;
-  goIosError?: string;
-  goIosVersion?: string;
-  pmd3Path: string;
-  pmd3Error?: string;
-  pmd3Version?: string;
-  lockdownDir: string;
-  pairingRecords: PairingRecord[] | null;
-  usbDevices: DiagnosticsDevice[] | null;
-  usbDevicesError?: string;
-  unpairedUsbDevices?: string[] | null;
-  error?: string;
-}
-
-export interface NavigationProgress {
-  index: number;
-  total: number;
-  lat: number;
-  lon: number;
-  speed: number;
-}
-
-export interface NavigationStatus {
-  state: "running" | "paused" | "stopped";
-  index: number;
-  total: number;
-}
-
-export interface Navigation {
-  progress: NavigationProgress | null;
-  status: NavigationStatus | null;
-}
-
-export interface RoutingProviderInfo {
-  id: "google" | "mapbox" | "osrm";
-  name: string;
-  available: boolean;
-  configured: boolean;
-  profiles: Array<"driving" | "walking" | "cycling">;
-}
-
-export interface RoutingInfo {
-  mode: "auto" | "manual";
-  provider: "google" | "mapbox" | "osrm";
-  activeProvider: "google" | "mapbox" | "osrm";
-  priority: Array<"google" | "mapbox" | "osrm">;
-  availableProviders: Array<"google" | "mapbox" | "osrm">;
-  providers: RoutingProviderInfo[];
-}
-
-export interface PatrolZone {
-  type: "circle" | "rectangle";
-  center: LatLon;
-  radius: number;
-  bounds?: {
-    ne: LatLon;
-    sw: LatLon;
-  };
-  active: boolean;
-}
-
-export interface Status {
-  state: "idle" | "ready" | "starting" | "running" | "moving" | "paused";
-  tunnelActive: boolean;
-  rsdAddress: string | null;
-  rsdPort: number | null;
-  connectionType: "USB" | "WiFi" | "MANUAL" | "UNKNOWN";
-  deviceInfo: DeviceInfo | null;
-  maintainActive: boolean;
-  lastHeartbeat: number | null;
-  usbDriver: string;
-  wifiDriver: string;
-  fallbackEnabled: boolean;
-  notificationsEnabled: boolean;
-  dynamicIslandEnabled: boolean;
-  favorites: Favorite[];
-  recentHistory: Favorite[];
-  currentSequencePreview: LatLon[];
-  patrolZone: PatrolZone | null;
-  navigation: Navigation;
-  lastInjectedLocation?: { lat: number; lon: number; name?: string; timestamp?: number } | null;
-  lastRealLocation?: { lat: number; lon: number; drift?: number; timestamp?: number } | null;
-  osrmBaseUrl?: string;
-  routing?: RoutingInfo;
-  clusterHeartbeatSeconds?: number;
-  clusterMasterDeadSeconds?: number;
-  clusterPeerTimeoutSeconds?: number;
-}
-
-export interface NetworkInterfaceInfo {
-  name: string;
-  ip: string;
-}
-
-export interface NetworkDevice {
-  udid: string;
-  address: string;
-  port: number;
-}
-
-export interface NetworkDevicesResult {
-  devices: NetworkDevice[] | null;
-  error?: string;
-}
-
-export interface Telemetry {
-  latency: number;
-  packetLoss: number;
-  uptime: number;
-  throughput: number;
-}
-
-interface WebSocketContextType {
-  isConnected: boolean;
-  connectionStatus: "connecting" | "connected" | "reconnecting" | "disconnected";
-  connectionUrl: string;
-  enginePort: number;
-  engineStatus: "starting" | "running" | "crashed" | "unknown";
-  setEnginePort: (port: number) => Promise<void>;
-  mdnsInterface: string | null;
-  setMdnsInterface: (interfaceName: string | null) => Promise<void>;
-  networkInterfaces: NetworkInterfaceInfo[];
-  lastError: string | null;
-  canSend: boolean;
-  status: Status | null;
-  telemetry: Telemetry | null;
-  deviceDetails: DeviceDetails | null;
-  getDeviceInfo: () => void;
-  sendMessage: (type: string, data?: any) => boolean;
-  setLocation: (lat: number, lon: number, name?: string) => void;
-  clearLocation: () => void;
-  playRoute: (endLat: number, endLon: number, speed: number, profile: "driving" | "walking" | "cycling") => void;
-  playSequence: (legs: any[], looping: boolean) => void;
-  playCustomGpx: (gpxContent: string, speed: number) => void;
-  stopRoute: () => void;
-  pauseRoute: () => void;
-  resumeRoute: () => void;
-  relance: () => void;
-  saveSettings: (settings: Settings) => void;
-  addFavorite: (lat: number, lon: number, name: string) => void;
-  removeFavorite: (lat: number, lon: number) => void;
-  renameFavorite: (lat: number, lon: number, newName: string) => void;
-  updatePatrolZone: (zone: PatrolZone | null) => void;
-  diagnostics: Diagnostics | null;
-  getDiagnostics: () => void;
-  networkDevices: NetworkDevicesResult | null;
-  getNetworkDevices: () => void;
-}
-
-const WebSocketContext = createContext<WebSocketContextType | null>(null);
+const WebSocketContext = createContext<EngineTransportContextType | null>(null);
 
 export const useEngine = () => {
   const context = useContext(WebSocketContext);
@@ -251,7 +64,7 @@ export const useWebSocket = () => {
 
 export const WebSocketProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [enginePort, setEnginePortState] = useState(DEFAULT_PORT);
-  const [engineStatus, setEngineStatus] = useState<WebSocketContextType["engineStatus"]>("unknown");
+  const [engineStatus, setEngineStatus] = useState<EngineTransportContextType["engineStatus"]>("unknown");
   const [mdnsInterface, setMdnsInterfaceState] = useState<string | null>(null);
   const [networkInterfaces, setNetworkInterfaces] = useState<NetworkInterfaceInfo[]>([]);
   const [deviceToken, setDeviceToken] = useState<string | null>(() => (isTauri ? null : getStoredToken()));
@@ -260,7 +73,7 @@ export const WebSocketProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     ? `ws://localhost:${enginePort}/ws`
     : sameOriginWsUrl("/ws") + (deviceToken ? `?token=${encodeURIComponent(deviceToken)}` : "");
   const [isConnected, setIsConnected] = useState(false);
-  const [connectionStatus, setConnectionStatus] = useState<WebSocketContextType["connectionStatus"]>("connecting");
+  const [connectionStatus, setConnectionStatus] = useState<EngineTransportContextType["connectionStatus"]>("connecting");
   const [lastError, setLastError] = useState<string | null>(null);
   const [status, setStatus] = useState<Status | null>(null);
   const [telemetry, setTelemetry] = useState<Telemetry | null>(null);
@@ -296,8 +109,8 @@ export const WebSocketProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       if (!isTauri) {
         setEngineStatus("running");
       }
-      ws.send(JSON.stringify({ type: "GET_STATUS" }));
-      ws.send(JSON.stringify({ type: "GET_LOGS" }));
+      ws.send(JSON.stringify({ type: EngineAction.GetStatus }));
+      ws.send(JSON.stringify({ type: EngineAction.GetLogs }));
     };
 
     ws.onmessage = (event) => {
@@ -306,38 +119,38 @@ export const WebSocketProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         const { type, data } = envelope;
 
         switch (type) {
-          case "STATUS":
-          case "STATUS_UPDATE":
+          case EngineEvent.Status:
+          case EngineEvent.StatusUpdate:
             setStatus(data);
             break;
-          case "TELEMETRY":
+          case EngineEvent.Telemetry:
             setTelemetry(data);
             break;
-          case "DEVICE_INFO":
+          case EngineEvent.DeviceInfo:
             setDeviceDetails(data);
             break;
-          case "LOG":
+          case EngineEvent.Log:
             engineEvents.emit("log", data);
             break;
-          case "DIAGNOSTICS":
+          case EngineEvent.Diagnostics:
             setDiagnostics(data);
             break;
-          case "NETWORK_DEVICES":
+          case EngineEvent.NetworkDevices:
             setNetworkDevices(data);
             break;
-          case "PAIR_RESULT":
+          case EngineEvent.PairResult:
             engineEvents.emit("pair_result", data);
             break;
-          case "PAIR_CODE":
+          case EngineEvent.PairCode:
             engineEvents.emit("pair_code", data);
             break;
-          case "PAIRED_DEVICES":
+          case EngineEvent.PairedDevices:
             engineEvents.emit("paired_devices", data);
             break;
-          case "LOGS":
+          case EngineEvent.Logs:
             engineEvents.emit("logs", data);
             break;
-          case "LOCATION":
+          case EngineEvent.Location:
             setStatus((prev) => {
               if (!prev) return null;
               return {
@@ -476,7 +289,7 @@ export const WebSocketProvider: React.FC<{ children: React.ReactNode }> = ({ chi
 
   const canSend = isConnected && wsRef.current?.readyState === WebSocket.OPEN;
 
-  const sendMessage = (type: string, data: any = {}) => {
+  const sendMessage = (type: string, data: EngineMessageData = {}) => {
     if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
       wsRef.current.send(JSON.stringify({ type, data }));
       return true;
@@ -488,7 +301,7 @@ export const WebSocketProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   };
 
   useEffect(() => {
-    const handleSend = (type: string, data?: any) => {
+    const handleSend = (type: string, data?: EngineMessageData) => {
       sendMessage(type, data);
     };
     engineEvents.on("send", handleSend);
@@ -498,74 +311,74 @@ export const WebSocketProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   }, [isConnected]);
 
   const setLocation = (lat: number, lon: number, name = "Point Injecté") => {
-    sendMessage("SET_LOCATION", { lat, lon, name });
+    sendMessage(EngineAction.SetLocation, { lat, lon, name });
   };
 
   const clearLocation = () => {
-    sendMessage("CLEAR_LOCATION");
+    sendMessage(EngineAction.ClearLocation);
   };
 
-  const playRoute = (endLat: number, endLon: number, speed: number, profile: "driving" | "walking" | "cycling") => {
-    sendMessage("PLAY_ROUTE", { endLat, endLon, speed, profile });
+  const playRoute = (endLat: number, endLon: number, speed: number, profile: RouteProfile) => {
+    sendMessage(EngineAction.PlayRoute, { endLat, endLon, speed, profile });
   };
 
-  const playSequence = (legs: any[], looping: boolean) => {
-    sendMessage("PLAY_SEQUENCE", { legs, looping });
+  const playSequence = (legs: PlaySequenceLeg[], looping: boolean) => {
+    sendMessage(EngineAction.PlaySequence, { legs, looping });
   };
 
   const playCustomGpx = (gpxContent: string, speed: number) => {
-    sendMessage("PLAY_CUSTOM_GPX", { gpxContent, speed });
+    sendMessage(EngineAction.PlayCustomGpx, { gpxContent, speed });
   };
 
   const stopRoute = () => {
-    sendMessage("STOP_ROUTE");
+    sendMessage(EngineAction.StopRoute);
   };
 
   const pauseRoute = () => {
-    sendMessage("PAUSE_ROUTE");
+    sendMessage(EngineAction.PauseRoute);
   };
 
   const resumeRoute = () => {
-    sendMessage("RESUME_ROUTE");
+    sendMessage(EngineAction.ResumeRoute);
   };
 
   const relance = () => {
-    sendMessage("RELANCE");
+    sendMessage(EngineAction.Relance);
   };
 
   const saveSettings = (newSettings: Settings) => {
-    sendMessage("SAVE_SETTINGS", newSettings);
+    sendMessage(EngineAction.SaveSettings, newSettings);
   };
 
   const addFavorite = (lat: number, lon: number, name: string) => {
-    sendMessage("ADD_FAVORITE", { lat, lon, name });
+    sendMessage(EngineAction.AddFavorite, { lat, lon, name });
   };
 
   const removeFavorite = (lat: number, lon: number) => {
-    sendMessage("REMOVE_FAVORITE", { lat, lon });
+    sendMessage(EngineAction.RemoveFavorite, { lat, lon });
   };
 
   const renameFavorite = (lat: number, lon: number, newName: string) => {
-    sendMessage("RENAME_FAVORITE", { lat, lon, newName });
+    sendMessage(EngineAction.RenameFavorite, { lat, lon, newName });
   };
 
   const updatePatrolZone = (zone: PatrolZone | null) => {
-    sendMessage("PATROL_UPDATE", { zone });
+    sendMessage(EngineAction.PatrolUpdate, { zone });
   };
 
   const getDeviceInfo = () => {
     setDeviceDetails(null);
-    sendMessage("GET_DEVICE_INFO");
+    sendMessage(EngineAction.GetDeviceInfo);
   };
 
   const getDiagnostics = () => {
     setDiagnostics(null);
-    sendMessage("GET_DIAGNOSTICS");
+    sendMessage(EngineAction.GetDiagnostics);
   };
 
   const getNetworkDevices = () => {
     setNetworkDevices(null);
-    sendMessage("GET_NETWORK_DEVICES");
+    sendMessage(EngineAction.GetNetworkDevices);
   };
 
   return (

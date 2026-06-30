@@ -7,21 +7,21 @@ import { isTransitEnabled, setTransitEnabled as persistTransitEnabled } from "..
 import { Modal } from "./ui/Modal";
 import { useEngine } from "../context/websocket";
 import { usePairing } from "../context/pairingContext";
+import { EngineAction } from "../types/engineMessages";
+import {
+  DEFAULT_ROUTING_PRIORITY,
+  ROUTING_PROVIDER_LABELS,
+  buildSettingsPayload,
+  isValidRsdAddress as validateRsdAddress,
+  moveRoutingProviderPriority,
+  selectQrPairingHost,
+  type RoutingProviderId,
+} from "../features/settings/settingsModel";
 
 interface SettingsModalProps {
   open: boolean;
   onClose: () => void;
 }
-
-type RoutingProviderId = "google" | "mapbox" | "osrm";
-
-const ROUTING_PROVIDER_LABELS: Record<RoutingProviderId, string> = {
-  google: "Google Routes",
-  mapbox: "Mapbox",
-  osrm: "OSRM",
-};
-
-const DEFAULT_ROUTING_PRIORITY: RoutingProviderId[] = ["google", "mapbox", "osrm"];
 
 /// Réglages avancés du moteur (connexion, appareil, tunnel/driver, diagnostics),
 /// regroupés dans une modale à sections plutôt qu'un onglet permanent de la sidebar.
@@ -67,13 +67,10 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ open, onClose }) =
   // Pick the interface the user restricted mDNS to, if any; otherwise the first
   // detected LAN interface — "localhost" would be useless in the QR code since
   // it's scanned by a *different* device (the iPhone).
-  const qrPairingHost = networkInterfaces.find((iface) => iface.name === mdnsInterface)?.ip
-    ?? networkInterfaces[0]?.ip
-    ?? null;
+  const qrPairingHost = selectQrPairingHost(networkInterfaces, mdnsInterface);
 
   // "ip:port" — accepts the format the daemon expects for a pinned RSD endpoint.
-  const RSD_ADDRESS_RE = /^(\d{1,3}\.){3}\d{1,3}:\d{1,5}$/;
-  const isValidRsdAddress = wifiAddress.trim() === "" || RSD_ADDRESS_RE.test(wifiAddress.trim());
+  const isValidRsdAddress = validateRsdAddress(wifiAddress);
 
   // Prefill the routing/cluster fields with the engine's live values whenever a
   // fresh status arrives. Also prefill the driver and transport fields once on startup.
@@ -121,26 +118,22 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ open, onClose }) =
       showToast("Moteur hors ligne: réglages non envoyés.");
       return;
     }
-    const routingSettings: Record<string, unknown> = {
+    saveSettings(buildSettingsPayload({
+      companionPort,
+      preferredDriver,
+      isEveilMode,
+      eveilInterval,
+      jitterEnabled,
+      osrmBaseUrl,
       routingMode,
       routingProvider,
-      routingProviderPriority: routingPriority,
-    };
-    if (googleRoutesApiKey.trim()) routingSettings.googleRoutesApiKey = googleRoutesApiKey.trim();
-    if (mapboxAccessToken.trim()) routingSettings.mapboxAccessToken = mapboxAccessToken.trim();
-
-    saveSettings({
-      companionPort: parseInt(companionPort),
-      preferredDriver: preferredDriver as any,
-      isEveilMode,
-      eveilInterval: parseInt(eveilInterval),
-      jitterEnabled,
-      osrmBaseUrl: osrmBaseUrl.trim(),
-      ...routingSettings,
-      clusterHeartbeatSeconds: parseInt(clusterHeartbeat) || 0,
-      clusterMasterDeadSeconds: parseInt(clusterMasterDead) || 0,
-      clusterPeerTimeoutSeconds: parseInt(clusterPeerTimeout) || 0,
-    } as any);
+      routingPriority,
+      googleRoutesApiKey,
+      mapboxAccessToken,
+      clusterHeartbeat,
+      clusterMasterDead,
+      clusterPeerTimeout,
+    }));
     setGoogleRoutesApiKey("");
     setMapboxAccessToken("");
     showToast("Réglages envoyés au moteur.");
@@ -152,28 +145,17 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ open, onClose }) =
       return;
     }
     if (provider === "google") {
-      saveSettings({ googleRoutesApiKey: "" } as any);
+      saveSettings({ googleRoutesApiKey: "" });
       setGoogleRoutesApiKey("");
     } else {
-      saveSettings({ mapboxAccessToken: "" } as any);
+      saveSettings({ mapboxAccessToken: "" });
       setMapboxAccessToken("");
     }
     showToast("Cle supprimee du moteur.");
   };
 
   const moveRoutingProvider = (provider: RoutingProviderId, direction: -1 | 1) => {
-    setRoutingPriority((current) => {
-      const normalized = [...current];
-      for (const id of DEFAULT_ROUTING_PRIORITY) {
-        if (!normalized.includes(id)) normalized.push(id);
-      }
-      const index = normalized.indexOf(provider);
-      const target = index + direction;
-      if (index < 0 || target < 0 || target >= normalized.length) return normalized;
-      const next = [...normalized];
-      [next[index], next[target]] = [next[target], next[index]];
-      return next;
-    });
+    setRoutingPriority((current) => moveRoutingProviderPriority(current, provider, direction));
   };
 
   const connectionSection = (
@@ -429,7 +411,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ open, onClose }) =
             const trimmed = wifiAddress.trim();
             // Priority: a typed manual address pins a raw endpoint (wifi); else a
             // picked device pins by UDID (auto + follow); else plain auto.
-            sendMessage("SWITCH_DRIVER", {
+            sendMessage(EngineAction.SwitchDriver, {
               driverId: preferredDriver,
               transport: trimmed ? "wifi" : "auto",
               wifiAddress: trimmed,

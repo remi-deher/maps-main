@@ -21,7 +21,13 @@ concurrency:
 permissions:
   contents: read
 
+# ==============================================================================
+# JOBS PIPELINE DEFINITION
+# ==============================================================================
 jobs:
+  # ----------------------------------------------------------------------------
+  # JOB 1: Check Release Trigger & Version Resolution
+  # ----------------------------------------------------------------------------
   check-trigger:
     name: check release trigger
     runs-on: ubuntu-latest
@@ -90,6 +96,9 @@ jobs:
 
   # Build the web UI once and share it; every engine build embeds it (-tags
   # webui) so each shipped engine serves the browser UI at / (headless+web).
+  # ----------------------------------------------------------------------------
+  # JOB 2: Build Web UI Frontend (Vite + React)
+  # ----------------------------------------------------------------------------
   build-webui:
     name: build web UI
     needs: check-trigger
@@ -113,6 +122,9 @@ jobs:
           path: tauri-app/dist
           if-no-files-found: error
 
+  # ----------------------------------------------------------------------------
+  # JOB 3: Build Core Go Headless Engine (Cross-Platform compilation)
+  # ----------------------------------------------------------------------------
   build-engine:
     name: build engine ${{ matrix.goos }}/${{ matrix.goarch }}
     needs: [check-trigger, build-webui]
@@ -157,6 +169,9 @@ jobs:
           name: gpsmock-engine-${{ matrix.goos }}-${{ matrix.goarch }}
           path: dist/*
 
+  # ----------------------------------------------------------------------------
+  # JOB 4: Build Self-Contained Portable Windows Engine (with drivers embedded)
+  # ----------------------------------------------------------------------------
   portable-windows-engine:
     name: build self-contained Windows portable .exe
     needs: [check-trigger, build-webui]
@@ -200,6 +215,9 @@ jobs:
           path: gpsmock-engine-portable.exe
           if-no-files-found: error
 
+  # ----------------------------------------------------------------------------
+  # JOB 5: Build Windows Installer for the Portable Engine (Inno Setup)
+  # ----------------------------------------------------------------------------
   installer-windows-engine:
     name: build Windows installer (Inno Setup)
     needs: [check-trigger, portable-windows-engine]
@@ -230,6 +248,9 @@ jobs:
           path: setup-out/gpsmock-engine-setup.exe
           if-no-files-found: error
 
+  # ----------------------------------------------------------------------------
+  # JOB 6: Build Desktop Client App (Tauri: Windows, macOS, Linux)
+  # ----------------------------------------------------------------------------
   build-tauri:
     name: build desktop app (${{ matrix.platform }})
     needs: check-trigger
@@ -307,6 +328,9 @@ jobs:
             tauri-app/src-tauri/target/release/bundle/**/*.rpm
           if-no-files-found: error
 
+  # ----------------------------------------------------------------------------
+  # JOB 7: Build Unsigned iOS Companion App Bundle (.ipa)
+  # ----------------------------------------------------------------------------
   build-ios:
     name: build unsigned .ipa
     needs: check-trigger
@@ -413,6 +437,9 @@ jobs:
           name: GpsMockCompanion-unsigned-ipa
           path: ios-app/dist/GpsMockCompanion-unsigned.ipa
 
+  # ----------------------------------------------------------------------------
+  # JOB 8: Build and Push Headless Engine Docker Image (GitHub & Docker Hub)
+  # ----------------------------------------------------------------------------
   docker:
     name: build & push engine image
     needs: check-trigger
@@ -486,6 +513,9 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
+  # ----------------------------------------------------------------------------
+  # JOB 9: Build iOS Enrolment Tools (GUI/Electron & CLI/Go)
+  # ----------------------------------------------------------------------------
   build-enroller:
     name: build ios-enroller (GUI & CLI)
     needs: check-trigger
@@ -534,6 +564,9 @@ jobs:
           path: staging/*
           if-no-files-found: error
 
+  # ----------------------------------------------------------------------------
+  # JOB 10: Gather All Compiled Assets and Publish GitHub Release
+  # ----------------------------------------------------------------------------
   release:
     name: publish GitHub release
     needs: [check-trigger, build-engine, portable-windows-engine, installer-windows-engine, build-tauri, build-ios, docker, build-enroller]
