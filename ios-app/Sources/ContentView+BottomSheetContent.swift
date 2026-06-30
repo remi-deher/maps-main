@@ -73,9 +73,9 @@ extension ContentView {
                 engineAddress: $engineAddress,
                 engine: session.engine,
                 discovery: discovery,
-                onToggleConnection: toggleConnection,
-                onRetryDiscovery: startDiscovery,
-                onApplyPort: reconnect,
+                onToggleConnection: { session.toggleConnection(engineAddress: engineAddress, keepAliveEnabled: keepAliveEnabled) },
+                onRetryDiscovery: { discovery.start() },
+                onApplyPort: { session.reconnect(engineAddress: engineAddress) },
                 liveActivityEnabled: $liveActivityEnabled,
                 keepAliveEnabled: $keepAliveEnabled,
                 keepAliveInterval: $keepAliveInterval,
@@ -130,7 +130,7 @@ extension ContentView {
     }
 
     func syncSheetDetent(to presentationDetent: PresentationDetent) {
-        let target = coordinator.sheetDetent(for: presentationDetent)
+        let target = sheetDetent(for: presentationDetent)
         if coordinator.sheetDetent != target {
             coordinator.sheetDetent = target
         }
@@ -191,7 +191,7 @@ extension ContentView {
 
     func teleportSelectedPlace() {
         guard let place = coordinator.selectedPlace, coordinator.requireConnection(session: session) else { return }
-        session.engine.setLocation(lat: place.coordinate.latitude, lon: place.coordinate.longitude)
+        session.engine.setLocation(lat: place.coordinate.latitude, lon: place.coordinate.longitude, name: place.title)
         coordinator.selectedPlace = nil
     }
 

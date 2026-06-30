@@ -16,7 +16,7 @@ import UIKit
 // opening a second simultaneous sheet on the same presenter.
 struct SettingsSheet: View {
     @Binding var engineAddress: String
-    var engine: EngineClient
+    var engine: any EngineClientProtocol
     var discovery: EngineDiscovery
     var onToggleConnection: () -> Void
     var onRetryDiscovery: () -> Void

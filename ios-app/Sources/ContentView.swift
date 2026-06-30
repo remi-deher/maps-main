@@ -158,18 +158,7 @@ struct ContentView: View {
                 newNavigationState: newState
             )
         }
-        .onChange(of: discovery.state) { newState in
-            guard case .found(let host, let port) = newState else { return }
-            // Only auto-fill when the user hasn't configured an address. A
-            // manually entered (working, IPv4) address must not be clobbered by
-            // a discovery result - the user explicitly chose it.
-            if engineAddress.isEmpty {
-                engineAddress = "\(host):\(port)"
-            }
-            if coordinator.engineState(session: session) != .connected && coordinator.engineState(session: session) != .connecting {
-                session.toggleConnection(engineAddress: engineAddress, keepAliveEnabled: keepAliveEnabled)
-            }
-        }
+        .onChange(of: discovery.state, perform: handleDiscoveryStateChange)
         .onChange(of: coordinator.searchQuery) { newValue in
             if let coordinate = session.location.lastLocation?.coordinate {
                 coordinator.searchCompleter.updateRegion(center: coordinate)
@@ -242,6 +231,20 @@ struct ContentView: View {
             coordinator.selectedPlace = place
             coordinator.selectedFeature = nil
         })
+    }
+
+    private func handleDiscoveryStateChange(_ newState: EngineDiscovery.State) {
+        guard case .found(let host, let port) = newState else { return }
+        // Only auto-fill when the user hasn't configured an address. A
+        // manually entered (working, IPv4) address must not be clobbered by
+        // a discovery result - the user explicitly chose it.
+        if engineAddress.isEmpty {
+            engineAddress = "\(host):\(port)"
+        }
+        let state = coordinator.engineState(session: session)
+        if state != .connected && state != .connecting {
+            session.toggleConnection(engineAddress: engineAddress, keepAliveEnabled: keepAliveEnabled)
+        }
     }
 
 }
