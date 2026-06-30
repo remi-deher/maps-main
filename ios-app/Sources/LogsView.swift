@@ -7,10 +7,10 @@ import SwiftUI
 // the machine running the engine, or a Mac + Console.app for the client
 // side, required.
 struct LogsView: View {
-    var engine: EngineClient
+    var engine: any EngineClientProtocol
     private var appLogger = AppLogger.shared
 
-    init(engine: EngineClient) {
+    init(engine: any EngineClientProtocol) {
         self.engine = engine
     }
 
