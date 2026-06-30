@@ -2,7 +2,7 @@ import SwiftUI
 import CoreLocation
 
 struct DiagnosticsView: View {
-    var engine: EngineClient
+    var engine: any EngineClientProtocol
     var discovery: EngineDiscovery
 
     var body: some View {
