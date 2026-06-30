@@ -174,28 +174,8 @@ struct ContentView: View {
                 withAnimation { coordinator.sheetDetent = .medium }
             }
         }
-        .onChange(of: coordinator.itineraryStops) { newStops in
-            // Plans-style: adding (or removing/reordering) a stop reframes
-            // the camera to show the whole itinerary, not just the new point.
-            coordinator.fitItinerary(newStops, session: session)
-            coordinator.estimator.recomputeLegEstimates(
-                stops: newStops,
-                profile: coordinator.itineraryProfile,
-                currentLocation: session.location.lastLocation,
-                onComplete: { coordinator.estimator.legEstimates = $0 }
-            )
-            if !newStops.isEmpty {
-                withAnimation { coordinator.sheetDetent = .medium }
-            }
-        }
-        .onChange(of: coordinator.itineraryProfile, perform: { _ in
-            coordinator.estimator.recomputeLegEstimates(
-                stops: coordinator.itineraryStops,
-                profile: coordinator.itineraryProfile,
-                currentLocation: session.location.lastLocation,
-                onComplete: { coordinator.estimator.legEstimates = $0 }
-            )
-        })
+        .onChange(of: coordinator.itineraryStops, perform: handleItineraryStopsChange)
+        .onChange(of: coordinator.itineraryProfile, perform: handleItineraryProfileChange)
         .onChange(of: liveActivityKey) { key in
             liveActivity.sync(state: key.state, locationName: key.name, enabled: liveActivityEnabled)
         }
@@ -245,6 +225,30 @@ struct ContentView: View {
         if state != .connected && state != .connecting {
             session.toggleConnection(engineAddress: engineAddress, keepAliveEnabled: keepAliveEnabled)
         }
+    }
+
+    private func handleItineraryStopsChange(_ newStops: [RouteStop]) {
+        // Plans-style: adding (or removing/reordering) a stop reframes
+        // the camera to show the whole itinerary, not just the new point.
+        coordinator.fitItinerary(newStops, session: session)
+        coordinator.estimator.recomputeLegEstimates(
+            stops: newStops,
+            profile: coordinator.itineraryProfile,
+            currentLocation: session.location.lastLocation,
+            onComplete: { estimates in coordinator.estimator.legEstimates = estimates }
+        )
+        if !newStops.isEmpty {
+            withAnimation { coordinator.sheetDetent = .medium }
+        }
+    }
+
+    private func handleItineraryProfileChange(_ newProfile: String) {
+        coordinator.estimator.recomputeLegEstimates(
+            stops: coordinator.itineraryStops,
+            profile: newProfile,
+            currentLocation: session.location.lastLocation,
+            onComplete: { estimates in coordinator.estimator.legEstimates = estimates }
+        )
     }
 
 }
