@@ -8,61 +8,14 @@ extension ContentView {
     // long dependency-wiring block.
     func bottomSheetContent(scrollOffset: Binding<CGFloat>) -> some View {
         BottomSheet(
-            search: BottomSheetSearchContext(
-                query: $coordinator.searchQuery,
-                isFocused: $searchFocused,
-                suggestions: coordinator.searchCompleter.results,
-                isSearching: coordinator.searchCompleter.isSearching,
-                onSelectSuggestion: coordinator.selectSearchSuggestion,
-                onSubmit: {
-                    searchFocused = false
-                    coordinator.submitSearch(session: session)
-                }
-            ),
-            itinerary: BottomSheetItineraryContext(
-                stops: $coordinator.itineraryStops,
-                speed: $coordinator.itinerarySpeed,
-                profile: $coordinator.itineraryProfile,
-                legEstimates: coordinator.legEstimates,
-                activeRoute: coordinator.activeRoute,
-                onAddStop: { searchFocused = true },
-                onLaunch: { coordinator.launchItinerary(session: session) },
-                onShowActiveRouteDetails: coordinator.showActiveRouteDetails,
-                onRecenterActiveRoute: { coordinator.recenterActiveRoute(session: session) }
-            ),
-            library: BottomSheetLibraryContext(
-                favorites: session.engine.status?.favorites ?? [],
-                onSelectFavorite: { fav in coordinator.selectFavorite(fav, session: session) },
-                onDeleteFavorite: { favorite in
-                    session.engine.removeFavorite(lat: favorite.lat, lon: favorite.lon)
-                },
-                recentPlaces: coordinator.recentPlaces,
-                onSelectRecentPlace: coordinator.selectRecentPlace,
-                onClearRecentPlaces: coordinator.clearRecentPlaces,
-                hasSavedItinerary: coordinator.hasSavedItinerary,
-                onLoadLastItinerary: coordinator.loadLastItinerary
-            ),
-            place: BottomSheetPlaceContext(
-                selectedPlace: coordinator.selectedPlace,
-                referenceCoordinate: coordinator.spoofedCoordinate(session: session) ?? session.location.lastLocation?.coordinate,
-                actions: placeActions
-            ),
+            search: searchContext,
+            itinerary: itineraryContext,
+            library: libraryContext,
+            place: placeContext,
             patrol: patrolControls,
             gpx: gpxImport,
-            simulation: BottomSheetSimulationContext(
-                state: session.engine.status?.state,
-                onPauseRoute: { coordinator.pauseActiveRoute(session: session) },
-                onResumeRoute: { coordinator.resumeActiveRoute(session: session) },
-                onStopRoute: { coordinator.stopActiveRoute(session: session) }
-            ),
-            chrome: BottomSheetChromeContext(
-                onOpenSettings: { coordinator.showSettings = true },
-                onReportProblem: {
-                    coordinator.settingsOpenToDiagnostics = true
-                    coordinator.showSettings = true
-                },
-                onCollapseSheet: collapseBottomSheet
-            ),
+            simulation: simulationContext,
+            chrome: chromeContext,
             presentation: BottomSheetPresentationContext(
                 scrollOffset: scrollOffset,
                 sheetDetent: $coordinator.sheetDetent,
@@ -156,6 +109,77 @@ extension ContentView {
             coordinator.sheetDetent = .collapsed
             coordinator.nativeSheetDetent = collapsedPresentationDetent
         }
+    }
+
+    var searchContext: BottomSheetSearchContext {
+        BottomSheetSearchContext(
+            query: $coordinator.searchQuery,
+            isFocused: $searchFocused,
+            suggestions: coordinator.searchCompleter.results,
+            isSearching: coordinator.searchCompleter.isSearching,
+            onSelectSuggestion: coordinator.selectSearchSuggestion,
+            onSubmit: {
+                searchFocused = false
+                coordinator.submitSearch(session: session)
+            }
+        )
+    }
+
+    var itineraryContext: BottomSheetItineraryContext {
+        BottomSheetItineraryContext(
+            stops: $coordinator.itineraryStops,
+            speed: $coordinator.itinerarySpeed,
+            profile: $coordinator.itineraryProfile,
+            legEstimates: coordinator.legEstimates,
+            activeRoute: coordinator.activeRoute,
+            onAddStop: { searchFocused = true },
+            onLaunch: { coordinator.launchItinerary(session: session) },
+            onShowActiveRouteDetails: coordinator.showActiveRouteDetails,
+            onRecenterActiveRoute: { coordinator.recenterActiveRoute(session: session) }
+        )
+    }
+
+    var libraryContext: BottomSheetLibraryContext {
+        BottomSheetLibraryContext(
+            favorites: session.engine.status?.favorites ?? [],
+            onSelectFavorite: { fav in coordinator.selectFavorite(fav, session: session) },
+            onDeleteFavorite: { favorite in
+                session.engine.removeFavorite(lat: favorite.lat, lon: favorite.lon)
+            },
+            recentPlaces: coordinator.recentPlaces,
+            onSelectRecentPlace: coordinator.selectRecentPlace,
+            onClearRecentPlaces: coordinator.clearRecentPlaces,
+            hasSavedItinerary: coordinator.hasSavedItinerary,
+            onLoadLastItinerary: coordinator.loadLastItinerary
+        )
+    }
+
+    var placeContext: BottomSheetPlaceContext {
+        BottomSheetPlaceContext(
+            selectedPlace: coordinator.selectedPlace,
+            referenceCoordinate: coordinator.spoofedCoordinate(session: session) ?? session.location.lastLocation?.coordinate,
+            actions: placeActions
+        )
+    }
+
+    var simulationContext: BottomSheetSimulationContext {
+        BottomSheetSimulationContext(
+            state: session.engine.status?.state,
+            onPauseRoute: { coordinator.pauseActiveRoute(session: session) },
+            onResumeRoute: { coordinator.resumeActiveRoute(session: session) },
+            onStopRoute: { coordinator.stopActiveRoute(session: session) }
+        )
+    }
+
+    var chromeContext: BottomSheetChromeContext {
+        BottomSheetChromeContext(
+            onOpenSettings: { coordinator.showSettings = true },
+            onReportProblem: {
+                coordinator.settingsOpenToDiagnostics = true
+                coordinator.showSettings = true
+            },
+            onCollapseSheet: collapseBottomSheet
+        )
     }
 
     var placeActions: PlaceActions {

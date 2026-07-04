@@ -49,7 +49,11 @@ final class ItineraryEstimator {
 
     // ETA + geometry for a single leg: OSRM when available (real road path),
     // otherwise a MapKit estimate with a straight-line segment for the preview.
-    private func legResult(from origin: CLLocationCoordinate2D, to destination: CLLocationCoordinate2D, profile: String) async -> (estimate: LegEstimate?, path: [CLLocationCoordinate2D]) {
+    private func legResult(
+        from origin: CLLocationCoordinate2D,
+        to destination: CLLocationCoordinate2D,
+        profile: String
+    ) async -> (estimate: LegEstimate?, path: [CLLocationCoordinate2D]) {
         if let route = await OSRMClient.fetchRoute(from: origin, to: destination, profile: profile) {
             return (LegEstimate(distanceMeters: route.distanceMeters, travelTime: route.durationSeconds), route.path)
         }
