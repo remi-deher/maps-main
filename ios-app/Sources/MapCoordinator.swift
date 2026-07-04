@@ -26,8 +26,16 @@ final class MapCoordinator {
     private let persistence = MapPersistenceStore()
     private let playbackBuilder = ItineraryPlaybackBuilder()
     var legEstimates: [UUID: LegEstimate] = [:]
+    // Real road geometry for the itinerary being planned (before launch), so
+    // the map shows the actual route à la Plans instead of nothing / straight
+    // lines. Populated by ItineraryEstimator alongside the ETAs.
+    var plannedRoutePath: [CLLocationCoordinate2D] = []
 
     var selectedPlace: SelectedPlace?
+    // Additional pins from a multi-result search ("restaurants near me" à la
+    // Plans). The selected one is drawn as the primary red marker; the rest are
+    // tappable secondary pins. Empty for a single-place selection.
+    var searchResults: [SelectedPlace] = []
     var selectedFeature: MapFeature?
     var cameraPosition: MapCameraPosition = .userLocation(fallback: .automatic)
     var visibleRegion: MKCoordinateRegion?
@@ -51,6 +59,17 @@ final class MapCoordinator {
     var gpxSpeed: Double = 25
     var gpxError: String?
 
+    // Camera-follow state cycled by the recenter button (à la Plans): off →
+    // following the user → following with heading. Reset to `.off` whenever the
+    // camera is moved programmatically (focus, itinerary fit, pitch toggle) so
+    // the button icon honestly reflects whether we're tracking.
+    enum FollowMode {
+        case off
+        case following
+        case heading
+    }
+    var followMode: FollowMode = .off
+
     var sheetDetent: SheetDetent = .collapsed
     var collapsedSheetHeight: CGFloat = BottomSheet.collapsedHeight
     var nativeSheetPresented = true
@@ -58,6 +77,9 @@ final class MapCoordinator {
     var sheetScrollOffset: CGFloat = 0
     var isMapTilted = false
     var showSettings = false
+    // When true, the settings sheet opens straight to the diagnostics screen
+    // (from "Signaler un problème") instead of the top-level category menu.
+    var settingsOpenToDiagnostics = false
     var hasSavedItinerary = MapPersistenceStore().hasSavedItinerary
 
     // Derived from session (passed in where needed)
@@ -75,7 +97,15 @@ final class MapCoordinator {
                 return enginePreview
             }
         }
-        return activeRoute?.stops.map(\.coordinate) ?? []
+        if let activeRoute {
+            return activeRoute.stops.map(\.coordinate)
+        }
+        // Planning phase: prefer the real road geometry, falling back to
+        // straight segments between stops until OSRM/MapKit resolves.
+        if !itineraryStops.isEmpty {
+            return plannedRoutePath.isEmpty ? itineraryStops.map(\.coordinate) : plannedRoutePath
+        }
+        return []
     }
 
     var displayedItineraryStops: [RouteStop] {
@@ -98,20 +128,12 @@ final class MapCoordinator {
             return SelectedPlace(coordinate: coordinate, title: coordsText, subtitle: nil)
         }
         let title = placemark.name ?? [placemark.thoroughfare, placemark.locality].compactMap { $0 }.joined(separator: ", ")
-        return SelectedPlace(coordinate: coordinate, title: title.isEmpty ? coordsText : title, subtitle: coordsText)
-    }
-
-    func selectSearchSuggestion(_ completion: MKLocalSearchCompletion) {
-        searchQuery = ""
-        Task {
-            guard let item = await searchCompleter.resolve(completion),
-                  let coordinate = item.placemark.location?.coordinate else { return }
-            await MainActor.run {
-                let place = SelectedPlace(coordinate: coordinate, title: item.name ?? "Lieu", subtitle: item.placemark.title)
-                rememberRecentPlace(place)
-                selectedPlace = place
-            }
-        }
+        // Subtitle is a human address (street, city) — never raw lat/lon, which
+        // Plans never surfaces to the user. The exact coordinates still live in
+        // the place card's dedicated "Coordonnées GPS" row.
+        let addressParts = [placemark.thoroughfare, placemark.locality].compactMap { $0 }.filter { !$0.isEmpty }
+        let subtitle = addressParts.isEmpty ? nil : addressParts.joined(separator: ", ")
+        return SelectedPlace(coordinate: coordinate, title: title.isEmpty ? coordsText : title, subtitle: subtitle)
     }
 
     func launchItinerary(session: MapSessionModel) {
@@ -128,7 +150,9 @@ final class MapCoordinator {
         playActiveRoute(route, session: session)
         activeRoute = route
         itineraryStops = []
+        plannedRoutePath = []
         selectedPlace = nil
+        searchResults = []
         fitItinerary(route.stops, session: session)
         withAnimation { sheetDetent = .medium }
     }
@@ -145,6 +169,7 @@ final class MapCoordinator {
         )
         activeRoute = route
         selectedPlace = nil
+        searchResults = []
         focus(on: place.coordinate)
         withAnimation { sheetDetent = .medium }
     }
@@ -163,6 +188,7 @@ final class MapCoordinator {
         playActiveRoute(updatedRoute, session: session)
         self.activeRoute = updatedRoute
         selectedPlace = nil
+        searchResults = []
         fitItinerary(updatedRoute.stops, session: session)
         withAnimation { sheetDetent = .medium }
     }
@@ -261,12 +287,14 @@ final class MapCoordinator {
 
     func selectFavorite(_ fav: Favorite, session: MapSessionModel) {
         let coordinate = CLLocationCoordinate2D(latitude: fav.lat, longitude: fav.lon)
+        searchResults = []
         rememberRecentPlace(SelectedPlace(coordinate: coordinate, title: fav.name ?? "Favori", subtitle: nil))
         session.engine.setLocation(lat: fav.lat, lon: fav.lon, name: fav.name ?? "Favori")
         focus(on: coordinate)
     }
 
     func selectRecentPlace(_ recent: RecentPlace) {
+        searchResults = []
         selectedPlace = SelectedPlace(coordinate: recent.coordinate, title: recent.title, subtitle: recent.subtitle)
         focus(on: recent.coordinate)
     }
@@ -298,9 +326,19 @@ final class MapCoordinator {
         persistence.saveRecentPlaces(recentPlaces)
     }
 
-    func focus(on coordinate: CLLocationCoordinate2D) {
+    func focus(on coordinate: CLLocationCoordinate2D, latitudinalMeters: CLLocationDistance = 800) {
+        // Shift the region center south so the point lands in the map area
+        // *above* the bottom sheet (which covers ~43% of the screen at medium)
+        // instead of being hidden underneath it — the same offset Plans applies
+        // when it surfaces a place card.
+        let southShift = latitudinalMeters * 0.32 / 111_000
+        let center = CLLocationCoordinate2D(
+            latitude: coordinate.latitude - southShift,
+            longitude: coordinate.longitude
+        )
+        followMode = .off
         withAnimation {
-            cameraPosition = .region(MKCoordinateRegion(center: coordinate, latitudinalMeters: 800, longitudinalMeters: 800))
+            cameraPosition = .region(MKCoordinateRegion(center: center, latitudinalMeters: latitudinalMeters, longitudinalMeters: latitudinalMeters))
         }
     }
 
@@ -310,6 +348,7 @@ final class MapCoordinator {
         if let real = session.location.lastLocation?.coordinate {
             coordinates.append(real)
         }
+        followMode = .off
         withAnimation {
             cameraPosition = .region(boundingRegion(for: coordinates))
         }

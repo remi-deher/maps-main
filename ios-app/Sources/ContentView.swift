@@ -54,6 +54,9 @@ struct ContentView: View {
         ZStack(alignment: .bottom) {
             EngineMapView(
                 spoofedLocation: coordinator.spoofedCoordinate(session: session),
+                selectedPlace: coordinator.selectedPlace,
+                searchResults: coordinator.searchResults,
+                onSelectSearchResult: { coordinator.selectSearchResult($0) },
                 routePreview: coordinator.routePreview(session: session),
                 itineraryStops: coordinator.displayedItineraryStops,
                 patrolZone: coordinator.patrolZone(session: session),
@@ -201,15 +204,38 @@ struct ContentView: View {
             // re-tapping the same POI works, and so the map's own selection
             // highlight doesn't linger once the card owns the interaction.
             guard let feature else { return }
-            let coordsText = String(format: "%.5f, %.5f", feature.coordinate.latitude, feature.coordinate.longitude)
-            let place = SelectedPlace(
+            // Show a provisional card instantly (title from the feature), then
+            // resolve the feature into a real MKMapItem to replace the raw
+            // coordinate subtitle with a proper address — Plans' tap-a-POI card.
+            let provisional = SelectedPlace(
                 coordinate: feature.coordinate,
                 title: feature.title ?? "Lieu",
-                subtitle: coordsText
+                subtitle: nil
             )
-            coordinator.rememberRecentPlace(place)
-            coordinator.selectedPlace = place
+            coordinator.selectedPlace = provisional
             coordinator.selectedFeature = nil
+            Task {
+                let mapItem: MKMapItem? = await withCheckedContinuation { continuation in
+                    MKMapItemRequest(feature: feature).getMapItem { item, _ in
+                        continuation.resume(returning: item)
+                    }
+                }
+                let resolved: SelectedPlace
+                if let mapItem {
+                    resolved = SelectedPlace(
+                        coordinate: mapItem.placemark.coordinate,
+                        title: mapItem.name ?? provisional.title,
+                        subtitle: mapItem.placemark.title
+                    )
+                } else {
+                    resolved = provisional
+                }
+                coordinator.rememberRecentPlace(resolved)
+                // Only apply if the user hasn't moved on to another selection.
+                if coordinator.selectedPlace == provisional {
+                    coordinator.selectedPlace = resolved
+                }
+            }
         })
     }
 
@@ -231,11 +257,17 @@ struct ContentView: View {
         // Plans-style: adding (or removing/reordering) a stop reframes
         // the camera to show the whole itinerary, not just the new point.
         coordinator.fitItinerary(newStops, session: session)
+        if newStops.isEmpty {
+            coordinator.plannedRoutePath = []
+        }
         coordinator.estimator.recomputeLegEstimates(
             stops: newStops,
             profile: coordinator.itineraryProfile,
             currentLocation: session.location.lastLocation,
-            onComplete: { estimates in coordinator.legEstimates = estimates }
+            onComplete: { plan in
+                coordinator.legEstimates = plan.estimates
+                coordinator.plannedRoutePath = plan.path
+            }
         )
         if !newStops.isEmpty {
             withAnimation { coordinator.sheetDetent = .medium }
@@ -247,7 +279,10 @@ struct ContentView: View {
             stops: coordinator.itineraryStops,
             profile: newProfile,
             currentLocation: session.location.lastLocation,
-            onComplete: { estimates in coordinator.legEstimates = estimates }
+            onComplete: { plan in
+                coordinator.legEstimates = plan.estimates
+                coordinator.plannedRoutePath = plan.path
+            }
         )
     }
 

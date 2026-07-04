@@ -12,7 +12,12 @@ extension ContentView {
                 query: $coordinator.searchQuery,
                 isFocused: $searchFocused,
                 suggestions: coordinator.searchCompleter.results,
-                onSelectSuggestion: coordinator.selectSearchSuggestion
+                isSearching: coordinator.searchCompleter.isSearching,
+                onSelectSuggestion: coordinator.selectSearchSuggestion,
+                onSubmit: {
+                    searchFocused = false
+                    coordinator.submitSearch(session: session)
+                }
             ),
             itinerary: BottomSheetItineraryContext(
                 stops: $coordinator.itineraryStops,
@@ -39,6 +44,7 @@ extension ContentView {
             ),
             place: BottomSheetPlaceContext(
                 selectedPlace: coordinator.selectedPlace,
+                referenceCoordinate: coordinator.spoofedCoordinate(session: session) ?? session.location.lastLocation?.coordinate,
                 actions: placeActions
             ),
             patrol: patrolControls,
@@ -51,6 +57,10 @@ extension ContentView {
             ),
             chrome: BottomSheetChromeContext(
                 onOpenSettings: { coordinator.showSettings = true },
+                onReportProblem: {
+                    coordinator.settingsOpenToDiagnostics = true
+                    coordinator.showSettings = true
+                },
                 onCollapseSheet: collapseBottomSheet
             ),
             presentation: BottomSheetPresentationContext(
@@ -68,8 +78,9 @@ extension ContentView {
                 coordinator.gpxError = error.localizedDescription
             }
         }
-        .fullScreenCover(isPresented: $coordinator.showSettings) {
+        .sheet(isPresented: $coordinator.showSettings, onDismiss: { coordinator.settingsOpenToDiagnostics = false }) {
             SettingsSheet(
+                openToDiagnostics: coordinator.settingsOpenToDiagnostics,
                 engineAddress: $engineAddress,
                 engine: session.engine,
                 discovery: discovery,
@@ -82,6 +93,10 @@ extension ContentView {
                 notificationsEnabled: $notificationsEnabled,
                 locationAuthorization: session.location.authorizationStatus
             )
+            // Settings stay on a sheet over the map (never a full-screen cover
+            // that hides it) — Plans never leaves the map. Large detent only,
+            // since the settings list needs the height.
+            .presentationDetents([.large])
         }
     }
 
@@ -150,7 +165,7 @@ extension ContentView {
             onAddStop: addSelectedPlaceAsStop,
             onFavorite: favoriteSelectedPlace,
             onCopyCoordinates: copySelectedPlaceCoordinates,
-            onDismiss: { coordinator.selectedPlace = nil }
+            onDismiss: { coordinator.clearSelection() }
         )
     }
 
@@ -192,7 +207,7 @@ extension ContentView {
     func teleportSelectedPlace() {
         guard let place = coordinator.selectedPlace, coordinator.requireConnection(session: session) else { return }
         session.engine.setLocation(lat: place.coordinate.latitude, lon: place.coordinate.longitude, name: place.title)
-        coordinator.selectedPlace = nil
+        coordinator.clearSelection()
     }
 
     func routeToSelectedPlace() {
@@ -207,7 +222,7 @@ extension ContentView {
             return
         }
         coordinator.itineraryStops.append(RouteStop(coordinate: place.coordinate, name: place.title))
-        coordinator.selectedPlace = nil
+        coordinator.clearSelection()
     }
 
     func favoriteSelectedPlace() {

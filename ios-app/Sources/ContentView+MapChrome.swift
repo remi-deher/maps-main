@@ -67,7 +67,11 @@ extension ContentView {
                 VStack(spacing: 10) {
                     mapPitchButton
                     mapStyleMenu
-                    RecenterButton(onTap: recenterOnUser)
+                    RecenterButton(
+                        systemImage: recenterIconName,
+                        isActive: coordinator.followMode != .off,
+                        onTap: recenterOnUser
+                    )
                 }
             }
             .padding(.trailing, max(safeArea.trailing + 16, 16))
@@ -99,9 +103,31 @@ extension ContentView {
         }
     }
 
+    var recenterIconName: String {
+        switch coordinator.followMode {
+        case .off: return "location"
+        case .following: return "location.fill"
+        case .heading: return "location.north.line.fill"
+        }
+    }
+
+    // Cycles the follow mode à la Plans: a first tap recenters and tracks the
+    // user; a second tap adds heading (map rotates to face travel); a third
+    // drops back to plain tracking. Panning the map elsewhere resets to `.off`
+    // via the programmatic-move sites in MapCoordinator.
     func recenterOnUser() {
         withAnimation {
-            coordinator.cameraPosition = .userLocation(fallback: .automatic)
+            switch coordinator.followMode {
+            case .off:
+                coordinator.followMode = .following
+                coordinator.cameraPosition = .userLocation(fallback: .automatic)
+            case .following:
+                coordinator.followMode = .heading
+                coordinator.cameraPosition = .userLocation(followsHeading: true, fallback: .automatic)
+            case .heading:
+                coordinator.followMode = .following
+                coordinator.cameraPosition = .userLocation(fallback: .automatic)
+            }
             coordinator.isMapTilted = false
         }
     }
@@ -112,6 +138,7 @@ extension ContentView {
             return
         }
 
+        coordinator.followMode = .off
         withAnimation(.interactiveSpring(response: 0.28, dampingFraction: 0.88)) {
             if coordinator.isMapTilted {
                 coordinator.cameraPosition = .region(visibleRegion)

@@ -9,6 +9,11 @@ struct SelectedPlace: Equatable {
     let title: String
     let subtitle: String?
 
+    // Stable id for map ForEach / dedup, derived from the coordinate.
+    var mapID: String {
+        String(format: "%.6f,%.6f", coordinate.latitude, coordinate.longitude)
+    }
+
     static func == (lhs: Self, rhs: Self) -> Bool {
         lhs.coordinate.latitude == rhs.coordinate.latitude
             && lhs.coordinate.longitude == rhs.coordinate.longitude
@@ -22,6 +27,9 @@ struct SelectedPlace: Equatable {
 struct PlaceCard: View {
     let place: SelectedPlace
     let isFavorite: Bool
+    // Origin for the "à X km" line under the title (simulated or real
+    // position). nil hides it — Plans always shows distance-from-here.
+    var referenceCoordinate: CLLocationCoordinate2D?
     var onTeleport: () -> Void
     var onRoute: () -> Void
     var onAddStop: () -> Void
@@ -35,6 +43,11 @@ struct PlaceCard: View {
     // preview is simply omitted then, never an error (§2 Plans parity).
     @State private var lookAroundScene: MKLookAroundScene?
     @State private var placemark: CLPlacemark?
+
+    // Sizes that scale with Dynamic Type (§ audit #21).
+    @ScaledMetric(relativeTo: .body) private var detailIconSize: CGFloat = 34
+    @ScaledMetric(relativeTo: .subheadline) private var actionButtonHeight: CGFloat = 46
+    @ScaledMetric(relativeTo: .body) private var previewHeight: CGFloat = 168
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -65,9 +78,15 @@ struct PlaceCard: View {
         HStack(alignment: .top, spacing: 12) {
             VStack(alignment: .leading, spacing: 6) {
                 Text(place.title)
-                    .font(.largeTitle.weight(.bold))
+                    .font(.title2.weight(.bold))
                     .lineLimit(2)
                     .minimumScaleFactor(0.78)
+
+                if let distanceText {
+                    Text(distanceText)
+                        .font(.subheadline.weight(.medium))
+                        .foregroundStyle(Color.accentColor)
+                }
 
                 if let subtitle = place.subtitle, !subtitle.isEmpty {
                     Text(subtitle)
@@ -97,7 +116,7 @@ struct PlaceCard: View {
                 .foregroundStyle(.secondary)
 
             LookAroundPreview(initialScene: scene)
-                .frame(height: 168)
+                .frame(height: previewHeight)
                 .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
                 .accessibilityLabel("Aperçu Look Around de \(place.title)")
         }
@@ -121,52 +140,72 @@ struct PlaceCard: View {
     }
 
     private var contextualActionBar: some View {
-        HStack(spacing: 10) {
-            Button {
-                if !isFavorite {
-                    trigger(onFavorite)
-                }
-            } label: {
-                Label(isFavorite ? "Ajouté aux favoris" : "Favori", systemImage: isFavorite ? "checkmark.circle.fill" : "star.fill")
-                    .font(.subheadline.weight(.semibold))
-                    .frame(maxWidth: .infinity, minHeight: 46)
-            }
-            .buttonStyle(.glassProminent)
-            .tint(.accentColor)
-            .disabled(isFavorite)
-
-            Menu {
+        VStack(spacing: 10) {
+            // Primary row — the two core simulation actions, à la Plans where
+            // "Itinéraire" is the prominent pill. "Positionner ici" is this
+            // app's teleport equivalent, so it leads.
+            HStack(spacing: 10) {
                 Button {
                     trigger(onTeleport)
                 } label: {
                     Label("Positionner ici", systemImage: "location.fill")
+                        .font(.subheadline.weight(.semibold))
+                        .frame(maxWidth: .infinity, minHeight: actionButtonHeight)
                 }
+                .buttonStyle(.glassProminent)
+                .tint(.accentColor)
 
                 Button {
                     trigger(onRoute)
                 } label: {
-                    Label("Créer un itinéraire", systemImage: "arrow.triangle.turn.up.right.diamond.fill")
+                    Label("Itinéraire", systemImage: "arrow.triangle.turn.up.right.diamond.fill")
+                        .font(.subheadline.weight(.semibold))
+                        .frame(maxWidth: .infinity, minHeight: actionButtonHeight)
                 }
+                .buttonStyle(.glass)
+                .buttonBorderShape(.capsule)
+            }
+
+            // Secondary row — favorite, add-as-stop, and the overflow menu.
+            HStack(spacing: 10) {
+                Button {
+                    if !isFavorite {
+                        trigger(onFavorite)
+                    }
+                } label: {
+                    Label(isFavorite ? "Favori ajouté" : "Favori", systemImage: isFavorite ? "checkmark.circle.fill" : "star")
+                        .font(.subheadline.weight(.semibold))
+                        .frame(maxWidth: .infinity, minHeight: 44)
+                }
+                .buttonStyle(.glass)
+                .buttonBorderShape(.capsule)
+                .disabled(isFavorite)
 
                 Button {
                     trigger(onAddStop)
                 } label: {
-                    Label("Ajouter comme étape", systemImage: "plus.circle.fill")
+                    Label("Ajouter une étape", systemImage: "plus")
+                        .font(.subheadline.weight(.semibold))
+                        .frame(maxWidth: .infinity, minHeight: 44)
                 }
+                .buttonStyle(.glass)
+                .buttonBorderShape(.capsule)
 
-                Button {
-                    trigger(onCopyCoordinates)
+                Menu {
+                    Button {
+                        trigger(onCopyCoordinates)
+                    } label: {
+                        Label("Copier les coordonnées", systemImage: "doc.on.doc.fill")
+                    }
                 } label: {
-                    Label("Copier les coordonnées", systemImage: "doc.on.doc.fill")
+                    Label("Plus d’actions", systemImage: "ellipsis")
+                        .labelStyle(.iconOnly)
+                        .font(.title3.weight(.semibold))
+                        .frame(width: 52, height: 44)
                 }
-            } label: {
-                Label("Plus d’actions", systemImage: "ellipsis")
-                    .labelStyle(.iconOnly)
-                    .font(.title3.weight(.semibold))
-                    .frame(width: 52, height: 46)
+                .buttonStyle(.glass)
+                .buttonBorderShape(.capsule)
             }
-            .buttonStyle(.glass)
-            .buttonBorderShape(.capsule)
         }
         .padding(8)
         .adaptiveGlassEffect(in: RoundedRectangle(cornerRadius: 24, style: .continuous))
@@ -177,7 +216,7 @@ struct PlaceCard: View {
             Image(systemName: icon)
                 .font(.subheadline.weight(.semibold))
                 .foregroundStyle(Color.accentColor)
-                .frame(width: 34, height: 34)
+                .frame(width: detailIconSize, height: detailIconSize)
                 .background(Color(.secondarySystemFill), in: Circle())
 
             VStack(alignment: .leading, spacing: 3) {
@@ -241,6 +280,21 @@ struct PlaceCard: View {
 
     private var coordinateText: String {
         String(format: "%.6f, %.6f", place.coordinate.latitude, place.coordinate.longitude)
+    }
+
+    // Great-circle distance from the reference position to the place, à la
+    // Plans' "à 2,3 km" under a result title.
+    private var distanceText: String? {
+        guard let referenceCoordinate else { return nil }
+        let from = CLLocation(latitude: referenceCoordinate.latitude, longitude: referenceCoordinate.longitude)
+        let to = CLLocation(latitude: place.coordinate.latitude, longitude: place.coordinate.longitude)
+        let meters = from.distance(from: to)
+        guard meters > 1 else { return nil }
+        let formatter = MeasurementFormatter()
+        formatter.unitOptions = .naturalScale
+        formatter.unitStyle = .medium
+        let measurement = Measurement(value: meters, unit: UnitLength.meters)
+        return "à \(formatter.string(from: measurement))"
     }
 
     private func trigger(_ action: () -> Void) {

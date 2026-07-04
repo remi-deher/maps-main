@@ -47,7 +47,8 @@ struct BottomSheetHeaderView: View {
                     BottomSheetSearchField(
                         searchQuery: search.query,
                         isFocused: search.isFocused,
-                        hasItineraryStops: !itinerary.stops.wrappedValue.isEmpty
+                        hasItineraryStops: !itinerary.stops.wrappedValue.isEmpty,
+                        onSubmit: search.onSubmit
                     )
                     trailingButton
                 }
@@ -78,7 +79,7 @@ struct BottomSheetHeaderView: View {
             .contentShape(Circle())
             .background {
                 if action == .settings {
-                    Circle().fill(.indigo.opacity(0.82))
+                    Circle().fill(Color.accentColor.opacity(0.82))
                 }
             }
         }

@@ -45,6 +45,15 @@ enum MapStyleChoice: String, CaseIterable, Identifiable {
 // dismissing the keyboard/panning without side effects).
 struct EngineMapView: View {
     var spoofedLocation: CLLocationCoordinate2D?
+    // The place currently selected from search / a tapped POI / a long-press.
+    // Rendered as a red pin (à la Plans) so the result is visible on the map,
+    // not only described in the sheet.
+    var selectedPlace: SelectedPlace?
+    // Additional pins from a multi-result category search; tapping one selects
+    // it. The currently selected place is drawn separately (red), so it's
+    // filtered out here to avoid a double pin.
+    var searchResults: [SelectedPlace] = []
+    var onSelectSearchResult: (SelectedPlace) -> Void = { _ in }
     var routePreview: [CLLocationCoordinate2D]
     var itineraryStops: [RouteStop]
     var patrolZone: PatrolZone?
@@ -64,10 +73,35 @@ struct EngineMapView: View {
 
     @State private var longPressFeedback = 0
 
+    // Multi-result pins minus the one currently selected (drawn as the red
+    // Marker), so the selected place isn't rendered twice.
+    private var secondarySearchResults: [SelectedPlace] {
+        guard let selectedPlace else { return searchResults }
+        return searchResults.filter { $0.mapID != selectedPlace.mapID }
+    }
+
     var body: some View {
         MapReader { proxy in
             Map(position: $cameraPosition, selection: $selectedFeature) {
                 UserAnnotation()
+                ForEach(secondarySearchResults, id: \.mapID) { result in
+                    Annotation(result.title, coordinate: result.coordinate) {
+                        Button {
+                            onSelectSearchResult(result)
+                        } label: {
+                            Image(systemName: "mappin.circle.fill")
+                                .font(.title)
+                                .foregroundStyle(.red)
+                                .background(Circle().fill(.white).padding(3))
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel(result.title)
+                    }
+                }
+                if let selectedPlace {
+                    Marker(selectedPlace.title, coordinate: selectedPlace.coordinate)
+                        .tint(.red)
+                }
                 if let spoofed = spoofedLocation {
                     // Custom annotation instead of Marker: Marker's
                     // permanently visible text label gets noisy once drift
