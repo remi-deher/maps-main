@@ -78,7 +78,7 @@ extension ContentView {
                 coordinator.gpxError = error.localizedDescription
             }
         }
-        .sheet(isPresented: $coordinator.showSettings, onDismiss: { coordinator.settingsOpenToDiagnostics = false }) {
+        .sheet(isPresented: $coordinator.showSettings) {
             SettingsSheet(
                 openToDiagnostics: coordinator.settingsOpenToDiagnostics,
                 engineAddress: $engineAddress,

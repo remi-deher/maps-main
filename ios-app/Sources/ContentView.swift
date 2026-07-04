@@ -130,6 +130,11 @@ struct ContentView: View {
         .onChange(of: notificationsEnabled) { enabled in
             if enabled { NotificationManager.shared.requestPermission() }
         }
+        .onChange(of: coordinator.showSettings) { isPresented in
+            // Reset the diagnostics deep-link once the settings sheet closes, so
+            // the next plain "Réglages" tap opens the top-level menu.
+            if !isPresented { coordinator.settingsOpenToDiagnostics = false }
+        }
         .onChange(of: coordinator.nativeSheetPresented) { isPresented in
             if !isPresented {
                 coordinator.nativeSheetPresented = true

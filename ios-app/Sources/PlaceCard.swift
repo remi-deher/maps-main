@@ -286,9 +286,9 @@ struct PlaceCard: View {
     // Plans' "à 2,3 km" under a result title.
     private var distanceText: String? {
         guard let referenceCoordinate else { return nil }
-        let from = CLLocation(latitude: referenceCoordinate.latitude, longitude: referenceCoordinate.longitude)
-        let to = CLLocation(latitude: place.coordinate.latitude, longitude: place.coordinate.longitude)
-        let meters = from.distance(from: to)
+        let origin = CLLocation(latitude: referenceCoordinate.latitude, longitude: referenceCoordinate.longitude)
+        let target = CLLocation(latitude: place.coordinate.latitude, longitude: place.coordinate.longitude)
+        let meters = origin.distance(from: target)
         guard meters > 1 else { return nil }
         let formatter = MeasurementFormatter()
         formatter.unitOptions = .naturalScale
