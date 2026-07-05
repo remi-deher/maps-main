@@ -10,6 +10,28 @@ function normalizeServerUrl(targetIp) {
     return baseUrl;
 }
 
+// Échange le code d'appairage à 6 chiffres (affiché par l'écran "Accès distant"
+// du moteur, il change toutes les 30 s) contre un jeton durable via POST
+// /api/pair — le seul endpoint qu'un client non encore approuvé peut appeler.
+async function redeemPairCode(targetIp, code) {
+    const baseUrl = normalizeServerUrl(targetIp);
+    const payload = { code: String(code).trim(), label: 'ios-enroller (GUI)' };
+    try {
+        const response = await axios.post(`${baseUrl}/api/pair`, payload, { timeout: 4000 });
+        const token = response.data && response.data.token;
+        if (!token) throw new Error("Réponse d'appairage sans jeton.");
+        return token;
+    } catch (err) {
+        if (err.response && err.response.status === 401) {
+            throw new Error('Code d\'appairage invalide ou expiré (il change toutes les 30 s — ressaisissez le code affiché à l\'instant).');
+        }
+        if (err.response && err.response.status === 404) {
+            throw new Error("L'accès distant n'est pas activé sur ce moteur (endpoint /api/pair absent).");
+        }
+        throw err;
+    }
+}
+
 // Envoie les clés de pairage de `udid` vers le moteur Go ciblé par `targetIp`,
 // en tentant l'endpoint moderne puis l'ancien en repli (404). `token` porte la
 // clé API / le jeton d'appairage requis quand le moteur distant est protégé.
@@ -68,4 +90,4 @@ async function transferKeys(targetIp, udid, token) {
     }
 }
 
-module.exports = { transferKeys };
+module.exports = { transferKeys, redeemPairCode };

@@ -4,6 +4,7 @@ import { getCurrentUdid, setStatusSubtext } from './deviceStatus.js';
 const btnTransfer = document.getElementById('btnTransfer');
 const targetIpInput = document.getElementById('targetIp');
 const apiTokenInput = document.getElementById('apiToken');
+const pairCodeInput = document.getElementById('pairCode');
 
 export function initTransfer() {
     btnTransfer.addEventListener('click', async () => {
@@ -13,6 +14,7 @@ export function initTransfer() {
             return;
         }
         const token = apiTokenInput ? apiTokenInput.value.trim() : '';
+        const pairCode = pairCodeInput ? pairCodeInput.value.trim() : '';
 
         btnTransfer.disabled = true;
         log(`Envoi des certificats vers ${targetIp}...`);
@@ -21,7 +23,7 @@ export function initTransfer() {
             const res = await fetch('/api/transfer', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ targetIp, udid: getCurrentUdid(), token }),
+                body: JSON.stringify({ targetIp, udid: getCurrentUdid(), token, pairCode }),
             });
             const data = await res.json();
 

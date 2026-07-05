@@ -1,7 +1,7 @@
 const express = require('express');
 const { getDeviceStatus, requestTrust } = require('./goios');
 const { scanEngines } = require('./discovery');
-const { transferKeys } = require('./enrollment');
+const { transferKeys, redeemPairCode } = require('./enrollment');
 
 const router = express.Router();
 
@@ -27,13 +27,19 @@ router.post('/pair', async (req, res) => {
 
 // 3. Transfert des clés vers le serveur distant
 router.post('/transfer', async (req, res) => {
-    const { targetIp, udid, token } = req.body;
+    const { targetIp, udid, token, pairCode } = req.body;
     if (!targetIp || !udid) {
         return res.status(400).json({ success: false, error: 'IP cible ou UDID manquant' });
     }
 
     try {
-        const data = await transferKeys(targetIp, udid, token);
+        // No token but a rotating pairing code was given: redeem it for a
+        // durable token first, then transfer with it.
+        let effectiveToken = token;
+        if ((!effectiveToken || !effectiveToken.trim()) && pairCode && pairCode.trim()) {
+            effectiveToken = await redeemPairCode(targetIp, pairCode);
+        }
+        const data = await transferKeys(targetIp, udid, effectiveToken);
         res.json({ success: true, data });
     } catch (error) {
         res.status(error.status || 500).json({

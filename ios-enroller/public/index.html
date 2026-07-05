@@ -53,7 +53,13 @@
             </button>
         </div>
         <div class="input-group">
-            <label for="apiToken">Clé API / jeton d'appairage <span style="opacity:.6">(si le moteur distant est protégé)</span></label>
+            <label for="pairCode">Code d'appairage <span style="opacity:.6">(6 chiffres, écran « Accès distant » — change toutes les 30 s)</span></label>
+            <div class="input-wrapper">
+                <input type="text" id="pairCode" placeholder="123456" inputmode="numeric" autocomplete="off" maxlength="6">
+            </div>
+        </div>
+        <div class="input-group">
+            <label for="apiToken">…ou clé API / jeton déjà obtenu <span style="opacity:.6">(sinon, laissez vide)</span></label>
             <div class="input-wrapper">
                 <input type="password" id="apiToken" placeholder="GPSMOCK_API_KEY ou jeton d'appairage" autocomplete="off">
             </div>

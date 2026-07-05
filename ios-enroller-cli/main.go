@@ -48,7 +48,8 @@ func main() {
 	serverFlag := flag.String("server", "", "URL du serveur Moteur (ex: http://192.168.1.143:8080). Si omis, une découverte mDNS est tentée.")
 	udidFlag := flag.String("udid", "", "UDID de l'iPhone (optionnel, détecté automatiquement)")
 	iosBinFlag := flag.String("ios-bin", "", "Chemin vers l'exécutable go-ios / ios (optionnel)")
-	tokenFlag := flag.String("token", "", "Clé API (GPSMOCK_API_KEY) ou jeton d'appairage du moteur distant. Requis si l'accès distant est protégé. À défaut, la variable d'environnement GPSMOCK_API_KEY est utilisée.")
+	tokenFlag := flag.String("token", "", "Clé API (GPSMOCK_API_KEY) ou jeton d'appairage déjà obtenu. À défaut, la variable d'environnement GPSMOCK_API_KEY est utilisée.")
+	pairCodeFlag := flag.String("pair-code", "", "Code d'appairage à 6 chiffres affiché par l'écran \"Accès distant\" du moteur (il change toutes les 30 s). Échangé automatiquement contre un jeton durable.")
 	discoverTimeout := flag.Duration("discover-timeout", 3*time.Second, "Durée d'écoute mDNS pour la découverte automatique du serveur")
 	flag.Parse()
 
@@ -67,6 +68,22 @@ func main() {
 	serverUrl := strings.TrimSuffix(*serverFlag, "/")
 	if serverUrl == "" {
 		serverUrl = resolveServerUrl(*discoverTimeout)
+	}
+
+	// If no token was supplied but a rotating pairing code was, redeem the code
+	// for a durable token now (POST /api/pair). This is the "type the 6-digit
+	// code shown on the engine's Remote Access screen" flow, same as the app.
+	if token == "" {
+		if code := strings.TrimSpace(*pairCodeFlag); code != "" {
+			fmt.Println("[INFO] Échange du code d'appairage contre un jeton durable...")
+			t, err := redeemPairCode(serverUrl, code)
+			if err != nil {
+				fmt.Printf("[ERREUR] Échec de l'appairage : %v\n", err)
+				os.Exit(1)
+			}
+			token = t
+			fmt.Println("[INFO] Jeton d'appairage obtenu.")
+		}
 	}
 
 	config := Config{
@@ -342,6 +359,54 @@ func detectUDID(iosBin string) (string, error) {
 	}
 
 	return "", nil
+}
+
+// redeemPairCode exchanges a rotating 6-digit pairing code for a durable device
+// token via POST /api/pair — the one endpoint a not-yet-trusted client may call
+// (the code itself is the credential). Returns the "<deviceID>.<secret>" token.
+func redeemPairCode(serverUrl, code string) (string, error) {
+	hostname, _ := os.Hostname()
+	label := "ios-enroller"
+	if hostname != "" {
+		label = "ios-enroller (" + hostname + ")"
+	}
+	payload := map[string]string{"code": code, "label": label}
+	bodyBytes, _ := json.Marshal(payload)
+
+	client := &http.Client{Timeout: 5 * time.Second}
+	url := fmt.Sprintf("%s/api/pair", serverUrl)
+	req, err := http.NewRequest("POST", url, bytes.NewBuffer(bodyBytes))
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode == http.StatusUnauthorized {
+		return "", fmt.Errorf("code d'appairage invalide ou expiré (il change toutes les 30 s — ressaisissez le code affiché à l'instant)")
+	}
+	if resp.StatusCode == http.StatusNotFound {
+		return "", fmt.Errorf("l'accès distant n'est pas activé sur ce moteur (endpoint /api/pair absent)")
+	}
+	if resp.StatusCode != http.StatusOK {
+		bodyStr, _ := io.ReadAll(resp.Body)
+		return "", fmt.Errorf("statut %d : %s", resp.StatusCode, strings.TrimSpace(string(bodyStr)))
+	}
+
+	var out struct {
+		Token string `json:"token"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		return "", fmt.Errorf("réponse d'appairage illisible : %w", err)
+	}
+	if out.Token == "" {
+		return "", fmt.Errorf("réponse d'appairage sans jeton")
+	}
+	return out.Token, nil
 }
 
 func sendEnrollment(serverUrl, udid, deviceRecordB64, token string) error {
