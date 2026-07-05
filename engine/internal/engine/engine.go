@@ -41,6 +41,12 @@ type Engine struct {
 	// and a second concurrent `ios tunnel start` would race the first one for
 	// the tunnel-info HTTP port (28100) and fail to bind it.
 	tunnelMu sync.Mutex
+	// activeStartCancel cancels the StartTunnel currently holding tunnelMu.
+	// SwitchDriver uses it to abort a doomed old-driver start immediately
+	// instead of waiting for that driver's full timeout before the replacement
+	// backend can mount its tunnel.
+	activeStartCancel context.CancelFunc
+	driverGeneration  uint64
 
 	// Anti-drift shield: tracks consecutive REAL_LOCATION reports that drift
 	// too far from the spoofed position, to confirm before forcing a re-inject.
@@ -151,6 +157,20 @@ func (e *Engine) simSetLocation(ctx context.Context, lat, lon float64, name stri
 }
 
 func (e *Engine) injectLocation(ctx context.Context, lat, lon float64, name string, recordHistory bool) error {
+	e.mu.RLock()
+	starting := e.st.State == "starting" && !e.st.TunnelActive
+	e.mu.RUnlock()
+	if starting {
+		err := fmt.Errorf("tunnel en cours de demarrage, reessayez dans quelques secondes")
+		e.LogEvent("warn", "engine", "location", "set", fmt.Sprintf("Injection reportee : %v", err), map[string]string{
+			"lat":           fmt.Sprintf("%.6f", lat),
+			"lon":           fmt.Sprintf("%.6f", lon),
+			"name":          name,
+			"recordHistory": fmt.Sprintf("%t", recordHistory),
+			"error":         err.Error(),
+		})
+		return err
+	}
 	if err := e.driver().SetLocation(ctx, lat, lon); err != nil {
 		e.LogEvent("error", "engine", "location", "set", fmt.Sprintf("Échec de l'injection de position : %v", err), map[string]string{
 			"lat":           fmt.Sprintf("%.6f", lat),

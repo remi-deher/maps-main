@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"math"
+	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -21,6 +23,18 @@ type mockDriver struct {
 	setLon              float64
 	setLocationCalled   bool
 	clearLocationCalled bool
+}
+
+type blockingStartDriver struct {
+	mockDriver
+	started chan struct{}
+	once    sync.Once
+}
+
+func (m *blockingStartDriver) StartTunnel(ctx context.Context) (driver.TunnelInfo, error) {
+	m.once.Do(func() { close(m.started) })
+	<-ctx.Done()
+	return driver.TunnelInfo{}, ctx.Err()
 }
 
 func (m *mockDriver) ID() domain.DriverID { return m.id }
@@ -96,6 +110,9 @@ func TestEngineStartTunnel(t *testing.T) {
 			if !ok {
 				t.Errorf("expected status event payload, got %T", data)
 			}
+			if !st.TunnelActive {
+				return
+			}
 			if !st.TunnelActive || st.RSDAddress != "127.0.0.1" || st.RSDPort != 54321 {
 				t.Errorf("incorrect status payload: %+v", st)
 			}
@@ -118,6 +135,37 @@ func TestEngineStartTunnel(t *testing.T) {
 	if !eventEmitted {
 		t.Errorf("expected status event to be emitted")
 	}
+}
+
+func TestSetLocationWhileTunnelStartingReturnsRetryableError(t *testing.T) {
+	drv := &blockingStartDriver{
+		mockDriver: mockDriver{id: domain.DriverPmd3},
+		started:    make(chan struct{}),
+	}
+	eng := New(drv, settings.Default())
+
+	done := make(chan error, 1)
+	go func() {
+		done <- eng.StartTunnel(context.Background())
+	}()
+
+	select {
+	case <-drv.started:
+	case <-time.After(2 * time.Second):
+		t.Fatal("StartTunnel did not enter the driver")
+	}
+
+	err := eng.SetLocation(context.Background(), 48.8566, 2.3522, "Paris")
+	if err == nil || !strings.Contains(err.Error(), "tunnel en cours de demarrage") {
+		t.Fatalf("SetLocation while starting error = %v, want retryable starting message", err)
+	}
+
+	eng.mu.Lock()
+	if eng.activeStartCancel != nil {
+		eng.activeStartCancel()
+	}
+	eng.mu.Unlock()
+	<-done
 }
 
 func TestEngineSetLocation(t *testing.T) {
@@ -611,5 +659,59 @@ func TestSwitchDriverResetsEngineState(t *testing.T) {
 	}
 	if oldDrv.setLocationCalled {
 		t.Error("expected old driver NOT to receive SetLocation after SwitchDriver")
+	}
+}
+
+func TestSwitchDriverCancelsInFlightStartTunnel(t *testing.T) {
+	const switchCancelID domain.DriverID = "switch-cancel-test-driver"
+	newDrv := &mockDriver{
+		id: switchCancelID,
+		tunnelInfo: driver.TunnelInfo{
+			Address: "127.0.0.2",
+			Port:    2,
+			Type:    domain.ConnUSB,
+		},
+	}
+	driver.Register(switchCancelID, func(cfg driver.Config) (driver.Driver, error) {
+		return newDrv, nil
+	})
+
+	oldDrv := &blockingStartDriver{
+		mockDriver: mockDriver{id: domain.DriverGoIos},
+		started:    make(chan struct{}),
+	}
+	eng := New(oldDrv, settings.Default())
+	eng.SetDriverConfigBase(driver.Config{Transport: driver.TransportAuto})
+
+	startErr := make(chan error, 1)
+	go func() {
+		startErr <- eng.StartTunnel(context.Background())
+	}()
+
+	select {
+	case <-oldDrv.started:
+	case <-time.After(2 * time.Second):
+		t.Fatal("old StartTunnel did not enter the driver")
+	}
+
+	switchErr := make(chan error, 1)
+	go func() {
+		switchErr <- eng.SwitchDriver(context.Background(), string(switchCancelID), "auto", "", "")
+	}()
+
+	select {
+	case err := <-switchErr:
+		if err != nil {
+			t.Fatalf("SwitchDriver: %v", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("SwitchDriver waited for the old driver's full StartTunnel timeout")
+	}
+
+	if err := <-startErr; err != nil {
+		t.Fatalf("stale StartTunnel returned error: %v", err)
+	}
+	if st := eng.Status(); !st.TunnelActive || st.RSDAddress != "127.0.0.2" {
+		t.Fatalf("expected new tunnel to be active, got %+v", st)
 	}
 }

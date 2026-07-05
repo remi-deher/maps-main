@@ -47,7 +47,19 @@ func (e *Engine) SwitchDriver(ctx context.Context, driverID, transport, wifiAddr
 	e.mu.Lock()
 	base := e.driverCfgBase
 	oldDrv := e.drv
+	e.driverGeneration++
+	if e.activeStartCancel != nil {
+		e.activeStartCancel()
+	}
 	e.mu.Unlock()
+
+	e.tunnelMu.Lock()
+	switchHoldsTunnelMu := true
+	defer func() {
+		if switchHoldsTunnelMu {
+			e.tunnelMu.Unlock()
+		}
+	}()
 
 	if oldDrv != nil {
 		_ = oldDrv.StopTunnel(ctx)
@@ -81,6 +93,14 @@ func (e *Engine) SwitchDriver(ctx context.Context, driverID, transport, wifiAddr
 
 	newDrv, err := driver.New(domain.DriverID(driverID), cfg)
 	if err != nil {
+		e.mu.Lock()
+		e.activeStartCancel = nil
+		if e.st.State == "starting" {
+			e.st.State = "idle"
+			e.emitStatusLocked()
+		} else {
+			e.mu.Unlock()
+		}
 		e.LogEvent("error", "admin", "driver", "switch", fmt.Sprintf("Changement de pilote vers %q échoué : %v", driverID, err), map[string]string{
 			"driver": driverID,
 			"error":  err.Error(),
@@ -124,6 +144,8 @@ func (e *Engine) SwitchDriver(ctx context.Context, driverID, transport, wifiAddr
 	}
 	e.LogEvent("info", "admin", "driver", "switch", fmt.Sprintf("Pilote changé pour %s (transport=%s), redémarrage du tunnel...", driverID, transport), switchFields)
 
+	e.tunnelMu.Unlock()
+	switchHoldsTunnelMu = false
 	if err := e.StartTunnel(ctx); err != nil {
 		e.LogEvent("error", "tunnel", "tunnel", "start", fmt.Sprintf("Tunnel non démarré après changement de pilote : %v", err), map[string]string{"error": err.Error()})
 		return err
@@ -136,19 +158,32 @@ func (e *Engine) StartTunnel(ctx context.Context) error {
 	e.tunnelMu.Lock()
 	defer e.tunnelMu.Unlock()
 
-	e.mu.RLock()
-	alreadyActive := e.st.TunnelActive
-	e.mu.RUnlock()
-	if alreadyActive {
+	startCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	e.mu.Lock()
+	if e.st.TunnelActive {
+		e.mu.Unlock()
 		return nil
 	}
-
-	drv := e.driver()
+	drv := e.drv
+	generation := e.driverGeneration
+	e.activeStartCancel = cancel
+	if e.st.State == "idle" {
+		e.st.State = "starting"
+		e.emitStatusLocked()
+	} else {
+		e.mu.Unlock()
+	}
+	defer e.clearActiveStart(generation)
 	e.LogEvent("info", "tunnel", "tunnel", "start", fmt.Sprintf("Démarrage du tunnel (%s)", drv.ID()), map[string]string{
 		"driver": string(drv.ID()),
 	})
-	ti, err := drv.StartTunnel(ctx)
+	ti, err := drv.StartTunnel(startCtx)
 	if err != nil {
+		if !e.isCurrentDriverGeneration(generation, drv) {
+			return nil
+		}
 		msg := fmt.Sprintf("Échec du démarrage du tunnel (%s) : %v", drv.ID(), err)
 		// On Linux/macOS, creating the RSD IPv6 tunnel interface requires root.
 		// Detect permission errors and add a clear remediation hint so the user
@@ -163,7 +198,18 @@ func (e *Engine) StartTunnel(ctx context.Context) error {
 			"driver": string(drv.ID()),
 			"error":  err.Error(),
 		})
+		e.mu.Lock()
+		if e.driverGeneration == generation && e.drv == drv && e.st.State == "starting" {
+			e.st.State = "idle"
+			e.emitStatusLocked()
+		} else {
+			e.mu.Unlock()
+		}
 		return err
+	}
+	if !e.isCurrentDriverGeneration(generation, drv) {
+		_ = drv.StopTunnel(context.Background())
+		return nil
 	}
 	e.LogEvent("info", "tunnel", "tunnel", "start", fmt.Sprintf("Tunnel actif (%s) : %s:%d", drv.ID(), ti.Address, ti.Port), map[string]string{
 		"driver":  string(drv.ID()),
@@ -177,11 +223,25 @@ func (e *Engine) StartTunnel(ctx context.Context) error {
 	e.st.RSDPort = ti.Port
 	e.st.ConnectionType = ti.Type
 	e.st.DeviceInfo = &domain.DeviceInfo{Name: "iPhone", Driver: drv.ID()}
-	if e.st.State == "idle" {
+	if e.st.State == "idle" || e.st.State == "starting" {
 		e.st.State = "ready"
 	}
 	e.emitStatusLocked()
 	return nil
+}
+
+func (e *Engine) clearActiveStart(generation uint64) {
+	e.mu.Lock()
+	if e.driverGeneration == generation {
+		e.activeStartCancel = nil
+	}
+	e.mu.Unlock()
+}
+
+func (e *Engine) isCurrentDriverGeneration(generation uint64, drv driver.Driver) bool {
+	e.mu.RLock()
+	defer e.mu.RUnlock()
+	return e.driverGeneration == generation && e.drv == drv
 }
 
 // isPermissionError reports whether err looks like an OS-level permission

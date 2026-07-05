@@ -3,6 +3,7 @@ package diagnostics
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -69,6 +70,10 @@ func IsPaired(udid string) bool {
 func PairingHint(ctx context.Context, lister DeviceLister) string {
 	devices, err := lister.ListDevices(ctx)
 	if err != nil {
+		if isTimeoutError(err) {
+			return "\n-> Impossible de lister les appareils USB : la commande du pilote a depasse son delai (" + err.Error() +
+				"). Ce timeout n'indique pas que Apple Mobile Device Service / usbmuxd est arrete ; reessayez apres la fin du demarrage du tunnel ou changez de pilote."
+		}
 		return "\n-> Impossible de lister les appareils USB (usbmux a échoué : " + err.Error() +
 			"). Vérifiez qu'Apple Mobile Device Service / iTunes (usbmuxd) est bien lancé et que le câble est branché."
 	}
@@ -89,6 +94,17 @@ func PairingHint(ctx context.Context, lister DeviceLister) string {
 	return "\n-> Aucun pairing Lockdown trouvé pour " + strings.Join(unpaired, ", ") +
 		" : le tunnel WiFi iOS 17+ ne peut pas s'établir sans lui, même en USB. " +
 		"Branchez l'iPhone en USB et validez \"Faire confiance à cet ordinateur ?\" sur son écran (ou lancez l'action PAIR_DEVICE), puis réessayez."
+}
+
+func isTimeoutError(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := strings.ToLower(err.Error())
+	return errors.Is(err, context.DeadlineExceeded) ||
+		strings.Contains(msg, "context deadline exceeded") ||
+		strings.Contains(msg, "i/o timeout") ||
+		strings.Contains(msg, "timed out")
 }
 
 var deviceNameRe = regexp.MustCompile(`<key>DeviceName</key>\s*<string>([^<]+)</string>`)
