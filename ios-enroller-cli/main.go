@@ -5,9 +5,11 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"os"
 	"os/exec"
@@ -361,6 +363,26 @@ func detectUDID(iosBin string) (string, error) {
 	return "", nil
 }
 
+// describeNetErr turns a low-level transport failure (timeout, refused,
+// unreachable host) into an actionable message pointing at the target URL,
+// instead of leaking Go's raw "context deadline exceeded" / url.Error text.
+func describeNetErr(err error, url string) error {
+	var netErr net.Error
+	if errors.As(err, &netErr) && netErr.Timeout() {
+		return fmt.Errorf("le moteur ne répond pas à %s (délai dépassé) : vérifiez qu'il est démarré, qu'il écoute sur ce port (0.0.0.0, pas seulement 127.0.0.1), et que le pare-feu / le réseau autorise la connexion", url)
+	}
+	msg := err.Error()
+	switch {
+	case strings.Contains(msg, "connection refused"):
+		return fmt.Errorf("connexion refusée par %s : aucun moteur n'écoute sur ce port à cette adresse (ou le pare-feu la bloque)", url)
+	case strings.Contains(msg, "no such host"),
+		strings.Contains(msg, "unreachable"):
+		return fmt.Errorf("hôte injoignable (%s) : vérifiez l'adresse IP et que les deux machines sont sur le même réseau", url)
+	default:
+		return fmt.Errorf("impossible de joindre le moteur (%s) : %w", url, err)
+	}
+}
+
 // redeemPairCode exchanges a rotating 6-digit pairing code for a durable device
 // token via POST /api/pair — the one endpoint a not-yet-trusted client may call
 // (the code itself is the credential). Returns the "<deviceID>.<secret>" token.
@@ -382,7 +404,7 @@ func redeemPairCode(serverUrl, code string) (string, error) {
 	req.Header.Set("Content-Type", "application/json")
 	resp, err := client.Do(req)
 	if err != nil {
-		return "", err
+		return "", describeNetErr(err, url)
 	}
 	defer func() { _ = resp.Body.Close() }()
 
@@ -437,7 +459,7 @@ func sendEnrollment(serverUrl, udid, deviceRecordB64, token string) error {
 	fmt.Printf("[DEBUG] Tentative de POST sur %s...\n", url)
 	resp, err := post(url)
 	if err != nil {
-		return err
+		return describeNetErr(err, url)
 	}
 	if resp.StatusCode == http.StatusOK {
 		_ = resp.Body.Close()
@@ -455,7 +477,7 @@ func sendEnrollment(serverUrl, udid, deviceRecordB64, token string) error {
 	fmt.Printf("[DEBUG] Statut %d sur /api/device/enroll, tentative de repli sur %s...\n", firstStatus, fallbackUrl)
 	respFallback, errFallback := post(fallbackUrl)
 	if errFallback != nil {
-		return errFallback
+		return describeNetErr(errFallback, fallbackUrl)
 	}
 	defer func() { _ = respFallback.Body.Close() }()
 	if respFallback.StatusCode == http.StatusOK {
