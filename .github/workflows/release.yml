@@ -389,7 +389,7 @@ jobs:
       - name: Cache XcodeGen
         if: steps.check-changes.outputs.reused != 'true'
         id: cache-xcodegen
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: |
             /opt/homebrew/Cellar/xcodegen
