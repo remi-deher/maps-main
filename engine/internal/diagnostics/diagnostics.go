@@ -52,12 +52,30 @@ func IsPaired(udid string) bool {
 	return err == nil && !info.IsDir()
 }
 
-// PairingHint checks whether a USB-visible device is missing its Lockdown
-// trust certificate and, if so, returns a remediation suffix.
+// PairingHint returns a targeted remediation suffix for a tunnel that failed
+// to establish, based on what the driver can actually see. It disambiguates
+// the three causes that otherwise all surface as the same generic timeout:
+//
+//   - usbmux/list itself failed → the Apple Mobile Device / usbmuxd service is
+//     likely down.
+//   - no device is detected at all → nothing to tunnel to (USB unplugged, phone
+//     locked before trust, or WiFi-only with no prior tunnel).
+//   - a detected device has no Lockdown pairing record → the iOS 17+ RSD tunnel
+//     can never come up until a one-time USB trust is done.
+//
+// When a device is present and paired it returns "" — the tunnel failed for a
+// reason this check can't see (dev mode off, phone locked, missing admin
+// rights), which the caller's generic timeout hint already describes.
 func PairingHint(ctx context.Context, lister DeviceLister) string {
 	devices, err := lister.ListDevices(ctx)
-	if err != nil || len(devices) == 0 {
-		return ""
+	if err != nil {
+		return "\n-> Impossible de lister les appareils USB (usbmux a échoué : " + err.Error() +
+			"). Vérifiez qu'Apple Mobile Device Service / iTunes (usbmuxd) est bien lancé et que le câble est branché."
+	}
+	if len(devices) == 0 {
+		return "\n-> Aucun appareil détecté par usbmux : branchez l'iPhone en USB, déverrouillez-le et " +
+			"acceptez \"Faire confiance à cet ordinateur ?\". Un appareil uniquement en WiFi ne suffit pas à " +
+			"(r)établir le tunnel s'il n'a jamais été appairé en USB."
 	}
 	var unpaired []string
 	for _, dev := range devices {
