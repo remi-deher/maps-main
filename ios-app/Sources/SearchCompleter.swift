@@ -11,6 +11,10 @@ import Observation
 @Observable
 final class SearchCompleter: NSObject, MKLocalSearchCompleterDelegate {
     var results: [MKLocalSearchCompletion] = []
+    // True between a keystroke and the completer returning results, so the UI
+    // can show a spinner instead of prematurely rendering an empty "no
+    // results" state (§ audit #9).
+    var isSearching = false
 
     private let completer: MKLocalSearchCompleter
 
@@ -18,12 +22,17 @@ final class SearchCompleter: NSObject, MKLocalSearchCompleterDelegate {
         completer = MKLocalSearchCompleter()
         super.init()
         completer.delegate = self
-        completer.resultTypes = [.address, .pointOfInterest]
+        // `.query` adds category completions ("Restaurants", "Stations-service")
+        // à la Plans, on top of concrete addresses and points of interest.
+        completer.resultTypes = [.address, .pointOfInterest, .query]
     }
 
     var queryFragment: String {
         get { completer.queryFragment }
-        set { completer.queryFragment = newValue }
+        set {
+            completer.queryFragment = newValue
+            isSearching = !newValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        }
     }
 
     func updateRegion(center: CLLocationCoordinate2D) {
@@ -39,12 +48,14 @@ final class SearchCompleter: NSObject, MKLocalSearchCompleterDelegate {
     nonisolated func completerDidUpdateResults(_ completer: MKLocalSearchCompleter) {
         Task { @MainActor in
             self.results = completer.results
+            self.isSearching = false
         }
     }
 
     nonisolated func completer(_ completer: MKLocalSearchCompleter, didFailWithError error: Error) {
         Task { @MainActor in
             self.results = []
+            self.isSearching = false
         }
     }
 }

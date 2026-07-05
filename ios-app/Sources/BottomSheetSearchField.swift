@@ -4,6 +4,7 @@ struct BottomSheetSearchField: View {
     @Binding var searchQuery: String
     var isFocused: FocusState<Bool>.Binding
     let hasItineraryStops: Bool
+    var onSubmit: () -> Void = {}
 
     var body: some View {
         HStack(spacing: 9) {
@@ -15,26 +16,36 @@ struct BottomSheetSearchField: View {
             TextField(hasItineraryStops ? "Ajouter un arrêt..." : "Rechercher une adresse", text: $searchQuery)
                 .focused(isFocused)
                 .submitLabel(.search)
+                .onSubmit(onSubmit)
                 .font(.title3.weight(.semibold))
 
-            Button(action: focusSearch) {
-                Image(systemName: "mic.fill")
-                    .font(.title3.weight(.semibold))
-                    .foregroundStyle(.secondary)
-                    .frame(width: 44, height: 44)
-                    .contentShape(Circle())
+            // A clear button when there's text — not a mic, which promised
+            // dictation the field never actually did (the keyboard already
+            // offers its own dictation mic). Keeps the field focused so the
+            // user can immediately retype.
+            if !searchQuery.isEmpty {
+                Button(action: clearSearch) {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.title3.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                        .frame(width: 44, height: 44)
+                        .contentShape(Circle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Effacer la recherche")
+                .transition(.opacity)
             }
-            .buttonStyle(.plain)
-            .accessibilityLabel("Recherche vocale")
         }
         .padding(.leading, 20)
-        .padding(.trailing, 8)
+        .padding(.trailing, searchQuery.isEmpty ? 20 : 8)
         .frame(minHeight: 58)
         .frame(maxWidth: .infinity, alignment: .leading)
         .glassEffect(.regular.interactive(), in: .capsule)
+        .animation(.snappy(duration: 0.18), value: searchQuery.isEmpty)
     }
 
-    private func focusSearch() {
+    private func clearSearch() {
+        searchQuery = ""
         isFocused.wrappedValue = true
     }
 }

@@ -28,13 +28,20 @@ struct BottomSheetActiveRouteControlsView: View {
     var onShowActiveRouteDetails: () -> Void
     var onOpenSettings: () -> Void
 
+    // Scale headline icons, step badges and row heights with Dynamic Type
+    // (§ audit #21).
+    @ScaledMetric(relativeTo: .title2) private var headerIconSize: CGFloat = 42
+    @ScaledMetric(relativeTo: .caption) private var stepBadgeSize: CGFloat = 24
+    @ScaledMetric(relativeTo: .subheadline) private var stepRowMinHeight: CGFloat = 52
+    @ScaledMetric(relativeTo: .subheadline) private var actionButtonHeight: CGFloat = 44
+
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             HStack(spacing: 12) {
                 Image(systemName: route.profile == "walking" ? "figure.walk.circle.fill" : "car.circle.fill")
                     .font(.title2.weight(.semibold))
                     .foregroundStyle(Color.accentColor)
-                    .frame(width: 42, height: 42)
+                    .frame(width: headerIconSize, height: headerIconSize)
 
                 VStack(alignment: .leading, spacing: 3) {
                     Text(simulationState == "paused" ? "Itineraire en pause" : "Itineraire en cours")
@@ -120,14 +127,14 @@ struct BottomSheetActiveRouteControlsView: View {
             HStack(spacing: 10) {
                 Button(action: placeActions.onFavorite) {
                     Label(isFavorite(place) ? "Favori" : "Favoris", systemImage: isFavorite(place) ? "star.fill" : "star")
-                        .frame(maxWidth: .infinity, minHeight: 44)
+                        .frame(maxWidth: .infinity, minHeight: actionButtonHeight)
                 }
                 .buttonStyle(.glass)
                 .buttonBorderShape(.capsule)
 
                 Button(action: placeActions.onAddStop) {
                     Label("Ajouter un arret", systemImage: "plus")
-                        .frame(maxWidth: .infinity, minHeight: 44)
+                        .frame(maxWidth: .infinity, minHeight: actionButtonHeight)
                 }
                 .buttonStyle(.glassProminent)
                 .tint(Color.accentColor)
@@ -160,7 +167,7 @@ struct BottomSheetActiveRouteControlsView: View {
             Text("\(index + 1)")
                 .font(.caption.bold())
                 .foregroundStyle(.white)
-                .frame(width: 24, height: 24)
+                .frame(width: stepBadgeSize, height: stepBadgeSize)
                 .background(Color.accentColor, in: Circle())
 
             VStack(alignment: .leading, spacing: 2) {
@@ -179,7 +186,7 @@ struct BottomSheetActiveRouteControlsView: View {
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 10)
-        .frame(minHeight: 52)
+        .frame(minHeight: stepRowMinHeight)
     }
 
     private func isFavorite(_ place: SelectedPlace) -> Bool {

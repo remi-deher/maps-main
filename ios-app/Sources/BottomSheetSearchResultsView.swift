@@ -3,14 +3,31 @@ import MapKit
 
 struct BottomSheetSearchResultsView: View {
     let searchSuggestions: [MKLocalSearchCompletion]
+    let isSearching: Bool
+    let query: String
     var onSelectSuggestion: (MKLocalSearchCompletion) -> Void
+
+    // Scale the row icon/height with Dynamic Type (§ audit #21).
+    @ScaledMetric(relativeTo: .body) private var rowIconSize: CGFloat = 34
+    @ScaledMetric(relativeTo: .body) private var rowMinHeight: CGFloat = 58
 
     var body: some View {
         if searchSuggestions.isEmpty {
-            Text("Recherche...")
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-                .padding(.top, 8)
+            if isSearching {
+                // Still fetching — a spinner, not a premature "no results".
+                HStack(spacing: 10) {
+                    ProgressView()
+                    Text("Recherche…")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+                .frame(maxWidth: .infinity, alignment: .center)
+                .padding(.top, 16)
+            } else {
+                // Genuinely empty result set for the typed query.
+                ContentUnavailableView.search(text: query)
+                    .padding(.top, 8)
+            }
         } else {
             VStack(spacing: 0) {
                 ForEach(searchSuggestions, id: \.compositeID) { completion in
@@ -31,20 +48,20 @@ struct BottomSheetSearchResultsView: View {
             onSelectSuggestion(completion)
         } label: {
             HStack(spacing: 12) {
-                Image(systemName: "mappin.and.ellipse")
+                Image(systemName: icon(for: completion))
                     .font(.subheadline.weight(.semibold))
                     .foregroundStyle(Color.accentColor)
-                    .frame(width: 34, height: 34)
+                    .frame(width: rowIconSize, height: rowIconSize)
                     .background(Color(.secondarySystemFill), in: Circle())
 
                 VStack(alignment: .leading, spacing: 3) {
-                    Text(completion.title)
-                        .font(.body.weight(.medium))
+                    Text(highlighted(completion.title, ranges: completion.titleHighlightRanges))
+                        .font(.body)
                         .foregroundStyle(.primary)
                         .lineLimit(1)
 
                     if !completion.subtitle.isEmpty {
-                        Text(completion.subtitle)
+                        Text(highlighted(completion.subtitle, ranges: completion.subtitleHighlightRanges))
                             .font(.caption)
                             .foregroundStyle(.secondary)
                             .lineLimit(1)
@@ -59,10 +76,34 @@ struct BottomSheetSearchResultsView: View {
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 10)
-            .frame(minHeight: 58)
+            .frame(minHeight: rowMinHeight)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+    }
+
+    // Bolds the substrings the user actually typed, using the ranges MapKit
+    // reports — the same emphasis Plans applies to matched query fragments.
+    private func highlighted(_ text: String, ranges: [NSValue]) -> AttributedString {
+        var attributed = AttributedString(text)
+        let count = attributed.characters.count
+        for value in ranges {
+            let nsRange = value.rangeValue
+            guard nsRange.location != NSNotFound,
+                  nsRange.location >= 0,
+                  nsRange.length > 0,
+                  nsRange.location + nsRange.length <= count else { continue }
+            let start = attributed.index(attributed.startIndex, offsetByCharacters: nsRange.location)
+            let end = attributed.index(start, offsetByCharacters: nsRange.length)
+            attributed[start..<end].font = .body.weight(.semibold)
+        }
+        return attributed
+    }
+
+    // A category/query completion (e.g. "Restaurants") has no located address
+    // subtitle — show a search glass; concrete places get a pin.
+    private func icon(for completion: MKLocalSearchCompletion) -> String {
+        completion.subtitle.isEmpty ? "magnifyingglass" : "mappin.and.ellipse"
     }
 }
 

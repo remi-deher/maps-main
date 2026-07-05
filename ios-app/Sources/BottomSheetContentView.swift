@@ -73,6 +73,8 @@ struct BottomSheetContentView: View {
         } else if isSearching {
             BottomSheetSearchResultsView(
                 searchSuggestions: search.suggestions,
+                isSearching: search.isSearching,
+                query: search.query.wrappedValue,
                 onSelectSuggestion: search.onSelectSuggestion
             )
         } else if !itinerary.stops.wrappedValue.isEmpty {
@@ -108,6 +110,7 @@ struct BottomSheetContentView: View {
         PlaceCard(
             place: selectedPlace,
             isFavorite: isFavorite(selectedPlace),
+            referenceCoordinate: place.referenceCoordinate,
             onTeleport: place.actions.onTeleport,
             onRoute: place.actions.onRoute,
             onAddStop: place.actions.onAddStop,
@@ -131,6 +134,7 @@ struct BottomSheetContentView: View {
                 onClearRecentPlaces: library.onClearRecentPlaces,
                 onLoadLastItinerary: library.onLoadLastItinerary,
                 onOpenSettings: chrome.onOpenSettings,
+                onReportProblem: chrome.onReportProblem,
                 searchQuery: search.query,
                 isFocused: search.isFocused
             )

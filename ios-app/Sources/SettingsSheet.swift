@@ -14,7 +14,16 @@ import UIKit
 // `NavigationLink` also resolves §3.11 of docs/UI_UX_BASELINE.md: LogsView and
 // the QR scanner now stack inside this sheet's own NavigationStack instead of
 // opening a second simultaneous sheet on the same presenter.
+// A settings sub-screen that can be opened directly (deep-linked) when the
+// sheet is presented, bypassing the top-level category menu.
+enum SettingsDeepLink: Hashable {
+    case diagnostics
+}
+
 struct SettingsSheet: View {
+    // When true, the sheet pushes straight to diagnostics on appear — used by
+    // "Signaler un problème" so the user lands where they need to be.
+    var openToDiagnostics: Bool = false
     @Binding var engineAddress: String
     var engine: any EngineClientProtocol
     var discovery: EngineDiscovery
@@ -54,11 +63,14 @@ struct SettingsSheet: View {
 
     @State var showQrScanner = false
 
+    // Navigation path so "Signaler un problème" can deep-link to diagnostics.
+    @State private var path: [SettingsDeepLink] = []
+
     @Environment(\.dismiss) var dismiss
 
     // swiftlint:disable:next cyclomatic_complexity
     var body: some View {
-        NavigationStack {
+        NavigationStack(path: $path) {
             List {
                 Section {
                     NavigationLink {
@@ -90,7 +102,16 @@ struct SettingsSheet: View {
             }
             .navigationTitle("Réglages")
             .navigationBarTitleDisplayMode(.inline)
+            .navigationDestination(for: SettingsDeepLink.self) { link in
+                switch link {
+                case .diagnostics:
+                    DiagnosticsView(engine: engine, discovery: discovery)
+                }
+            }
             .onAppear {
+                if openToDiagnostics, path.isEmpty {
+                    path = [.diagnostics]
+                }
                 if let value = engine.status?.jitterEnabled {
                     jitterEnabled = value
                 }

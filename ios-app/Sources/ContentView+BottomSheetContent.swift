@@ -8,51 +8,14 @@ extension ContentView {
     // long dependency-wiring block.
     func bottomSheetContent(scrollOffset: Binding<CGFloat>) -> some View {
         BottomSheet(
-            search: BottomSheetSearchContext(
-                query: $coordinator.searchQuery,
-                isFocused: $searchFocused,
-                suggestions: coordinator.searchCompleter.results,
-                onSelectSuggestion: coordinator.selectSearchSuggestion
-            ),
-            itinerary: BottomSheetItineraryContext(
-                stops: $coordinator.itineraryStops,
-                speed: $coordinator.itinerarySpeed,
-                profile: $coordinator.itineraryProfile,
-                legEstimates: coordinator.legEstimates,
-                activeRoute: coordinator.activeRoute,
-                onAddStop: { searchFocused = true },
-                onLaunch: { coordinator.launchItinerary(session: session) },
-                onShowActiveRouteDetails: coordinator.showActiveRouteDetails,
-                onRecenterActiveRoute: { coordinator.recenterActiveRoute(session: session) }
-            ),
-            library: BottomSheetLibraryContext(
-                favorites: session.engine.status?.favorites ?? [],
-                onSelectFavorite: { fav in coordinator.selectFavorite(fav, session: session) },
-                onDeleteFavorite: { favorite in
-                    session.engine.removeFavorite(lat: favorite.lat, lon: favorite.lon)
-                },
-                recentPlaces: coordinator.recentPlaces,
-                onSelectRecentPlace: coordinator.selectRecentPlace,
-                onClearRecentPlaces: coordinator.clearRecentPlaces,
-                hasSavedItinerary: coordinator.hasSavedItinerary,
-                onLoadLastItinerary: coordinator.loadLastItinerary
-            ),
-            place: BottomSheetPlaceContext(
-                selectedPlace: coordinator.selectedPlace,
-                actions: placeActions
-            ),
+            search: searchContext,
+            itinerary: itineraryContext,
+            library: libraryContext,
+            place: placeContext,
             patrol: patrolControls,
             gpx: gpxImport,
-            simulation: BottomSheetSimulationContext(
-                state: session.engine.status?.state,
-                onPauseRoute: { coordinator.pauseActiveRoute(session: session) },
-                onResumeRoute: { coordinator.resumeActiveRoute(session: session) },
-                onStopRoute: { coordinator.stopActiveRoute(session: session) }
-            ),
-            chrome: BottomSheetChromeContext(
-                onOpenSettings: { coordinator.showSettings = true },
-                onCollapseSheet: collapseBottomSheet
-            ),
+            simulation: simulationContext,
+            chrome: chromeContext,
             presentation: BottomSheetPresentationContext(
                 scrollOffset: scrollOffset,
                 sheetDetent: $coordinator.sheetDetent,
@@ -68,8 +31,9 @@ extension ContentView {
                 coordinator.gpxError = error.localizedDescription
             }
         }
-        .fullScreenCover(isPresented: $coordinator.showSettings) {
+        .sheet(isPresented: $coordinator.showSettings) {
             SettingsSheet(
+                openToDiagnostics: coordinator.settingsOpenToDiagnostics,
                 engineAddress: $engineAddress,
                 engine: session.engine,
                 discovery: discovery,
@@ -82,6 +46,10 @@ extension ContentView {
                 notificationsEnabled: $notificationsEnabled,
                 locationAuthorization: session.location.authorizationStatus
             )
+            // Settings stay on a sheet over the map (never a full-screen cover
+            // that hides it) — Plans never leaves the map. Large detent only,
+            // since the settings list needs the height.
+            .presentationDetents([.large])
         }
     }
 
@@ -143,6 +111,77 @@ extension ContentView {
         }
     }
 
+    var searchContext: BottomSheetSearchContext {
+        BottomSheetSearchContext(
+            query: $coordinator.searchQuery,
+            isFocused: $searchFocused,
+            suggestions: coordinator.searchCompleter.results,
+            isSearching: coordinator.searchCompleter.isSearching,
+            onSelectSuggestion: coordinator.selectSearchSuggestion,
+            onSubmit: {
+                searchFocused = false
+                coordinator.submitSearch(session: session)
+            }
+        )
+    }
+
+    var itineraryContext: BottomSheetItineraryContext {
+        BottomSheetItineraryContext(
+            stops: $coordinator.itineraryStops,
+            speed: $coordinator.itinerarySpeed,
+            profile: $coordinator.itineraryProfile,
+            legEstimates: coordinator.legEstimates,
+            activeRoute: coordinator.activeRoute,
+            onAddStop: { searchFocused = true },
+            onLaunch: { coordinator.launchItinerary(session: session) },
+            onShowActiveRouteDetails: coordinator.showActiveRouteDetails,
+            onRecenterActiveRoute: { coordinator.recenterActiveRoute(session: session) }
+        )
+    }
+
+    var libraryContext: BottomSheetLibraryContext {
+        BottomSheetLibraryContext(
+            favorites: session.engine.status?.favorites ?? [],
+            onSelectFavorite: { fav in coordinator.selectFavorite(fav, session: session) },
+            onDeleteFavorite: { favorite in
+                session.engine.removeFavorite(lat: favorite.lat, lon: favorite.lon)
+            },
+            recentPlaces: coordinator.recentPlaces,
+            onSelectRecentPlace: coordinator.selectRecentPlace,
+            onClearRecentPlaces: coordinator.clearRecentPlaces,
+            hasSavedItinerary: coordinator.hasSavedItinerary,
+            onLoadLastItinerary: coordinator.loadLastItinerary
+        )
+    }
+
+    var placeContext: BottomSheetPlaceContext {
+        BottomSheetPlaceContext(
+            selectedPlace: coordinator.selectedPlace,
+            referenceCoordinate: coordinator.spoofedCoordinate(session: session) ?? session.location.lastLocation?.coordinate,
+            actions: placeActions
+        )
+    }
+
+    var simulationContext: BottomSheetSimulationContext {
+        BottomSheetSimulationContext(
+            state: session.engine.status?.state,
+            onPauseRoute: { coordinator.pauseActiveRoute(session: session) },
+            onResumeRoute: { coordinator.resumeActiveRoute(session: session) },
+            onStopRoute: { coordinator.stopActiveRoute(session: session) }
+        )
+    }
+
+    var chromeContext: BottomSheetChromeContext {
+        BottomSheetChromeContext(
+            onOpenSettings: { coordinator.showSettings = true },
+            onReportProblem: {
+                coordinator.settingsOpenToDiagnostics = true
+                coordinator.showSettings = true
+            },
+            onCollapseSheet: collapseBottomSheet
+        )
+    }
+
     var placeActions: PlaceActions {
         PlaceActions(
             onTeleport: teleportSelectedPlace,
@@ -150,7 +189,7 @@ extension ContentView {
             onAddStop: addSelectedPlaceAsStop,
             onFavorite: favoriteSelectedPlace,
             onCopyCoordinates: copySelectedPlaceCoordinates,
-            onDismiss: { coordinator.selectedPlace = nil }
+            onDismiss: { coordinator.clearSelection() }
         )
     }
 
@@ -192,7 +231,7 @@ extension ContentView {
     func teleportSelectedPlace() {
         guard let place = coordinator.selectedPlace, coordinator.requireConnection(session: session) else { return }
         session.engine.setLocation(lat: place.coordinate.latitude, lon: place.coordinate.longitude, name: place.title)
-        coordinator.selectedPlace = nil
+        coordinator.clearSelection()
     }
 
     func routeToSelectedPlace() {
@@ -207,7 +246,7 @@ extension ContentView {
             return
         }
         coordinator.itineraryStops.append(RouteStop(coordinate: place.coordinate, name: place.title))
-        coordinator.selectedPlace = nil
+        coordinator.clearSelection()
     }
 
     func favoriteSelectedPlace() {
