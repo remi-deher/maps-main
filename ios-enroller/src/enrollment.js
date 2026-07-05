@@ -11,8 +11,9 @@ function normalizeServerUrl(targetIp) {
 }
 
 // Envoie les clés de pairage de `udid` vers le moteur Go ciblé par `targetIp`,
-// en tentant l'endpoint moderne puis l'ancien en repli (404).
-async function transferKeys(targetIp, udid) {
+// en tentant l'endpoint moderne puis l'ancien en repli (404). `token` porte la
+// clé API / le jeton d'appairage requis quand le moteur distant est protégé.
+async function transferKeys(targetIp, udid, token) {
     const lockdownPath = path.join(LOCKDOWN_DIR, `${udid}.plist`);
     if (!fs.existsSync(lockdownPath)) {
         throw new Error(`Fichier de pairage introuvable. L'appareil est-il bien enrôlé ? (${lockdownPath})`);
@@ -26,16 +27,42 @@ async function transferKeys(targetIp, udid) {
 
     const baseUrl = normalizeServerUrl(targetIp);
     const payload = { udid, selfIdentity: selfIdentityData, deviceRecord: deviceRecordData };
+    // The remote engine gates /api/device/enroll behind auth for non-loopback
+    // callers; send the credential as a Bearer token when provided.
+    const headers = {};
+    if (token && token.trim()) {
+        headers.Authorization = `Bearer ${token.trim()}`;
+    }
+    const options = { timeout: 4000, headers };
+
+    const asUnauthorized = (err) => {
+        if (err.response && err.response.status === 401) {
+            return new Error(
+                token && token.trim()
+                    ? "Le moteur distant a refusé le jeton fourni (401). Vérifiez la clé API / le jeton d'appairage."
+                    : "Le moteur distant est protégé (401). Renseignez la clé API ou un jeton d'appairage."
+            );
+        }
+        return null;
+    };
 
     try {
         console.log(`[DEBUG] Tentative d'envoi vers ${baseUrl}/api/device/enroll...`);
-        const response = await axios.post(`${baseUrl}/api/device/enroll`, payload, { timeout: 4000 });
+        const response = await axios.post(`${baseUrl}/api/device/enroll`, payload, options);
         return response.data;
     } catch (err) {
+        const unauthorized = asUnauthorized(err);
+        if (unauthorized) throw unauthorized;
         if (err.response && err.response.status === 404) {
             console.log(`[DEBUG] Endpoint moderne non trouvé (404), tentative avec l'ancien endpoint /api/enroll...`);
-            const response = await axios.post(`${baseUrl}/api/enroll`, payload, { timeout: 4000 });
-            return response.data;
+            try {
+                const response = await axios.post(`${baseUrl}/api/enroll`, payload, options);
+                return response.data;
+            } catch (errFallback) {
+                const unauth = asUnauthorized(errFallback);
+                if (unauth) throw unauth;
+                throw errFallback;
+            }
         }
         throw err;
     }

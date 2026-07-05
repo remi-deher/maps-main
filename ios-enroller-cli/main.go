@@ -41,14 +41,24 @@ type Config struct {
 	ServerUrl string
 	UDID      string
 	GoIosBin  string
+	Token     string
 }
 
 func main() {
 	serverFlag := flag.String("server", "", "URL du serveur Moteur (ex: http://192.168.1.143:8080). Si omis, une découverte mDNS est tentée.")
 	udidFlag := flag.String("udid", "", "UDID de l'iPhone (optionnel, détecté automatiquement)")
 	iosBinFlag := flag.String("ios-bin", "", "Chemin vers l'exécutable go-ios / ios (optionnel)")
+	tokenFlag := flag.String("token", "", "Clé API (GPSMOCK_API_KEY) ou jeton d'appairage du moteur distant. Requis si l'accès distant est protégé. À défaut, la variable d'environnement GPSMOCK_API_KEY est utilisée.")
 	discoverTimeout := flag.Duration("discover-timeout", 3*time.Second, "Durée d'écoute mDNS pour la découverte automatique du serveur")
 	flag.Parse()
+
+	// A remote engine gates /api/device/enroll behind auth (checkAuth): any
+	// non-loopback request needs the API key or a paired-device token. Fall back
+	// to the env var so scripted runs don't have to repeat it on the CLI.
+	token := strings.TrimSpace(*tokenFlag)
+	if token == "" {
+		token = strings.TrimSpace(os.Getenv("GPSMOCK_API_KEY"))
+	}
 
 	fmt.Println("===========================================")
 	fmt.Println("       iOS-Enroller - Outil CLI Go")
@@ -63,6 +73,7 @@ func main() {
 		ServerUrl: serverUrl,
 		UDID:      *udidFlag,
 		GoIosBin:  *iosBinFlag,
+		Token:     token,
 	}
 
 	// 1. Trouver le dossier Lockdown
@@ -143,7 +154,7 @@ func main() {
 
 	// 6. Envoyer au serveur cible
 	fmt.Printf("[INFO] Envoi vers le serveur cible : %s...\n", config.ServerUrl)
-	err = sendEnrollment(config.ServerUrl, udid, deviceRecordB64)
+	err = sendEnrollment(config.ServerUrl, udid, deviceRecordB64, config.Token)
 	if err != nil {
 		fmt.Printf("[ERREUR] Échec de l'envoi : %v\n", err)
 		os.Exit(1)
@@ -333,48 +344,71 @@ func detectUDID(iosBin string) (string, error) {
 	return "", nil
 }
 
-func sendEnrollment(serverUrl, udid, deviceRecordB64 string) error {
+func sendEnrollment(serverUrl, udid, deviceRecordB64, token string) error {
 	payload := map[string]string{
 		"udid":         udid,
 		"deviceRecord": deviceRecordB64,
 	}
 	bodyBytes, _ := json.Marshal(payload)
+	client := &http.Client{Timeout: 5 * time.Second}
+
+	post := func(url string) (*http.Response, error) {
+		req, err := http.NewRequest("POST", url, bytes.NewBuffer(bodyBytes))
+		if err != nil {
+			return nil, err
+		}
+		req.Header.Set("Content-Type", "application/json")
+		// The remote engine's enroll endpoint is auth-gated for non-loopback
+		// callers; present the API key / paired-device token as a Bearer token
+		// (also mirrored as ?token= for parity with the WS handshake path).
+		if token != "" {
+			req.Header.Set("Authorization", "Bearer "+token)
+		}
+		return client.Do(req)
+	}
 
 	// Essayer /api/device/enroll
 	url := fmt.Sprintf("%s/api/device/enroll", serverUrl)
 	fmt.Printf("[DEBUG] Tentative de POST sur %s...\n", url)
-	
-	req, _ := http.NewRequest("POST", url, bytes.NewBuffer(bodyBytes))
-	req.Header.Set("Content-Type", "application/json")
-	
-	client := &http.Client{Timeout: 5 * time.Second}
-	resp, err := client.Do(req)
-	
-	if err == nil && resp.StatusCode == http.StatusOK {
+	resp, err := post(url)
+	if err != nil {
+		return err
+	}
+	if resp.StatusCode == http.StatusOK {
 		_ = resp.Body.Close()
 		return nil
 	}
-
-	if err == nil {
+	if resp.StatusCode == http.StatusUnauthorized {
 		_ = resp.Body.Close()
-		// Essayer l'ancienne route /api/enroll
-		fallbackUrl := fmt.Sprintf("%s/api/enroll", serverUrl)
-		fmt.Printf("[DEBUG] Statut %d sur /api/device/enroll, tentative de repli sur %s...\n", resp.StatusCode, fallbackUrl)
-		
-		reqFallback, _ := http.NewRequest("POST", fallbackUrl, bytes.NewBuffer(bodyBytes))
-		reqFallback.Header.Set("Content-Type", "application/json")
-		
-		respFallback, errFallback := client.Do(reqFallback)
-		if errFallback == nil {
-			defer respFallback.Body.Close()
-			if respFallback.StatusCode == http.StatusOK {
-				return nil
-			}
-			bodyStr, _ := io.ReadAll(respFallback.Body)
-			return fmt.Errorf("statut d'erreur serveur : %d, corps : %s", respFallback.StatusCode, string(bodyStr))
-		}
-		return errFallback
+		return errUnauthorized(token)
 	}
 
-	return err
+	// Essayer l'ancienne route /api/enroll (repli 404)
+	firstStatus := resp.StatusCode
+	_ = resp.Body.Close()
+	fallbackUrl := fmt.Sprintf("%s/api/enroll", serverUrl)
+	fmt.Printf("[DEBUG] Statut %d sur /api/device/enroll, tentative de repli sur %s...\n", firstStatus, fallbackUrl)
+	respFallback, errFallback := post(fallbackUrl)
+	if errFallback != nil {
+		return errFallback
+	}
+	defer func() { _ = respFallback.Body.Close() }()
+	if respFallback.StatusCode == http.StatusOK {
+		return nil
+	}
+	if respFallback.StatusCode == http.StatusUnauthorized {
+		return errUnauthorized(token)
+	}
+	bodyStr, _ := io.ReadAll(respFallback.Body)
+	return fmt.Errorf("statut d'erreur serveur : %d, corps : %s", respFallback.StatusCode, string(bodyStr))
+}
+
+// errUnauthorized returns a message that distinguishes "no credential provided"
+// from "credential rejected", since both surface as HTTP 401.
+func errUnauthorized(token string) error {
+	if token == "" {
+		return fmt.Errorf("le moteur distant a refusé la requête (401) : l'accès distant est protégé. " +
+			"Fournissez la clé API ou un jeton d'appairage via -token <clé> (ou la variable GPSMOCK_API_KEY)")
+	}
+	return fmt.Errorf("le moteur distant a refusé le jeton fourni (401) : vérifiez la clé API / le jeton d'appairage (-token)")
 }

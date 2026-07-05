@@ -3,6 +3,7 @@ import { getCurrentUdid, setStatusSubtext } from './deviceStatus.js';
 
 const btnTransfer = document.getElementById('btnTransfer');
 const targetIpInput = document.getElementById('targetIp');
+const apiTokenInput = document.getElementById('apiToken');
 
 export function initTransfer() {
     btnTransfer.addEventListener('click', async () => {
@@ -11,6 +12,7 @@ export function initTransfer() {
             log("Veuillez saisir l'adresse IP cible.", 'error');
             return;
         }
+        const token = apiTokenInput ? apiTokenInput.value.trim() : '';
 
         btnTransfer.disabled = true;
         log(`Envoi des certificats vers ${targetIp}...`);
@@ -19,7 +21,7 @@ export function initTransfer() {
             const res = await fetch('/api/transfer', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ targetIp, udid: getCurrentUdid() }),
+                body: JSON.stringify({ targetIp, udid: getCurrentUdid(), token }),
             });
             const data = await res.json();
 

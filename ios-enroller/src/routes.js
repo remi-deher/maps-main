@@ -27,13 +27,13 @@ router.post('/pair', async (req, res) => {
 
 // 3. Transfert des clés vers le serveur distant
 router.post('/transfer', async (req, res) => {
-    const { targetIp, udid } = req.body;
+    const { targetIp, udid, token } = req.body;
     if (!targetIp || !udid) {
         return res.status(400).json({ success: false, error: 'IP cible ou UDID manquant' });
     }
 
     try {
-        const data = await transferKeys(targetIp, udid);
+        const data = await transferKeys(targetIp, udid, token);
         res.json({ success: true, data });
     } catch (error) {
         res.status(error.status || 500).json({
