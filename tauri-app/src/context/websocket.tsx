@@ -27,6 +27,24 @@ import { EngineAction, EngineEvent } from "../types/engineMessages";
 
 const DEFAULT_PORT = 8080;
 
+// The server broadcasts TELEMETRY every 5s, so any healthy connection yields a
+// message well within this window. Past it, the socket is presumed a zombie
+// (OS froze it during sleep, Wi-Fi dropped without a close frame) and is force-
+// closed to trigger the normal reconnect — even though readyState still says
+// OPEN. Checked on a short interval.
+const STALE_AFTER_MS = 15_000;
+const STALE_CHECK_MS = 5_000;
+// Softer threshold than STALE_AFTER_MS: past this the displayed status/telemetry
+// is flagged as possibly outdated in the UI, before the harder cutoff forces a
+// reconnect. Keeps widgets from presenting frozen data as live.
+const STALE_WARN_MS = 8_000;
+
+// Reconnect backoff: start fast, grow exponentially to a ceiling, with jitter
+// so multiple LAN clients don't retry in lockstep against an engine that just
+// came back. Reset to base on a successful open.
+const RECONNECT_BASE_MS = 1_000;
+const RECONNECT_MAX_MS = 30_000;
+
 export type {
   DeviceDetails,
   Diagnostics,
@@ -77,11 +95,21 @@ export const WebSocketProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   const [lastError, setLastError] = useState<string | null>(null);
   const [status, setStatus] = useState<Status | null>(null);
   const [telemetry, setTelemetry] = useState<Telemetry | null>(null);
+  // True when no frame has arrived recently (see STALE_WARN_MS): the UI dims
+  // status/telemetry and shows an "outdated" hint instead of pretending live.
+  const [isStale, setIsStale] = useState(false);
   const [deviceDetails, setDeviceDetails] = useState<DeviceDetails | null>(null);
   const [diagnostics, setDiagnostics] = useState<Diagnostics | null>(null);
   const [networkDevices, setNetworkDevices] = useState<NetworkDevicesResult | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectTimeoutRef = useRef<any>(null);
+  // Wall-clock time of the last frame received, used by the staleness watchdog.
+  const lastMessageRef = useRef<number>(Date.now());
+  // Current reconnect backoff delay, grown on each close and reset on open.
+  const reconnectDelayRef = useRef<number>(RECONNECT_BASE_MS);
+  // Holds the latest `connect` closure so the wake handlers (whose effect runs
+  // once) can call the current version without re-subscribing every render.
+  const connectRef = useRef<() => void>(() => {});
 
   const connect = () => {
     if (reconnectTimeoutRef.current) {
@@ -103,6 +131,9 @@ export const WebSocketProvider: React.FC<{ children: React.ReactNode }> = ({ chi
 
     ws.onopen = () => {
       console.log("WebSocket connected successfully");
+      lastMessageRef.current = Date.now();
+      reconnectDelayRef.current = RECONNECT_BASE_MS;
+      setIsStale(false);
       setIsConnected(true);
       setConnectionStatus("connected");
       setLastError(null);
@@ -114,6 +145,7 @@ export const WebSocketProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     };
 
     ws.onmessage = (event) => {
+      lastMessageRef.current = Date.now();
       try {
         const envelope = JSON.parse(event.data);
         const { type, data } = envelope;
@@ -182,11 +214,15 @@ export const WebSocketProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     };
 
     ws.onclose = () => {
-      console.log("WebSocket closed. Attempting reconnect in 2s...");
       setIsConnected(false);
       setConnectionStatus("reconnecting");
-      setLastError("Connexion au moteur perdue. Nouvelle tentative dans 2 s.");
-      reconnectTimeoutRef.current = setTimeout(connect, 2000);
+      const delay = reconnectDelayRef.current;
+      const jittered = delay + Math.floor(Math.random() * 1000);
+      console.log(`WebSocket closed. Attempting reconnect in ${Math.round(jittered / 1000)}s...`);
+      setLastError(`Connexion au moteur perdue. Nouvelle tentative dans ${Math.round(jittered / 1000)} s.`);
+      reconnectTimeoutRef.current = setTimeout(connect, jittered);
+      // Grow the backoff for the next attempt (reset to base once open again).
+      reconnectDelayRef.current = Math.min(delay * 2, RECONNECT_MAX_MS);
     };
 
     ws.onerror = (err) => {
@@ -195,6 +231,60 @@ export const WebSocketProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       ws.close();
     };
   };
+
+  connectRef.current = connect;
+
+  // Staleness watchdog: an OPEN socket that hasn't produced a frame within
+  // STALE_AFTER_MS is a zombie (the browser won't surface a broken pipe after
+  // sleep). Closing it routes through onclose -> reconnect.
+  useEffect(() => {
+    const id = window.setInterval(() => {
+      const ws = wsRef.current;
+      const age = Date.now() - lastMessageRef.current;
+      const open = ws && ws.readyState === WebSocket.OPEN;
+      // Flag stale data before the hard cutoff so widgets can dim/warn.
+      setIsStale(!!open && age > STALE_WARN_MS);
+      if (open && age > STALE_AFTER_MS) {
+        console.warn("WebSocket stale (no frame in >%dms), forcing reconnect", STALE_AFTER_MS);
+        setConnectionStatus("reconnecting");
+        ws!.close();
+      }
+    }, STALE_CHECK_MS);
+    return () => clearInterval(id);
+  }, []);
+
+  // On wake (tab refocus, network back, window focus) re-check immediately
+  // rather than waiting out the watchdog interval or the reconnect timer.
+  useEffect(() => {
+    const wake = () => {
+      const ws = wsRef.current;
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        if (Date.now() - lastMessageRef.current > STALE_AFTER_MS) {
+          ws.close();
+        }
+        return;
+      }
+      // Socket already down: if a reconnect was scheduled, fire it now. Only
+      // when a timer exists, so we never initiate a connection the normal flow
+      // wouldn't (e.g. web without a device token yet).
+      if (reconnectTimeoutRef.current) {
+        clearTimeout(reconnectTimeoutRef.current);
+        reconnectTimeoutRef.current = null;
+        connectRef.current();
+      }
+    };
+    const onVisibility = () => {
+      if (document.visibilityState === "visible") wake();
+    };
+    window.addEventListener("online", wake);
+    window.addEventListener("focus", wake);
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => {
+      window.removeEventListener("online", wake);
+      window.removeEventListener("focus", wake);
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
+  }, []);
 
   useEffect(() => {
     if (!isTauri) {
@@ -221,6 +311,16 @@ export const WebSocketProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       const payload = event.payload;
       if (payload === "starting") {
         setEngineStatus("starting");
+      } else if (payload.startsWith("restarting")) {
+        // "restarting:<attempt>:<max>" — the supervisor is auto-respawning a
+        // crashed engine. Show a starting state with a countdown-ish hint.
+        setEngineStatus("starting");
+        const [, attempt, max] = payload.split(":");
+        setLastError(
+          attempt && max
+            ? `Moteur GPS-Mock interrompu, redémarrage automatique (tentative ${attempt}/${max})…`
+            : "Moteur GPS-Mock interrompu, redémarrage automatique…"
+        );
       } else if (payload.startsWith("exited") || payload.startsWith("error")) {
         setEngineStatus("crashed");
         setLastError(`Moteur GPS-Mock indisponible (${payload}).`);
@@ -397,6 +497,7 @@ export const WebSocketProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         canSend,
         status,
         telemetry,
+        isStale,
         deviceDetails,
         getDeviceInfo,
         sendMessage,

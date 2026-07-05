@@ -6,7 +6,7 @@ mod network;
 
 use commands::{
     get_engine_port, get_mdns_interface, list_network_interfaces, read_device_plist,
-    set_engine_port, set_mdns_interface,
+    restart_engine, set_engine_port, set_mdns_interface,
 };
 use config::read_config;
 use engine_process::{cleanup_stray_engine, shutdown_engine, spawn_engine, EngineState};
@@ -43,7 +43,8 @@ pub fn run() {
             get_mdns_interface,
             set_mdns_interface,
             list_network_interfaces,
-            read_device_plist
+            read_device_plist,
+            restart_engine
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

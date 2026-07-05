@@ -356,6 +356,71 @@
   animation: slideInPanel 0.16s ease forwards;
 }
 
+/* Stale-data treatment (S7): a warning tint + dimmed body so frozen
+   status/telemetry never reads as live. */
+.engine-status-frame.stale,
+.map-telemetry-widget.stale {
+  border-color: rgba(245, 158, 11, 0.55);
+}
+
+.map-telemetry-widget.stale .widget-body {
+  opacity: 0.55;
+}
+
+/* Tile-CDN-unreachable banner (U6). */
+.map-tile-warning {
+  position: absolute;
+  top: 64px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 1200;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  max-width: min(460px, calc(100vw - 32px));
+  padding: 8px 14px;
+  font-size: var(--fs-xs);
+  color: #fde68a;
+  background: rgba(120, 80, 10, 0.94);
+  border: 1px solid rgba(251, 191, 36, 0.4);
+  border-radius: var(--radius-md);
+  backdrop-filter: blur(8px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+}
+
+.map-tile-warning button {
+  flex-shrink: 0;
+  padding: 4px 10px;
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  color: #1f2937;
+  background: #fbbf24;
+  border: none;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+
+/* Manual engine restart button (U1), shown when the supervisor has given up. */
+.engine-restart-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 7px 10px;
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  color: #fff;
+  background: rgba(37, 99, 235, 0.92);
+  border: 1px solid rgba(59, 130, 246, 0.6);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+
+.engine-restart-btn:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
 .status-badge-row {
   display: flex;
 }

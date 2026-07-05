@@ -155,9 +155,18 @@ func (m *TunnelMount) Start(ctx context.Context, cfg TunnelMountConfig) (TunnelI
 	}()
 	go func() {
 		sc := bufio.NewScanner(pr)
+		// The default 64 KiB line cap would make Scan() abort on a single
+		// oversized line (bufio.ErrTooLong); raise it so ordinary daemon
+		// output never trips it.
+		sc.Buffer(make([]byte, 0, 64*1024), 1024*1024)
 		for sc.Scan() {
 			appendTail(sc.Text())
 		}
+		// Once scanning stops (EOF, or a line still exceeded the raised cap),
+		// keep draining the pipe. Otherwise an unread io.Pipe would block the
+		// daemon's next stdout/stderr write indefinitely — freezing the tunnel
+		// process itself, so cmd.Wait() never returns and Stop() times out.
+		_, _ = io.Copy(io.Discard, pr)
 	}()
 
 	ticker := time.NewTicker(cfg.PollInterval)

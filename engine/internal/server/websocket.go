@@ -31,7 +31,7 @@ func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 	}
 	conn.SetReadLimit(maxWSMessageBytes)
 	c := &client{conn: conn, send: make(chan []byte, 16), limiter: newRateLimiter(10, 20), loopback: isLoopback(r)}
-	s.hub.register <- c
+	s.hub.registerClient(c)
 
 	// Greet the new client with the current status.
 	c.send <- encode(api.EventStatus, s.eng.Status())
@@ -43,9 +43,19 @@ func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 // readPump dispatches inbound envelopes for one client until it disconnects.
 func (s *Server) readPump(c *client) {
 	defer func() {
-		s.hub.unregister <- c
+		s.hub.unregisterClient(c)
 		_ = c.conn.Close()
 	}()
+	// A silently-gone peer (asleep, network dropped) stops answering pings; the
+	// read deadline then fires and ReadMessage returns an error, so this loop —
+	// and its goroutine — exits instead of blocking forever. Each pong (sent
+	// automatically by the peer in response to writePump's pings) pushes the
+	// deadline back out.
+	_ = c.conn.SetReadDeadline(time.Now().Add(pongWait))
+	c.conn.SetPongHandler(func(string) error {
+		_ = c.conn.SetReadDeadline(time.Now().Add(pongWait))
+		return nil
+	})
 	for {
 		_, raw, err := c.conn.ReadMessage()
 		if err != nil {

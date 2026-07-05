@@ -13,11 +13,18 @@ import (
 // spam `ios tunnel ls` / the tunneld REST API.
 const healthCheckInterval = 5 * time.Second
 
-// tunnelRetryInterval throttles re-attempts to establish a tunnel that has
-// never come up (e.g. no device was connected yet at boot). Each attempt
-// blocks the loop for up to the driver's tunnel-start timeout (tens of
-// seconds), so this must stay well above healthCheckInterval.
+// tunnelRetryInterval is the *initial* delay between re-attempts to establish a
+// tunnel that has never come up (e.g. no device was connected yet at boot).
+// Each attempt blocks the loop for up to the driver's tunnel-start timeout
+// (tens of seconds), so this must stay well above healthCheckInterval.
 const tunnelRetryInterval = 30 * time.Second
+
+// tunnelRetryMax caps the backoff applied to the retry interval. A device left
+// unplugged for hours would otherwise keep triggering a ~45s tunnel attempt
+// (plus a `stopagent`/daemon spawn and an error log) every 30s all night; the
+// backoff stretches that to one attempt every few minutes instead. Reset to
+// tunnelRetryInterval as soon as a tunnel comes up.
+const tunnelRetryMax = 5 * time.Minute
 
 // StartHealthMonitor launches the background tunnel watchdog. It runs until ctx
 // is cancelled. The loop is a no-op whenever no tunnel is active, so it is safe
@@ -42,6 +49,9 @@ func (e *Engine) healthLoop(ctx context.Context) {
 	// just 5s after boot — racing the boot goroutine's own StartTunnel call for
 	// the tunnel daemon's HTTP port.
 	lastRetry := time.Now()
+	// Current backoff between failed retries, grown on each failure and reset
+	// once a tunnel is active (see below).
+	retryInterval := tunnelRetryInterval
 
 	for {
 		select {
@@ -56,13 +66,20 @@ func (e *Engine) healthLoop(ctx context.Context) {
 		if !active {
 			warnedSearching = false
 			// StartTunnel may have failed at boot (no device connected yet) —
-			// nothing else retries that, so do it here, throttled.
-			if time.Since(lastRetry) >= tunnelRetryInterval {
+			// nothing else retries that, so do it here, with a growing backoff
+			// so an absent device doesn't spawn a tunnel attempt every 30s.
+			if time.Since(lastRetry) >= retryInterval {
 				lastRetry = time.Now()
-				_ = e.StartTunnel(ctx)
+				if err := e.StartTunnel(ctx); err != nil {
+					retryInterval = min(retryInterval*2, tunnelRetryMax)
+				} else {
+					retryInterval = tunnelRetryInterval
+				}
 			}
 			continue
 		}
+		// Tunnel is up: reset the backoff so the next outage retries promptly.
+		retryInterval = tunnelRetryInterval
 
 		drv := e.driver()
 		hc, ok := drv.(driver.HealthChecker)

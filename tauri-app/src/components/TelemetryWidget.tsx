@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { ChevronDown } from "lucide-react";
-import { Status, LatLon } from "../context/websocket";
+import { Status, LatLon, useEngine } from "../context/websocket";
 
 interface TelemetryWidgetProps {
   status: Status;
@@ -12,14 +12,29 @@ interface TelemetryWidgetProps {
 /// real-device drift — mirrors the EngineStatusFrame pattern so the map
 /// doesn't carry a permanently-open detail panel.
 export const TelemetryWidget: React.FC<TelemetryWidgetProps> = ({ status, currentPos }) => {
+  const { isStale } = useEngine();
   const [expanded, setExpanded] = useState(false);
 
-  const speed = status.navigation?.progress?.speed?.toFixed(1) || (status.state === "moving" ? "15.0" : "0.0");
-  const stateLabel = status.state === "moving" ? "En mouvement" : status.state === "paused" ? "En pause" : "Arrêté";
-  const stateClass = status.state === "moving" ? "moving" : status.state === "paused" ? "" : "disconnected";
+  // Only trust a reported speed; when the engine claims "moving" without a
+  // progress reading, show "—" rather than an invented figure.
+  const speed = status.navigation?.progress?.speed?.toFixed(1) ?? (status.state === "moving" ? "—" : "0.0");
+  const stateLabel = isStale
+    ? "Obsolète"
+    : status.state === "moving"
+    ? "En mouvement"
+    : status.state === "paused"
+    ? "En pause"
+    : "Arrêté";
+  const stateClass = isStale
+    ? "disconnected"
+    : status.state === "moving"
+    ? "moving"
+    : status.state === "paused"
+    ? ""
+    : "disconnected";
 
   return (
-    <div className={`map-telemetry-widget ${expanded ? "expanded" : ""}`}>
+    <div className={`map-telemetry-widget ${expanded ? "expanded" : ""} ${isStale ? "stale" : ""}`}>
       <button
         className="engine-status-pill"
         onClick={() => setExpanded((v) => !v)}

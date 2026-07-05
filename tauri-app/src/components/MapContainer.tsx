@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { MapContainer, TileLayer, Marker, Popup, Polyline, Circle, Rectangle, useMap, useMapEvents } from "react-leaflet";
 import L from "leaflet";
 // Bundle Leaflet's CSS locally instead of a CDN <link> — the Tauri CSP
@@ -139,6 +139,14 @@ export const InteractiveMap: React.FC = () => {
   const [showLogs, setShowLogs] = useState(false);
   const [showFavorites, setShowFavorites] = useState(false);
   const [showDevice, setShowDevice] = useState(false);
+
+  // Map tiles come from external CDNs; offline or a CDN outage leaves a grey
+  // map with no explanation. Count consecutive tile errors (reset on any
+  // successful load) and, past a threshold, surface a banner offering the
+  // standard OSM background as a fallback.
+  const [tilesUnreachable, setTilesUnreachable] = useState(false);
+  const tileErrorsRef = useRef(0);
+  const TILE_ERROR_THRESHOLD = 8;
 
   const {
     mapMode,
@@ -286,6 +294,16 @@ export const InteractiveMap: React.FC = () => {
         <TileLayer
           attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/">CARTO</a> &copy; ESRI'
           url={tileUrls[mapStyle]}
+          eventHandlers={{
+            tileerror: () => {
+              tileErrorsRef.current += 1;
+              if (tileErrorsRef.current >= TILE_ERROR_THRESHOLD) setTilesUnreachable(true);
+            },
+            tileload: () => {
+              tileErrorsRef.current = 0;
+              setTilesUnreachable(false);
+            },
+          }}
         />
 
         <MapEventsHandler onMapClick={handleMapClick} />
@@ -474,6 +492,35 @@ export const InteractiveMap: React.FC = () => {
           </>
         )}
       </MapContainer>
+
+      {/* Tile CDN unreachable notice (offline / CDN outage) */}
+      {tilesUnreachable && (
+        <div className="map-tile-warning" role="status" aria-live="polite">
+          <span>Fond de carte inaccessible (connexion ou CDN indisponible).</span>
+          {mapStyle !== "standard" ? (
+            <button
+              type="button"
+              onClick={() => {
+                tileErrorsRef.current = 0;
+                setTilesUnreachable(false);
+                setMapStyle("standard");
+              }}
+            >
+              Passer en fond standard
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={() => {
+                tileErrorsRef.current = 0;
+                setTilesUnreachable(false);
+              }}
+            >
+              Masquer
+            </button>
+          )}
+        </div>
+      )}
 
       {/* Auto-detected transport mode notice (map-click stops) */}
       {routeToast && (

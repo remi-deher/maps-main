@@ -42,6 +42,11 @@ type Server struct {
 	actionTimeout     time.Duration
 	telemetryInterval time.Duration
 
+	// shutdownCtx is cancelled by Shutdown to stop the hub and telemetry loops
+	// cleanly (mirrors the engine's ctx-driven healthLoop).
+	shutdownCtx    context.Context
+	shutdownCancel context.CancelFunc
+
 	metricsMu sync.Mutex
 	wsActions map[string]map[string]int64 // action -> status -> count
 }
@@ -72,12 +77,15 @@ func WithAuth(a *auth.Store) Option {
 
 // New builds a Server listening on addr (e.g. ":8080").
 func New(eng *engine.Engine, addr string, opts ...Option) *Server {
+	ctx, cancel := context.WithCancel(context.Background())
 	s := &Server{
 		eng:               eng,
 		hub:               newHub(),
 		startedAt:         time.Now(),
 		actionTimeout:     defaultActionTimeout,
 		telemetryInterval: defaultTelemetryInterval,
+		shutdownCtx:       ctx,
+		shutdownCancel:    cancel,
 		wsActions:         make(map[string]map[string]int64),
 	}
 	for _, opt := range opts {
@@ -131,8 +139,8 @@ func New(eng *engine.Engine, addr string, opts ...Option) *Server {
 // Start launches the broadcast hub (non-blocking). Called by ListenAndServe and
 // by tests that drive the Handler directly.
 func (s *Server) Start() {
-	go s.hub.run()
-	go s.runTelemetry()
+	go s.hub.run(s.shutdownCtx)
+	go s.runTelemetry(s.shutdownCtx)
 }
 
 // runTelemetry mirrors legacy's companion-server.js _telemetryInterval: every
@@ -151,13 +159,18 @@ func (s *Server) Start() {
 //
 // Broadcasting unconditionally is harmless when no client is connected — the
 // hub's fan-out loop over an empty client map is a no-op.
-func (s *Server) runTelemetry() {
+func (s *Server) runTelemetry(ctx context.Context) {
 	if s.startedAt.IsZero() {
 		s.startedAt = time.Now()
 	}
 	ticker := time.NewTicker(s.telemetryInterval)
 	defer ticker.Stop()
-	for range ticker.C {
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+		}
 		bytesSent, dropped := s.hub.snapshotAndReset()
 		throughputKBs := float64(bytesSent) / 1024 / s.telemetryInterval.Seconds()
 
@@ -189,7 +202,11 @@ func (s *Server) ListenAndServe() error {
 	return s.http.ListenAndServe()
 }
 
-// Shutdown gracefully stops the HTTP server.
+// Shutdown gracefully stops the HTTP server and the background hub/telemetry
+// loops.
 func (s *Server) Shutdown(ctx context.Context) error {
+	if s.shutdownCancel != nil {
+		s.shutdownCancel()
+	}
 	return s.http.Shutdown(ctx)
 }

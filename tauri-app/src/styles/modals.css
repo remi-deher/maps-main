@@ -68,6 +68,22 @@
   word-break: break-word;
 }
 
+.log-banner-count {
+  opacity: 0.7;
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+
+/* Summary chip for banners beyond MAX_VISIBLE (U4). */
+.log-banner-more {
+  justify-content: center;
+  padding: 6px 14px;
+  font-size: var(--fs-xs);
+  color: #cbd5e1;
+  background: rgba(30, 41, 59, 0.9);
+  border: 1px solid rgba(148, 163, 184, 0.25);
+}
+
 .log-banner-dismiss {
   background: none;
   border: none;

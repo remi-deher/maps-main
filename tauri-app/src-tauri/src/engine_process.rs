@@ -1,14 +1,30 @@
 use std::fs;
 use std::sync::Mutex;
+use std::time::{Duration, Instant};
 use tauri::{AppHandle, Emitter, Manager};
 use tauri_plugin_shell::process::{CommandChild, CommandEvent};
 use tauri_plugin_shell::ShellExt;
 
 const PID_FILE: &str = "engine.pid";
 
+// Auto-restart policy for an engine that dies unexpectedly (crash, OOM kill),
+// so a long-running session survives a sidecar failure without the user having
+// to relaunch the app. Attempts are capped to avoid a hot crash loop; the
+// counter resets once an instance has run longer than RESTART_STABLE_AFTER.
+const MAX_RESTART_ATTEMPTS: u32 = 5;
+const RESTART_STABLE_AFTER: Duration = Duration::from_secs(600);
+const MAX_RESTART_BACKOFF_SECS: u64 = 30;
+
+#[derive(Default)]
+struct RestartState {
+    attempts: u32,
+    last_spawn: Option<Instant>,
+}
+
 #[derive(Default)]
 pub(crate) struct EngineState {
     child: Mutex<Option<CommandChild>>,
+    restart: Mutex<RestartState>,
 }
 
 fn pid_file_path(app: &AppHandle) -> std::path::PathBuf {
@@ -145,7 +161,16 @@ pub(crate) fn spawn_engine(
     let pid = child.pid();
     write_pid_file(app, pid);
     *state.child.lock().unwrap_or_else(|e| e.into_inner()) = Some(child);
+    state
+        .restart
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .last_spawn = Some(Instant::now());
     let _ = app.emit("engine-status", "starting");
+
+    // Captured for an automatic respawn if this instance dies unexpectedly.
+    let restart_port = port;
+    let restart_mdns = mdns_interface.map(|s| s.to_string());
 
     let app_handle = app.clone();
     tauri::async_runtime::spawn(async move {
@@ -166,15 +191,71 @@ pub(crate) fn spawn_engine(
                     let state = app_handle.state::<EngineState>();
                     let mut guard = state.child.lock().unwrap_or_else(|e| e.into_inner());
                     let still_current = guard.as_ref().map(|p| p.pid()) == Some(pid);
-                    if still_current {
-                        *guard = None;
-                        drop(guard);
-                        clear_pid_file(&app_handle);
-                        let _ = app_handle.emit(
-                            "engine-status",
-                            format!("exited:{}", payload.code.unwrap_or(-1)),
-                        );
+                    if !still_current {
+                        // A newer spawn already superseded this instance (user
+                        // changed port/interface): nothing to clean up or restart.
+                        break;
                     }
+                    *guard = None;
+                    drop(guard);
+                    clear_pid_file(&app_handle);
+
+                    let code = payload.code.unwrap_or(-1);
+
+                    // Decide whether to auto-restart. Reset the attempt counter
+                    // when the instance had been running comfortably, so an
+                    // occasional crash after hours doesn't count toward the
+                    // hot-loop cap.
+                    let attempt = {
+                        let mut r = state.restart.lock().unwrap_or_else(|e| e.into_inner());
+                        let ran_long = r
+                            .last_spawn
+                            .map(|t| t.elapsed() >= RESTART_STABLE_AFTER)
+                            .unwrap_or(false);
+                        if ran_long {
+                            r.attempts = 0;
+                        }
+                        r.attempts += 1;
+                        r.attempts
+                    };
+
+                    if attempt > MAX_RESTART_ATTEMPTS {
+                        // Give up: repeated rapid crashes, surface it to the UI.
+                        let _ = app_handle.emit("engine-status", format!("exited:{code}"));
+                        break;
+                    }
+
+                    let backoff = (1u64 << (attempt - 1)).min(MAX_RESTART_BACKOFF_SECS);
+                    let _ = app_handle.emit(
+                        "engine-status",
+                        format!("restarting:{attempt}:{MAX_RESTART_ATTEMPTS}"),
+                    );
+
+                    // Wait out the backoff on a detached thread (no tokio timer
+                    // dependency), then respawn — unless something else already
+                    // brought the engine back in the meantime.
+                    let restart_handle = app_handle.clone();
+                    let restart_mdns = restart_mdns.clone();
+                    std::thread::spawn(move || {
+                        std::thread::sleep(Duration::from_secs(backoff));
+                        let occupied = restart_handle
+                            .state::<EngineState>()
+                            .child
+                            .lock()
+                            .unwrap_or_else(|e| e.into_inner())
+                            .is_some();
+                        if !occupied {
+                            if let Err(err) = spawn_engine(
+                                &restart_handle,
+                                restart_port,
+                                restart_mdns.as_deref(),
+                            ) {
+                                let _ = restart_handle
+                                    .emit("engine-status", format!("error: {err}"));
+                            }
+                        }
+                    });
+                    break;
                 }
                 _ => {}
             }
@@ -212,6 +293,18 @@ fn bundled_driver_envs(app: &AppHandle) -> Vec<(String, String)> {
     }
 
     envs
+}
+
+// Clears the auto-restart attempt counter — called when the user explicitly
+// (re)starts the engine, so a manual restart after the auto-restart gave up
+// re-arms the supervisor from scratch.
+pub(crate) fn reset_restart_attempts(app: &AppHandle) {
+    let state = app.state::<EngineState>();
+    state
+        .restart
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .attempts = 0;
 }
 
 pub(crate) fn shutdown_engine(app: &AppHandle) {

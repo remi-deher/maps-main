@@ -1,13 +1,16 @@
 package server
 
 import (
+	"context"
 	"testing"
 	"time"
 )
 
 func TestHubTracksBytesSentAndClientCount(t *testing.T) {
 	h := newHub()
-	go h.run()
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+	go h.run(ctx)
 
 	c := &client{send: make(chan []byte, 16)}
 	h.register <- c
@@ -49,7 +52,9 @@ func TestHubTracksBytesSentAndClientCount(t *testing.T) {
 
 func TestHubDropsSlowClientAndCountsIt(t *testing.T) {
 	h := newHub()
-	go h.run()
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+	go h.run(ctx)
 
 	// Unbuffered send channel that nobody reads from: the very first
 	// broadcast will find it full and the hub must drop the client.

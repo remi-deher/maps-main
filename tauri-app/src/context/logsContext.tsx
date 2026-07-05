@@ -23,8 +23,29 @@ export const LogsProvider: React.FC<{ children: React.ReactNode }> = ({ children
     });
   }, []);
 
-  const setLogs = useCallback((newLogs: LogEntry[]) => {
-    setLogsState(newLogs);
+  // A GET_LOGS snapshot is *merged* into the existing buffer rather than
+  // replacing it: on a reconnect after the engine restarted, the server's
+  // buffer may be empty or short, and a plain replace would wipe the history
+  // the operator needs to diagnose the very outage they just hit. Dedup by
+  // (timestamp,message), keep chronological order, cap at MAX_LOGS.
+  const setLogs = useCallback((incoming: LogEntry[]) => {
+    setLogsState((prev) => {
+      if (prev.length === 0) {
+        return incoming.length > MAX_LOGS ? incoming.slice(incoming.length - MAX_LOGS) : incoming;
+      }
+      const keyOf = (e: LogEntry) => `${e.timestamp}|${e.message}`;
+      const seen = new Set(prev.map(keyOf));
+      const merged = prev.slice();
+      for (const entry of incoming) {
+        const k = keyOf(entry);
+        if (!seen.has(k)) {
+          seen.add(k);
+          merged.push(entry);
+        }
+      }
+      merged.sort((a, b) => a.timestamp - b.timestamp);
+      return merged.length > MAX_LOGS ? merged.slice(merged.length - MAX_LOGS) : merged;
+    });
   }, []);
 
   const clearLogs = useCallback(() => {

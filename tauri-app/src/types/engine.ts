@@ -239,6 +239,9 @@ export interface EngineTransportContextType {
   canSend: boolean;
   status: Status | null;
   telemetry: Telemetry | null;
+  // True when no engine frame has arrived recently — the UI should present
+  // status/telemetry as possibly outdated rather than live.
+  isStale: boolean;
   deviceDetails: DeviceDetails | null;
   getDeviceInfo: () => void;
   sendMessage: (type: string, data?: EngineMessageData) => boolean;

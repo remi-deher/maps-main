@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/remi-deher/maps-main/engine/internal/driver"
@@ -42,6 +43,11 @@ type locationSession struct {
 	tailMu   sync.Mutex
 	stderr   []string
 	endpoint driver.TunnelInfo
+	// poisoned is set when a round-trip was abandoned on ctx cancellation: the
+	// reader goroutine spawned by readResponse may still be blocked on stdout
+	// and would consume the *next* request's reply, desyncing the protocol. A
+	// poisoned session refuses further round-trips so the caller recreates one.
+	poisoned atomic.Bool
 }
 
 func newLocationSession(ctx context.Context, py string, endpoint driver.TunnelInfo) (*locationSession, error) {
@@ -141,6 +147,13 @@ func (s *locationSession) roundTrip(ctx context.Context, payload map[string]any)
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	// A prior round-trip was abandoned mid-flight; its orphaned reader may still
+	// be draining stdout, so writing again could pair our write with its read.
+	// Fail fast and let the caller open a fresh session.
+	if s.poisoned.Load() {
+		return fmt.Errorf("pmd3 location worker: session abandoned after timeout%s", s.stderrSuffix())
+	}
+
 	if err := json.NewEncoder(s.stdin).Encode(payload); err != nil {
 		return fmt.Errorf("pmd3 location worker write: %w%s", err, s.stderrSuffix())
 	}
@@ -181,6 +194,10 @@ func (s *locationSession) readResponse(ctx context.Context) error {
 	case err := <-errCh:
 		return fmt.Errorf("%w%s", err, s.stderrSuffix())
 	case <-ctx.Done():
+		// The goroutine above is still blocked on ReadString and will read the
+		// (late) reply meant for this request — poison the session so it is
+		// never reused for a subsequent, mismatched round-trip.
+		s.poisoned.Store(true)
 		return ctx.Err()
 	}
 }
