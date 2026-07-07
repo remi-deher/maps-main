@@ -14,9 +14,16 @@ except ImportError:
     USE_LEGACY_DVT = False
 
 
+# Bounds a single DVT action. A dead tunnel (device asleep, blackholed
+# route) can leave location.set() awaiting an ack forever; timing out turns
+# that into a normal {"ok": false} error response, which makes the Go side
+# discard this session and open a fresh one instead of blocking on it.
+ACTION_TIMEOUT_SECONDS = 20
+
+
 async def maybe_await(value):
     if inspect.isawaitable(value):
-        return await value
+        return await asyncio.wait_for(value, ACTION_TIMEOUT_SECONDS)
     return value
 
 

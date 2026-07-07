@@ -230,6 +230,26 @@ func (e *Engine) StartTunnel(ctx context.Context) error {
 	return nil
 }
 
+// markTunnelLost records that the active tunnel is gone (daemon died, device
+// unreachable) so a follow-up StartTunnel actually restarts it instead of
+// early-returning on the stale TunnelActive flag. Keeps LastInjectedLocation
+// untouched: once the tunnel is back, the relance/anti-drift paths re-assert
+// the held position on their own.
+func (e *Engine) markTunnelLost() {
+	e.mu.Lock()
+	if !e.st.TunnelActive {
+		e.mu.Unlock()
+		return
+	}
+	e.st.TunnelActive = false
+	e.st.RSDAddress = ""
+	e.st.RSDPort = 0
+	if e.st.State == "ready" || e.st.State == "running" {
+		e.st.State = "idle"
+	}
+	e.emitStatusLocked()
+}
+
 func (e *Engine) clearActiveStart(generation uint64) {
 	e.mu.Lock()
 	if e.driverGeneration == generation {

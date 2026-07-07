@@ -96,7 +96,15 @@ func (d *Driver) stopLocationSession(ctx context.Context) error {
 	if session == nil {
 		return nil
 	}
-	return session.stop(ctx)
+	// Bound the polite stop the same way locationSession() bounds its own
+	// session replacement: a worker stuck mid-DVT-write (dead tunnel after a
+	// long device sleep) never reads stdin nor answers, and some callers —
+	// the health monitor's daemon-dead restart path in particular — arrive
+	// here with a context that has no deadline at all. An unbounded wait
+	// there froze the health loop permanently.
+	stopCtx, cancel := context.WithTimeout(ctx, workerStartTimeout)
+	defer cancel()
+	return session.stop(stopCtx)
 }
 
 func (d *Driver) takeLocationSession() *locationSession {

@@ -104,6 +104,13 @@ func (e *Engine) healthLoop(ctx context.Context) {
 		}
 		if !daemonAlive {
 			e.LogEvent("warn", "tunnel", "tunnel", "reconnect", "Tunnel perdu (démon arrêté), redémarrage…", nil)
+			// Flip the status to tunnel-down BEFORE restarting: StartTunnel's
+			// TunnelActive guard would otherwise see the stale true and return
+			// nil without doing anything — leaving this branch to log
+			// "redémarrage…" every tick forever while the tunnel never actually
+			// comes back (the stuck state that used to require a full engine
+			// restart after a long idle period).
+			e.markTunnelLost()
 			_ = drv.StopTunnel(ctx)
 			if err := e.StartTunnel(ctx); err != nil {
 				e.LogEvent("error", "tunnel", "tunnel", "reconnect", fmt.Sprintf("Reconnexion échouée : %v", err), map[string]string{"error": err.Error()})

@@ -35,7 +35,13 @@ func (d *Driver) StartTunnel(ctx context.Context) (driver.TunnelInfo, error) {
 				return err
 			}
 			// Best-effort: mount the Developer Disk Image (ignore failures).
-			_ = execCommandContext(ctx, py, d.args("mounter", "auto-mount")...).Run()
+			// Bounded: callers like the health monitor's retry loop pass a
+			// context without a deadline, and a mounter hung on a locked/
+			// sleeping device would otherwise hold the engine's tunnel lock
+			// indefinitely.
+			mountCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+			defer cancel()
+			_ = execCommandContext(mountCtx, py, d.args("mounter", "auto-mount")...).Run()
 			return nil
 		},
 		StartDaemon: func(context.Context) (*exec.Cmd, error) {
@@ -61,10 +67,17 @@ func keepPmd3TunneldOutput(line string) bool {
 }
 
 func (d *Driver) StopTunnel(ctx context.Context) error {
-	if err := d.stopLocationSession(ctx); err != nil {
+	// Always tear the daemon down, even when the location worker refused to
+	// stop cleanly (a worker stuck on a dead DVT socket after a long device
+	// sleep is the common failure here). Returning early on the worker error
+	// used to leave the tunneld daemon orphaned AND the mount cache still
+	// "on" — so the next StartTunnel returned the stale endpoint immediately
+	// and the tunnel never actually restarted.
+	workerErr := d.stopLocationSession(ctx)
+	if err := d.mount.Stop(ctx); err != nil {
 		return err
 	}
-	return d.mount.Stop(ctx)
+	return workerErr
 }
 
 func (d *Driver) CheckHealth(context.Context) bool {

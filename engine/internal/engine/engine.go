@@ -287,7 +287,14 @@ func (e *Engine) ReportRealLocation(ctx context.Context, lat, lon float64) {
 		e.driftFailures++
 		if e.driftFailures >= driftConfirmFailures && time.Since(e.lastReinjection) > driftReinjectionCooldown {
 			reinject = true
-			e.driftFailures = 0
+			// lastReinjection marks this *attempt*, not a confirmed success — it
+			// exists purely to rate-limit how often we retry (see the cooldown's
+			// doc above), so it must advance whether or not the SetLocation below
+			// actually lands. driftFailures, on the other hand, is only cleared
+			// once we know the re-injection worked (below) — otherwise a tunnel
+			// that's mid-restart (e.g. right after a long-idle reconnect) would
+			// silently "eat" the failure and force two more drift confirmations
+			// before trying again, which is what made the shield look stuck.
 			e.lastReinjection = time.Now()
 		}
 	} else {
@@ -303,7 +310,13 @@ func (e *Engine) ReportRealLocation(ctx context.Context, lat, lon float64) {
 			"lat":            fmt.Sprintf("%.6f", reinjectTarget.Lat),
 			"lon":            fmt.Sprintf("%.6f", reinjectTarget.Lon),
 		})
-		_ = e.SetLocation(ctx, reinjectTarget.Lat, reinjectTarget.Lon, reinjectTarget.Name)
+		if err := e.SetLocation(ctx, reinjectTarget.Lat, reinjectTarget.Lon, reinjectTarget.Name); err != nil {
+			e.LogEvent("error", "anti-drift", "location", "reinject", fmt.Sprintf("Ré-injection forcée échouée (nouvelle tentative dès la prochaine dérive confirmée) : %v", err), map[string]string{"error": err.Error()})
+		} else {
+			e.mu.Lock()
+			e.driftFailures = 0
+			e.mu.Unlock()
+		}
 	}
 }
 

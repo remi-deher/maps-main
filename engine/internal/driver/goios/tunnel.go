@@ -36,9 +36,14 @@ func (d *Driver) StartTunnel(ctx context.Context) (driver.TunnelInfo, error) {
 			// clean HTTP API on tunnelInfoPort. A leftover agent (from a prior
 			// run or a manual `ios tunnel start`) would otherwise keep serving
 			// its own — possibly empty — tunnel list. Best-effort; ignore errors
-			// (no agent to stop is the common, fine case).
+			// (no agent to stop is the common, fine case). Bounded: callers like
+			// the health monitor's retry loop pass a context without a deadline,
+			// and a hung stopagent would otherwise hold the engine's tunnel lock
+			// indefinitely.
 			if bin, err := d.binPath(); err == nil {
-				_ = execCommandContext(ctx, bin, "tunnel", "stopagent").Run()
+				stopCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
+				defer cancel()
+				_ = execCommandContext(stopCtx, bin, "tunnel", "stopagent").Run()
 			}
 			return nil
 		},

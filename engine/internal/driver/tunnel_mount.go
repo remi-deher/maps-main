@@ -173,6 +173,19 @@ func (m *TunnelMount) Start(ctx context.Context, cfg TunnelMountConfig) (TunnelI
 	defer ticker.Stop()
 	deadline := time.After(cfg.StartTimeout)
 
+	// killAndReap mirrors Stop(): after requesting the kill, wait (bounded)
+	// for the daemon to actually be reaped. Returning with the old daemon
+	// still dying would let the caller's next Start() race it for the tun
+	// adapter / device lock / API port — the same intermittent restart
+	// failure Stop() already guards against.
+	killAndReap := func() {
+		_ = killProcess(cmd)
+		select {
+		case <-reaped:
+		case <-time.After(stopReapTimeout):
+		}
+	}
+
 	for {
 		if endpoint, ok := cfg.Resolve(ctx); ok {
 			m.set(endpoint.Info, cmd, endpoint.UDID)
@@ -186,13 +199,13 @@ func (m *TunnelMount) Start(ctx context.Context, cfg TunnelMountConfig) (TunnelI
 			}
 			return TunnelInfo{}, fmt.Errorf("%s: %s exited before a tunnel was established: %w", cfg.DriverName, cfg.DaemonLabel, err)
 		case <-deadline:
-			_ = killProcess(cmd)
+			killAndReap()
 			if out := tailSnapshot(); out != "" {
 				return TunnelInfo{}, fmt.Errorf("%s: tunnel not established within %s%s, last output:\n%s", cfg.DriverName, cfg.StartTimeout, timeoutHintSuffix(cfg.TimeoutHint), out)
 			}
 			return TunnelInfo{}, fmt.Errorf("%s: tunnel not established within %s%s", cfg.DriverName, cfg.StartTimeout, timeoutHintSuffix(cfg.TimeoutHint))
 		case <-ctx.Done():
-			_ = killProcess(cmd)
+			killAndReap()
 			return TunnelInfo{}, ctx.Err()
 		case <-ticker.C:
 		}

@@ -3,6 +3,7 @@ package engine
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"math"
 	"strings"
 	"sync"
@@ -22,6 +23,7 @@ type mockDriver struct {
 	setLat              float64
 	setLon              float64
 	setLocationCalled   bool
+	setLocationErr      error
 	clearLocationCalled bool
 }
 
@@ -50,9 +52,12 @@ func (m *mockDriver) StopTunnel(ctx context.Context) error {
 }
 
 func (m *mockDriver) SetLocation(ctx context.Context, lat, lon float64) error {
+	m.setLocationCalled = true
+	if m.setLocationErr != nil {
+		return m.setLocationErr
+	}
 	m.setLat = lat
 	m.setLon = lon
-	m.setLocationCalled = true
 	return nil
 }
 
@@ -611,6 +616,92 @@ func TestReportRealLocationDriftCounterResetsOnGoodReading(t *testing.T) {
 
 	if drv.setLocationCalled {
 		t.Error("expected no re-injection: counter should reset after a good reading")
+	}
+}
+
+// TestMarkTunnelLostAllowsHealthRestart reproduces the health monitor's
+// daemon-dead recovery path. StartTunnel early-returns while st.TunnelActive
+// is true, so when the tunnel daemon dies behind the engine's back the
+// restart is a silent no-op unless the stale flag is cleared first — the
+// pre-fix stuck state where "Tunnel perdu, redémarrage…" looped forever and
+// only a full engine restart recovered.
+func TestMarkTunnelLostAllowsHealthRestart(t *testing.T) {
+	ti := driver.TunnelInfo{Address: "fd00::1", Port: 60000, Type: domain.ConnUSB}
+	drv := &mockDriver{id: domain.DriverGoIos, tunnelInfo: ti}
+	eng := New(drv, settings.Default())
+	ctx := context.Background()
+	if err := eng.StartTunnel(ctx); err != nil {
+		t.Fatalf("StartTunnel: %v", err)
+	}
+
+	// Daemon dies: the driver-side tunnel goes down, engine status is stale.
+	_ = drv.StopTunnel(ctx)
+
+	// Demonstrate the trap: with the stale TunnelActive flag still set,
+	// StartTunnel returns nil without restarting anything.
+	if err := eng.StartTunnel(ctx); err != nil {
+		t.Fatalf("StartTunnel (stale flag): %v", err)
+	}
+	if drv.tunnelOn {
+		t.Fatal("precondition failed: StartTunnel should be a no-op while TunnelActive is still set")
+	}
+
+	// The health monitor's fix: mark the tunnel lost, then restart for real.
+	eng.markTunnelLost()
+	if eng.Status().TunnelActive {
+		t.Error("expected TunnelActive=false after markTunnelLost")
+	}
+	if err := eng.StartTunnel(ctx); err != nil {
+		t.Fatalf("StartTunnel (after markTunnelLost): %v", err)
+	}
+	if !drv.tunnelOn {
+		t.Error("expected the driver tunnel to actually restart after markTunnelLost")
+	}
+	if st := eng.Status(); !st.TunnelActive || st.RSDAddress != ti.Address {
+		t.Errorf("expected status to reflect the restarted tunnel, got active=%t addr=%q", st.TunnelActive, st.RSDAddress)
+	}
+}
+
+// TestReportRealLocationFailedReinjectionRetriesAfterCooldown reproduces the
+// scenario reported after a long-idle reconnect: the tunnel is still coming
+// back up (or the driver call otherwise errors) exactly when the anti-drift
+// shield tries to force a re-injection. Before the fix, driftFailures and
+// lastReinjection were reset as if the attempt had succeeded, so a failed
+// re-injection silently required TWO BRAND NEW consecutive drift
+// confirmations (plus another full cooldown) before trying again â€” which
+// could chain indefinitely if the tunnel kept flapping, making the shield
+// look stuck until the whole engine was restarted.
+func TestReportRealLocationFailedReinjectionRetriesAfterCooldown(t *testing.T) {
+	ti := driver.TunnelInfo{Address: "127.0.0.1", Port: 1, Type: domain.ConnUSB}
+	drv := &mockDriver{id: domain.DriverPmd3, tunnelInfo: ti}
+	eng := New(drv, settings.Default())
+	ctx := context.Background()
+	_ = eng.StartTunnel(ctx)
+	_ = eng.SetLocation(ctx, 48.8566, 2.3522, "Paris")
+
+	drv.setLocationCalled = false
+	drv.setLocationErr = errors.New("tunnel en cours de demarrage")
+
+	// Two consecutive bad reports trigger the forced re-injection attempt,
+	// which fails (tunnel still restarting).
+	eng.ReportRealLocation(ctx, 48.875, 2.3522)
+	eng.ReportRealLocation(ctx, 48.875, 2.3522)
+	if !drv.setLocationCalled {
+		t.Fatal("expected a re-injection attempt after two consecutive drift readings")
+	}
+	if eng.driftFailures == 0 {
+		t.Fatal("expected driftFailures to survive a failed re-injection so the shield retries without two brand-new confirmations")
+	}
+
+	// Tunnel recovers and the cooldown elapses.
+	drv.setLocationErr = nil
+	drv.setLocationCalled = false
+	eng.lastReinjection = time.Now().Add(-driftReinjectionCooldown - time.Second)
+
+	// A single further confirmed-drift report should retry immediately now.
+	eng.ReportRealLocation(ctx, 48.875, 2.3522)
+	if !drv.setLocationCalled {
+		t.Error("expected the shield to retry the re-injection on the next confirmed drift after cooldown, without requiring two more failures")
 	}
 }
 
