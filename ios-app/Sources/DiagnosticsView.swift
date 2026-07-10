@@ -130,7 +130,10 @@ struct DiagnosticsView: View {
                     }
                     Button("Annuler", role: .cancel) {}
                 } message: {
-                    Text("Coupe brièvement le tunnel actif : tue les process pymobiledevice3, redémarre le service Bonjour/mDNS, puis rétablit la connexion automatiquement.")
+                    Text(
+                        "Coupe brièvement le tunnel actif : tue les process pymobiledevice3, "
+                            + "redémarre le service Bonjour/mDNS, puis rétablit la connexion automatiquement."
+                    )
                 }
             } header: {
                 Text("Maintenance")
@@ -144,7 +147,7 @@ struct DiagnosticsView: View {
         }
         .navigationTitle("Diagnostics")
         .navigationBarTitleDisplayMode(.inline)
-        .onChange(of: engine.restartServicesResult?.ok) { _, _ in
+        .onChange(of: engine.restartServicesResult?.succeeded) { _, _ in
             isRestartingServices = false
         }
     }
@@ -152,12 +155,16 @@ struct DiagnosticsView: View {
     @ViewBuilder
     private func restartResultSummary(_ result: RestartServicesResultPayload) -> some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text(result.ok ? "Redémarrage réussi, tunnel rétabli." : "Échec du redémarrage : \(result.error ?? "erreur inconnue")")
-                .foregroundStyle(result.ok ? .green : .red)
+            Text(
+                result.succeeded
+                    ? "Redémarrage réussi, tunnel rétabli."
+                    : "Échec du redémarrage : \(result.error ?? "erreur inconnue")"
+            )
+            .foregroundStyle(result.succeeded ? .green : .red)
             ForEach(result.steps ?? [], id: \.name) { step in
-                Text("\(step.ok ? "✓" : "✗") \(step.name)" + (step.error.map { " — \($0)" } ?? ""))
+                Text("\(step.succeeded ? "✓" : "✗") \(step.name)" + (step.error.map { " — \($0)" } ?? ""))
                     .font(.caption)
-                    .foregroundStyle(step.ok ? .secondary : .red)
+                    .foregroundStyle(step.succeeded ? Color.secondary : Color.red)
             }
         }
     }

@@ -54,6 +54,7 @@ channels:
       GET_PAIR_CODE: { $ref: "#/components/messages/EMPTY" }
       LIST_PAIRED_DEVICES: { $ref: "#/components/messages/EMPTY" }
       REVOKE_PAIRED_DEVICE: { $ref: "#/components/messages/REVOKE_PAIRED_DEVICE" }
+      RESTART_SERVICES: { $ref: "#/components/messages/RESTART_SERVICES" }
       # ── Outbound (engine -> client) ──
       STATUS: { $ref: "#/components/messages/STATUS" }
       STATUS_UPDATE: { $ref: "#/components/messages/STATUS_UPDATE" }
@@ -73,6 +74,7 @@ channels:
       PAIR_RESULT: { $ref: "#/components/messages/PAIR_RESULT" }
       PAIR_CODE: { $ref: "#/components/messages/PAIR_CODE" }
       PAIRED_DEVICES: { $ref: "#/components/messages/PAIRED_DEVICES" }
+      RESTART_SERVICES_RESULT: { $ref: "#/components/messages/RESTART_SERVICES_RESULT" }
 
 operations:
   sendAction:
@@ -175,6 +177,10 @@ components:
       payload: { $ref: "#/components/schemas/Envelope_PairedDevices" }
     REVOKE_PAIRED_DEVICE:
       payload: { $ref: "#/components/schemas/Envelope_RevokePairedDevice" }
+    RESTART_SERVICES:
+      payload: { $ref: "#/components/schemas/Envelope_RestartServices" }
+    RESTART_SERVICES_RESULT:
+      payload: { $ref: "#/components/schemas/Envelope_RestartServicesResult" }
 
   schemas:
     Envelope_Empty:
@@ -588,6 +594,34 @@ components:
           type: object
           properties:
             ok: { type: boolean }
+            error: { type: string }
+          required: [ok]
+      required: [type, data]
+
+    Envelope_RestartServices:
+      type: object
+      properties:
+        type: { const: RESTART_SERVICES }
+        data: { type: object }
+      required: [type]
+
+    Envelope_RestartServicesResult:
+      type: object
+      properties:
+        type: { const: RESTART_SERVICES_RESULT }
+        data:
+          type: object
+          properties:
+            ok: { type: boolean }
+            steps:
+              type: array
+              items:
+                type: object
+                properties:
+                  name: { type: string }
+                  ok: { type: boolean }
+                  error: { type: string }
+                required: [name, ok]
             error: { type: string }
           required: [ok]
       required: [type, data]

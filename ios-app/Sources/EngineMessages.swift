@@ -39,13 +39,25 @@ enum EngineEvent: String {
 struct RestartServicesResultPayload: Decodable {
     struct Step: Decodable {
         let name: String
-        let ok: Bool
+        let succeeded: Bool
         let error: String?
+
+        enum CodingKeys: String, CodingKey {
+            case name
+            case succeeded = "ok"
+            case error
+        }
     }
 
-    let ok: Bool
+    let succeeded: Bool
     let steps: [Step]?
     let error: String?
+
+    enum CodingKeys: String, CodingKey {
+        case succeeded = "ok"
+        case steps
+        case error
+    }
 }
 
 struct EngineEnvelope {
