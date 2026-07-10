@@ -31,26 +31,28 @@ enum EngineEvent: String {
     case restartServicesResult = "RESTART_SERVICES_RESULT"
 }
 
+// RestartServiceStep is one step's outcome within RestartServicesResultPayload
+// (e.g. "kill python processes", "restart Bonjour/mDNS", "restart tunnel").
+struct RestartServiceStep: Decodable {
+    let name: String
+    let succeeded: Bool
+    let error: String?
+
+    enum CodingKeys: String, CodingKey {
+        case name
+        case succeeded = "ok"
+        case error
+    }
+}
+
 // RestartServicesResultPayload is the data for RESTART_SERVICES_RESULT (the
 // response to RESTART_SERVICES — see engine/internal/api/messages.go). OK
 // reflects only the final tunnel-restart step; Steps gives the outcome of
 // every step (kill python processes, restart Bonjour/mDNS, restart tunnel)
 // so the UI can show exactly what happened.
 struct RestartServicesResultPayload: Decodable {
-    struct Step: Decodable {
-        let name: String
-        let succeeded: Bool
-        let error: String?
-
-        enum CodingKeys: String, CodingKey {
-            case name
-            case succeeded = "ok"
-            case error
-        }
-    }
-
     let succeeded: Bool
-    let steps: [Step]?
+    let steps: [RestartServiceStep]?
     let error: String?
 
     enum CodingKeys: String, CodingKey {
