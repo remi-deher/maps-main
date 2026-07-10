@@ -59,13 +59,28 @@ jobs:
       - name: Generate Xcode project
         run: xcodegen generate
 
+      - name: Pick an available iPhone simulator
+        # Hardcoding a model name (e.g. "iPhone 17") breaks every time the
+        # runner image's default Xcode ships a different simulator lineup —
+        # ask the installed Xcode what it actually has instead.
+        run: |
+          set -e
+          DEVICE=$(xcrun simctl list devices available iPhone | grep -m1 -E '^\s*iPhone' | sed -E 's/^[[:space:]]*(iPhone[^(]+) \(.*/\1/' | sed -E 's/[[:space:]]+$//')
+          if [ -z "$DEVICE" ]; then
+            echo "::error::No available iPhone simulator found on this runner"
+            xcrun simctl list devices available
+            exit 1
+          fi
+          echo "Using simulator: $DEVICE"
+          echo "IOS_SIM_DEVICE=$DEVICE" >> "$GITHUB_ENV"
+
       - name: Run Unit Tests
         run: |
           xcodebuild test \
             -project GpsMockCompanion.xcodeproj \
             -scheme GpsMockCompanion \
             -sdk iphonesimulator \
-            -destination "platform=iOS Simulator,name=iPhone 17" \
+            -destination "platform=iOS Simulator,name=${IOS_SIM_DEVICE}" \
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGN_IDENTITY="" \
