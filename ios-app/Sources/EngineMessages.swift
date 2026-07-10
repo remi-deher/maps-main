@@ -19,6 +19,7 @@ enum EngineAction: String {
     case addFavorite = "ADD_FAVORITE"
     case removeFavorite = "REMOVE_FAVORITE"
     case playSequence = "PLAY_SEQUENCE"
+    case restartServices = "RESTART_SERVICES"
 }
 
 enum EngineEvent: String {
@@ -27,6 +28,24 @@ enum EngineEvent: String {
     case pong = "PONG"
     case log = "LOG"
     case logs = "LOGS"
+    case restartServicesResult = "RESTART_SERVICES_RESULT"
+}
+
+// RestartServicesResultPayload is the data for RESTART_SERVICES_RESULT (the
+// response to RESTART_SERVICES — see engine/internal/api/messages.go). OK
+// reflects only the final tunnel-restart step; Steps gives the outcome of
+// every step (kill python processes, restart Bonjour/mDNS, restart tunnel)
+// so the UI can show exactly what happened.
+struct RestartServicesResultPayload: Decodable {
+    struct Step: Decodable {
+        let name: String
+        let ok: Bool
+        let error: String?
+    }
+
+    let ok: Bool
+    let steps: [Step]?
+    let error: String?
 }
 
 struct EngineEnvelope {

@@ -5,6 +5,9 @@ struct DiagnosticsView: View {
     var engine: any EngineClientProtocol
     var discovery: EngineDiscovery
 
+    @State private var isRestartingServices = false
+    @State private var showRestartConfirmation = false
+
     var body: some View {
         List {
             Section("Liaison Moteur") {
@@ -100,9 +103,63 @@ struct DiagnosticsView: View {
                     discovery.start()
                 }
             }
+
+            Section {
+                Button(role: .destructive) {
+                    showRestartConfirmation = true
+                } label: {
+                    if isRestartingServices {
+                        HStack {
+                            ProgressView()
+                            Text("Redémarrage en cours...")
+                        }
+                    } else {
+                        Text("Redémarrer Python + Bonjour (serveur)")
+                    }
+                }
+                .disabled(engine.state != .connected || isRestartingServices)
+                .confirmationDialog(
+                    "Redémarrer le serveur ?",
+                    isPresented: $showRestartConfirmation,
+                    titleVisibility: .visible
+                ) {
+                    Button("Redémarrer", role: .destructive) {
+                        isRestartingServices = true
+                        engine.restartServicesResult = nil
+                        engine.restartServices()
+                    }
+                    Button("Annuler", role: .cancel) {}
+                } message: {
+                    Text("Coupe brièvement le tunnel actif : tue les process pymobiledevice3, redémarre le service Bonjour/mDNS, puis rétablit la connexion automatiquement.")
+                }
+            } header: {
+                Text("Maintenance")
+            } footer: {
+                if let result = engine.restartServicesResult {
+                    restartResultSummary(result)
+                } else {
+                    Text("À utiliser si la connexion reste bloquée malgré un redémarrage de recherche Bonjour.")
+                }
+            }
         }
         .navigationTitle("Diagnostics")
         .navigationBarTitleDisplayMode(.inline)
+        .onChange(of: engine.restartServicesResult?.ok) { _, _ in
+            isRestartingServices = false
+        }
+    }
+
+    @ViewBuilder
+    private func restartResultSummary(_ result: RestartServicesResultPayload) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(result.ok ? "Redémarrage réussi, tunnel rétabli." : "Échec du redémarrage : \(result.error ?? "erreur inconnue")")
+                .foregroundStyle(result.ok ? .green : .red)
+            ForEach(result.steps ?? [], id: \.name) { step in
+                Text("\(step.ok ? "✓" : "✗") \(step.name)" + (step.error.map { " — \($0)" } ?? ""))
+                    .font(.caption)
+                    .foregroundStyle(step.ok ? .secondary : .red)
+            }
+        }
     }
 
     private var connectionColor: Color {

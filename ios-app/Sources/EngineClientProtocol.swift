@@ -9,6 +9,7 @@ protocol EngineClientProtocol: AnyObject {
     var pingLatency: Double? { get set }
     var keepAliveEnabled: Bool { get set }
     var keepAliveInterval: Double { get set }
+    var restartServicesResult: RestartServicesResultPayload? { get set }
 
     func connect(to urlString: String)
     func ensureConnected()
@@ -29,6 +30,7 @@ protocol EngineClientProtocol: AnyObject {
     func getLogs()
     func clearHistory()
     func relance()
+    func restartServices()
     func switchDriver(driverId: String, transport: String, wifiAddress: String)
     func updatePatrolZone(
         type: String,

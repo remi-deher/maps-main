@@ -20,7 +20,6 @@ func TestHelperProcess(t *testing.T) {
 	if !ok {
 		return
 	}
-	_ = args
 	switch scenario {
 	case "sleep":
 		time.Sleep(time.Minute)
@@ -31,6 +30,17 @@ func TestHelperProcess(t *testing.T) {
 			time.Sleep(10 * time.Millisecond)
 		}
 		time.Sleep(time.Minute)
+	case "record":
+		// Used by KillProcessesMatching's test: records the exact command it
+		// would have run instead of actually running it, so the test never
+		// kills a real process on the machine running `go test`.
+		if f := os.Getenv("FAKE_RECORD_FILE"); f != "" {
+			line := strings.Join(args[1:], " ") + "\n"
+			if fh, err := os.OpenFile(f, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644); err == nil {
+				_, _ = fh.WriteString(line)
+				_ = fh.Close()
+			}
+		}
 	}
 	os.Exit(0)
 }

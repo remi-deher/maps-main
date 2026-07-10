@@ -47,6 +47,7 @@ const (
 	ActionScanMdns          = "SCAN_MDNS"
 	ActionProbeRsdPorts     = "PROBE_RSD_PORTS"
 	ActionPairDevice        = "PAIR_DEVICE"
+	ActionRestartServices   = "RESTART_SERVICES"
 
 	// Remote-access pairing management, served only to loopback clients (the
 	// desktop window). The rotating code is a secret, so these must never be
@@ -76,6 +77,7 @@ const (
 	EventPairResult             = "PAIR_RESULT"
 	EventPairCode               = "PAIR_CODE"
 	EventPairedDevices          = "PAIRED_DEVICES"
+	EventRestartServicesResult  = "RESTART_SERVICES_RESULT"
 )
 
 // ─── Inbound payloads ────────────────────────────────────────────────────────
@@ -341,4 +343,25 @@ type PairedDevicesPayload struct {
 // paired device to remove.
 type RevokePairedDevicePayload struct {
 	ID string `json:"id"`
+}
+
+// RestartServiceStepPayload is one step's outcome within
+// RestartServicesResultPayload (e.g. "kill python processes", "restart
+// Bonjour/mDNS service", "restart tunnel").
+type RestartServiceStepPayload struct {
+	Name  string `json:"name"`
+	OK    bool   `json:"ok"`
+	Error string `json:"error,omitempty"`
+}
+
+// RestartServicesResultPayload is the data for RESTART_SERVICES_RESULT (the
+// response to RESTART_SERVICES): the "unstick everything" maintenance action
+// that kills orphaned pymobiledevice3 processes, restarts the OS Bonjour/mDNS
+// service, and re-establishes the tunnel. OK reflects only the final
+// tunnel-restart step; Steps gives the outcome of every step so the UI can
+// show what actually happened.
+type RestartServicesResultPayload struct {
+	OK    bool                        `json:"ok"`
+	Steps []RestartServiceStepPayload `json:"steps,omitempty"`
+	Error string                      `json:"error,omitempty"`
 }

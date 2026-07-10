@@ -21,6 +21,7 @@ final class EngineClient: NSObject, URLSessionWebSocketDelegate, EngineClientPro
     var lastError: String?
     var status: EngineStatus?
     var logs: [LogEntryPayload] = []
+    var restartServicesResult: RestartServicesResultPayload?
 
     // Mirrors the engine's in-memory log ring buffer size
     // (engine/internal/engine/engine.go's log history cap) — keeping the same
@@ -236,6 +237,13 @@ final class EngineClient: NSObject, URLSessionWebSocketDelegate, EngineClientPro
             } catch {
                 AppLogger.shared.error("Échec du décodage de LOGS: \(error)")
             }
+        case .restartServicesResult:
+            do {
+                let result = try JSONDecoder().decode(RestartServicesResultPayload.self, from: payloadData)
+                DispatchQueue.main.async { self.restartServicesResult = result }
+            } catch {
+                AppLogger.shared.error("Échec du décodage de RESTART_SERVICES_RESULT: \(error)")
+            }
         }
     }
 
@@ -292,6 +300,16 @@ final class EngineClient: NSObject, URLSessionWebSocketDelegate, EngineClientPro
 
     func relance() {
         sendAction(.relance)
+    }
+
+    // Kills orphaned pymobiledevice3 processes, restarts the OS Bonjour/mDNS
+    // service, and re-establishes the tunnel — the manual "unstick
+    // everything" action for the connectivity failures that otherwise
+    // require console access to the machine running the engine (see
+    // engine/internal/engine/engine_maintenance.go). Result arrives
+    // asynchronously as RESTART_SERVICES_RESULT.
+    func restartServices() {
+        sendAction(.restartServices)
     }
 
     private func sendPing() {

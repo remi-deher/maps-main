@@ -46,7 +46,7 @@ func (s *Server) dispatch(c *client, env api.Envelope) {
 
 	var err error
 	defer func() {
-		if env.Type != api.ActionSwitchDriver {
+		if env.Type != api.ActionSwitchDriver && env.Type != api.ActionRestartServices {
 			s.trackAction(env.Type, err)
 		}
 		if err != nil {
@@ -156,6 +156,8 @@ func (s *Server) dispatch(c *client, env api.Envelope) {
 		err = s.dispatchRevokePairedDevice(c, env)
 	case api.ActionGetDiagnostics:
 		err = s.dispatchGetDiagnostics(ctx, c)
+	case api.ActionRestartServices:
+		s.dispatchRestartServices(c)
 	default:
 		slog.Warn("server: unrecognized WS action", "type", env.Type)
 		err = fmt.Errorf("unrecognized WS action: %s", env.Type)
@@ -280,4 +282,29 @@ func (s *Server) dispatchGetDiagnostics(ctx context.Context, c *client) error {
 	}
 	c.send <- encode(api.EventDiagnostics, diag)
 	return nil
+}
+
+// dispatchRestartServices runs the "kill python + restart Bonjour/mDNS +
+// restart tunnel" maintenance action in the background: like SWITCH_DRIVER,
+// tearing down and re-establishing the tunnel can take well beyond the
+// per-action timeout the rest of dispatch uses, so it gets its own context and
+// reports its outcome via trackAction/c.send once done instead of blocking
+// the dispatch loop.
+func (s *Server) dispatchRestartServices(c *client) {
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+		defer cancel()
+		result, err := s.eng.RestartServices(ctx)
+		steps := make([]api.RestartServiceStepPayload, 0, len(result.Steps))
+		for _, step := range result.Steps {
+			steps = append(steps, api.RestartServiceStepPayload{Name: step.Name, OK: step.OK, Error: step.Error})
+		}
+		payload := api.RestartServicesResultPayload{OK: err == nil, Steps: steps}
+		if err != nil {
+			slog.Error("RESTART_SERVICES", "error", err)
+			payload.Error = err.Error()
+		}
+		c.send <- encode(api.EventRestartServicesResult, payload)
+		s.trackAction(api.ActionRestartServices, err)
+	}()
 }
