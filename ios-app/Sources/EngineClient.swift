@@ -157,13 +157,15 @@ final class EngineClient: NSObject, URLSessionWebSocketDelegate, EngineClientPro
         let delay = min(reconnectBaseDelay * pow(2, Double(reconnectAttempt)), reconnectMaxDelay)
         reconnectAttempt += 1
         DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
-            guard let self, self.generation == generation else { return }
+            guard let self = self, self.generation == generation else { return }
             // Dynamic IP re-binding: if reconnect attempts fail 3+ times, check if Bonjour discovered a new host IP
-            if self.reconnectAttempt >= 3, case .found(let host, let port) = EngineDiscovery.shared.state {
-                let candidateURL = "ws://\(host):\(port)"
-                if candidateURL != self.urlString {
-                    AppLogger.shared.info("Re-liaison dynamique de la cible WebSocket vers Bonjour: \(candidateURL)")
-                    self.urlString = candidateURL
+            if self.reconnectAttempt >= 3 {
+                if case .found(let host, let port) = EngineDiscovery.shared.state {
+                    let candidateURL = "ws://\(host):\(port)"
+                    if candidateURL != self.urlString {
+                        AppLogger.shared.info("Re-liaison dynamique de la cible WebSocket vers Bonjour: \(candidateURL)")
+                        self.urlString = candidateURL
+                    }
                 }
             }
             self.startSocket(generation: generation)

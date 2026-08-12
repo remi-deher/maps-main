@@ -35,12 +35,10 @@ export const LogsTab: React.FC = () => {
   const [level, setLevel] = useState<LevelFilter>("all");
   const [source, setSource] = useState("all");
   const [category, setCategory] = useState("all");
-  const [action, setAction] = useState("all");
   const [query, setQuery] = useState("");
 
   const sources = useMemo(() => uniqueValues(logs, "source"), [logs]);
   const categories = useMemo(() => uniqueValues(logs, "category"), [logs]);
-  const actions = useMemo(() => uniqueValues(logs, "action"), [logs]);
 
   const filteredLogs = useMemo(() => {
     const needle = query.trim().toLowerCase();
@@ -58,7 +56,6 @@ export const LogsTab: React.FC = () => {
       })
       .filter((entry) => source === "all" || entry.source === source)
       .filter((entry) => category === "all" || entry.category === category)
-      .filter((entry) => action === "all" || entry.action === action)
       .filter((entry) => {
         if (!needle) return true;
         return [
@@ -72,13 +69,12 @@ export const LogsTab: React.FC = () => {
       })
       .slice()
       .reverse();
-  }, [action, category, level, logMode, logs, query, source]);
+  }, [category, level, logMode, logs, query, source]);
 
   const resetFilters = () => {
     setLevel("all");
     setSource("all");
     setCategory("all");
-    setAction("all");
     setQuery("");
   };
 

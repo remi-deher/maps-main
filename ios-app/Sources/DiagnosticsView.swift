@@ -137,7 +137,7 @@ struct DiagnosticsView: View {
                 }
                 .disabled(engine.state != .connected || isRestartingServices)
                 .confirmationDialog(
-                    "Remise à plat du serveur ?",
+                    Text("Remise à plat du serveur ?"),
                     isPresented: $showRestartConfirmation,
                     titleVisibility: .visible
                 ) {
