@@ -183,18 +183,13 @@ func (e *Engine) injectLocation(ctx context.Context, lat, lon float64, name stri
 		return err
 	}
 	if err := e.driver().SetLocation(ctx, lat, lon); err != nil {
-		e.LogEvent("error", "engine", "location", "set", fmt.Sprintf("Échec de l'injection de position : %v. Auto-réparation du tunnel...", err), map[string]string{
+		e.LogEvent("error", "engine", "location", "set", fmt.Sprintf("Échec de l'injection de position : %v", err), map[string]string{
 			"lat":           fmt.Sprintf("%.6f", lat),
 			"lon":           fmt.Sprintf("%.6f", lon),
 			"name":          name,
 			"recordHistory": fmt.Sprintf("%t", recordHistory),
 			"error":         err.Error(),
 		})
-		e.markTunnelLost()
-		e.ResetHealthBackoff()
-		go func() {
-			_ = e.StartTunnel(context.Background())
-		}()
 		return err
 	}
 	now := nowMs()
