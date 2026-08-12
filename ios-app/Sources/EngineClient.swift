@@ -156,7 +156,7 @@ final class EngineClient: NSObject, URLSessionWebSocketDelegate, EngineClientPro
         }
         let delay = min(reconnectBaseDelay * pow(2, Double(reconnectAttempt)), reconnectMaxDelay)
         reconnectAttempt += 1
-        DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+        let reconnectItem = DispatchWorkItem { [weak self] in
             guard let self = self, self.generation == generation else { return }
             // Dynamic IP re-binding: if reconnect attempts fail 3+ times, check if Bonjour discovered a new host IP
             if self.reconnectAttempt >= 3 {
@@ -170,6 +170,7 @@ final class EngineClient: NSObject, URLSessionWebSocketDelegate, EngineClientPro
             }
             self.startSocket(generation: generation)
         }
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: reconnectItem)
     }
 
     func urlSession(_ session: URLSession, webSocketTask: URLSessionWebSocketTask, didOpenWithProtocol protocol: String?) {

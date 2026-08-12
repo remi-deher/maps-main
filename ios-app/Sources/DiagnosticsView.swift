@@ -112,7 +112,7 @@ struct DiagnosticsView: View {
                 }
             }
 
-            Section("Maintenance & Remise à Plat (Serveur)") {
+            Section {
                 Button("Redémarrer le Tunnel (Serveur)") {
                     engine.restartTunnel()
                 }
