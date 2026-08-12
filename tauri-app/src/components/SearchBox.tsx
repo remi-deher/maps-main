@@ -14,6 +14,7 @@ export const SearchBox: React.FC<SearchBoxProps> = ({ onSelectLocation, near }) 
   const [loading, setLoading] = useState(false);
   const [showDropdown, setShowDropdown] = useState(false);
   const [searchError, setSearchError] = useState<string | null>(null);
+  const [activeIndex, setActiveIndex] = useState(-1);
   const containerRef = useRef<HTMLDivElement>(null);
   // Read `near` from a ref so a moving simulation re-biasing the position
   // doesn't re-fire the search debounce on every tick.
@@ -48,6 +49,7 @@ export const SearchBox: React.FC<SearchBoxProps> = ({ onSelectLocation, near }) 
       try {
         const places = await searchPlaces(query, { signal: controller.signal, near: nearRef.current });
         setResults(places);
+        setActiveIndex(-1);
         setShowDropdown(true);
       } catch (error) {
         if ((error as Error).name === "AbortError") return;
@@ -71,9 +73,27 @@ export const SearchBox: React.FC<SearchBoxProps> = ({ onSelectLocation, near }) 
     setShowDropdown(false);
   };
 
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (!showDropdown || results.length === 0) return;
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      setActiveIndex((i) => Math.min(i + 1, results.length - 1));
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault();
+      setActiveIndex((i) => Math.max(i - 1, 0));
+    } else if (e.key === "Enter") {
+      e.preventDefault();
+      const target = results[activeIndex >= 0 ? activeIndex : 0];
+      if (target) handleSelect(target);
+    } else if (e.key === "Escape") {
+      setShowDropdown(false);
+    }
+  };
+
   const handleClear = () => {
     setQuery("");
     setResults([]);
+    setActiveIndex(-1);
     setShowDropdown(false);
     setSearchError(null);
   };
@@ -88,6 +108,7 @@ export const SearchBox: React.FC<SearchBoxProps> = ({ onSelectLocation, near }) 
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           onFocus={() => query.length >= 3 && setShowDropdown(true)}
+          onKeyDown={handleKeyDown}
         />
         {query && (
           <button className="clear-search-btn" onClick={handleClear} aria-label="Effacer la recherche">
@@ -103,13 +124,13 @@ export const SearchBox: React.FC<SearchBoxProps> = ({ onSelectLocation, near }) 
           ) : searchError ? (
             <div className="search-dropdown-loading" role="alert">{searchError}</div>
           ) : (
-            results.map((res) => (
+            results.map((res, idx) => (
               <button
                 type="button"
                 key={res.placeId}
-                className="search-result-item"
+                className={`search-result-item${idx === activeIndex ? " active" : ""}`}
                 role="option"
-                aria-selected={false}
+                aria-selected={idx === activeIndex}
                 onClick={() => handleSelect(res)}
               >
                 <MapPin size={14} className="result-marker-icon" />

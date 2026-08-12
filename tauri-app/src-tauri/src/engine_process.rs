@@ -111,6 +111,15 @@ fn kill_engine_tree(child: CommandChild) {
         let _ = std::process::Command::new("taskkill")
             .args(["/F", "/T", "/PID", &pid.to_string()])
             .output();
+        // pymobiledevice3 may be spawned detached from the engine tree.
+        let _ = std::process::Command::new("powershell")
+            .args([
+                "-NoProfile",
+                "-NonInteractive",
+                "-Command",
+                "Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -like '*pymobiledevice3*' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }",
+            ])
+            .output();
     }
 
     #[cfg(not(target_os = "windows"))]
@@ -122,6 +131,16 @@ fn kill_engine_tree(child: CommandChild) {
                 .output();
         }
     }
+}
+
+#[cfg(target_os = "windows")]
+fn restart_bonjour_service() {
+    let _ = std::process::Command::new("net")
+        .args(["stop", "Bonjour Service"])
+        .output();
+    let _ = std::process::Command::new("net")
+        .args(["start", "Bonjour Service"])
+        .output();
 }
 
 pub(crate) fn spawn_engine(
@@ -314,4 +333,6 @@ pub(crate) fn shutdown_engine(app: &AppHandle) {
         kill_engine_tree(child);
     }
     clear_pid_file(app);
+    #[cfg(target_os = "windows")]
+    restart_bonjour_service();
 }

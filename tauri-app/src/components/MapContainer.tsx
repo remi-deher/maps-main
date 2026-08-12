@@ -17,7 +17,7 @@ import { DeviceModal } from "./DeviceModal";
 import { RouteModePanel, MODE_META } from "./RouteModePanel";
 import { PatrolModePanel } from "./PatrolModePanel";
 import { useMapInteractionController } from "../features/map/useMapInteractionController";
-import { Crosshair, Route, ScrollText, Settings, ShieldCheck, Sliders, Smartphone, Star, X } from "lucide-react";
+import { Crosshair, Minus, Plus, Route, ScrollText, Settings, ShieldCheck, Sliders, Smartphone, Star, X } from "lucide-react";
 
 export type { MapMode } from "../features/map/mapModel";
 
@@ -55,6 +55,60 @@ const realIcon = L.divIcon({
   iconSize: [14, 14],
   iconAnchor: [7, 7],
 });
+
+// Zoom buttons rendered inside the Leaflet context so useMap() is available.
+const ZoomControls: React.FC = () => {
+  const map = useMap();
+  return (
+    <div className="map-zoom-controls" role="group" aria-label="Zoom">
+      <button
+        className="map-zoom-btn"
+        onClick={() => map.zoomIn()}
+        title="Zoom avant (+)"
+        aria-label="Zoom avant"
+      >
+        <Plus size={18} />
+      </button>
+      <button
+        className="map-zoom-btn"
+        onClick={() => map.zoomOut()}
+        title="Zoom arrière (-)"
+        aria-label="Zoom arrière"
+      >
+        <Minus size={18} />
+      </button>
+    </div>
+  );
+};
+
+// Keyboard zoom: +/= to zoom in, - to zoom out.
+const KeyboardZoomHandler: React.FC = () => {
+  const map = useMap();
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+      if (e.key === "+" || e.key === "=") map.zoomIn();
+      if (e.key === "-") map.zoomOut();
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [map]);
+  return null;
+};
+
+// Pans/zooms the map to a location when the "fly-to-search" custom event fires.
+const FlyToSearch: React.FC = () => {
+  const map = useMap();
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const { lat, lon } = (e as CustomEvent<{ lat: number; lon: number }>).detail;
+      map.setView([lat, lon], Math.max(map.getZoom(), 14));
+    };
+    window.addEventListener("fly-to-search", handler);
+    return () => window.removeEventListener("fly-to-search", handler);
+  }, [map]);
+  return null;
+};
 
 // Helper component to center map on coordinates and keep following position
 // updates until the user manually pans the map away.
@@ -309,6 +363,9 @@ export const InteractiveMap: React.FC = () => {
         <MapEventsHandler onMapClick={handleMapClick} />
         <RecenterMap coords={currentPos} />
         <MapResizeHandler />
+        <ZoomControls />
+        <KeyboardZoomHandler />
+        <FlyToSearch />
 
         {/* Current Spoofed Location Marker */}
         {currentPos.lat !== 0 && (

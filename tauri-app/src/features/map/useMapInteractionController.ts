@@ -78,6 +78,7 @@ export function useMapInteractionController(
     setSelectedCoords(coords);
     setSelectedPlaceName(name);
     setFavName(name);
+    window.dispatchEvent(new CustomEvent("fly-to-search", { detail: { lat, lon } }));
   };
 
   const handleTeleport = () => {
