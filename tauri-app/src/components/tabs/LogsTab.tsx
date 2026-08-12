@@ -5,10 +5,18 @@ import type { LogEntry } from "../../types/engine";
 import { useLogs } from "../../context/logsContext";
 import { EngineAction } from "../../types/engineMessages";
 
-type LevelFilter = "all" | "info" | "warn" | "error";
+type LogMode = "normal" | "ultraDetailed";
+type LevelFilter = "all" | "info" | "debugConsole" | "warn" | "error";
 
 const formatTime = (timestamp: number) => {
   return new Date(timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+};
+
+const formatTimeMs = (timestamp: number) => {
+  const d = new Date(timestamp);
+  const timeStr = d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+  const ms = d.getMilliseconds().toString().padStart(3, "0");
+  return `${timeStr}.${ms}`;
 };
 
 const uniqueValues = (logs: LogEntry[], key: "source" | "category" | "action") => {
@@ -22,7 +30,8 @@ const fieldsText = (entry: LogEntry) => {
 
 export const LogsTab: React.FC = () => {
   const { sendMessage, canSend } = useEngine();
-      const { logs } = useLogs();
+  const { logs } = useLogs();
+  const [logMode, setLogMode] = useState<LogMode>("normal");
   const [level, setLevel] = useState<LevelFilter>("all");
   const [source, setSource] = useState("all");
   const [category, setCategory] = useState("all");
@@ -36,7 +45,17 @@ export const LogsTab: React.FC = () => {
   const filteredLogs = useMemo(() => {
     const needle = query.trim().toLowerCase();
     return logs
-      .filter((entry) => level === "all" || entry.level === level)
+      .filter((entry) => {
+        // Normal mode hides debug & console by default unless explicitly filtered
+        if (logMode === "normal" && level === "all") {
+          if (entry.level === "debug" || entry.level === "console") return false;
+        }
+        if (level === "info") return entry.level === "info";
+        if (level === "debugConsole") return entry.level === "debug" || entry.level === "console";
+        if (level === "warn") return entry.level === "warn";
+        if (level === "error") return entry.level === "error";
+        return true;
+      })
       .filter((entry) => source === "all" || entry.source === source)
       .filter((entry) => category === "all" || entry.category === category)
       .filter((entry) => action === "all" || entry.action === action)
@@ -53,7 +72,7 @@ export const LogsTab: React.FC = () => {
       })
       .slice()
       .reverse();
-  }, [action, category, level, logs, query, source]);
+  }, [action, category, level, logMode, logs, query, source]);
 
   const resetFilters = () => {
     setLevel("all");
@@ -65,8 +84,9 @@ export const LogsTab: React.FC = () => {
 
   const copyFilteredLogs = async () => {
     const text = filteredLogs.map((entry) => {
-      const meta = [entry.level, entry.source, entry.category, entry.action].filter(Boolean).join(" ");
-      return `${formatTime(entry.timestamp)} ${meta} ${entry.message} ${fieldsText(entry)}`.trim();
+      const time = logMode === "ultraDetailed" ? formatTimeMs(entry.timestamp) : formatTime(entry.timestamp);
+      const meta = [entry.level.toUpperCase(), entry.source, entry.category, entry.action].filter(Boolean).join(" ");
+      return `[${time}] ${meta} - ${entry.message} ${fieldsText(entry)}`.trim();
     }).join("\n");
     await navigator.clipboard?.writeText(text);
   };
@@ -80,7 +100,7 @@ export const LogsTab: React.FC = () => {
           <b>{filteredLogs.length}</b>
         </div>
         <div className="logs-actions">
-          <button className="icon-btn" type="button" onClick={copyFilteredLogs} disabled={filteredLogs.length === 0} title="Copier">
+          <button className="icon-btn" type="button" onClick={copyFilteredLogs} disabled={filteredLogs.length === 0} title="Copier les journaux">
             <Clipboard size={16} />
           </button>
           <button className="icon-btn" type="button" onClick={resetFilters} title="Réinitialiser les filtres">
@@ -94,10 +114,18 @@ export const LogsTab: React.FC = () => {
 
       <div className="logs-filter-grid">
         <label className="form-group">
+          <span className="form-label">Mode d'affichage</span>
+          <select value={logMode} onChange={(event) => setLogMode(event.target.value as LogMode)}>
+            <option value="normal">Normal</option>
+            <option value="ultraDetailed">Ultra-détaillé</option>
+          </select>
+        </label>
+        <label className="form-group">
           <span className="form-label">Niveau</span>
           <select value={level} onChange={(event) => setLevel(event.target.value as LevelFilter)}>
             <option value="all">Tous</option>
             <option value="info">Info</option>
+            <option value="debugConsole">Debug & Console</option>
             <option value="warn">Avert.</option>
             <option value="error">Erreurs</option>
           </select>
@@ -116,18 +144,11 @@ export const LogsTab: React.FC = () => {
             {categories.map((value) => <option key={value} value={value}>{value}</option>)}
           </select>
         </label>
-        <label className="form-group">
-          <span className="form-label">Action</span>
-          <select value={action} onChange={(event) => setAction(event.target.value)}>
-            <option value="all">Toutes</option>
-            {actions.map((value) => <option key={value} value={value}>{value}</option>)}
-          </select>
-        </label>
       </div>
 
       <label className="logs-search">
         <ListFilter size={15} />
-        <input type="text" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Filtrer" />
+        <input type="text" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Filtrer dans les journaux" />
       </label>
 
       <div className="logs-list">
@@ -141,7 +162,9 @@ export const LogsTab: React.FC = () => {
           filteredLogs.map((entry, index) => (
             <article className={`log-row level-${entry.level}`} key={`${entry.timestamp}-${index}`}>
               <div className="log-row-main">
-                <span className="log-time">{formatTime(entry.timestamp)}</span>
+                <span className="log-time">
+                  {logMode === "ultraDetailed" ? formatTimeMs(entry.timestamp) : formatTime(entry.timestamp)}
+                </span>
                 <span className="log-message">{entry.message}</span>
               </div>
               <div className="log-meta">

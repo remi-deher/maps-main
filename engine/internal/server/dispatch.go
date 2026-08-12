@@ -158,6 +158,10 @@ func (s *Server) dispatch(c *client, env api.Envelope) {
 		err = s.dispatchGetDiagnostics(ctx, c)
 	case api.ActionRestartServices:
 		s.dispatchRestartServices(c)
+	case api.ActionRestartTunnel:
+		s.dispatchRestartTunnel(c)
+	case api.ActionRestartMdns:
+		s.dispatchRestartMdns(c)
 	default:
 		slog.Warn("server: unrecognized WS action", "type", env.Type)
 		err = fmt.Errorf("unrecognized WS action: %s", env.Type)
@@ -306,5 +310,35 @@ func (s *Server) dispatchRestartServices(c *client) {
 		}
 		c.send <- encode(api.EventRestartServicesResult, payload)
 		s.trackAction(api.ActionRestartServices, err)
+	}()
+}
+
+func (s *Server) dispatchRestartTunnel(c *client) {
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+		defer cancel()
+		err := s.eng.RestartTunnel(ctx)
+		payload := api.RestartTunnelResultPayload{OK: err == nil}
+		if err != nil {
+			slog.Error("RESTART_TUNNEL", "error", err)
+			payload.Error = err.Error()
+		}
+		c.send <- encode(api.EventRestartTunnelResult, payload)
+		s.trackAction(api.ActionRestartTunnel, err)
+	}()
+}
+
+func (s *Server) dispatchRestartMdns(c *client) {
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		err := s.eng.RestartMdns(ctx)
+		payload := api.RestartMdnsResultPayload{OK: err == nil}
+		if err != nil {
+			slog.Error("RESTART_MDNS", "error", err)
+			payload.Error = err.Error()
+		}
+		c.send <- encode(api.EventRestartMdnsResult, payload)
+		s.trackAction(api.ActionRestartMdns, err)
 	}()
 }

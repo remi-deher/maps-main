@@ -263,8 +263,13 @@ func (m *TunnelMount) UDID() string {
 }
 
 func (m *TunnelMount) CheckHealth(timeout time.Duration) bool {
-	ti, ok := m.Current()
-	if !ok {
+	m.mu.Lock()
+	ti := m.info
+	on := m.on
+	daemonExited := m.daemonExited
+	m.mu.Unlock()
+
+	if !on || daemonExited {
 		return false
 	}
 	conn, err := net.DialTimeout("tcp", net.JoinHostPort(ti.Address, strconv.Itoa(ti.Port)), timeout)

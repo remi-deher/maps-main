@@ -48,6 +48,8 @@ const (
 	ActionProbeRsdPorts     = "PROBE_RSD_PORTS"
 	ActionPairDevice        = "PAIR_DEVICE"
 	ActionRestartServices   = "RESTART_SERVICES"
+	ActionRestartTunnel     = "RESTART_TUNNEL"
+	ActionRestartMdns       = "RESTART_MDNS"
 
 	// Remote-access pairing management, served only to loopback clients (the
 	// desktop window). The rotating code is a secret, so these must never be
@@ -78,6 +80,8 @@ const (
 	EventPairCode               = "PAIR_CODE"
 	EventPairedDevices          = "PAIRED_DEVICES"
 	EventRestartServicesResult  = "RESTART_SERVICES_RESULT"
+	EventRestartTunnelResult    = "RESTART_TUNNEL_RESULT"
+	EventRestartMdnsResult      = "RESTART_MDNS_RESULT"
 )
 
 // ─── Inbound payloads ────────────────────────────────────────────────────────
@@ -364,4 +368,16 @@ type RestartServicesResultPayload struct {
 	OK    bool                        `json:"ok"`
 	Steps []RestartServiceStepPayload `json:"steps,omitempty"`
 	Error string                      `json:"error,omitempty"`
+}
+
+// RestartTunnelResultPayload is the data for RESTART_TUNNEL_RESULT.
+type RestartTunnelResultPayload struct {
+	OK    bool   `json:"ok"`
+	Error string `json:"error,omitempty"`
+}
+
+// RestartMdnsResultPayload is the data for RESTART_MDNS_RESULT.
+type RestartMdnsResultPayload struct {
+	OK    bool   `json:"ok"`
+	Error string `json:"error,omitempty"`
 }

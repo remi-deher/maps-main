@@ -21,12 +21,14 @@ final class AppLogger {
     static let shared = AppLogger()
 
     private let osLog = Logger(subsystem: "com.remi2.gpsmock.companion", category: "app")
-    private let maxEntries = 200
+    private let maxEntries = 500
 
     private(set) var entries: [AppLogEntry] = []
 
     private init() {}
 
+    func debug(_ message: String) { log("debug", message) }
+    func console(_ message: String) { log("console", message) }
     func info(_ message: String) { log("info", message) }
     func warn(_ message: String) { log("warn", message) }
     func error(_ message: String) { log("error", message) }
@@ -35,6 +37,7 @@ final class AppLogger {
         switch level {
         case "error": osLog.error("\(message, privacy: .public)")
         case "warn": osLog.warning("\(message, privacy: .public)")
+        case "debug", "console": osLog.debug("\(message, privacy: .public)")
         default: osLog.info("\(message, privacy: .public)")
         }
         let entry = AppLogEntry(timestamp: Date(), level: level, message: message)

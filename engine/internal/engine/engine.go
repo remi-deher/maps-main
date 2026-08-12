@@ -74,6 +74,16 @@ type Engine struct {
 	// persistence (e.g. in tests).
 	store       settings.Store
 	secretStore settings.SecretStore
+
+	resetHealthBackoff chan struct{}
+}
+
+// ResetHealthBackoff signals the health watchdog loop to reset its retry timer immediately.
+func (e *Engine) ResetHealthBackoff() {
+	select {
+	case e.resetHealthBackoff <- struct{}{}:
+	default:
+	}
 }
 
 // SetClusterManager attaches the HA cluster manager so Status() reports its
@@ -113,10 +123,11 @@ func NewWithSecrets(drv driver.Driver, cfg settings.Settings, secrets settings.S
 	routingInfo := apiRoutingInfo(routingRegistry.Info())
 
 	return &Engine{
-		drv:             drv,
-		emit:            func(string, any) {}, // no-op until the server wires OnEvent
-		routingRegistry: routingRegistry,
-		logService:      logging.NewService(maxLogEntries),
+		drv:                drv,
+		emit:               func(string, any) {}, // no-op until the server wires OnEvent
+		routingRegistry:    routingRegistry,
+		logService:         logging.NewService(maxLogEntries),
+		resetHealthBackoff: make(chan struct{}, 1),
 		st: api.Status{
 			State:                     "idle",
 			ConnectionType:            domain.ConnUnknown,
@@ -172,13 +183,18 @@ func (e *Engine) injectLocation(ctx context.Context, lat, lon float64, name stri
 		return err
 	}
 	if err := e.driver().SetLocation(ctx, lat, lon); err != nil {
-		e.LogEvent("error", "engine", "location", "set", fmt.Sprintf("Échec de l'injection de position : %v", err), map[string]string{
+		e.LogEvent("error", "engine", "location", "set", fmt.Sprintf("Échec de l'injection de position : %v. Auto-réparation du tunnel...", err), map[string]string{
 			"lat":           fmt.Sprintf("%.6f", lat),
 			"lon":           fmt.Sprintf("%.6f", lon),
 			"name":          name,
 			"recordHistory": fmt.Sprintf("%t", recordHistory),
 			"error":         err.Error(),
 		})
+		e.markTunnelLost()
+		e.ResetHealthBackoff()
+		go func() {
+			_ = e.StartTunnel(context.Background())
+		}()
 		return err
 	}
 	now := nowMs()

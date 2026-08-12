@@ -104,26 +104,44 @@ struct DiagnosticsView: View {
                 }
             }
 
-            Section {
+            Section("Liaison & Reconnexion") {
+                Button("Réessayer la connexion") {
+                    discovery.stop()
+                    discovery.start()
+                    engine.ensureConnected()
+                }
+            }
+
+            Section("Maintenance & Remise à Plat (Serveur)") {
+                Button("Redémarrer le Tunnel (Serveur)") {
+                    engine.restartTunnel()
+                }
+                .disabled(engine.state != .connected)
+
+                Button("Redémarrer le Service Bonjour (Serveur)") {
+                    engine.restartMdns()
+                }
+                .disabled(engine.state != .connected)
+
                 Button(role: .destructive) {
                     showRestartConfirmation = true
                 } label: {
                     if isRestartingServices {
                         HStack {
                             ProgressView()
-                            Text("Redémarrage en cours...")
+                            Text("Remise à plat en cours...")
                         }
                     } else {
-                        Text("Redémarrer Python + Bonjour (serveur)")
+                        Text("Remise à plat complète (Python + Bonjour + Tunnel)")
                     }
                 }
                 .disabled(engine.state != .connected || isRestartingServices)
                 .confirmationDialog(
-                    "Redémarrer le serveur ?",
+                    "Remise à plat du serveur ?",
                     isPresented: $showRestartConfirmation,
                     titleVisibility: .visible
                 ) {
-                    Button("Redémarrer", role: .destructive) {
+                    Button("Remise à plat complète", role: .destructive) {
                         isRestartingServices = true
                         engine.restartServicesResult = nil
                         engine.restartServices()
@@ -131,17 +149,17 @@ struct DiagnosticsView: View {
                     Button("Annuler", role: .cancel) {}
                 } message: {
                     Text(
-                        "Coupe brièvement le tunnel actif : tue les process pymobiledevice3, "
+                        "Coupe le tunnel actif, tue les process pymobiledevice3, "
                             + "redémarre le service Bonjour/mDNS, puis rétablit la connexion automatiquement."
                     )
                 }
             } header: {
-                Text("Maintenance")
+                Text("Remise à Plat")
             } footer: {
                 if let result = engine.restartServicesResult {
                     restartResultSummary(result)
                 } else {
-                    Text("À utiliser si la connexion reste bloquée malgré un redémarrage de recherche Bonjour.")
+                    Text("Commandes de remise à zéro à utiliser en cas de blocage persistant.")
                 }
             }
         }

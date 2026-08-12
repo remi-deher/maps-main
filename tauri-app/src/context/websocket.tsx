@@ -481,6 +481,18 @@ export const WebSocketProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     sendMessage(EngineAction.GetNetworkDevices);
   };
 
+  const restartServices = () => {
+    sendMessage(EngineAction.RestartServices);
+  };
+
+  const restartTunnel = () => {
+    sendMessage(EngineAction.RestartTunnel);
+  };
+
+  const restartMdns = () => {
+    sendMessage(EngineAction.RestartMdns);
+  };
+
   return (
     <WebSocketContext.Provider
       value={{
@@ -519,6 +531,9 @@ export const WebSocketProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         getDiagnostics,
         networkDevices,
         getNetworkDevices,
+        restartServices,
+        restartTunnel,
+        restartMdns,
       }}
     >
       {children}

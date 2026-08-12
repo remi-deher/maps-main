@@ -26,7 +26,7 @@ interface SettingsModalProps {
 /// Réglages avancés du moteur (connexion, appareil, tunnel/driver, diagnostics),
 /// regroupés dans une modale à sections plutôt qu'un onglet permanent de la sidebar.
 export const SettingsModal: React.FC<SettingsModalProps> = ({ open, onClose }) => {
-  const { enginePort, engineStatus, setEnginePort, mdnsInterface, setMdnsInterface, networkInterfaces, connectionUrl, canSend, status, deviceDetails, getDeviceInfo, saveSettings, sendMessage, diagnostics, getDiagnostics, networkDevices, getNetworkDevices, relance, clearLocation, pauseRoute, resumeRoute, stopRoute } = useEngine();
+  const { enginePort, engineStatus, setEnginePort, mdnsInterface, setMdnsInterface, networkInterfaces, connectionUrl, canSend, status, deviceDetails, getDeviceInfo, saveSettings, sendMessage, diagnostics, getDiagnostics, networkDevices, getNetworkDevices, relance, clearLocation, pauseRoute, resumeRoute, stopRoute, restartTunnel, restartMdns, restartServices } = useEngine();
       const { pairResult, pairing, pairDevice } = usePairing();
 
   const [toast, setToast] = useState<string | null>(null);
@@ -768,6 +768,51 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ open, onClose }) =
               )}
             </div>
           )}
+
+          <fieldset className="field-group">
+            <legend className="field-group-legend">Remise à plat & Maintenance</legend>
+            <p style={{ fontSize: "0.75rem", color: "#94a3b8", margin: "0 0 10px 0" }}>
+              Commandes de remise à zéro à utiliser en cas de problème de connexion persistant.
+            </p>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: "8px" }}>
+              <button
+                className="btn btn-secondary"
+                type="button"
+                onClick={() => {
+                  restartTunnel();
+                  showToast("Commande de redémarrage du tunnel envoyée.");
+                }}
+                disabled={!canSend}
+              >
+                Redémarrer le Tunnel
+              </button>
+              <button
+                className="btn btn-secondary"
+                type="button"
+                onClick={() => {
+                  restartMdns();
+                  showToast("Commande de redémarrage mDNS envoyée.");
+                }}
+                disabled={!canSend}
+              >
+                Redémarrer Bonjour/mDNS
+              </button>
+              <button
+                className="btn btn-secondary"
+                style={{ borderColor: "rgba(239, 68, 68, 0.4)", color: "#fca5a5" }}
+                type="button"
+                onClick={() => {
+                  if (window.confirm("Êtes-vous sûr de vouloir remettre à plat tous les services (tuer pymobiledevice3, redémarrer Bonjour et relancer le tunnel) ?")) {
+                    restartServices();
+                    showToast("Remise à plat complète des services lancée.");
+                  }
+                }}
+                disabled={!canSend}
+              >
+                Remise à plat complète
+              </button>
+            </div>
+          </fieldset>
         </div>
       ) : (
         <p style={{ fontSize: "0.78rem", color: "#94a3b8", margin: 0 }}>

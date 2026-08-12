@@ -22,6 +22,8 @@ final class EngineClient: NSObject, URLSessionWebSocketDelegate, EngineClientPro
     var status: EngineStatus?
     var logs: [LogEntryPayload] = []
     var restartServicesResult: RestartServicesResultPayload?
+    var restartTunnelResult: RestartTunnelResultPayload?
+    var restartMdnsResult: RestartMdnsResultPayload?
 
     // Mirrors the engine's in-memory log ring buffer size
     // (engine/internal/engine/engine.go's log history cap) — keeping the same
@@ -156,6 +158,14 @@ final class EngineClient: NSObject, URLSessionWebSocketDelegate, EngineClientPro
         reconnectAttempt += 1
         DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
             guard let self, self.generation == generation else { return }
+            // Dynamic IP re-binding: if reconnect attempts fail 3+ times, check if Bonjour discovered a new host IP
+            if self.reconnectAttempt >= 3, case .found(let host, let port) = EngineDiscovery.shared.state {
+                let candidateURL = "ws://\(host):\(port)"
+                if candidateURL != self.urlString {
+                    AppLogger.shared.info("Re-liaison dynamique de la cible WebSocket vers Bonjour: \(candidateURL)")
+                    self.urlString = candidateURL
+                }
+            }
             self.startSocket(generation: generation)
         }
     }
@@ -244,6 +254,20 @@ final class EngineClient: NSObject, URLSessionWebSocketDelegate, EngineClientPro
             } catch {
                 AppLogger.shared.error("Échec du décodage de RESTART_SERVICES_RESULT: \(error)")
             }
+        case .restartTunnelResult:
+            do {
+                let result = try JSONDecoder().decode(RestartTunnelResultPayload.self, from: payloadData)
+                DispatchQueue.main.async { self.restartTunnelResult = result }
+            } catch {
+                AppLogger.shared.error("Échec du décodage de RESTART_TUNNEL_RESULT: \(error)")
+            }
+        case .restartMdnsResult:
+            do {
+                let result = try JSONDecoder().decode(RestartMdnsResultPayload.self, from: payloadData)
+                DispatchQueue.main.async { self.restartMdnsResult = result }
+            } catch {
+                AppLogger.shared.error("Échec du décodage de RESTART_MDNS_RESULT: \(error)")
+            }
         }
     }
 
@@ -310,6 +334,14 @@ final class EngineClient: NSObject, URLSessionWebSocketDelegate, EngineClientPro
     // asynchronously as RESTART_SERVICES_RESULT.
     func restartServices() {
         sendAction(.restartServices)
+    }
+
+    func restartTunnel() {
+        sendAction(.restartTunnel)
+    }
+
+    func restartMdns() {
+        sendAction(.restartMdns)
     }
 
     private func sendPing() {

@@ -13,7 +13,7 @@ const LogsContext = createContext<LogsContextValue | null>(null);
 
 export const LogsProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [logs, setLogsState] = useState<LogEntry[]>([]);
-  const MAX_LOGS = 200;
+  const MAX_LOGS = 500;
 
   const appendLog = useCallback((log: LogEntry) => {
     setLogsState((prev) => {

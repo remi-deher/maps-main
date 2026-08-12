@@ -71,3 +71,35 @@ func (e *Engine) RestartServices(ctx context.Context) (MaintenanceResult, error)
 	addStep("Redémarrage du tunnel", nil)
 	return result, nil
 }
+
+// RestartTunnel force-restarts the active iOS device tunnel and resets health backoff.
+func (e *Engine) RestartTunnel(ctx context.Context) error {
+	e.stopActiveSimulation()
+	e.markTunnelLost()
+	e.ResetHealthBackoff()
+	if drv := e.driver(); drv != nil {
+		_ = drv.StopTunnel(ctx)
+	}
+	e.LogEvent("info", "admin", "maintenance", "restart-tunnel", "Redémarrage forcé du tunnel en cours...", nil)
+	err := e.StartTunnel(ctx)
+	if err != nil {
+		e.LogEvent("error", "admin", "maintenance", "restart-tunnel", fmt.Sprintf("Échec du redémarrage du tunnel : %v", err), map[string]string{"error": err.Error()})
+	} else {
+		e.LogEvent("info", "admin", "maintenance", "restart-tunnel", "Tunnel redémarré avec succès", nil)
+	}
+	return err
+}
+
+// RestartMdns restarts the OS-level mDNS responder service and triggers mDNS wake/scan.
+func (e *Engine) RestartMdns(ctx context.Context) error {
+	e.LogEvent("info", "admin", "maintenance", "restart-mdns", "Redémarrage du service Bonjour/mDNS...", nil)
+	err := discovery.RestartMDNSService(ctx)
+	if err != nil {
+		e.LogEvent("warn", "admin", "maintenance", "restart-mdns", fmt.Sprintf("Avertissement redémarrage service mDNS : %v", err), map[string]string{"error": err.Error()})
+	} else {
+		e.LogEvent("info", "admin", "maintenance", "restart-mdns", "Service Bonjour/mDNS redémarré avec succès", nil)
+	}
+	e.ResetHealthBackoff()
+	e.StartMdnsWake(ctx)
+	return err
+}

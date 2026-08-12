@@ -20,6 +20,8 @@ enum EngineAction: String {
     case removeFavorite = "REMOVE_FAVORITE"
     case playSequence = "PLAY_SEQUENCE"
     case restartServices = "RESTART_SERVICES"
+    case restartTunnel = "RESTART_TUNNEL"
+    case restartMdns = "RESTART_MDNS"
 }
 
 enum EngineEvent: String {
@@ -29,6 +31,28 @@ enum EngineEvent: String {
     case log = "LOG"
     case logs = "LOGS"
     case restartServicesResult = "RESTART_SERVICES_RESULT"
+    case restartTunnelResult = "RESTART_TUNNEL_RESULT"
+    case restartMdnsResult = "RESTART_MDNS_RESULT"
+}
+
+struct RestartTunnelResultPayload: Decodable {
+    let succeeded: Bool
+    let error: String?
+
+    enum CodingKeys: String, CodingKey {
+        case succeeded = "ok"
+        case error
+    }
+}
+
+struct RestartMdnsResultPayload: Decodable {
+    let succeeded: Bool
+    let error: String?
+
+    enum CodingKeys: String, CodingKey {
+        case succeeded = "ok"
+        case error
+    }
 }
 
 // RestartServiceStep is one step's outcome within RestartServicesResultPayload

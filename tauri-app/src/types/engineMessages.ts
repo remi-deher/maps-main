@@ -27,6 +27,9 @@ export const EngineAction = {
   GetPairCode: "GET_PAIR_CODE",
   ListPairedDevices: "LIST_PAIRED_DEVICES",
   RevokePairedDevice: "REVOKE_PAIRED_DEVICE",
+  RestartServices: "RESTART_SERVICES",
+  RestartTunnel: "RESTART_TUNNEL",
+  RestartMdns: "RESTART_MDNS",
 } as const;
 
 export const EngineEvent = {
@@ -43,6 +46,9 @@ export const EngineEvent = {
   PairedDevices: "PAIRED_DEVICES",
   Logs: "LOGS",
   Location: "LOCATION",
+  RestartServicesResult: "RESTART_SERVICES_RESULT",
+  RestartTunnelResult: "RESTART_TUNNEL_RESULT",
+  RestartMdnsResult: "RESTART_MDNS_RESULT",
 } as const;
 
 export type EngineActionType = (typeof EngineAction)[keyof typeof EngineAction];

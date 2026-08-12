@@ -53,7 +53,7 @@ func (s *Service) Get() []api.LogEntryPayload {
 
 func normalizeLevel(level string) string {
 	switch level {
-	case "warn", "error":
+	case "warn", "error", "debug", "console":
 		return level
 	default:
 		return "info"

@@ -185,7 +185,7 @@ export interface Telemetry {
 
 export interface LogEntry {
   timestamp: number;
-  level: "info" | "warn" | "error";
+  level: "info" | "warn" | "error" | "debug" | "console";
   source: string;
   category?: string;
   action?: string;
@@ -263,6 +263,9 @@ export interface EngineTransportContextType {
   getDiagnostics: () => void;
   networkDevices: NetworkDevicesResult | null;
   getNetworkDevices: () => void;
+  restartServices: () => void;
+  restartTunnel: () => void;
+  restartMdns: () => void;
 }
 
 export interface WebSocketContextType extends EngineTransportContextType {

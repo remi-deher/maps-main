@@ -2,11 +2,21 @@ package engine
 
 import "github.com/remi-deher/maps-main/engine/internal/api"
 
-const maxLogEntries = 200
+const maxLogEntries = 500
 
 // Log appends an entry to the in-memory buffer and broadcasts it immediately.
 func (e *Engine) Log(level, source, message string) {
 	e.LogEvent(level, source, "", "", message, nil)
+}
+
+// LogDebug appends a debug entry to the in-memory buffer and broadcasts it.
+func (e *Engine) LogDebug(source, message string) {
+	e.LogEvent("debug", source, "", "", message, nil)
+}
+
+// LogConsole appends a console output entry to the in-memory buffer and broadcasts it.
+func (e *Engine) LogConsole(source, message string) {
+	e.LogEvent("console", source, "", "", message, nil)
 }
 
 // LogEvent appends a structured entry to the in-memory buffer and broadcasts it.

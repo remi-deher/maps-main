@@ -57,6 +57,9 @@ func (e *Engine) healthLoop(ctx context.Context) {
 		select {
 		case <-ctx.Done():
 			return
+		case <-e.resetHealthBackoff:
+			lastRetry = time.Time{}
+			retryInterval = tunnelRetryInterval
 		case <-ticker.C:
 		}
 
