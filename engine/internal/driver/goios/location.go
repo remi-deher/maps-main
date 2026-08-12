@@ -24,6 +24,9 @@ func (d *Driver) SetLocation(ctx context.Context, lat, lon float64) error {
 		"--lat=" + ftoa(lat),
 		"--lon=" + ftoa(lon),
 	}
+	if ti.UserspacePort > 0 {
+		args = append(args, "--userspace-port="+strconv.Itoa(ti.UserspacePort))
+	}
 	if udid := d.getUDID(ctx); udid != "" {
 		args = append(args, "--udid="+udid)
 	}
@@ -40,6 +43,9 @@ func (d *Driver) ClearLocation(ctx context.Context) error {
 		"resetlocation",
 		"--address=" + ti.Address,
 		"--rsd-port=" + strconv.Itoa(ti.Port),
+	}
+	if ti.UserspacePort > 0 {
+		args = append(args, "--userspace-port="+strconv.Itoa(ti.UserspacePort))
 	}
 	if udid := d.getUDID(ctx); udid != "" {
 		args = append(args, "--udid="+udid)

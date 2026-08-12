@@ -49,11 +49,25 @@ func (d *Driver) StartTunnel(ctx context.Context) (driver.TunnelInfo, error) {
 			if err != nil {
 				return nil, err
 			}
-			return execCommand(py, d.args("remote", "tunneld")...), nil
+			return execCommand(py, d.args(d.tunneldArgs()...)...), nil
 		},
 		OutputLineFilter: keepPmd3TunneldOutput,
 		Resolve:          d.queryTunneld,
 	})
+}
+
+// tunneldArgs builds the `remote tunneld` invocation. It forces the TCP tunnel
+// on Python 3.13+ (see pythonSupportsTCPTunnel): pymobiledevice3 otherwise
+// defaults to QUIC, which Apple removed in iOS 18.2+ — a QUIC daemon then
+// publishes no usable RSD tunnel for a modern device and the start silently
+// times out. On < 3.13 TCP isn't available, so we leave the daemon on its
+// default (QUIC) as the only transport it can offer.
+func (d *Driver) tunneldArgs() []string {
+	args := []string{"remote", "tunneld"}
+	if d.pythonSupportsTCPTunnel() {
+		args = append(args, "--protocol", "tcp")
+	}
+	return args
 }
 
 const pmd3TunneldTimeoutHint = "le serveur tunneld répond, mais aucun tunnel RSD n'a été publié. Vérifiez que l'iPhone est déverrouillé, approuvé, en mode développeur, et lancez l'application/serveur avec les droits administrateur si l'adaptateur tunnel ne peut pas être créé."

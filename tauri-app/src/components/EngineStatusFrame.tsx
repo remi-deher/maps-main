@@ -61,6 +61,23 @@ export const EngineStatusFrame: React.FC = () => {
 
   const latencyText = telemetry && telemetry.latency > 0 ? `${telemetry.latency} ms` : "—";
 
+  // Tunnel quality, derived from the engine's own health block (see api.TunnelHealth).
+  const health = status?.tunnelHealth;
+  const injectStalled = (health?.consecutiveInjectFailures ?? 0) >= 3;
+  const tunnelLabel = !status?.tunnelActive
+    ? "Inactif"
+    : health?.searching
+    ? "Recherche…"
+    : injectStalled
+    ? "Injection KO"
+    : "Actif";
+  const tunnelClass = !status?.tunnelActive ? "" : injectStalled ? "warn" : health?.searching ? "warn" : "ok";
+  const tunnelRtt = health?.lastCheckRttMs && health.lastCheckRttMs > 0 ? `${health.lastCheckRttMs} ms` : null;
+  const lastInjectAgo =
+    health?.lastInjectionOkAt && health.lastInjectionOkAt > 0
+      ? formatUptime((Date.now() - health.lastInjectionOkAt) / 1000)
+      : null;
+
   return (
     <div className={`engine-status-frame ${expanded ? "expanded" : ""} ${isStale ? "stale" : ""}`}>
       <button
@@ -100,10 +117,27 @@ export const EngineStatusFrame: React.FC = () => {
             </div>
             <div className="metric-tile">
               <span>Tunnel</span>
-              <strong className={status?.tunnelActive ? "ok" : ""}>{status?.tunnelActive ? "Actif" : "Inactif"}</strong>
+              <strong className={tunnelClass}>{tunnelLabel}</strong>
               <small>{status?.connectionType || "UNKNOWN"}</small>
             </div>
           </div>
+
+          {status?.tunnelActive && (tunnelRtt || lastInjectAgo) && (
+            <div className="metric-grid dense-metrics">
+              {tunnelRtt && (
+                <div className="metric-tile">
+                  <span>RTT tunnel</span>
+                  <strong>{tunnelRtt}</strong>
+                </div>
+              )}
+              {lastInjectAgo && (
+                <div className="metric-tile">
+                  <span>Dernière injection</span>
+                  <strong className={injectStalled ? "warn" : ""}>il y a {lastInjectAgo}</strong>
+                </div>
+              )}
+            </div>
+          )}
 
           {telemetry && (
             <div className="metric-grid dense-metrics">

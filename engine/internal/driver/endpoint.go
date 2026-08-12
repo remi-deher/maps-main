@@ -58,10 +58,11 @@ func ReresolveActiveTunnel(ctx context.Context, mount *TunnelMount, lister Netwo
 			continue
 		}
 		info := TunnelInfo{
-			Address: devices[i].Address,
-			Port:    devices[i].Port,
-			Type:    Classify(devices[i].Address),
-			Since:   time.Now(),
+			Address:       devices[i].Address,
+			Port:          devices[i].Port,
+			Type:          Classify(devices[i].Address),
+			Since:         time.Now(),
+			UserspacePort: devices[i].UserspacePort,
 		}
 		mount.UpdateInfo(info)
 		return info, true, true

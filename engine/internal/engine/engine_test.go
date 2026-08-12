@@ -214,6 +214,53 @@ func TestEngineSetLocation(t *testing.T) {
 	}
 }
 
+func TestTunnelHealthTracksInjectionSuccessAndFailure(t *testing.T) {
+	ti := driver.TunnelInfo{Address: "127.0.0.1", Port: 54321, Type: domain.ConnUSB}
+	drv := &mockDriver{id: domain.DriverPmd3, tunnelInfo: ti}
+	eng := New(drv, settings.Default())
+	_ = eng.StartTunnel(context.Background())
+
+	// A fresh tunnel seeds the health block with an uptime anchor and no failures.
+	st := eng.Status()
+	if st.TunnelHealth == nil || st.TunnelHealth.EstablishedAt == 0 {
+		t.Fatalf("expected tunnelHealth seeded on StartTunnel, got %+v", st.TunnelHealth)
+	}
+
+	// A successful injection stamps LastInjectionOkAt and keeps failures at zero.
+	if err := eng.SetLocation(context.Background(), 48.8566, 2.3522, "Paris"); err != nil {
+		t.Fatalf("SetLocation: %v", err)
+	}
+	st = eng.Status()
+	if st.TunnelHealth.LastInjectionOkAt == 0 {
+		t.Error("expected LastInjectionOkAt set after a successful injection")
+	}
+	if st.TunnelHealth.ConsecutiveInjectFailures != 0 {
+		t.Errorf("failures = %d, want 0 after success", st.TunnelHealth.ConsecutiveInjectFailures)
+	}
+
+	// Failing injections accumulate until the tunnel is considered injection-stalled.
+	drv.setLocationErr = errors.New("dvt session dead")
+	for i := 0; i < injectFailureThreshold; i++ {
+		_ = eng.SetLocation(context.Background(), 40.0, -74.0, "NYC")
+	}
+	st = eng.Status()
+	if st.TunnelHealth.ConsecutiveInjectFailures < injectFailureThreshold {
+		t.Errorf("failures = %d, want >= %d", st.TunnelHealth.ConsecutiveInjectFailures, injectFailureThreshold)
+	}
+	if !eng.injectionStalled() {
+		t.Error("expected injectionStalled() true after threshold consecutive failures")
+	}
+
+	// A recovery resets the failure run.
+	drv.setLocationErr = nil
+	if err := eng.SetLocation(context.Background(), 48.8566, 2.3522, "Paris"); err != nil {
+		t.Fatalf("SetLocation after recovery: %v", err)
+	}
+	if eng.injectionStalled() {
+		t.Error("expected injectionStalled() false after a successful injection")
+	}
+}
+
 func TestEngineClearLocation(t *testing.T) {
 	ti := driver.TunnelInfo{Address: "127.0.0.1", Port: 54321, Type: domain.ConnUSB}
 	drv := &mockDriver{id: domain.DriverPmd3, tunnelInfo: ti}

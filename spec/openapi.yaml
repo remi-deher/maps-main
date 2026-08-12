@@ -238,6 +238,21 @@ components:
         name: { type: string }
         driver: { $ref: "#/components/schemas/DriverID" }
 
+    TunnelHealth:
+      type: object
+      description: >-
+        Engine-side view of tunnel quality so a client can distinguish
+        "up and injecting" from "reachable but injection failing" or
+        "daemon searching for the device". Timestamps are epoch milliseconds.
+      properties:
+        establishedAt: { type: integer }
+        lastInjectionOkAt: { type: integer }
+        consecutiveInjectFailures: { type: integer }
+        lastReresolveAt: { type: integer }
+        lastCheckRttMs: { type: integer }
+        searching: { type: boolean }
+      required: [consecutiveInjectFailures, searching]
+
     LogEntry:
       type: object
       properties:
@@ -260,6 +275,7 @@ components:
         rsdAddress: { type: [string, "null"] }
         rsdPort: { type: [integer, "null"] }
         connectionType: { $ref: "#/components/schemas/ConnectionType" }
+        tunnelHealth: { oneOf: [ { $ref: "#/components/schemas/TunnelHealth" }, { type: "null" } ] }
         deviceInfo: { oneOf: [ { $ref: "#/components/schemas/DeviceInfo" }, { type: "null" } ] }
         maintainActive: { type: boolean }
         lastHeartbeat: { type: [integer, "null"] }

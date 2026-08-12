@@ -31,10 +31,11 @@ var tunnelAPIClient = &http.Client{Timeout: 3 * time.Second}
 // /tunnels and printed by `ios tunnel ls`), e.g.
 // [{"address":"fdd7:...:1","rsdPort":65032,"udid":"...","userspaceTun":false}].
 type tunnelEntry struct {
-	Address      string `json:"address"`
-	RsdPort      int    `json:"rsdPort"`
-	UDID         string `json:"udid"`
-	UserspaceTun bool   `json:"userspaceTun"`
+	Address          string `json:"address"`
+	RsdPort          int    `json:"rsdPort"`
+	UDID             string `json:"udid"`
+	UserspaceTun     bool   `json:"userspaceTun"`
+	UserspaceTunPort int    `json:"userspaceTunPort"`
 }
 
 func (d *Driver) tunnelsURL() string {
@@ -86,6 +87,12 @@ func (d *Driver) queryTunnel(ctx context.Context) (driver.TunnelEndpoint, bool) 
 			continue
 		}
 		if endpoint, ok := driver.NewTunnelEndpoint(e.Address, e.RsdPort, e.UDID); ok {
+			// A userspace tunnel (no kernel TUN adapter) is reached through a
+			// local TCP proxy port; carry it so SetLocation can pass
+			// --userspace-port. Zero/absent for a normal kernel-TUN tunnel.
+			if e.UserspaceTun {
+				endpoint.Info.UserspacePort = e.UserspaceTunPort
+			}
 			return endpoint, true
 		}
 	}
@@ -101,7 +108,11 @@ func (d *Driver) ListNetworkDevices(ctx context.Context) ([]driver.NetworkDevice
 		if e.Address == "" || e.RsdPort <= 0 {
 			continue
 		}
-		devices = append(devices, driver.NetworkDevice{UDID: e.UDID, Address: e.Address, Port: e.RsdPort})
+		dev := driver.NetworkDevice{UDID: e.UDID, Address: e.Address, Port: e.RsdPort}
+		if e.UserspaceTun {
+			dev.UserspacePort = e.UserspaceTunPort
+		}
+		devices = append(devices, dev)
 	}
 	return devices, nil
 }

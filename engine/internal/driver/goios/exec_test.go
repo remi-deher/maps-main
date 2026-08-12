@@ -240,6 +240,51 @@ func TestSetLocationBuildsCorrectCommand(t *testing.T) {
 	}
 }
 
+func TestSetLocationAddsUserspacePortForUserspaceTunnel(t *testing.T) {
+	d := &Driver{bin: "fake-ios"}
+	// A userspace tunnel: SetLocation must reach the device through the local
+	// proxy port via --userspace-port, on top of the usual address/rsd-port.
+	d.mount.SetActive(driver.TunnelInfo{Address: "fde6:1234::1", Port: 54321, UserspacePort: 61000}, "")
+
+	got := echoArgs(t, func() error {
+		return d.SetLocation(context.Background(), 48.8566, 2.3522)
+	})
+	if !strings.Contains(got, "--userspace-port=61000") {
+		t.Errorf("setlocation args %q missing --userspace-port for a userspace tunnel", got)
+	}
+}
+
+func TestSetLocationOmitsUserspacePortForKernelTunnel(t *testing.T) {
+	d := &Driver{bin: "fake-ios"}
+	d.mount.SetActive(driver.TunnelInfo{Address: "fde6:1234::1", Port: 54321}, "") // UserspacePort 0
+
+	got := echoArgs(t, func() error {
+		return d.SetLocation(context.Background(), 48.8566, 2.3522)
+	})
+	if strings.Contains(got, "userspace-port") {
+		t.Errorf("setlocation args %q must not include --userspace-port for a kernel-TUN tunnel", got)
+	}
+}
+
+func TestTunnelStartArgsAddsUserspaceOnlyInUserspaceMode(t *testing.T) {
+	d := &Driver{bin: "fake-ios", udid: "udid-1", lockdownArgs: []string{"--pair-record-path=/some/dir"}}
+
+	kernel := strings.Join(d.tunnelStartArgs(false), " ")
+	if strings.Contains(kernel, "--userspace") {
+		t.Errorf("kernel-TUN args %q must not include --userspace", kernel)
+	}
+	for _, want := range []string{"tunnel start", "--pair-record-path=/some/dir", "--tunnel-info-port=", "--udid=udid-1"} {
+		if !strings.Contains(kernel, want) {
+			t.Errorf("kernel-TUN args %q missing %q", kernel, want)
+		}
+	}
+
+	userspace := strings.Join(d.tunnelStartArgs(true), " ")
+	if !strings.Contains(userspace, "--userspace") {
+		t.Errorf("userspace args %q must include --userspace", userspace)
+	}
+}
+
 func TestClearLocationBuildsResetCommand(t *testing.T) {
 	d := &Driver{bin: "fake-ios", lockdownArgs: []string{"--pair-record-path=/some/dir"}}
 	d.mount.SetActive(driver.TunnelInfo{Address: "fde6:1234::1", Port: 54321}, "")

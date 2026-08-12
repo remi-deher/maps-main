@@ -6,6 +6,7 @@ import (
 	"runtime"
 	"strings"
 
+	"github.com/remi-deher/maps-main/engine/internal/api"
 	"github.com/remi-deher/maps-main/engine/internal/domain"
 	"github.com/remi-deher/maps-main/engine/internal/driver"
 )
@@ -226,6 +227,13 @@ func (e *Engine) StartTunnel(ctx context.Context) error {
 	if e.st.State == "idle" || e.st.State == "starting" {
 		e.st.State = "ready"
 	}
+	// Fresh tunnel: seed the health block (uptime anchor) and clear any stale
+	// failure counters/searching flag from a previous session.
+	e.updateTunnelHealthLocked(func(th *api.TunnelHealth) {
+		th.EstablishedAt = nowMs()
+		th.ConsecutiveInjectFailures = 0
+		th.Searching = false
+	})
 	e.emitStatusLocked()
 	return nil
 }
@@ -244,6 +252,10 @@ func (e *Engine) markTunnelLost() {
 	e.st.TunnelActive = false
 	e.st.RSDAddress = ""
 	e.st.RSDPort = 0
+	// The tunnel is gone: drop the health block so the UI doesn't show a stale
+	// uptime/latency for a tunnel that no longer exists. A fresh StartTunnel
+	// re-seeds it.
+	e.st.TunnelHealth = nil
 	if e.st.State == "ready" || e.st.State == "running" {
 		e.st.State = "idle"
 	}

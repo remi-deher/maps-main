@@ -160,6 +160,40 @@ func (e *Engine) SetLocation(ctx context.Context, lat, lon float64, name string)
 	return e.injectLocation(ctx, lat, lon, name, true)
 }
 
+// updateTunnelHealthLocked applies fn to a fresh copy of the tunnel-health block
+// and stores it. Copy-on-write, exactly like LastInjectedLocation: the previous
+// pointer may be aliased by an in-flight STATUS snapshot being JSON-encoded, so
+// it must never be mutated in place. Caller holds e.mu.
+func (e *Engine) updateTunnelHealthLocked(fn func(*api.TunnelHealth)) {
+	var th api.TunnelHealth
+	if e.st.TunnelHealth != nil {
+		th = *e.st.TunnelHealth
+	}
+	fn(&th)
+	e.st.TunnelHealth = &th
+}
+
+// driverSetLocation forwards to the active driver and records injection health
+// (last success timestamp / consecutive-failure count) that the tunnel-health
+// status and the watchdog's injection-liveness check both read. Centralizing
+// it here means every injection path — user set, simulation tick, drift
+// re-inject, relance keep-alive — keeps the counters honest.
+func (e *Engine) driverSetLocation(ctx context.Context, lat, lon float64) error {
+	err := e.driver().SetLocation(ctx, lat, lon)
+	now := nowMs()
+	e.mu.Lock()
+	e.updateTunnelHealthLocked(func(th *api.TunnelHealth) {
+		if err != nil {
+			th.ConsecutiveInjectFailures++
+		} else {
+			th.LastInjectionOkAt = now
+			th.ConsecutiveInjectFailures = 0
+		}
+	})
+	e.mu.Unlock()
+	return err
+}
+
 // simSetLocation injects a position from a running route/patrol simulation
 // tick. It skips the history list — recording every tick would flood it with
 // a new entry every second instead of the handful of user-initiated jumps.
@@ -182,7 +216,7 @@ func (e *Engine) injectLocation(ctx context.Context, lat, lon float64, name stri
 		})
 		return err
 	}
-	if err := e.driver().SetLocation(ctx, lat, lon); err != nil {
+	if err := e.driverSetLocation(ctx, lat, lon); err != nil {
 		e.LogEvent("error", "engine", "location", "set", fmt.Sprintf("Échec de l'injection de position : %v", err), map[string]string{
 			"lat":           fmt.Sprintf("%.6f", lat),
 			"lon":           fmt.Sprintf("%.6f", lon),
@@ -418,7 +452,7 @@ func (e *Engine) Relance(ctx context.Context) error {
 // relance read back. Mirrors injectLocation's emit pattern without touching the
 // history list.
 func (e *Engine) reinjectAnchor(ctx context.Context, anchor *api.LocationStamp, injLat, injLon float64) error {
-	if err := e.driver().SetLocation(ctx, injLat, injLon); err != nil {
+	if err := e.driverSetLocation(ctx, injLat, injLon); err != nil {
 		e.LogEvent("error", "engine", "location", "relance", fmt.Sprintf("Échec de la ré-injection : %v", err), map[string]string{
 			"lat":   fmt.Sprintf("%.6f", injLat),
 			"lon":   fmt.Sprintf("%.6f", injLon),

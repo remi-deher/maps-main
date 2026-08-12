@@ -132,12 +132,22 @@ export interface PatrolZone {
   active: boolean;
 }
 
+export interface TunnelHealth {
+  establishedAt?: number;
+  lastInjectionOkAt?: number;
+  consecutiveInjectFailures: number;
+  lastReresolveAt?: number;
+  lastCheckRttMs?: number;
+  searching: boolean;
+}
+
 export interface Status {
   state: "idle" | "ready" | "starting" | "running" | "moving" | "paused";
   tunnelActive: boolean;
   rsdAddress: string | null;
   rsdPort: number | null;
   connectionType: "USB" | "WiFi" | "MANUAL" | "UNKNOWN";
+  tunnelHealth?: TunnelHealth | null;
   deviceInfo: DeviceInfo | null;
   maintainActive: boolean;
   lastHeartbeat: number | null;

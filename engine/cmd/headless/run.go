@@ -145,6 +145,11 @@ func runEngine(ctx context.Context, cfg runConfig) error {
 	// the tunnel if the daemon dies. No-op until a tunnel is up.
 	eng.StartHealthMonitor(ctx)
 
+	// Idle keepalive: re-asserts a held-at-rest position every ~45s so the
+	// tunnel and DVT session don't go stale during device sleep. No-op unless a
+	// position is held with no active simulation.
+	eng.StartKeepaliveMonitor(ctx)
+
 	// Keep iPhones discoverable: a passive mDNS browse stops iOS from powering
 	// down its discovery responder, which otherwise blinds the tunnel daemons
 	// over WiFi. Best-effort; no-ops when no browse tool is installed.

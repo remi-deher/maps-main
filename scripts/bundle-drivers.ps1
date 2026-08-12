@@ -19,7 +19,11 @@ param(
 $ErrorActionPreference = "Stop"
 
 $GoIosVersion = "v1.2.0"      # keep in sync with docker/Dockerfile
-$PythonVersion = "3.12.8"
+# Python 3.13+ is required for pymobiledevice3's TCP RSD tunnel: on older
+# interpreters `remote tunneld` defaults to the QUIC tunnel, which Apple
+# removed in iOS 18.2+ — so a 3.12 bundle silently fails to tunnel modern
+# devices. The pmd3 driver forces --protocol tcp when it detects 3.13+.
+$PythonVersion = "3.13.1"
 $WintunVersion = "0.14.1"
 
 New-Item -ItemType Directory -Force -Path $TargetDir | Out-Null
@@ -65,8 +69,11 @@ if ($onWindows -and $IncludePython) {
 
     Push-Location $pyDir
     try {
-        # Enable site-packages so pip-installed modules import.
-        (Get-Content python312._pth) -replace '#import site', 'import site' | Set-Content python312._pth
+        # Enable site-packages so pip-installed modules import. The embeddable
+        # distribution names this file after the version (python313._pth for
+        # 3.13.x); derive it so a version bump doesn't silently miss it.
+        $pth = Get-ChildItem -Filter 'python3*._pth' | Select-Object -First 1
+        (Get-Content $pth.Name) -replace '#import site', 'import site' | Set-Content $pth.Name
         Invoke-WebRequest -Uri "https://bootstrap.pypa.io/get-pip.py" -OutFile get-pip.py
         ./python.exe get-pip.py --no-warn-script-location
         # setuptools/wheel first: some transitive deps build from source.

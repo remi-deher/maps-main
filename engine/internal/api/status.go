@@ -64,6 +64,33 @@ type RealLocation struct {
 	Timestamp int64   `json:"timestamp,omitempty"`
 }
 
+// TunnelHealth carries the engine's own view of tunnel quality, so the UI can
+// tell "tunnel up and injecting" from "TCP reachable but injection failing" or
+// "daemon searching for the device" — states a bare connected/disconnected flag
+// hides. All timestamps are epoch milliseconds; zero means "never".
+type TunnelHealth struct {
+	// EstablishedAt is when the current tunnel came up (uptime anchor).
+	EstablishedAt int64 `json:"establishedAt,omitempty"`
+	// LastInjectionOkAt is the last time a SetLocation actually succeeded. A
+	// tunnel can pass its TCP health dial while every injection fails (dead DVT
+	// session after a long device sleep); the gap between now and this is the
+	// signal that catches it.
+	LastInjectionOkAt int64 `json:"lastInjectionOkAt,omitempty"`
+	// ConsecutiveInjectFailures counts SetLocation failures since the last
+	// success. The watchdog treats a run of these as tunnel-unhealthy even when
+	// the TCP dial still passes.
+	ConsecutiveInjectFailures int `json:"consecutiveInjectFailures"`
+	// LastReresolveAt is the last time the daemon re-resolved the endpoint
+	// (device followed across USB↔WiFi) without a restart.
+	LastReresolveAt int64 `json:"lastReresolveAt,omitempty"`
+	// LastCheckRTTms is the round-trip of the most recent successful health dial,
+	// a coarse tunnel-latency gauge.
+	LastCheckRTTms int64 `json:"lastCheckRttMs,omitempty"`
+	// Searching is true while the tunnel is down but the daemon is still up and
+	// looking for the device (USB/WiFi), as opposed to a hard failure.
+	Searching bool `json:"searching"`
+}
+
 // Status is the full state object broadcast on the STATUS event and returned by
 // GET /api/status. It mirrors the legacy companion-server payload.
 type Status struct {
@@ -78,6 +105,8 @@ type Status struct {
 	LastVerifiedLocation *LocationStamp `json:"lastVerifiedLocation"`
 	LastActiveLocation   *LocationStamp `json:"lastActiveLocation"`
 	LastRealLocation     *RealLocation  `json:"lastRealLocation"`
+
+	TunnelHealth *TunnelHealth `json:"tunnelHealth,omitempty"`
 
 	MaintainActive bool  `json:"maintainActive"`
 	LastHeartbeat  int64 `json:"lastHeartbeat"`

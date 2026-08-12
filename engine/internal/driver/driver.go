@@ -17,6 +17,12 @@ type TunnelInfo struct {
 	Port    int
 	Type    domain.ConnectionType
 	Since   time.Time
+	// UserspacePort is go-ios's local userspace-tunnel TCP port (its
+	// `userspaceTunPort`). Non-zero only for a userspace tunnel (started without
+	// a kernel TUN adapter, i.e. without admin rights); location commands must
+	// then be told to reach the device through it via --userspace-port. Zero for
+	// a normal kernel-TUN tunnel and for backends without a userspace mode.
+	UserspacePort int
 }
 
 // Device is a discoverable iOS device.
@@ -97,6 +103,10 @@ type NetworkDevice struct {
 	UDID    string
 	Address string // host (IPv6 ULA, bracket if embedding in host:port)
 	Port    int
+	// UserspacePort mirrors TunnelInfo.UserspacePort so a re-resolve (which
+	// rebuilds the endpoint from this list) preserves a userspace tunnel's proxy
+	// port. Zero for kernel-TUN tunnels and backends without a userspace mode.
+	UserspacePort int
 }
 
 // NetworkDeviceLister is an optional capability: drivers whose tunnel daemon
