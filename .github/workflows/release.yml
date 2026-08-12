@@ -309,6 +309,55 @@ jobs:
         shell: pwsh
         run: ./scripts/build-sidecar.ps1
 
+      # Tauri v2 downloads NSIS and WiX at bundle time from GitHub releases,
+      # which fails transiently on Windows runners ("io: Peer disconnected").
+      # Cache the tools directory so subsequent runs skip the download entirely,
+      # and pre-populate it with retry when the cache is cold.
+      - name: Cache Tauri Windows bundler tools (WiX / NSIS)
+        if: matrix.platform == 'windows-latest'
+        id: tauri-tools-cache
+        uses: actions/cache@v4
+        with:
+          path: ~\AppData\Local\tauri
+          key: tauri-win-tools-nsis311-wix3141
+
+      - name: Pre-download Tauri bundler tools (WiX + NSIS) with retry
+        if: matrix.platform == 'windows-latest' && steps.tauri-tools-cache.outputs.cache-hit != 'true'
+        shell: pwsh
+        run: |
+          $tauri = "$env:LOCALAPPDATA\tauri"
+
+          function Download-WithRetry($url, $dest, $retries = 5) {
+            for ($i = 1; $i -le $retries; $i++) {
+              try {
+                Invoke-WebRequest -Uri $url -OutFile $dest -UseBasicParsing
+                return
+              } catch {
+                Write-Host "Attempt $i failed: $_"
+                if ($i -lt $retries) { Start-Sleep -Seconds (5 * $i) }
+              }
+            }
+            throw "Failed to download $url after $retries attempts"
+          }
+
+          # NSIS (tauri-apps/binary-releases)
+          $nsisDir = "$tauri\NSIS"
+          if (-not (Test-Path $nsisDir)) {
+            New-Item -ItemType Directory -Force -Path $nsisDir | Out-Null
+            $zip = "$env:TEMP\nsis.zip"
+            Download-WithRetry "https://github.com/tauri-apps/binary-releases/releases/download/nsis-3.11/nsis-3.11.zip" $zip
+            Expand-Archive -Path $zip -DestinationPath $nsisDir -Force
+          }
+
+          # WiX 3.14 (wixtoolset/wix3)
+          $wixDir = "$tauri\WixTools314"
+          if (-not (Test-Path $wixDir)) {
+            New-Item -ItemType Directory -Force -Path $wixDir | Out-Null
+            $zip = "$env:TEMP\wix.zip"
+            Download-WithRetry "https://github.com/wixtoolset/wix3/releases/download/wix3141rtm/wix314-binaries.zip" $zip
+            Expand-Archive -Path $zip -DestinationPath $wixDir -Force
+          }
+
       - name: Build Tauri app (bundled)
         uses: tauri-apps/tauri-action@84b9d35b5fc46c1e45415bdb6144030364f7ebc5 # v0
         env:
