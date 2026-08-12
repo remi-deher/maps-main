@@ -9,6 +9,7 @@ import Observation
 // permission is denied.
 @Observable
 final class EngineDiscovery {
+    static weak var shared: EngineDiscovery?
     enum State: Equatable {
         case idle
         case searching

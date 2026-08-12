@@ -116,6 +116,7 @@ struct ContentView: View {
             coordinator.updateKeepAlive(session: session, enabled: keepAliveEnabled, interval: keepAliveInterval)
             // updated above
             coordinator.loadRecentPlaces()
+            EngineDiscovery.shared = discovery
             discovery.start()
         }
         .onChange(of: locationAccuracyMode) { mode in
