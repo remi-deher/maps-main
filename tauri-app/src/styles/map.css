@@ -609,10 +609,11 @@
   transform: scale(0.95);
 }
 
-/* Zoom controls — stacked below the recenter button */
+/* Zoom controls — stacked below the app-panel dock (recenter 76px, then the
+   4-button dock at 128px runs to ~288px), so they don't overlap it. */
 .map-zoom-controls {
   position: absolute;
-  top: 124px;
+  top: 300px;
   right: 16px;
   z-index: 1000;
   display: flex;
