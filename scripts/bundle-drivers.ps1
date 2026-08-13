@@ -67,6 +67,23 @@ if ($onWindows -and $IncludePython) {
     Invoke-WebRequest -Uri "https://www.python.org/ftp/python/$PythonVersion/python-$PythonVersion-embed-amd64.zip" -OutFile $zip
     Expand-Archive -Path $zip -DestinationPath $pyDir -Force
 
+    # Download Python C headers/libs from official NuGet package so C extensions (e.g. lzfse) can build during pip install
+    $nupkg = Join-Path $env:TEMP "python-nuget.zip"
+    $nuExtract = Join-Path $env:TEMP "python-nuget"
+    try {
+        Invoke-WebRequest -Uri "https://www.nuget.org/api/v2/package/python/$PythonVersion" -OutFile $nupkg
+        Expand-Archive -Path $nupkg -DestinationPath $nuExtract -Force
+        if (Test-Path (Join-Path $nuExtract "tools/include")) {
+            Copy-Item -Recurse -Force (Join-Path $nuExtract "tools/include") (Join-Path $pyDir "include")
+        }
+        if (Test-Path (Join-Path $nuExtract "tools/libs")) {
+            Copy-Item -Recurse -Force (Join-Path $nuExtract "tools/libs") (Join-Path $pyDir "libs")
+        }
+    } finally {
+        if (Test-Path $nupkg) { Remove-Item -Force $nupkg }
+        if (Test-Path $nuExtract) { Remove-Item -Recurse -Force $nuExtract }
+    }
+
     Push-Location $pyDir
     try {
         # Enable site-packages so pip-installed modules import. The embeddable
@@ -80,6 +97,8 @@ if ($onWindows -and $IncludePython) {
         ./python.exe -m pip install --no-cache-dir --upgrade setuptools wheel
         ./python.exe -m pip install --no-cache-dir pymobiledevice3
         Remove-Item get-pip.py
+        if (Test-Path "include") { Remove-Item -Recurse -Force include }
+        if (Test-Path "libs") { Remove-Item -Recurse -Force libs }
     } finally {
         Pop-Location
     }
