@@ -316,7 +316,7 @@ jobs:
       - name: Cache Tauri Windows bundler tools (WiX / NSIS)
         if: matrix.platform == 'windows-latest'
         id: tauri-tools-cache
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ~\AppData\Local\tauri
           key: tauri-win-tools-nsis311-wix3141
