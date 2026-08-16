@@ -646,7 +646,7 @@ jobs:
         # runs, so the tag + release are only ever created here, at the very
         # end, with every asset already built. softprops/action-gh-release
         # creates the tag (pointing at this commit) if it doesn't exist yet.
-        uses: softprops/action-gh-release@718ea10b132b3b2eba29c1007bb80653f286566b # v3.0.1
+        uses: softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228 # v3.0.2
         with:
           tag_name: ${{ needs.check-trigger.outputs.tag }}
           files: dist/**/*
