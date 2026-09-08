@@ -77,13 +77,7 @@ func runEngine(ctx context.Context, cfg runConfig) error {
 	log.Printf("gps-mock engine (v3) — headless")
 	log.Printf("available drivers: %v", driver.Available())
 
-	transport := driver.TransportAuto
-	switch cfg.transport {
-	case "usb":
-		transport = driver.TransportUSB
-	case "wifi":
-		transport = driver.TransportWiFi
-	}
+	transport := parseTransport(cfg.transport)
 
 	dcfg := driver.Config{Transport: transport, ManualAddress: cfg.rsd, BinaryPaths: map[string]string{}, TunnelStartTimeout: cfg.tunnelStartTimeout}
 	if cfg.goiosBin != "" {
