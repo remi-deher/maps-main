@@ -457,3 +457,50 @@ func readLines(t *testing.T, path string) []string {
 	}
 	return lines
 }
+
+// While the device screen is locked the tunnel daemon reassigns the RSD address
+// repeatedly. Each move discards the worker bound to the old address — and that
+// worker is the one most likely to be stuck mid-connect on it, so asking it to
+// stop is asking the question it can't answer. The wait was bounded, but it was
+// held under locMu, freezing every injection for up to workerStartTimeout each
+// time the address changed. It is killed outright instead.
+func TestMovedEndpointDiscardsTheWorkerWithoutAskingItToStop(t *testing.T) {
+	commandsFile := filepath.Join(t.TempDir(), "commands.jsonl")
+	t.Setenv("FAKE_LOCATION_FILE", commandsFile)
+	withFakeExec(t, "cmd-ok")
+
+	d := &Driver{py: "fake-python", base: []string{}}
+	d.mount.SetActive(driver.TunnelInfo{Address: "fde6::1", Port: 54321}, "")
+	if err := d.SetLocation(context.Background(), 48.8566, 2.3522); err != nil {
+		t.Fatalf("SetLocation: %v", err)
+	}
+	first := d.location
+	if first == nil {
+		t.Fatal("expected a worker after the first injection")
+	}
+
+	// The daemon moved the device to a new RSD port.
+	d.mount.UpdateInfo(driver.TunnelInfo{Address: "fde6::1", Port: 65000})
+
+	start := time.Now()
+	if err := d.SetLocation(context.Background(), 40.6892, -74.0445); err != nil {
+		t.Fatalf("SetLocation after the endpoint moved: %v", err)
+	}
+	elapsed := time.Since(start)
+	t.Cleanup(func() { _ = d.stopLocationSession(context.Background()) })
+
+	if d.location == first {
+		t.Error("expected a fresh worker bound to the new endpoint")
+	}
+	if elapsed >= workerStartTimeout {
+		t.Errorf("rebinding took %s, want well under the %s stop timeout", elapsed, workerStartTimeout)
+	}
+
+	// The discarded worker must not have been sent a "stop" — that round-trip
+	// is the thing that used to hang.
+	for _, line := range readLines(t, commandsFile) {
+		if strings.Contains(line, `"action":"stop"`) {
+			t.Errorf("a stop was sent to the stale worker: %q", line)
+		}
+	}
+}

@@ -77,15 +77,16 @@ func (d *Driver) locationSession(ctx context.Context) (*locationSession, error) 
 		return d.location, nil
 	}
 	if d.location != nil {
-		// The old session is bound to an endpoint the tunnel has moved on from
-		// (e.g. a reresolve while the device screen is locked, see
-		// workerStartTimeout's doc) — it may be mid-connect to a now-dead
-		// address and unresponsive to the polite "stop" round-trip. Bound the
-		// wait so a stuck worker can't hold locMu (and so every other location
-		// operation) for as long as Background() would have let it.
-		stopCtx, cancel := context.WithTimeout(ctx, workerStartTimeout)
-		_ = d.location.stop(stopCtx)
-		cancel()
+		// Reaching here means the endpoint moved (the equal case returned just
+		// above), so this worker is bound to an address the tunnel has left —
+		// which happens repeatedly while the device screen is locked and the
+		// daemon keeps reassigning. Kill it outright instead of asking it to
+		// stop: it has nothing left to flush, and a worker stuck mid-connect on
+		// a dead address is exactly the one that won't answer a polite
+		// round-trip. That wait was bounded, but the bound is held under locMu,
+		// so every injection stalled for it — up to 12s of frozen playback each
+		// time the address changed, on a route injecting once a second.
+		d.location.forceKill()
 		d.location = nil
 	}
 

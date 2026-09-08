@@ -15,6 +15,7 @@ import (
 	"github.com/remi-deher/maps-main/engine/internal/api"
 	"github.com/remi-deher/maps-main/engine/internal/build"
 	"github.com/remi-deher/maps-main/engine/internal/cluster"
+	"github.com/remi-deher/maps-main/engine/internal/discovery"
 	"github.com/remi-deher/maps-main/engine/internal/domain"
 	"github.com/remi-deher/maps-main/engine/internal/driver"
 	"github.com/remi-deher/maps-main/engine/internal/logging"
@@ -76,6 +77,11 @@ type Engine struct {
 	secretStore settings.SecretStore
 
 	resetHealthBackoff chan struct{}
+
+	// mdnsWaker owns the passive mDNS browses that keep iPhones discoverable
+	// over WiFi. Held here so RestartMdns replaces the running browses instead
+	// of stacking another set on top of them.
+	mdnsWaker discovery.MDNSWaker
 }
 
 // ResetHealthBackoff signals the health watchdog loop to reset its retry timer immediately.
