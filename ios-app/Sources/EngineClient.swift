@@ -39,7 +39,9 @@ final class EngineClient: NSObject, URLSessionWebSocketDelegate, EngineClientPro
     var pingLatency: Double?
     private var lastPingSentAt: Date?
     private var pingTimer: Timer?
-    private var urlString: String = ""
+    // The engine we are (re)connecting to, credential included. Empty URL means
+    // "no target set yet", which ensureConnected/reconnect treat as a no-op.
+    private var endpoint = EngineEndpoint(urlString: "", token: nil)
 
     // Background keep-alive cadence, mirrored from the app's @AppStorage so
     // the location-callback path (which runs while suspended, where SwiftUI
@@ -75,8 +77,8 @@ final class EngineClient: NSObject, URLSessionWebSocketDelegate, EngineClientPro
         EngineClient.shared = self
     }
 
-    func connect(to urlString: String) {
-        self.urlString = urlString
+    func connect(to endpoint: EngineEndpoint) {
+        self.endpoint = endpoint
         generation += 1
         reconnectAttempt = 0
         startSocket(generation: generation)
@@ -88,8 +90,8 @@ final class EngineClient: NSObject, URLSessionWebSocketDelegate, EngineClientPro
     // user action. A no-op while already connected/connecting or before any
     // address has been set.
     func ensureConnected() {
-        guard !urlString.isEmpty, state == .disconnected else { return }
-        connect(to: urlString)
+        guard !endpoint.urlString.isEmpty, state == .disconnected else { return }
+        connect(to: endpoint)
     }
 
     // Re-asserts the last injected position, but no more than once per
@@ -118,13 +120,16 @@ final class EngineClient: NSObject, URLSessionWebSocketDelegate, EngineClientPro
     }
 
     private func startSocket(generation: Int) {
-        guard let url = URL(string: urlString) else {
-            DispatchQueue.main.async { self.lastError = "Adresse invalide: \(self.urlString)" }
+        // The credential rides in an Authorization header on the handshake
+        // request rather than in the URL — see EngineEndpoint.
+        guard let request = endpoint.makeRequest() else {
+            let address = endpoint.urlString
+            DispatchQueue.main.async { self.lastError = "Adresse invalide: \(address)" }
             return
         }
         DispatchQueue.main.async { self.state = .connecting }
 
-        let newTask = session.webSocketTask(with: url)
+        let newTask = session.webSocketTask(with: request)
         task = newTask
         newTask.resume()
         receive(on: newTask, generation: generation)
@@ -158,13 +163,22 @@ final class EngineClient: NSObject, URLSessionWebSocketDelegate, EngineClientPro
         reconnectAttempt += 1
         let reconnectItem = DispatchWorkItem { [weak self] in
             guard let self = self, self.generation == generation else { return }
-            // Dynamic IP re-binding: if reconnect attempts fail 3+ times, check if Bonjour discovered a new host IP
+            // Dynamic IP re-binding: if reconnect attempts fail 3+ times, check
+            // if Bonjour discovered a new host IP. The endpoint is rebuilt
+            // through the same helper as the initial connect so the new address
+            // gets its own stored token (and the /ws path — hand-assembling
+            // "ws://host:port" here used to drop it, which made every
+            // re-binding attempt fail).
             if self.reconnectAttempt >= 3 {
                 if case .found(let host, let port) = EngineDiscovery.shared?.state {
-                    let candidateURL = "ws://\(host):\(port)"
-                    if candidateURL != self.urlString {
-                        AppLogger.shared.info("Re-liaison dynamique de la cible WebSocket vers Bonjour: \(candidateURL)")
-                        self.urlString = candidateURL
+                    let address = "\(host):\(port)"
+                    let candidate = EnginePairing.webSocketEndpoint(
+                        address: address,
+                        token: EngineTokenStore.token(forAddress: address)
+                    )
+                    if candidate != self.endpoint {
+                        AppLogger.shared.info("Re-liaison dynamique de la cible WebSocket vers Bonjour: \(candidate.urlString)")
+                        self.endpoint = candidate
                     }
                 }
             }
@@ -174,7 +188,7 @@ final class EngineClient: NSObject, URLSessionWebSocketDelegate, EngineClientPro
     }
 
     func urlSession(_ session: URLSession, webSocketTask: URLSessionWebSocketTask, didOpenWithProtocol protocol: String?) {
-        AppLogger.shared.info("Connecté au moteur (\(self.urlString))")
+        AppLogger.shared.info("Connecté au moteur (\(self.endpoint.urlString))")
         reconnectAttempt = 0
         DispatchQueue.main.async {
             self.state = .connected

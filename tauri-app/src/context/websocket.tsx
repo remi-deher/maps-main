@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useRef, useState } from "react";
+import React, { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import {
@@ -87,9 +87,18 @@ export const WebSocketProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   const [networkInterfaces, setNetworkInterfaces] = useState<NetworkInterfaceInfo[]>([]);
   const [deviceToken, setDeviceToken] = useState<string | null>(() => (isTauri ? null : getStoredToken()));
 
-  const connectionUrl = isTauri
-    ? `ws://localhost:${enginePort}/ws`
-    : sameOriginWsUrl("/ws") + (deviceToken ? `?token=${encodeURIComponent(deviceToken)}` : "");
+  const connectionUrl = isTauri ? `ws://localhost:${enginePort}/ws` : sameOriginWsUrl("/ws");
+  // The device token is offered as a WebSocket subprotocol rather than a
+  // `?token=` query param: a browser can't set an Authorization header on a
+  // handshake, but a credential in the URL is copied into the engine's access
+  // logs and into the Referer of anything the URL reaches. The engine reads
+  // `Sec-WebSocket-Protocol: bearer, <token>` and echoes "bearer" back (see
+  // engine/internal/server/auth.go). Tauri talks to its own loopback sidecar,
+  // which needs no credential at all.
+  const connectionProtocols = useMemo(
+    () => (!isTauri && deviceToken ? ["bearer", deviceToken] : undefined),
+    [deviceToken],
+  );
   const [isConnected, setIsConnected] = useState(false);
   const [connectionStatus, setConnectionStatus] = useState<EngineTransportContextType["connectionStatus"]>("connecting");
   const [lastError, setLastError] = useState<string | null>(null);
@@ -126,7 +135,7 @@ export const WebSocketProvider: React.FC<{ children: React.ReactNode }> = ({ chi
 
     console.log(`Connecting to GPS-Mock engine WebSocket on port ${enginePort}...`);
     setConnectionStatus((previous) => (previous === "disconnected" ? "reconnecting" : "connecting"));
-    const ws = new WebSocket(connectionUrl);
+    const ws = new WebSocket(connectionUrl, connectionProtocols);
     wsRef.current = ws;
 
     ws.onopen = () => {

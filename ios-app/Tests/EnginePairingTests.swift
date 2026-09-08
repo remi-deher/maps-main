@@ -44,16 +44,41 @@ final class EnginePairingTests: XCTestCase {
         XCTAssertNil(EnginePairing.normalizedCode(nil))
     }
 
-    // MARK: - webSocketURL
+    // MARK: - webSocketEndpoint
 
-    func testWebSocketURLWithoutToken() {
-        XCTAssertEqual(EnginePairing.webSocketURL(address: "host:8080", token: nil), "ws://host:8080/ws")
-        XCTAssertEqual(EnginePairing.webSocketURL(address: "host:8080", token: ""), "ws://host:8080/ws")
+    func testWebSocketEndpointWithoutToken() {
+        for token in [nil, "", "   "] as [String?] {
+            let endpoint = EnginePairing.webSocketEndpoint(address: "host:8080", token: token)
+            XCTAssertEqual(endpoint.urlString, "ws://host:8080/ws")
+            XCTAssertNil(endpoint.token, "blank tokens must collapse to nil, got \(String(describing: token))")
+        }
     }
 
-    func testWebSocketURLWithToken() {
-        let url = EnginePairing.webSocketURL(address: "host:8080", token: "dev123.secret-AB_cd")
-        XCTAssertEqual(url, "ws://host:8080/ws?token=dev123.secret-AB_cd")
+    // The credential must stay out of the URL: a token in a query string is
+    // copied into every access log the request passes through.
+    func testWebSocketEndpointKeepsTokenOutOfTheURL() {
+        let endpoint = EnginePairing.webSocketEndpoint(address: "host:8080", token: "dev123.secret-AB_cd")
+        XCTAssertEqual(endpoint.urlString, "ws://host:8080/ws")
+        XCTAssertEqual(endpoint.token, "dev123.secret-AB_cd")
+    }
+
+    // ...and instead ride on the handshake request as a bearer credential,
+    // which is what the engine's checkAuth prefers.
+    func testEndpointRequestCarriesBearerHeader() throws {
+        let endpoint = EnginePairing.webSocketEndpoint(address: "host:8080", token: "dev123.secret")
+        let request = try XCTUnwrap(endpoint.makeRequest())
+        XCTAssertEqual(request.url?.absoluteString, "ws://host:8080/ws")
+        XCTAssertEqual(request.value(forHTTPHeaderField: "Authorization"), "Bearer dev123.secret")
+    }
+
+    func testEndpointRequestOmitsAuthorizationWhenUnpaired() throws {
+        let endpoint = EnginePairing.webSocketEndpoint(address: "host:8080", token: nil)
+        let request = try XCTUnwrap(endpoint.makeRequest())
+        XCTAssertNil(request.value(forHTTPHeaderField: "Authorization"))
+    }
+
+    func testEndpointRequestIsNilForAMalformedAddress() {
+        XCTAssertNil(EngineEndpoint(urlString: "", token: nil).makeRequest())
     }
 
     // MARK: - EngineTokenStore (Keychain round-trip on the simulator)

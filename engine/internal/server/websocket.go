@@ -10,8 +10,19 @@ import (
 	"github.com/remi-deher/maps-main/engine/internal/api"
 )
 
+// The WebSocket handshake is not covered by the same-origin policy, so a
+// hostile page could otherwise open a socket to the engine on loopback and
+// drive it. checkOrigin (origin.go) is the guard; handleWS calls checkAuth —
+// which applies the same check — before upgrading, so this is defence in depth
+// rather than the only barrier.
 var upgrader = websocket.Upgrader{
-	CheckOrigin: func(*http.Request) bool { return true }, // companion/desktop are trusted LAN clients
+	CheckOrigin: checkOrigin,
+	// A browser that passes its token as `Sec-WebSocket-Protocol: bearer,
+	// <token>` (see bearerOrQueryToken) will abort the connection unless the
+	// server echoes one of the subprotocols it offered. Advertising "bearer"
+	// makes gorilla select and echo it; clients that offer nothing negotiate
+	// no subprotocol, exactly as before.
+	Subprotocols: []string{"bearer"},
 }
 
 // maxWSMessageBytes bounds a single inbound WebSocket message (PLAY_CUSTOM_GPX

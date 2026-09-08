@@ -29,6 +29,10 @@ import (
 const (
 	defaultActionTimeout     = 60 * time.Second
 	defaultTelemetryInterval = 5 * time.Second
+	// readHeaderTimeout is deliberately generous: it exists to evict a stalled
+	// or malicious peer, not to police slow networks, and the WebSocket
+	// handshake it also covers is a single small request.
+	readHeaderTimeout = 20 * time.Second
 )
 
 // Server ties the Engine to an HTTP/WebSocket front end.
@@ -38,6 +42,12 @@ type Server struct {
 	http      *http.Server
 	auth      *auth.Store
 	startedAt time.Time
+
+	// pairThrottle rate-limits failed attempts on the credential-free
+	// POST /api/pair endpoint, per source IP. Always present, even when no
+	// auth store is attached and the route isn't registered, so handlePair
+	// never has to nil-check it.
+	pairThrottle *pairThrottle
 
 	actionTimeout     time.Duration
 	telemetryInterval time.Duration
@@ -87,6 +97,7 @@ func New(eng *engine.Engine, addr string, opts ...Option) *Server {
 		shutdownCtx:       ctx,
 		shutdownCancel:    cancel,
 		wsActions:         make(map[string]map[string]int64),
+		pairThrottle:      newPairThrottle(),
 	}
 	for _, opt := range opts {
 		opt(s)
@@ -132,7 +143,15 @@ func New(eng *engine.Engine, addr string, opts ...Option) *Server {
 		mux.Handle("/", h)
 	}
 
-	s.http = &http.Server{Addr: addr, Handler: mux}
+	// ReadHeaderTimeout bounds how long a peer may take to send its request
+	// headers. Without it a client that opens a connection and dribbles one
+	// byte at a time holds a goroutine and an fd indefinitely (Slowloris);
+	// the engine listens on the LAN, so that is not hypothetical.
+	s.http = &http.Server{
+		Addr:              addr,
+		Handler:           mux,
+		ReadHeaderTimeout: readHeaderTimeout,
+	}
 	return s
 }
 

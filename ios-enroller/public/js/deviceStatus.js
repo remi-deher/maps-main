@@ -1,4 +1,5 @@
 import { log, getMessageCount } from './logger.js';
+import { apiFetch } from './api.js';
 
 const statusMain = document.getElementById('statusMain');
 const statusSub = document.getElementById('statusSub');
@@ -45,7 +46,7 @@ function showDisconnected() {
 
 export async function checkStatus() {
     try {
-        const res = await fetch('/api/status');
+        const res = await apiFetch('/api/status');
         const data = await res.json();
 
         if (data.connected && data.udid) {
@@ -73,7 +74,7 @@ export function initPairing() {
         btnPair.disabled = true;
         log("Lancement de la procédure d'association...");
         try {
-            const res = await fetch('/api/pair', { method: 'POST' });
+            const res = await apiFetch('/api/pair', { method: 'POST' });
             const data = await res.json();
             if (data.success) {
                 log(data.message, 'success');

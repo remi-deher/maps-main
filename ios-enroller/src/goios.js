@@ -1,11 +1,16 @@
-const { exec } = require('child_process');
+const { execFile } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 const { GOIOS_PATH, LOCKDOWN_DIR } = require('./paths');
 
-function runCommand(command) {
+// execFile, pas exec : les arguments sont passés tels quels au binaire au lieu
+// de traverser un shell. GOIOS_PATH est un chemin résolu sur disque, il peut
+// donc contenir des espaces (« C:\Program Files\... ») ou des métacaractères
+// venant du nom du dossier d'installation ; avec exec il fallait le citer à la
+// main et un `&` bien placé suffisait à faire exécuter autre chose.
+function runIos(args) {
     return new Promise((resolve, reject) => {
-        exec(command, (error, stdout, stderr) => {
+        execFile(GOIOS_PATH, args, (error, stdout, stderr) => {
             if (error && !stdout) {
                 reject(error);
             } else {
@@ -37,7 +42,7 @@ function extractUdid(rawOutput) {
 // Détecte l'appareil branché et indique s'il est déjà associé (pairé).
 async function getDeviceStatus() {
     console.log('[DEBUG] Exécution de go-ios list...');
-    const output = await runCommand(`"${GOIOS_PATH}" list`);
+    const output = await runIos(['list']);
     console.log('[DEBUG] Sortie brute:', output);
 
     const udid = extractUdid(output);
@@ -54,7 +59,7 @@ async function getDeviceStatus() {
 
 // Force l'invite "Faire confiance" sur l'iPhone via une commande go-ios.
 async function requestTrust() {
-    await runCommand(`"${GOIOS_PATH}" info`);
+    await runIos(['info']);
     return "Veuillez vérifier l'écran de votre iPhone et cliquer sur 'Faire confiance'.";
 }
 

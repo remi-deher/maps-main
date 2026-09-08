@@ -59,12 +59,12 @@ enum BackgroundRefreshManager {
         let engine = EngineClient()
         let work = Task {
             // engine_health's checkAuth rejects any non-loopback client with no
-            // paired-device token — building the bare ws://… URL here (instead
-            // of going through the same helper as the foreground connect path)
-            // meant this background reconnect was silently rejected whenever
-            // the engine wasn't on localhost, so the safety-net RELANCE never
-            // actually fired.
-            engine.connect(to: await MapSessionModel.webSocketURL(for: engineAddress))
+            // paired-device token — building the bare ws://… endpoint here
+            // (instead of going through the same helper as the foreground
+            // connect path) meant this background reconnect was silently
+            // rejected whenever the engine wasn't on localhost, so the
+            // safety-net RELANCE never actually fired.
+            engine.connect(to: await MapSessionModel.webSocketEndpoint(for: engineAddress))
             // Wait up to ~10 s for the handshake (well within the ~30 s budget).
             for _ in 0..<20 {
                 if Task.isCancelled || engine.state == .connected { break }

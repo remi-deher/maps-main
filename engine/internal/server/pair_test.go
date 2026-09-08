@@ -197,3 +197,55 @@ func TestPairWSListAndRevoke(t *testing.T) {
 		t.Error("revoked token still verifies")
 	}
 }
+
+// A paired token must be usable without ever putting it in a URL: query strings
+// end up in access logs and Referer headers. The header forms are what the iOS
+// companion and the web UI use; ?token= is kept only for older clients.
+func TestTokenAcceptedOutsideTheQueryString(t *testing.T) {
+	h, store := newAuthHandler(t)
+
+	code, err := store.CurrentCode(time.Now())
+	if err != nil {
+		t.Fatalf("CurrentCode: %v", err)
+	}
+	rec := do(h, "POST", "/api/pair", remoteAddr, `{"code":"`+code+`","label":"iPhone"}`)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("pair = %d, want 200", rec.Code)
+	}
+	var paired struct {
+		Token string `json:"token"`
+	}
+	if err := json.NewDecoder(rec.Body).Decode(&paired); err != nil {
+		t.Fatalf("decode pair response: %v", err)
+	}
+
+	for _, tc := range []struct {
+		name   string
+		header string
+		value  string
+	}{
+		{"Authorization bearer", "Authorization", "Bearer " + paired.Token},
+		{"websocket subprotocol", "Sec-WebSocket-Protocol", "bearer, " + paired.Token},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			req := httptest.NewRequest("GET", "/api/status", nil)
+			req.RemoteAddr = remoteAddr
+			req.Header.Set(tc.header, tc.value)
+			out := httptest.NewRecorder()
+			h.ServeHTTP(out, req)
+			if out.Code != http.StatusOK {
+				t.Errorf("remote request with %s = %d, want 200", tc.name, out.Code)
+			}
+		})
+	}
+
+	// A genuine subprotocol negotiation must not be mistaken for a credential.
+	req := httptest.NewRequest("GET", "/api/status", nil)
+	req.RemoteAddr = remoteAddr
+	req.Header.Set("Sec-WebSocket-Protocol", "graphql-ws")
+	out := httptest.NewRecorder()
+	h.ServeHTTP(out, req)
+	if out.Code != http.StatusUnauthorized {
+		t.Errorf("non-credential subprotocol = %d, want 401", out.Code)
+	}
+}

@@ -40,7 +40,7 @@ final class MapSessionModel {
             engine.disconnect()
             return
         }
-        engine.connect(to: Self.webSocketURL(for: engineAddress))
+        engine.connect(to: Self.webSocketEndpoint(for: engineAddress))
         startReporting()
         bindBackgroundKeepAlive()
         if keepAliveEnabled {
@@ -58,16 +58,16 @@ final class MapSessionModel {
         if engine.state == .connected || engine.state == .connecting {
             engine.disconnect()
         }
-        engine.connect(to: Self.webSocketURL(for: engineAddress))
+        engine.connect(to: Self.webSocketEndpoint(for: engineAddress))
         startReporting()
         bindBackgroundKeepAlive()
     }
 
-    // Builds the engine WebSocket URL, attaching the durable device token
-    // stored for this address (if the engine was paired) so a LAN connection
-    // is authorized — the engine rejects tokenless remote clients.
-    static func webSocketURL(for address: String) -> String {
-        EnginePairing.webSocketURL(address: address, token: EngineTokenStore.token(forAddress: address))
+    // Builds the engine WebSocket endpoint, attaching the durable device
+    // token stored for this address (if the engine was paired) so a LAN
+    // connection is authorized — the engine rejects tokenless remote clients.
+    static func webSocketEndpoint(for address: String) -> EngineEndpoint {
+        EnginePairing.webSocketEndpoint(address: address, token: EngineTokenStore.token(forAddress: address))
     }
 
     // Routes every CoreLocation delivery through the engine. This is the path

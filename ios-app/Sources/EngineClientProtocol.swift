@@ -13,7 +13,7 @@ protocol EngineClientProtocol: AnyObject {
     var restartTunnelResult: RestartTunnelResultPayload? { get set }
     var restartMdnsResult: RestartMdnsResultPayload? { get set }
 
-    func connect(to urlString: String)
+    func connect(to endpoint: EngineEndpoint)
     func ensureConnected()
     func relanceIfDue()
     func disconnect()

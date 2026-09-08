@@ -1,4 +1,5 @@
 import { log } from './logger.js';
+import { apiFetch } from './api.js';
 import { getCurrentUdid, setStatusSubtext } from './deviceStatus.js';
 
 const btnTransfer = document.getElementById('btnTransfer');
@@ -20,7 +21,7 @@ export function initTransfer() {
         log(`Envoi des certificats vers ${targetIp}...`);
 
         try {
-            const res = await fetch('/api/transfer', {
+            const res = await apiFetch('/api/transfer', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ targetIp, udid: getCurrentUdid(), token, pairCode }),
