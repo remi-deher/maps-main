@@ -5,6 +5,7 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/remi-deher/maps-main/engine/internal/api"
@@ -35,20 +36,41 @@ func (s *Server) handlePairCode(w http.ResponseWriter, r *http.Request) {
 	}{Code: code, SecondsRemaining: secondsRemaining})
 }
 
+// maxPairBodyBytes bounds the pairing request body. It is the only endpoint
+// reachable without a credential, so it must not let an anonymous caller stream
+// an arbitrarily large body into the JSON decoder.
+const maxPairBodyBytes = 4 << 10
+
 // handlePair redeems a pairing code for a durable device token. This is the one
 // endpoint a not-yet-trusted remote client may call, so it is intentionally
 // outside checkAuth — the code itself is the credential. On success the caller
 // receives "<deviceID>.<secret>" once and stores it for all later connections.
+//
+// Being credential-free, it carries its own two guards: the same Origin check
+// checkAuth applies (a web page must not be able to pair itself), and a per-IP
+// throttle on failed attempts so the 6-digit code can't be brute-forced.
 func (s *Server) handlePair(w http.ResponseWriter, r *http.Request) {
+	if !checkOrigin(r) {
+		denyOrigin(w)
+		return
+	}
+	ip := clientIP(r)
+	if !s.pairThrottle.allow(ip) {
+		w.Header().Set("Retry-After", strconv.Itoa(int(pairRefillInterval.Seconds())))
+		writeJSON(w, http.StatusTooManyRequests, opErr(errors.New("too many pairing attempts, try again later")))
+		return
+	}
+
 	var p struct {
 		Code  string `json:"code"`
 		Label string `json:"label"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&p); err != nil {
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxPairBodyBytes)).Decode(&p); err != nil {
 		writeJSON(w, http.StatusBadRequest, opErr(err))
 		return
 	}
 	if !s.auth.VerifyCode(p.Code, time.Now()) {
+		slog.Warn("pairing attempt rejected", "ip", ip)
 		writeJSON(w, http.StatusUnauthorized, opErr(errors.New("invalid or expired pairing code")))
 		return
 	}
@@ -57,6 +79,9 @@ func (s *Server) handlePair(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusInternalServerError, opErr(err))
 		return
 	}
+	// Legitimate caller: give back the attempt it spent so repeated honest
+	// pairings never run into the anti-brute-force budget.
+	s.pairThrottle.refund(ip)
 	writeJSON(w, http.StatusOK, struct {
 		Token  string      `json:"token"`
 		Device auth.Device `json:"device"`

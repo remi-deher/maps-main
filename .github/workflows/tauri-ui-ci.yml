@@ -53,3 +53,21 @@ jobs:
 
       - name: Verify build bundle
         run: npm run build
+
+      # End-to-end against the real app in a real browser. The engine is stubbed
+      # at the WebSocket boundary (e2e/fixtures/engineStub.ts), so this needs no
+      # device, tunnel or Go build — it checks the client's half of the
+      # {type, data} contract and that the surfaces render.
+      - name: Install Playwright browser
+        run: npx playwright install --with-deps chromium
+
+      - name: Run end-to-end tests
+        run: npm run test:e2e
+
+      - name: Upload Playwright report on failure
+        if: failure()
+        uses: actions/upload-artifact@v5
+        with:
+          name: playwright-report
+          path: tauri-app/playwright-report/
+          retention-days: 7

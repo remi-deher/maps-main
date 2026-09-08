@@ -1,31 +1,21 @@
-import React, { createContext, useContext, useEffect, useRef, useState } from "react";
-import { invoke } from "@tauri-apps/api/core";
-import { listen } from "@tauri-apps/api/event";
-import {
-  isTauri,
-  sameOriginWsUrl,
-  getStoredToken,
-} from "../lib/runtime";
+import React, { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
+import { isTauri, sameOriginWsUrl, getStoredToken } from "../lib/runtime";
 import { engineEvents } from "../lib/events";
 import { useLogs } from "./logsContext";
 import { usePairing } from "./pairingContext";
+import { applyEngineEvent } from "../features/engine/engineEventDispatch";
+import { createEngineActions } from "../features/engine/engineActions";
+import { useTauriBridge } from "../features/engine/useTauriBridge";
 import type {
   DeviceDetails,
   Diagnostics,
   EngineMessageData,
   EngineTransportContextType,
   NetworkDevicesResult,
-  NetworkInterfaceInfo,
-  PatrolZone,
-  PlaySequenceLeg,
-  RouteProfile,
-  Settings,
   Status,
   Telemetry,
 } from "../types/engine";
-import { EngineAction, EngineEvent } from "../types/engineMessages";
-
-const DEFAULT_PORT = 8080;
+import { EngineAction } from "../types/engineMessages";
 
 // The server broadcasts TELEMETRY every 5s, so any healthy connection yields a
 // message well within this window. Past it, the socket is presumed a zombie
@@ -80,19 +70,42 @@ export const useWebSocket = () => {
   };
 };
 
+/// Owns the engine connection: the socket itself, its reconnection policy, and
+/// the state the whole UI reads from it.
+///
+/// What used to sit here too now lives beside it — the inbound envelope routing
+/// in `engineEventDispatch`, the Tauri shell's port/supervisor bridge in
+/// `useTauriBridge`, and the ~25 one-line action wrappers in `engineActions` —
+/// so this file is about the transport and nothing else.
 export const WebSocketProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [enginePort, setEnginePortState] = useState(DEFAULT_PORT);
-  const [engineStatus, setEngineStatus] = useState<EngineTransportContextType["engineStatus"]>("unknown");
-  const [mdnsInterface, setMdnsInterfaceState] = useState<string | null>(null);
-  const [networkInterfaces, setNetworkInterfaces] = useState<NetworkInterfaceInfo[]>([]);
+  const [lastError, setLastError] = useState<string | null>(null);
+  const {
+    enginePort,
+    setEnginePort,
+    engineStatus,
+    setEngineStatus,
+    mdnsInterface,
+    setMdnsInterface,
+    networkInterfaces,
+  } = useTauriBridge(setLastError);
+
   const [deviceToken, setDeviceToken] = useState<string | null>(() => (isTauri ? null : getStoredToken()));
 
-  const connectionUrl = isTauri
-    ? `ws://localhost:${enginePort}/ws`
-    : sameOriginWsUrl("/ws") + (deviceToken ? `?token=${encodeURIComponent(deviceToken)}` : "");
+  const connectionUrl = isTauri ? `ws://localhost:${enginePort}/ws` : sameOriginWsUrl("/ws");
+  // The device token is offered as a WebSocket subprotocol rather than a
+  // `?token=` query param: a browser can't set an Authorization header on a
+  // handshake, but a credential in the URL is copied into the engine's access
+  // logs and into the Referer of anything the URL reaches. The engine reads
+  // `Sec-WebSocket-Protocol: bearer, <token>` and echoes "bearer" back (see
+  // engine/internal/server/auth.go). Tauri talks to its own loopback sidecar,
+  // which needs no credential at all.
+  const connectionProtocols = useMemo(
+    () => (!isTauri && deviceToken ? ["bearer", deviceToken] : undefined),
+    [deviceToken],
+  );
+
   const [isConnected, setIsConnected] = useState(false);
   const [connectionStatus, setConnectionStatus] = useState<EngineTransportContextType["connectionStatus"]>("connecting");
-  const [lastError, setLastError] = useState<string | null>(null);
   const [status, setStatus] = useState<Status | null>(null);
   const [telemetry, setTelemetry] = useState<Telemetry | null>(null);
   // True when no frame has arrived recently (see STALE_WARN_MS): the UI dims
@@ -101,6 +114,7 @@ export const WebSocketProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   const [deviceDetails, setDeviceDetails] = useState<DeviceDetails | null>(null);
   const [diagnostics, setDiagnostics] = useState<Diagnostics | null>(null);
   const [networkDevices, setNetworkDevices] = useState<NetworkDevicesResult | null>(null);
+
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectTimeoutRef = useRef<any>(null);
   // Wall-clock time of the last frame received, used by the staleness watchdog.
@@ -111,22 +125,28 @@ export const WebSocketProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   // once) can call the current version without re-subscribing every render.
   const connectRef = useRef<() => void>(() => {});
 
+  // Detaches the handlers before closing so the teardown doesn't trigger the
+  // reconnect path we are trying to cancel.
+  const closeSocket = () => {
+    const ws = wsRef.current;
+    if (!ws) return;
+    ws.onclose = null;
+    ws.onerror = null;
+    ws.onmessage = null;
+    ws.onopen = null;
+    ws.close();
+  };
+
   const connect = () => {
     if (reconnectTimeoutRef.current) {
       clearTimeout(reconnectTimeoutRef.current);
       reconnectTimeoutRef.current = null;
     }
-    if (wsRef.current) {
-      wsRef.current.onclose = null;
-      wsRef.current.onerror = null;
-      wsRef.current.onmessage = null;
-      wsRef.current.onopen = null;
-      wsRef.current.close();
-    }
+    closeSocket();
 
     console.log(`Connecting to GPS-Mock engine WebSocket on port ${enginePort}...`);
     setConnectionStatus((previous) => (previous === "disconnected" ? "reconnecting" : "connecting"));
-    const ws = new WebSocket(connectionUrl);
+    const ws = new WebSocket(connectionUrl, connectionProtocols);
     wsRef.current = ws;
 
     ws.onopen = () => {
@@ -147,66 +167,14 @@ export const WebSocketProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     ws.onmessage = (event) => {
       lastMessageRef.current = Date.now();
       try {
-        const envelope = JSON.parse(event.data);
-        const { type, data } = envelope;
-
-        switch (type) {
-          case EngineEvent.Status:
-          case EngineEvent.StatusUpdate:
-            setStatus(data);
-            break;
-          case EngineEvent.Telemetry:
-            setTelemetry(data);
-            break;
-          case EngineEvent.DeviceInfo:
-            setDeviceDetails(data);
-            break;
-          case EngineEvent.Log:
-            engineEvents.emit("log", data);
-            break;
-          case EngineEvent.Diagnostics:
-            setDiagnostics(data);
-            break;
-          case EngineEvent.NetworkDevices:
-            setNetworkDevices(data);
-            break;
-          case EngineEvent.PairResult:
-            engineEvents.emit("pair_result", data);
-            break;
-          case EngineEvent.PairCode:
-            engineEvents.emit("pair_code", data);
-            break;
-          case EngineEvent.PairedDevices:
-            engineEvents.emit("paired_devices", data);
-            break;
-          case EngineEvent.Logs:
-            engineEvents.emit("logs", data);
-            break;
-          case EngineEvent.Location:
-            setStatus((prev) => {
-              if (!prev) return null;
-              return {
-                ...prev,
-                navigation: {
-                  ...prev.navigation,
-                  progress: prev.navigation.progress ? {
-                    ...prev.navigation.progress,
-                    lat: data.lat,
-                    lon: data.lon,
-                  } : {
-                    index: 0,
-                    total: 1,
-                    lat: data.lat,
-                    lon: data.lon,
-                    speed: 0,
-                  }
-                }
-              };
-            });
-            break;
-          default:
-            break;
-        }
+        const { type, data } = JSON.parse(event.data);
+        applyEngineEvent(type, data, {
+          setStatus,
+          setTelemetry,
+          setDeviceDetails,
+          setDiagnostics,
+          setNetworkDevices,
+        });
       } catch (err) {
         console.error("Error parsing WebSocket message:", err);
         setLastError("Message moteur illisible.");
@@ -287,60 +255,6 @@ export const WebSocketProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   }, []);
 
   useEffect(() => {
-    if (!isTauri) {
-      return;
-    }
-    invoke<number>("get_engine_port")
-      .then((port) => setEnginePortState(port))
-      .catch(() => {});
-    invoke<string | null>("get_mdns_interface")
-      .then((iface) => setMdnsInterfaceState(iface))
-      .catch(() => {});
-    invoke<NetworkInterfaceInfo[]>("list_network_interfaces")
-      .then((interfaces) => setNetworkInterfaces(interfaces))
-      .catch(() => {});
-  }, []);
-
-  useEffect(() => {
-    if (!isTauri) {
-      return;
-    }
-    let cancelled = false;
-    let unsubscribe: (() => void) | null = null;
-    listen<string>("engine-status", (event) => {
-      const payload = event.payload;
-      if (payload === "starting") {
-        setEngineStatus("starting");
-      } else if (payload.startsWith("restarting")) {
-        // "restarting:<attempt>:<max>" — the supervisor is auto-respawning a
-        // crashed engine. Show a starting state with a countdown-ish hint.
-        setEngineStatus("starting");
-        const [, attempt, max] = payload.split(":");
-        setLastError(
-          attempt && max
-            ? `Moteur GPS-Mock interrompu, redémarrage automatique (tentative ${attempt}/${max})…`
-            : "Moteur GPS-Mock interrompu, redémarrage automatique…"
-        );
-      } else if (payload.startsWith("exited") || payload.startsWith("error")) {
-        setEngineStatus("crashed");
-        setLastError(`Moteur GPS-Mock indisponible (${payload}).`);
-      } else {
-        setEngineStatus("running");
-      }
-    }).then((fn) => {
-      if (cancelled) {
-        fn();
-        return;
-      }
-      unsubscribe = fn;
-    });
-    return () => {
-      cancelled = true;
-      unsubscribe?.();
-    };
-  }, []);
-
-  useEffect(() => {
     const handleReconnect = (token: string | null) => {
       setDeviceToken(token);
     };
@@ -351,41 +265,19 @@ export const WebSocketProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   }, []);
 
   useEffect(() => {
+    // In a browser, a device token is the prerequisite: the engine rejects a
+    // tokenless remote client, so connecting before pairing would just loop.
     if (!isTauri && !deviceToken) {
       return;
     }
     connect();
     return () => {
-      if (wsRef.current) {
-        wsRef.current.onclose = null;
-        wsRef.current.onerror = null;
-        wsRef.current.onmessage = null;
-        wsRef.current.onopen = null;
-        wsRef.current.close();
-      }
+      closeSocket();
       if (reconnectTimeoutRef.current) {
         clearTimeout(reconnectTimeoutRef.current);
       }
     };
   }, [enginePort, deviceToken]);
-
-  const setEnginePort = async (port: number) => {
-    if (!isTauri) {
-      return;
-    }
-    setEngineStatus("starting");
-    await invoke("set_engine_port", { port });
-    setEnginePortState(port);
-  };
-
-  const setMdnsInterface = async (interfaceName: string | null) => {
-    if (!isTauri) {
-      return;
-    }
-    setEngineStatus("starting");
-    await invoke("set_mdns_interface", { interface: interfaceName });
-    setMdnsInterfaceState(interfaceName);
-  };
 
   const canSend = isConnected && wsRef.current?.readyState === WebSocket.OPEN;
 
@@ -393,11 +285,10 @@ export const WebSocketProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
       wsRef.current.send(JSON.stringify({ type, data }));
       return true;
-    } else {
-      console.warn("WebSocket not connected. Cannot send:", type);
-      setLastError("Action impossible: le moteur GPS-Mock est hors ligne.");
-      return false;
     }
+    console.warn("WebSocket not connected. Cannot send:", type);
+    setLastError("Action impossible: le moteur GPS-Mock est hors ligne.");
+    return false;
   };
 
   useEffect(() => {
@@ -410,88 +301,12 @@ export const WebSocketProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     };
   }, [isConnected]);
 
-  const setLocation = (lat: number, lon: number, name = "Point Injecté") => {
-    sendMessage(EngineAction.SetLocation, { lat, lon, name });
-  };
-
-  const clearLocation = () => {
-    sendMessage(EngineAction.ClearLocation);
-  };
-
-  const playRoute = (endLat: number, endLon: number, speed: number, profile: RouteProfile) => {
-    sendMessage(EngineAction.PlayRoute, { endLat, endLon, speed, profile });
-  };
-
-  const playSequence = (legs: PlaySequenceLeg[], looping: boolean) => {
-    sendMessage(EngineAction.PlaySequence, { legs, looping });
-  };
-
-  const playCustomGpx = (gpxContent: string, speed: number) => {
-    sendMessage(EngineAction.PlayCustomGpx, { gpxContent, speed });
-  };
-
-  const stopRoute = () => {
-    sendMessage(EngineAction.StopRoute);
-  };
-
-  const pauseRoute = () => {
-    sendMessage(EngineAction.PauseRoute);
-  };
-
-  const resumeRoute = () => {
-    sendMessage(EngineAction.ResumeRoute);
-  };
-
-  const relance = () => {
-    sendMessage(EngineAction.Relance);
-  };
-
-  const saveSettings = (newSettings: Settings) => {
-    sendMessage(EngineAction.SaveSettings, newSettings);
-  };
-
-  const addFavorite = (lat: number, lon: number, name: string) => {
-    sendMessage(EngineAction.AddFavorite, { lat, lon, name });
-  };
-
-  const removeFavorite = (lat: number, lon: number) => {
-    sendMessage(EngineAction.RemoveFavorite, { lat, lon });
-  };
-
-  const renameFavorite = (lat: number, lon: number, newName: string) => {
-    sendMessage(EngineAction.RenameFavorite, { lat, lon, newName });
-  };
-
-  const updatePatrolZone = (zone: PatrolZone | null) => {
-    sendMessage(EngineAction.PatrolUpdate, { zone });
-  };
-
-  const getDeviceInfo = () => {
-    setDeviceDetails(null);
-    sendMessage(EngineAction.GetDeviceInfo);
-  };
-
-  const getDiagnostics = () => {
-    setDiagnostics(null);
-    sendMessage(EngineAction.GetDiagnostics);
-  };
-
-  const getNetworkDevices = () => {
-    setNetworkDevices(null);
-    sendMessage(EngineAction.GetNetworkDevices);
-  };
-
-  const restartServices = () => {
-    sendMessage(EngineAction.RestartServices);
-  };
-
-  const restartTunnel = () => {
-    sendMessage(EngineAction.RestartTunnel);
-  };
-
-  const restartMdns = () => {
-    sendMessage(EngineAction.RestartMdns);
-  };
+  const actions = createEngineActions({
+    send: sendMessage,
+    clearDeviceDetails: () => setDeviceDetails(null),
+    clearDiagnostics: () => setDiagnostics(null),
+    clearNetworkDevices: () => setNetworkDevices(null),
+  });
 
   return (
     <WebSocketContext.Provider
@@ -511,29 +326,10 @@ export const WebSocketProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         telemetry,
         isStale,
         deviceDetails,
-        getDeviceInfo,
-        sendMessage,
-        setLocation,
-        clearLocation,
-        playRoute,
-        playSequence,
-        playCustomGpx,
-        stopRoute,
-        pauseRoute,
-        resumeRoute,
-        relance,
-        saveSettings,
-        addFavorite,
-        removeFavorite,
-        renameFavorite,
-        updatePatrolZone,
         diagnostics,
-        getDiagnostics,
         networkDevices,
-        getNetworkDevices,
-        restartServices,
-        restartTunnel,
-        restartMdns,
+        sendMessage,
+        ...actions,
       }}
     >
       {children}

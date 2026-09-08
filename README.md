@@ -1,18 +1,25 @@
 # GPS‑Mock v3
 
-![Architecture diagram](file:///C:/Users/remi2/.gemini/antigravity-ide/brain/9bda5120-ab12-43aa-ba27-9811e8e3c6e4/gpsmock_architecture_1782230207515.png)
-
 **Suite de simulation/injection de position GPS** pour iPhone (iOS 17+, tunnel RSD via `pymobiledevice3` / `go‑ios`).
+
+> **Deux versions d'iOS distinctes, à ne pas confondre :**
+> - **iPhone ciblé (celui dont on simule la position) : iOS 17+.** C'est la
+>   version à partir de laquelle Apple impose le tunnel RSD, le mécanisme sur
+>   lequel repose toute l'injection.
+> - **App compagnon (`ios-app/`, facultative) : iOS 26+.** Elle s'appuie sur les
+>   API SwiftUI et App Intents de cette version. Le moteur et le client desktop
+>   pilotent l'injection sans elle — c'est une télécommande, pas un
+>   composant requis.
 
 ---
 
 ## Badges
 
-[![Engine CI](https://github.com/remi-deher/maps-main/actions/workflows/engine-ci.yml/badge.svg?branch=v3-rewrite)](https://github.com/remi-deher/maps-main/actions/workflows/engine-ci.yml)
-[![Tauri App Build CI](https://github.com/remi-deher/maps-main/actions/workflows/tauri-build-ci.yml/badge.svg?branch=v3-rewrite)](https://github.com/remi-deher/maps-main/actions/workflows/tauri-build-ci.yml)
-[![iOS Companion Build CI](https://github.com/remi-deher/maps-main/actions/workflows/ios-build-ci.yml/badge.svg?branch=v3-rewrite)](https://github.com/remi-deher/maps-main/actions/workflows/ios-build-ci.yml)
-[![CodeQL](https://github.com/remi-deher/maps-main/actions/workflows/codeql.yml/badge.svg?branch=v3-rewrite)](https://github.com/remi-deher/maps-main/actions/workflows/codeql.yml)
-[![Security & Dependency Scan](https://github.com/remi-deher/maps-main/actions/workflows/security.yml/badge.svg?branch=v3-rewrite)](https://github.com/remi-deher/maps-main/actions/workflows/security.yml)
+[![Engine CI](https://github.com/remi-deher/maps-main/actions/workflows/engine-ci.yml/badge.svg?branch=main)](https://github.com/remi-deher/maps-main/actions/workflows/engine-ci.yml)
+[![Tauri App Build CI](https://github.com/remi-deher/maps-main/actions/workflows/tauri-build-ci.yml/badge.svg?branch=main)](https://github.com/remi-deher/maps-main/actions/workflows/tauri-build-ci.yml)
+[![iOS Companion Build CI](https://github.com/remi-deher/maps-main/actions/workflows/ios-build-ci.yml/badge.svg?branch=main)](https://github.com/remi-deher/maps-main/actions/workflows/ios-build-ci.yml)
+[![CodeQL](https://github.com/remi-deher/maps-main/actions/workflows/codeql.yml/badge.svg?branch=main)](https://github.com/remi-deher/maps-main/actions/workflows/codeql.yml)
+[![Security & Dependency Scan](https://github.com/remi-deher/maps-main/actions/workflows/security.yml/badge.svg?branch=main)](https://github.com/remi-deher/maps-main/actions/workflows/security.yml)
 
 ---
 
@@ -44,7 +51,7 @@
 
 - **Moteur (Go)** – API REST + WebSocket, simulation GPS, séquenceur, routing, clustering, hot‑swap de driver/transport.
 - **Tauri app** – UI desktop (React) avec le moteur en side‑car.
-- **iOS companion** – App SwiftUI qui découvre le moteur via Bonjour et pilote l’injection.
+- **iOS companion** – App SwiftUI (iOS 26+, facultative) qui découvre le moteur via Bonjour et pilote l’injection.
 - **Docker** – Conteneur headless pour les déploiements CI/CD.
 
 ---

@@ -14,11 +14,17 @@ func (e *Engine) pairingHint(ctx context.Context, drv driver.Driver) string {
 	return diagnostics.PairingHint(ctx, drv)
 }
 
-// GetDiagnostics collects diagnostics about drivers, certificates, and devices.
+// GetDiagnostics collects diagnostics about drivers, certificates, and devices,
+// including the pre-flight report on whether the device is actually ready to
+// receive an injected position.
 func (e *Engine) GetDiagnostics(ctx context.Context) (Diagnostics, error) {
 	e.mu.RLock()
 	explicit := e.driverCfgBase.BinaryPaths
 	e.mu.RUnlock()
 
-	return diagnostics.Collect(ctx, explicit, e.driver())
+	drv := e.driver()
+	// The probe is an optional driver capability; a backend without it makes the
+	// device-state checks report "unknown" rather than dropping them.
+	prober, _ := drv.(driver.DeviceStateProbe)
+	return diagnostics.CollectWithProbe(ctx, explicit, drv, prober)
 }

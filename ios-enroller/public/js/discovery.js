@@ -1,4 +1,5 @@
 import { log } from './logger.js';
+import { apiFetch } from './api.js';
 
 const btnScan = document.getElementById('btnScan');
 const discoveredServers = document.getElementById('discoveredServers');
@@ -12,7 +13,7 @@ export function initDiscovery() {
         log('Scan mDNS du réseau local (3s)...');
 
         try {
-            const res = await fetch('/api/scan-engines');
+            const res = await apiFetch('/api/scan-engines');
             const data = await res.json();
             const servers = data.servers || [];
 

@@ -59,16 +59,25 @@ enum EnginePairing {
         return digits.count == 6 ? digits : nil
     }
 
-    // Builds the WebSocket URL for an engine address, appending the durable
-    // token as a query param when present (browsers can't set headers on the
-    // WS handshake, and the engine accepts ?token= for exactly this reason).
-    static func webSocketURL(address: String, token: String?) -> String {
-        let base = "ws://\(address)/ws"
-        guard let token, !token.isEmpty,
-              let encoded = token.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) else {
-            return base
-        }
-        return "\(base)?token=\(encoded)"
+    // Builds the WebSocket endpoint for an engine address: the URL, plus the
+    // durable device token to present on the handshake (nil when the engine
+    // was never paired — a loopback engine accepts that).
+    //
+    // The token is deliberately *not* folded into the URL. A credential in a
+    // query string is written to the engine's access logs, to any proxy in
+    // between, and to the Referer of anything the URL is later handed to;
+    // URLSession lets us set a real Authorization header on a WebSocket
+    // handshake, so there is no reason to accept that exposure.
+    static func webSocketEndpoint(address: String, token: String?) -> EngineEndpoint {
+        EngineEndpoint(urlString: "ws://\(address)/ws", token: normalizedToken(token))
+    }
+
+    // Empty and whitespace-only tokens collapse to nil so callers don't have to
+    // distinguish "never paired" from "paired with a blank token".
+    static func normalizedToken(_ token: String?) -> String? {
+        guard let token else { return nil }
+        let trimmed = token.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
     }
 
     enum PairingError: LocalizedError {

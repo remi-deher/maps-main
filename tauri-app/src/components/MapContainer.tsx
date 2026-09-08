@@ -1,198 +1,39 @@
-import React, { useEffect, useRef, useState } from "react";
-import { MapContainer, TileLayer, Marker, Popup, Polyline, Circle, Rectangle, useMap, useMapEvents } from "react-leaflet";
+import React, { useRef, useState } from "react";
+import { MapContainer, TileLayer, Marker, Popup, Polyline, Circle, Rectangle } from "react-leaflet";
 import L from "leaflet";
 // Bundle Leaflet's CSS locally instead of a CDN <link> — the Tauri CSP
 // (default-src 'self') blocks external stylesheets, which left the map
 // mis-sized/offset in the packaged app.
 import "leaflet/dist/leaflet.css";
 import { LatLon, useEngine } from "../context/websocket";
-import { SearchBox } from "./SearchBox";
 import { MapActionSheet } from "./MapActionSheet";
-import { SettingsModal } from "./SettingsModal";
-import { LogsModal } from "./LogsModal";
-import { FavoritesModal } from "./FavoritesModal";
-import { EngineStatusFrame } from "./EngineStatusFrame";
-import { TelemetryWidget } from "./TelemetryWidget";
-import { DeviceModal } from "./DeviceModal";
+import { MapChrome, type MapStyle } from "./map/MapChrome";
 import { RouteModePanel, MODE_META } from "./RouteModePanel";
 import { PatrolModePanel } from "./PatrolModePanel";
 import { useMapInteractionController } from "../features/map/useMapInteractionController";
-import { Crosshair, Minus, Plus, Route, ScrollText, Settings, ShieldCheck, Sliders, Smartphone, Star, X } from "lucide-react";
+import { configureLeafletDefaultIcons, destIcon, mockIcon, realIcon } from "../features/map/leafletIcons";
+import {
+  FlyToSearch,
+  KeyboardZoomHandler,
+  MapEventsHandler,
+  MapResizeHandler,
+  RecenterMap,
+  ZoomControls,
+} from "../features/map/leafletBehaviors";
+import { Route, ShieldCheck, X } from "lucide-react";
 
 export type { MapMode } from "../features/map/mapModel";
 
-// Fix Leaflet marker icon issues in Vite
-import markerIcon2x from "leaflet/dist/images/marker-icon-2x.png";
-import markerIcon from "leaflet/dist/images/marker-icon.png";
-import markerShadow from "leaflet/dist/images/marker-shadow.png";
-
-// Setup default marker icons
-delete (L.Icon.Default.prototype as any)._getIconUrl;
-L.Icon.Default.mergeOptions({
-  iconUrl: markerIcon,
-  iconRetinaUrl: markerIcon2x,
-  shadowUrl: markerShadow,
-});
-
-// Custom Icons
-const mockIcon = L.divIcon({
-  html: `<div style="background-color: #10b981; width: 14px; height: 14px; border-radius: 50%; border: 3px solid #ffffff; box-shadow: 0 0 10px #10b981;"></div>`,
-  className: "custom-mock-icon",
-  iconSize: [14, 14],
-  iconAnchor: [7, 7],
-});
-
-const destIcon = L.divIcon({
-  html: `<div style="background-color: #0ea5e9; width: 14px; height: 14px; border-radius: 50%; border: 3px solid #ffffff; box-shadow: 0 0 10px #0ea5e9;"></div>`,
-  className: "custom-dest-icon",
-  iconSize: [14, 14],
-  iconAnchor: [7, 7],
-});
-
-const realIcon = L.divIcon({
-  html: `<div style="background-color: #ef4444; width: 14px; height: 14px; border-radius: 50%; border: 3px solid #ffffff; box-shadow: 0 0 10px #ef4444;"></div>`,
-  className: "custom-real-icon",
-  iconSize: [14, 14],
-  iconAnchor: [7, 7],
-});
-
-// Zoom buttons rendered inside the Leaflet context so useMap() is available.
-const ZoomControls: React.FC = () => {
-  const map = useMap();
-  return (
-    <div className="map-zoom-controls" role="group" aria-label="Zoom">
-      <button
-        className="map-zoom-btn"
-        onClick={() => map.zoomIn()}
-        title="Zoom avant (+)"
-        aria-label="Zoom avant"
-      >
-        <Plus size={18} />
-      </button>
-      <button
-        className="map-zoom-btn"
-        onClick={() => map.zoomOut()}
-        title="Zoom arrière (-)"
-        aria-label="Zoom arrière"
-      >
-        <Minus size={18} />
-      </button>
-    </div>
-  );
-};
-
-// Keyboard zoom: +/= to zoom in, - to zoom out.
-const KeyboardZoomHandler: React.FC = () => {
-  const map = useMap();
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
-      if (e.key === "+" || e.key === "=") map.zoomIn();
-      if (e.key === "-") map.zoomOut();
-    };
-    document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
-  }, [map]);
-  return null;
-};
-
-// Pans/zooms the map to a location when the "fly-to-search" custom event fires.
-const FlyToSearch: React.FC = () => {
-  const map = useMap();
-  useEffect(() => {
-    const handler = (e: Event) => {
-      const { lat, lon } = (e as CustomEvent<{ lat: number; lon: number }>).detail;
-      map.setView([lat, lon], Math.max(map.getZoom(), 14));
-    };
-    window.addEventListener("fly-to-search", handler);
-    return () => window.removeEventListener("fly-to-search", handler);
-  }, [map]);
-  return null;
-};
-
-// Helper component to center map on coordinates and keep following position
-// updates until the user manually pans the map away.
-const RecenterMap: React.FC<{ coords: LatLon }> = ({ coords }) => {
-  const map = useMap();
-  const hasCentered = React.useRef(false);
-  const isFollowing = React.useRef(true);
-
-  // Stop auto-following as soon as the user drags the map themselves.
-  useEffect(() => {
-    const handleDragStart = () => {
-      isFollowing.current = false;
-    };
-    map.on("dragstart", handleDragStart);
-    return () => {
-      map.off("dragstart", handleDragStart);
-    };
-  }, [map]);
-
-  useEffect(() => {
-    if (!coords || (coords.lat === 0 && coords.lon === 0)) return;
-
-    if (!hasCentered.current) {
-      map.setView([coords.lat, coords.lon], 13);
-      hasCentered.current = true;
-    } else if (isFollowing.current) {
-      map.panTo([coords.lat, coords.lon]);
-    }
-  }, [coords, map]);
-
-  useEffect(() => {
-    const handleRecenter = () => {
-      if (coords && coords.lat !== 0 && coords.lon !== 0) {
-        isFollowing.current = true;
-        map.panTo([coords.lat, coords.lon]);
-      }
-    };
-    window.addEventListener("recenter-map", handleRecenter);
-    return () => {
-      window.removeEventListener("recenter-map", handleRecenter);
-    };
-  }, [coords, map]);
-
-  return null;
-};
-
-// Keeps Leaflet's internal size in sync with its container (panel collapse/expand, window resize)
-const MapResizeHandler: React.FC = () => {
-  const map = useMap();
-
-  useEffect(() => {
-    const container = map.getContainer();
-    const observer = new ResizeObserver(() => {
-      map.invalidateSize();
-    });
-    observer.observe(container);
-    return () => observer.disconnect();
-  }, [map]);
-
-  return null;
-};
-
-interface MapEventsHandlerProps {
-  onMapClick: (coords: LatLon) => void;
-}
-
-const MapEventsHandler: React.FC<MapEventsHandlerProps> = ({ onMapClick }) => {
-  useMapEvents({
-    click(e) {
-      onMapClick({ lat: e.latlng.lat, lon: e.latlng.lng });
-    },
-  });
-  return null;
-};
+// Leaflet ships its default marker icons as bundler-relative image imports;
+// this rewires them so they resolve under Vite. Module scope on purpose: it
+// must run once, before any Marker renders.
+configureLeafletDefaultIcons();
 
 export const InteractiveMap: React.FC = () => {
   const { status, setLocation, addFavorite, updatePatrolZone, canSend } = useEngine();
 
   // Map settings state
-  const [mapStyle, setMapStyle] = useState<"dark" | "standard" | "satellite">("dark");
-  const [showSettings, setShowSettings] = useState(false);
-  const [showLogs, setShowLogs] = useState(false);
-  const [showFavorites, setShowFavorites] = useState(false);
-  const [showDevice, setShowDevice] = useState(false);
+  const [mapStyle, setMapStyle] = useState<MapStyle>("dark");
 
   // Map tiles come from external CDNs; offline or a CDN outage leaves a grey
   // map with no explanation. Count consecutive tile errors (reset on any
@@ -245,104 +86,15 @@ export const InteractiveMap: React.FC = () => {
 
   return (
     <div className="map-viewport">
-      {/* Tools entry — opens the contextual tool frame (defaults to Itinéraire).
-          Only shown in explore mode; once open, the frame's own tabs take over. */}
-      {mapMode === "explore" && (
-        <button
-          className="map-tools-toggle"
-          onClick={() => setMapMode("route")}
-          title="Outils de trajet"
-          aria-label="Ouvrir les outils de trajet"
-        >
-          <Sliders size={15} /> Outils
-        </button>
-      )}
-
-      {/* Floating Geocoding SearchBox */}
-      <SearchBox onSelectLocation={handleSearchSelect} near={currentPos} />
-
-      {/* Floating Recenter Button */}
-      <button
-        className="map-recenter-btn"
-        onClick={() => window.dispatchEvent(new CustomEvent("recenter-map"))}
-        title="Centrer sur ma position"
-        aria-label="Centrer sur ma position"
-      >
-        <Crosshair size={18} />
-      </button>
-
-      {/* Floating app-panel dock — settings / logs / favorites / device grouped
-          into a single translucent surface instead of four separate buttons. */}
-      <div className="map-dock" role="group" aria-label="Panneaux">
-        <button
-          className="map-dock-btn"
-          onClick={() => setShowSettings(true)}
-          title="Réglages"
-          aria-label="Réglages"
-        >
-          <Settings size={18} />
-        </button>
-        <button
-          className="map-dock-btn"
-          onClick={() => setShowLogs(true)}
-          title="Journaux"
-          aria-label="Journaux"
-        >
-          <ScrollText size={18} />
-        </button>
-        <button
-          className="map-dock-btn"
-          onClick={() => setShowFavorites(true)}
-          title="Favoris"
-          aria-label="Favoris"
-        >
-          <Star size={18} />
-        </button>
-        <button
-          className="map-dock-btn"
-          onClick={() => setShowDevice(true)}
-          title="Périphérique"
-          aria-label="Périphérique"
-        >
-          <Smartphone size={18} />
-        </button>
-      </div>
-
-      <SettingsModal open={showSettings} onClose={() => setShowSettings(false)} />
-      <LogsModal open={showLogs} onClose={() => setShowLogs(false)} />
-      <FavoritesModal open={showFavorites} onClose={() => setShowFavorites(false)} />
-      <DeviceModal open={showDevice} onClose={() => setShowDevice(false)} />
-
-      {/* Floating Engine status frame (kept visible — connection health is glanceable) */}
-      <EngineStatusFrame />
-
-      {/* Floating Map Style Selector */}
-      <div className="map-style-control" role="group" aria-label="Style de carte">
-        <button
-          className={`map-style-btn ${mapStyle === "dark" ? "active" : ""}`}
-          aria-pressed={mapStyle === "dark"}
-          onClick={() => setMapStyle("dark")}
-        >
-          Sombre
-        </button>
-        <button
-          className={`map-style-btn ${mapStyle === "standard" ? "active" : ""}`}
-          aria-pressed={mapStyle === "standard"}
-          onClick={() => setMapStyle("standard")}
-        >
-          Plan
-        </button>
-        <button
-          className={`map-style-btn ${mapStyle === "satellite" ? "active" : ""}`}
-          aria-pressed={mapStyle === "satellite"}
-          onClick={() => setMapStyle("satellite")}
-        >
-          Sat
-        </button>
-      </div>
-
-      {/* Floating Telemetry Status Widget — collapsed pill, expands on click */}
-      {status && <TelemetryWidget status={status} currentPos={currentPos} />}
+      <MapChrome
+        mapMode={mapMode}
+        setMapMode={setMapMode}
+        mapStyle={mapStyle}
+        setMapStyle={setMapStyle}
+        currentPos={currentPos}
+        status={status ?? null}
+        onSearchSelect={handleSearchSelect}
+      />
 
       <MapContainer center={[currentPos.lat, currentPos.lon]} zoom={13} zoomControl={false} scrollWheelZoom={true}>
         <TileLayer

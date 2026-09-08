@@ -4,7 +4,16 @@ import Observation
 // Wraps CLLocationManager and republishes the device's real position so
 // EngineClient can forward it to the moteur as REAL_LOCATION — the data the
 // anti-drift shield needs to confirm the spoof actually "took" on-device.
+// @MainActor: `lastLocation` and `authorizationStatus` are read by SwiftUI
+// during a body evaluation, and `onLocationUpdate` calls straight into
+// EngineClient, which is main-actor isolated too. CoreLocation already delivers
+// its callbacks on the queue the delegate was set from — the main queue here —
+// so this annotation documents and enforces what was already true rather than
+// changing any behaviour; the delegate methods below assert that instead of
+// hopping, which matters because they are the only code path that runs while
+// the app is suspended and a hop could be deferred past the wake window.
 @Observable
+@MainActor
 final class LocationManager: NSObject, CLLocationManagerDelegate {
     var authorizationStatus: CLAuthorizationStatus = .notDetermined
     var lastLocation: CLLocation?
@@ -95,7 +104,11 @@ final class LocationManager: NSObject, CLLocationManagerDelegate {
         manager.stopUpdatingLocation()
     }
 
-    func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
+    nonisolated func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
+        MainActor.assumeIsolated { self.handleAuthorizationChange() }
+    }
+
+    private func handleAuthorizationChange() {
         authorizationStatus = manager.authorizationStatus
         if authorizationStatus == .authorizedWhenInUse || authorizationStatus == .authorizedAlways {
             // Re-apply the stored background intent now that the (async) grant
@@ -117,7 +130,11 @@ final class LocationManager: NSObject, CLLocationManagerDelegate {
     private static let maxLocationAge: TimeInterval = 10
     private static let maxHorizontalAccuracy: CLLocationDistance = 200
 
-    func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
+    nonisolated func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
+        MainActor.assumeIsolated { self.handleLocations(locations) }
+    }
+
+    private func handleLocations(_ locations: [CLLocation]) {
         guard let latest = locations.last else { return }
         let age = -latest.timestamp.timeIntervalSinceNow
         guard age <= Self.maxLocationAge,
@@ -130,7 +147,7 @@ final class LocationManager: NSObject, CLLocationManagerDelegate {
         onLocationUpdate?(latest)
     }
 
-    func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {
+    nonisolated func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {
         // Transient GPS errors are common indoors; nothing actionable here.
     }
 }

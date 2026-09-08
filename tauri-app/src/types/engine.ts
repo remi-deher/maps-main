@@ -65,6 +65,23 @@ export interface DiagnosticsDevice {
   Source: string;
 }
 
+// One pre-flight prerequisite. "unknown" is distinct from "failed" on purpose:
+// a check the engine couldn't run must not be shown as the user's problem.
+export type RequirementStatus = "ok" | "failed" | "unknown";
+
+export interface Requirement {
+  id: string;
+  label: string;
+  status: RequirementStatus;
+  detail: string;
+  fix?: string;
+}
+
+export interface Readiness {
+  ready: boolean;
+  requirements: Requirement[] | null;
+}
+
 export interface Diagnostics {
   goIosPath: string;
   goIosError?: string;
@@ -77,6 +94,7 @@ export interface Diagnostics {
   usbDevices: DiagnosticsDevice[] | null;
   usbDevicesError?: string;
   unpairedUsbDevices?: string[] | null;
+  readiness?: Readiness;
   error?: string;
 }
 

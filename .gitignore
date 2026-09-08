@@ -75,3 +75,9 @@ engine/internal/platform/embedded/
 
 # go:embed web UI payload (tauri-app/dist) for the -tags webui build, assembled in CI
 engine/internal/webui/embedded/
+
+# Playwright (e2e)
+tauri-app/test-results/
+tauri-app/playwright-report/
+tauri-app/blob-report/
+tauri-app/.playwright/

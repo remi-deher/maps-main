@@ -27,7 +27,7 @@ RUN cd engine && CGO_ENABLED=0 go build -tags webui -trimpath -ldflags="-s -w" \
 
 # Build arguments to customize driver installation
 ARG WITH_GOIOS=1
-ARG GOIOS_VERSION=v1.2.0
+ARG GOIOS_VERSION=v1.3.2
 ARG GOIOS_QUIC_GO_VERSION=v0.59.1
 ARG GOIOS_X_CRYPTO_VERSION=v0.53.0
 ARG GOIOS_X_NET_VERSION=v0.56.0

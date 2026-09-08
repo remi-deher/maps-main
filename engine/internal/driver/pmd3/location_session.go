@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"io"
 	"os/exec"
-	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -50,8 +49,13 @@ type locationSession struct {
 	poisoned atomic.Bool
 }
 
-func newLocationSession(ctx context.Context, py string, endpoint driver.TunnelInfo) (*locationSession, error) {
-	cmd := execCommand(py, "-u", "-c", locationWorkerScript, endpoint.Address, strconv.Itoa(endpoint.Port))
+// newLocationSession starts the Python worker with workerArgs and waits for its
+// ready handshake. endpoint is what the session is considered bound to, so
+// locationSession() can tell when a re-resolve has moved the tunnel out from
+// under it; in userspace mode it is the synthetic in-process marker.
+func newLocationSession(ctx context.Context, py string, workerArgs []string, endpoint driver.TunnelInfo) (*locationSession, error) {
+	args := append([]string{"-u", "-c", locationWorkerScript}, workerArgs...)
+	cmd := execCommand(py, args...)
 	driver.ConfigureProcAttr(cmd)
 
 	stdin, err := cmd.StdinPipe()
@@ -122,6 +126,13 @@ func (s *locationSession) set(ctx context.Context, lat, lon float64) error {
 
 func (s *locationSession) clear(ctx context.Context) error {
 	return s.roundTrip(ctx, map[string]any{"action": "clear"})
+}
+
+// ping is a liveness round-trip. In userspace mode the tunnel lives inside this
+// worker process, so there is no socket for TunnelMount.CheckHealth to dial —
+// a worker that still answers is the only meaningful health signal.
+func (s *locationSession) ping(ctx context.Context) error {
+	return s.roundTrip(ctx, map[string]any{"action": "ping"})
 }
 
 func (s *locationSession) stop(ctx context.Context) error {

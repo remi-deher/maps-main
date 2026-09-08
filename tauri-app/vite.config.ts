@@ -12,6 +12,10 @@ export default defineConfig(async () => ({
     globals: true,
     environment: "jsdom",
     setupFiles: "./vitest.setup.ts",
+    // e2e/ belongs to Playwright (npm run test:e2e). Vitest would otherwise
+    // collect the spec files and fail on Playwright's own test() — the two
+    // runners share the name but not the runtime.
+    exclude: ["node_modules/**", "dist/**", "e2e/**"],
   },
 
   // Vite options tailored for Tauri development and only applied in `tauri dev` or `tauri build`
