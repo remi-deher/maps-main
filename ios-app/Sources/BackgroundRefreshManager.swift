@@ -54,17 +54,32 @@ enum BackgroundRefreshManager {
             return
         }
 
-        // Held for the lifetime of the work so the socket isn't torn down by
-        // ARC before RELANCE flushes.
+        // EngineClient is main-actor isolated, so the whole one-shot runs
+        // there. BGTaskScheduler hands us this callback on an arbitrary queue,
+        // hence the hop.
+        let address = engineAddress
+        Task { @MainActor in
+            await runOneShotRelance(for: task, address: address)
+        }
+    }
+
+    // Connects, re-asserts the position once, and tears the socket back down.
+    //
+    // The engine is held for the lifetime of the work so ARC can't close the
+    // socket before RELANCE flushes, and setTaskCompleted is called from
+    // exactly one place — awaiting the work — instead of from both the happy
+    // path and the expiration handler, which could report the task twice.
+    @MainActor
+    private static func runOneShotRelance(for task: BGAppRefreshTask, address: String) async {
         let engine = EngineClient()
-        let work = Task {
+        let work = Task { @MainActor in
             // engine_health's checkAuth rejects any non-loopback client with no
             // paired-device token — building the bare ws://… endpoint here
             // (instead of going through the same helper as the foreground
             // connect path) meant this background reconnect was silently
             // rejected whenever the engine wasn't on localhost, so the
             // safety-net RELANCE never actually fired.
-            engine.connect(to: await MapSessionModel.webSocketEndpoint(for: engineAddress))
+            engine.connect(to: MapSessionModel.webSocketEndpoint(for: address))
             // Wait up to ~10 s for the handshake (well within the ~30 s budget).
             for _ in 0..<20 {
                 if Task.isCancelled || engine.state == .connected { break }
@@ -75,14 +90,14 @@ enum BackgroundRefreshManager {
             // Give the send a moment to flush before the socket is closed.
             try? await Task.sleep(for: .seconds(1))
             engine.disconnect()
-            task.setTaskCompleted(success: connected)
+            return connected
         }
 
-        task.expirationHandler = {
-            work.cancel()
-            engine.disconnect()
-            task.setTaskCompleted(success: false)
-        }
+        // Cancelling unblocks the sleeps above, so the work falls through to
+        // disconnect() and returns on its own.
+        task.expirationHandler = { work.cancel() }
+
+        task.setTaskCompleted(success: await work.value)
     }
 
     // @AppStorage is backed by UserDefaults — read the same keys here, applying

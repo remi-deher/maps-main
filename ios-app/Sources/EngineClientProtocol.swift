@@ -1,6 +1,12 @@
 import Foundation
 import CoreLocation
 
+// @MainActor for the same reason EngineClient is: every implementation owns
+// state that SwiftUI reads during a body evaluation. Annotating the protocol
+// (rather than only the conforming class) keeps `any EngineClientProtocol`
+// call sites — MapSessionModel, the App Intents, the settings and logs sheets —
+// isolated too, instead of silently losing the guarantee behind the existential.
+@MainActor
 protocol EngineClientProtocol: AnyObject {
     var state: EngineConnectionState { get set }
     var lastError: String? { get set }

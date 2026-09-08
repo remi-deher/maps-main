@@ -10,7 +10,21 @@ import Observation
 // the engine is the single source of truth, so every connected client
 // (desktop, iOS, headless) sees the same STATUS broadcasts and stays in sync
 // for free.
+//
+// The whole class is @MainActor. Its state is read by SwiftUI views on every
+// body evaluation and written from three different places — URLSession's
+// delegate queue, the receive/send completion queues, and the CoreLocation
+// callback — and the previous arrangement only protected *some* of it: the
+// observable properties were hopped to main with DispatchQueue.main.async,
+// while `generation`, `reconnectAttempt`, `endpoint`, `task` and the
+// throttling timestamps were read and written straight from the completion
+// queues. That is a data race the compiler could not see, on exactly the
+// fields the reconnect logic depends on. Pinning everything to the main actor
+// makes the invariant the code already assumed ("this state belongs to the
+// UI thread") one the compiler enforces, and lets every DispatchQueue.main
+// hop disappear.
 @Observable
+@MainActor
 final class EngineClient: NSObject, URLSessionWebSocketDelegate, EngineClientProtocol {
     // The live client, so App Intents (Siri / Shortcuts / Spotlight) can reach
     // the active connection without a view. The app keeps one instance alive
@@ -38,7 +52,12 @@ final class EngineClient: NSObject, URLSessionWebSocketDelegate, EngineClientPro
     private var task: URLSessionWebSocketTask?
     var pingLatency: Double?
     private var lastPingSentAt: Date?
-    private var pingTimer: Timer?
+    // Heartbeat loop. A Task rather than a Timer: a Timer needs a live run loop
+    // and calls back outside any actor, so under main-actor isolation it would
+    // have to hop on every tick; a Task created here inherits this actor and is
+    // cancelled deterministically in disconnect().
+    private var pingTask: Task<Void, Never>?
+    private let pingInterval: TimeInterval = 5
     // The engine we are (re)connecting to, credential included. Empty URL means
     // "no target set yet", which ensureConnected/reconnect treat as a no-op.
     private var endpoint = EngineEndpoint(urlString: "", token: nil)
@@ -70,6 +89,7 @@ final class EngineClient: NSObject, URLSessionWebSocketDelegate, EngineClientPro
     private var reconnectAttempt = 0
     private let reconnectBaseDelay: TimeInterval = 2
     private let reconnectMaxDelay: TimeInterval = 30
+    private var reconnectTask: Task<Void, Never>?
 
     override init() {
         super.init()
@@ -109,25 +129,23 @@ final class EngineClient: NSObject, URLSessionWebSocketDelegate, EngineClientPro
 
     func disconnect() {
         generation += 1 // invalidates any in-flight callbacks
-        pingTimer?.invalidate()
-        pingTimer = nil
+        stopPinging()
+        reconnectTask?.cancel()
+        reconnectTask = nil
         task?.cancel(with: .normalClosure, reason: nil)
         task = nil
-        DispatchQueue.main.async {
-            self.state = .disconnected
-            self.pingLatency = nil
-        }
+        state = .disconnected
+        pingLatency = nil
     }
 
     private func startSocket(generation: Int) {
         // The credential rides in an Authorization header on the handshake
         // request rather than in the URL — see EngineEndpoint.
         guard let request = endpoint.makeRequest() else {
-            let address = endpoint.urlString
-            DispatchQueue.main.async { self.lastError = "Adresse invalide: \(address)" }
+            lastError = "Adresse invalide: \(endpoint.urlString)"
             return
         }
-        DispatchQueue.main.async { self.state = .connecting }
+        state = .connecting
 
         let newTask = session.webSocketTask(with: request)
         task = newTask
@@ -135,76 +153,117 @@ final class EngineClient: NSObject, URLSessionWebSocketDelegate, EngineClientPro
         receive(on: newTask, generation: generation)
     }
 
-    private func receive(on task: URLSessionWebSocketTask, generation: Int) {
+    // nonisolated because the completion handler URLSession invokes is not on
+    // any actor. Only Sendable values (a String, a String description) cross
+    // back into the actor — never the Message or the Error themselves, neither
+    // of which is Sendable.
+    private nonisolated func receive(on task: URLSessionWebSocketTask, generation: Int) {
         task.receive { [weak self] result in
-            guard let self, self.generation == generation else { return }
             switch result {
             case .failure(let error):
-                self.handleDisconnect(error: error, generation: generation)
-            case .success(let message):
-                if case .string(let text) = message {
-                    self.handleMessage(text)
+                let description = error.localizedDescription
+                Task { @MainActor in
+                    self?.handleDisconnect(description: description, generation: generation)
                 }
-                self.receive(on: task, generation: generation)
+            case .success(let message):
+                var text: String?
+                if case .string(let received) = message { text = received }
+                let payload = text
+                Task { @MainActor in
+                    guard let self, self.generation == generation else { return }
+                    if let payload { self.handleMessage(payload) }
+                    self.receive(on: task, generation: generation)
+                }
             }
         }
     }
 
-    private func handleDisconnect(error: Error, generation: Int) {
-        AppLogger.shared.warn("Connexion moteur perdue: \(error.localizedDescription)")
-        pingTimer?.invalidate()
-        pingTimer = nil
-        DispatchQueue.main.async {
-            self.lastError = error.localizedDescription
-            self.state = .reconnecting
-            self.pingLatency = nil
-        }
+    private func handleDisconnect(description: String, generation: Int) {
+        // A stale callback from a previous connection must not restart anything
+        // — that is the orphaned-callback reconnect loop this counter exists to
+        // prevent.
+        guard generation == self.generation else { return }
+
+        AppLogger.shared.warn("Connexion moteur perdue: \(description)")
+        stopPinging()
+        lastError = description
+        state = .reconnecting
+        pingLatency = nil
+
         let delay = min(reconnectBaseDelay * pow(2, Double(reconnectAttempt)), reconnectMaxDelay)
         reconnectAttempt += 1
-        let reconnectItem = DispatchWorkItem { [weak self] in
-            guard let self = self, self.generation == generation else { return }
-            // Dynamic IP re-binding: if reconnect attempts fail 3+ times, check
-            // if Bonjour discovered a new host IP. The endpoint is rebuilt
-            // through the same helper as the initial connect so the new address
-            // gets its own stored token (and the /ws path — hand-assembling
-            // "ws://host:port" here used to drop it, which made every
-            // re-binding attempt fail).
-            if self.reconnectAttempt >= 3 {
-                if case .found(let host, let port) = EngineDiscovery.shared?.state {
-                    let address = "\(host):\(port)"
-                    let candidate = EnginePairing.webSocketEndpoint(
-                        address: address,
-                        token: EngineTokenStore.token(forAddress: address)
-                    )
-                    if candidate != self.endpoint {
-                        AppLogger.shared.info("Re-liaison dynamique de la cible WebSocket vers Bonjour: \(candidate.urlString)")
-                        self.endpoint = candidate
-                    }
-                }
-            }
+
+        reconnectTask?.cancel()
+        reconnectTask = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(delay))
+            guard !Task.isCancelled, let self, self.generation == generation else { return }
+            self.rebindToDiscoveredEngineIfStuck()
             self.startSocket(generation: generation)
         }
-        DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: reconnectItem)
     }
 
-    func urlSession(_ session: URLSession, webSocketTask: URLSessionWebSocketTask, didOpenWithProtocol protocol: String?) {
-        AppLogger.shared.info("Connecté au moteur (\(self.endpoint.urlString))")
-        reconnectAttempt = 0
-        DispatchQueue.main.async {
-            self.state = .connected
-            self.pingTimer?.invalidate()
-            self.pingTimer = Timer.scheduledTimer(withTimeInterval: 5.0, repeats: true) { [weak self] _ in
-                self?.sendPing()
-            }
-            self.sendPing()
+    // Dynamic IP re-binding: after three failed attempts, prefer whatever
+    // Bonjour has discovered — the engine's machine may simply have a new DHCP
+    // lease. The endpoint is rebuilt through the same helper as the initial
+    // connect so the new address gets its own stored token (and the /ws path —
+    // hand-assembling "ws://host:port" here used to drop it, which made every
+    // re-binding attempt fail).
+    private func rebindToDiscoveredEngineIfStuck() {
+        guard reconnectAttempt >= 3 else { return }
+        guard case .found(let host, let port) = EngineDiscovery.shared?.state else { return }
+        let address = "\(host):\(port)"
+        let candidate = EnginePairing.webSocketEndpoint(
+            address: address,
+            token: EngineTokenStore.token(forAddress: address)
+        )
+        guard candidate != endpoint else { return }
+        AppLogger.shared.info("Re-liaison dynamique de la cible WebSocket vers Bonjour: \(candidate.urlString)")
+        endpoint = candidate
+    }
+
+    // URLSession delegate callbacks arrive on the session's own queue, so they
+    // are nonisolated and hop onto the actor before touching any state.
+    nonisolated func urlSession(
+        _ session: URLSession,
+        webSocketTask: URLSessionWebSocketTask,
+        didOpenWithProtocol protocol: String?
+    ) {
+        Task { @MainActor [weak self] in self?.handleSocketOpened() }
+    }
+
+    nonisolated func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
+        let description = (error ?? URLError(.networkConnectionLost)).localizedDescription
+        Task { @MainActor [weak self] in
+            guard let self, self.task === task else { return }
+            self.handleDisconnect(description: description, generation: self.generation)
         }
+    }
+
+    private func handleSocketOpened() {
+        AppLogger.shared.info("Connecté au moteur (\(endpoint.urlString))")
+        reconnectAttempt = 0
+        state = .connected
+        startPinging()
         sendAction(.getStatus)
         sendAction(.getLogs)
     }
 
-    func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
-        guard self.task === task else { return }
-        handleDisconnect(error: error ?? URLError(.networkConnectionLost), generation: generation)
+    private func startPinging() {
+        stopPinging()
+        sendPing()
+        pingTask = Task { [weak self] in
+            while !Task.isCancelled {
+                guard let interval = self?.pingInterval else { return }
+                try? await Task.sleep(for: .seconds(interval))
+                guard !Task.isCancelled else { return }
+                self?.sendPing()
+            }
+        }
+    }
+
+    private func stopPinging() {
+        pingTask?.cancel()
+        pingTask = nil
     }
 
     private func handleMessage(_ text: String) {
@@ -224,67 +283,54 @@ final class EngineClient: NSObject, URLSessionWebSocketDelegate, EngineClientPro
         }
 
         guard let event = EngineEvent(rawValue: type) else {
-            AppLogger.shared.warn("Type de message inconnu ignorÃ©: \(type)")
+            AppLogger.shared.warn("Type de message inconnu ignoré: \(type)")
             return
         }
 
         switch event {
         case .status, .statusUpdate:
-            do {
-                let decoded = try JSONDecoder().decode(EngineStatus.self, from: payloadData)
-                DispatchQueue.main.async { self.status = decoded }
-            } catch {
-                AppLogger.shared.error("Échec du décodage de STATUS: \(error)")
-            }
+            decode(EngineStatus.self, from: payloadData, label: "STATUS") { self.status = $0 }
         case .pong:
-            // `lastPingSentAt` is written on the main queue (sendPing runs off
-            // the Timer, scheduled on main); read it there too instead of from
-            // this background receive-completion queue to avoid a data race.
-            DispatchQueue.main.async {
-                if let sentAt = self.lastPingSentAt {
-                    self.pingLatency = Date().timeIntervalSince(sentAt) * 1000 // ms
-                }
+            if let sentAt = lastPingSentAt {
+                pingLatency = Date().timeIntervalSince(sentAt) * 1000 // ms
             }
         case .log:
-            do {
-                let entry = try JSONDecoder().decode(LogEntryPayload.self, from: payloadData)
-                DispatchQueue.main.async {
-                    self.logs.append(entry)
-                    if self.logs.count > self.maxLogEntries {
-                        self.logs.removeFirst(self.logs.count - self.maxLogEntries)
-                    }
+            decode(LogEntryPayload.self, from: payloadData, label: "LOG") { entry in
+                self.logs.append(entry)
+                if self.logs.count > self.maxLogEntries {
+                    self.logs.removeFirst(self.logs.count - self.maxLogEntries)
                 }
-            } catch {
-                AppLogger.shared.error("Échec du décodage de LOG: \(error)")
             }
         case .logs:
-            do {
-                let entries = try JSONDecoder().decode([LogEntryPayload].self, from: payloadData)
-                DispatchQueue.main.async { self.logs = entries }
-            } catch {
-                AppLogger.shared.error("Échec du décodage de LOGS: \(error)")
-            }
+            decode([LogEntryPayload].self, from: payloadData, label: "LOGS") { self.logs = $0 }
         case .restartServicesResult:
-            do {
-                let result = try JSONDecoder().decode(RestartServicesResultPayload.self, from: payloadData)
-                DispatchQueue.main.async { self.restartServicesResult = result }
-            } catch {
-                AppLogger.shared.error("Échec du décodage de RESTART_SERVICES_RESULT: \(error)")
+            decode(RestartServicesResultPayload.self, from: payloadData, label: "RESTART_SERVICES_RESULT") {
+                self.restartServicesResult = $0
             }
         case .restartTunnelResult:
-            do {
-                let result = try JSONDecoder().decode(RestartTunnelResultPayload.self, from: payloadData)
-                DispatchQueue.main.async { self.restartTunnelResult = result }
-            } catch {
-                AppLogger.shared.error("Échec du décodage de RESTART_TUNNEL_RESULT: \(error)")
+            decode(RestartTunnelResultPayload.self, from: payloadData, label: "RESTART_TUNNEL_RESULT") {
+                self.restartTunnelResult = $0
             }
         case .restartMdnsResult:
-            do {
-                let result = try JSONDecoder().decode(RestartMdnsResultPayload.self, from: payloadData)
-                DispatchQueue.main.async { self.restartMdnsResult = result }
-            } catch {
-                AppLogger.shared.error("Échec du décodage de RESTART_MDNS_RESULT: \(error)")
+            decode(RestartMdnsResultPayload.self, from: payloadData, label: "RESTART_MDNS_RESULT") {
+                self.restartMdnsResult = $0
             }
+        }
+    }
+
+    // Decodes one payload and applies it, logging a decode failure under the
+    // event's own name. Collapses seven identical do/catch blocks into one
+    // place, so a new event type is one line rather than six.
+    private func decode<T: Decodable>(
+        _ type: T.Type,
+        from data: Data,
+        label: String,
+        apply: (T) -> Void
+    ) {
+        do {
+            apply(try JSONDecoder().decode(type, from: data))
+        } catch {
+            AppLogger.shared.error("Échec du décodage de \(label): \(error)")
         }
     }
 
@@ -435,16 +481,19 @@ final class EngineClient: NSObject, URLSessionWebSocketDelegate, EngineClientPro
     private func sendEnvelope(_ envelope: EngineEnvelope) {
         guard let task else {
             AppLogger.shared.warn("Action \(envelope.type) ignoree: non connecte au moteur")
-            DispatchQueue.main.async { self.lastError = "Non connecte au moteur - action ignoree." }
+            lastError = "Non connecte au moteur - action ignoree."
             return
         }
         guard let payload = try? JSONSerialization.data(withJSONObject: envelope.jsonObject),
               let json = String(data: payload, encoding: .utf8) else { return }
+        let label = envelope.type
         task.send(.string(json)) { [weak self] error in
-            if let error {
-                AppLogger.shared.error("Envoi \(envelope.type) echoue: \(error.localizedDescription)")
-                DispatchQueue.main.async { self?.lastError = error.localizedDescription }
-            }
+            guard let error else { return }
+            // Same rule as receive(): only the Sendable description crosses
+            // back onto the actor, not the Error.
+            let description = error.localizedDescription
+            AppLogger.shared.error("Envoi \(label) echoue: \(description)")
+            Task { @MainActor in self?.lastError = description }
         }
     }
 }
