@@ -63,6 +63,16 @@ func (d *Driver) locationSession(ctx context.Context) (*locationSession, error) 
 	d.locMu.Lock()
 	defer d.locMu.Unlock()
 
+	// In userspace mode the worker *is* the tunnel (see userspace.go), so it was
+	// created by StartTunnel and there is no endpoint to rebuild it from. A
+	// missing session here means the tunnel is gone, not that one can be opened.
+	if d.userspace.Load() {
+		if d.location == nil {
+			return nil, fmt.Errorf("pmd3: userspace tunnel not started")
+		}
+		return d.location, nil
+	}
+
 	if d.location != nil && sameEndpoint(d.location.endpoint, ti) {
 		return d.location, nil
 	}
@@ -83,7 +93,7 @@ func (d *Driver) locationSession(ctx context.Context) (*locationSession, error) 
 	if err != nil {
 		return nil, err
 	}
-	session, err := newLocationSession(ctx, py, ti)
+	session, err := newLocationSession(ctx, py, rsdWorkerArgs(ti), ti)
 	if err != nil {
 		return nil, err
 	}
@@ -120,3 +130,5 @@ func sameEndpoint(a, b driver.TunnelInfo) bool {
 }
 
 func ftoa(v float64) string { return strconv.FormatFloat(v, 'f', -1, 64) }
+
+func itoa(v int) string { return strconv.Itoa(v) }

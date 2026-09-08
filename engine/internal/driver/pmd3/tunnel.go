@@ -14,13 +14,51 @@ const (
 	tunnelPollInterval        = 1 * time.Second
 )
 
-// StartTunnel mounts the developer image, runs the `remote tunneld` daemon, and
-// polls its REST API until the device tunnel is up. With a manual address it
-// targets that endpoint directly without a local daemon.
+// StartTunnel mounts the developer image, then brings a tunnel up.
+//
+// It tries `remote tunneld` first — a shared, kernel-routed tunnel, which is
+// what the rest of the driver is built around — and falls back to the no-admin
+// in-process tunnel when that fails. tunneld needs administrator rights to
+// create its TUN adapter, so on a machine where the user hasn't granted them
+// the first attempt fails and the fallback is what makes the app work at all.
+// See userspace.go for what the fallback changes.
 func (d *Driver) StartTunnel(ctx context.Context) (driver.TunnelInfo, error) {
 	if d.tunnelStartTimeout <= 0 {
 		d.tunnelStartTimeout = defaultTunnelStartTimeout
 	}
+	d.userspace.Store(false)
+
+	// The DDI is a prerequisite for every DVT service, location simulation
+	// included, and mounting goes over plain USB — so it is done once here for
+	// both tunnel modes rather than inside the tunneld path only.
+	d.mountDeveloperImage(ctx)
+
+	ti, err := d.startTunneld(ctx)
+	// A manual address has no daemon to replace, and a cancelled context
+	// (shutdown / SwitchDriver) must not trigger another attempt.
+	if err == nil || d.manual != "" || ctx.Err() != nil {
+		return ti, err
+	}
+	return d.startUserspaceTunnel(ctx)
+}
+
+// mountDeveloperImage best-effort mounts the Developer Disk Image. Failures are
+// ignored: the image may already be mounted, or unavailable offline (iOS 17+
+// personalizes it through Apple's signing server), and neither should stop a
+// tunnel that might work anyway. Bounded because callers like the health
+// monitor's retry loop pass a context without a deadline, and a mounter hung on
+// a locked/sleeping device would otherwise hold the engine's tunnel lock.
+func (d *Driver) mountDeveloperImage(ctx context.Context) {
+	py, err := d.pyCommand()
+	if err != nil {
+		return
+	}
+	mountCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+	_ = execCommandContext(mountCtx, py, d.args("mounter", "auto-mount")...).Run()
+}
+
+func (d *Driver) startTunneld(ctx context.Context) (driver.TunnelInfo, error) {
 	return d.mount.Start(ctx, driver.TunnelMountConfig{
 		DriverName:    "pmd3",
 		StartLabel:    "remote tunneld",
@@ -29,21 +67,6 @@ func (d *Driver) StartTunnel(ctx context.Context) (driver.TunnelInfo, error) {
 		StartTimeout:  d.tunnelStartTimeout,
 		PollInterval:  tunnelPollInterval,
 		TimeoutHint:   pmd3TunneldTimeoutHint,
-		BeforeStart: func(ctx context.Context) error {
-			py, err := d.pyCommand()
-			if err != nil {
-				return err
-			}
-			// Best-effort: mount the Developer Disk Image (ignore failures).
-			// Bounded: callers like the health monitor's retry loop pass a
-			// context without a deadline, and a mounter hung on a locked/
-			// sleeping device would otherwise hold the engine's tunnel lock
-			// indefinitely.
-			mountCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
-			defer cancel()
-			_ = execCommandContext(mountCtx, py, d.args("mounter", "auto-mount")...).Run()
-			return nil
-		},
 		StartDaemon: func(context.Context) (*exec.Cmd, error) {
 			py, err := d.pyCommand()
 			if err != nil {
@@ -88,6 +111,10 @@ func (d *Driver) StopTunnel(ctx context.Context) error {
 	// "on" — so the next StartTunnel returned the stale endpoint immediately
 	// and the tunnel never actually restarted.
 	workerErr := d.stopLocationSession(ctx)
+	// In userspace mode the worker was the tunnel, so stopping it above already
+	// tore the tunnel down; clearing the flag keeps a later StartTunnel from
+	// taking the userspace paths before it has decided again.
+	d.userspace.Store(false)
 	if err := d.mount.Stop(ctx); err != nil {
 		return err
 	}
@@ -95,6 +122,9 @@ func (d *Driver) StopTunnel(ctx context.Context) error {
 }
 
 func (d *Driver) CheckHealth(context.Context) bool {
+	if d.userspace.Load() {
+		return d.checkUserspaceHealth(3 * time.Second)
+	}
 	return d.mount.CheckHealth(3 * time.Second)
 }
 
@@ -102,5 +132,16 @@ func (d *Driver) CheckHealth(context.Context) bool {
 // endpoint for the current device, following it across a USB↔WiFi move without
 // restarting the daemon (tunneld already monitors both transports concurrently).
 func (d *Driver) ReresolveTunnel(ctx context.Context) (driver.TunnelInfo, bool, bool) {
+	if d.userspace.Load() {
+		// Nothing to re-resolve: the worker owns the tunnel, and its address is
+		// in-process, so it never moves. A worker that stopped answering means
+		// the tunnel is gone for good — report it as dead so the health monitor
+		// restarts it rather than waiting for an endpoint that will never come.
+		if !d.checkUserspaceHealth(3 * time.Second) {
+			return driver.TunnelInfo{}, false, false
+		}
+		ti, ok := d.mount.Current()
+		return ti, ok, true
+	}
 	return driver.ReresolveActiveTunnel(ctx, &d.mount, d)
 }

@@ -31,6 +31,8 @@ func (d *Driver) StartTunnel(ctx context.Context) (driver.TunnelInfo, error) {
 	// Try to resolve UDID before starting tunnel
 	_ = d.getUDID(ctx)
 
+	d.mountDeveloperImage(ctx)
+
 	ti, err := d.startTunnelMode(ctx, false)
 	// A manual address has no daemon to restart in userspace, and a cancelled
 	// context (shutdown / SwitchDriver) must not trigger another attempt.
@@ -38,6 +40,32 @@ func (d *Driver) StartTunnel(ctx context.Context) (driver.TunnelInfo, error) {
 		return ti, err
 	}
 	return d.startTunnelMode(ctx, true)
+}
+
+// mountDeveloperImage best-effort mounts the Developer Disk Image via
+// `ios image auto`. Every DVT service — location simulation included — needs it
+// on the device, and pymobiledevice3's driver has always mounted it while this
+// one never did: a machine that only ever ran go-ios (no Xcode, no prior pmd3
+// run) would find `setlocation` failing with nothing to explain why.
+//
+// Deliberately non-fatal and bounded. The image is usually already mounted, and
+// on iOS 17+ it is personalized through Apple's signing server, so a machine
+// that is offline — or a device that already has it — must not be stopped from
+// tunnelling. Callers such as the health monitor's retry loop pass a context
+// with no deadline, so the timeout is what keeps a mounter hung on a locked
+// device from holding the engine's tunnel lock.
+func (d *Driver) mountDeveloperImage(ctx context.Context) {
+	bin, err := d.binPath()
+	if err != nil {
+		return
+	}
+	args := []string{"image", "auto"}
+	if d.udid != "" {
+		args = append(args, "--udid="+d.udid)
+	}
+	mountCtx, cancel := context.WithTimeout(ctx, 60*time.Second)
+	defer cancel()
+	_ = execCommandContext(mountCtx, bin, args...).Run()
 }
 
 // startTunnelMode brings up the tunnel in either kernel-TUN (userspace=false) or

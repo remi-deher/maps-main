@@ -94,6 +94,12 @@ func TestHelperProcess(t *testing.T) {
 }
 
 func runLocationWorkerHelper() {
+	// Simulates a worker that never reaches the ready handshake — e.g. a
+	// userspace tunnel that can't be built because the device isn't there.
+	if os.Getenv("FAKE_WORKER_NO_READY") != "" {
+		time.Sleep(30 * time.Second)
+		return
+	}
 	fmt.Println(`{"ok":true,"ready":true}`)
 	sc := bufio.NewScanner(os.Stdin)
 	for sc.Scan() {
@@ -160,13 +166,78 @@ func TestStartTunnelDiscoversViaTunneldAPIAndKeepsProcessRunning(t *testing.T) {
 	}
 }
 
-func TestStartTunnelTimesOutWhenNoTunnelAppears(t *testing.T) {
+// tunneld needs administrator rights to create its TUN adapter. When it can't
+// (no elevation), the driver must not give up: it falls back to the no-admin
+// tunnel that the location worker builds in-process.
+func TestStartTunnelFallsBackToUserspaceWhenTunneldPublishesNothing(t *testing.T) {
 	withFakeExec(t, "tunnel-daemon")
 	url := tunneldServer(t, `{}`) // daemon up, but no tunnel ever registered
 	d := &Driver{py: "fake-python", tunnelStartTimeout: 200 * time.Millisecond, tunneldURL: url}
 
+	ti, err := d.StartTunnel(context.Background())
+	if err != nil {
+		t.Fatalf("StartTunnel: %v", err)
+	}
+	if !d.IsUserspace() {
+		t.Error("expected the driver to be in userspace mode after the tunneld attempt failed")
+	}
+	if ti.Address != userspaceEndpoint.Address {
+		t.Errorf("endpoint = %+v, want the in-process marker %q", ti, userspaceEndpoint.Address)
+	}
+	if _, ok := d.Tunnel(); !ok {
+		t.Error("expected an active tunnel after the userspace fallback")
+	}
+
+	// The worker built the tunnel, so it is already open and injection must
+	// reuse it rather than try to rebuild a session from an endpoint.
+	if err := d.SetLocation(context.Background(), 48.8566, 2.3522); err != nil {
+		t.Errorf("SetLocation over the userspace tunnel: %v", err)
+	}
+	// There is no socket to dial, so health is the worker answering.
+	if !d.CheckHealth(context.Background()) {
+		t.Error("CheckHealth = false while the userspace worker is alive")
+	}
+
+	if err := d.StopTunnel(context.Background()); err != nil {
+		t.Errorf("StopTunnel: %v", err)
+	}
+	if d.IsUserspace() {
+		t.Error("userspace mode should be cleared once the tunnel is stopped")
+	}
+}
+
+// The fallback is a fallback, not a mask: when the worker can't build a tunnel
+// either, StartTunnel has to fail rather than report a tunnel that isn't there.
+func TestStartTunnelFailsWhenBothTunneldAndUserspaceFail(t *testing.T) {
+	withFakeExec(t, "tunnel-daemon")
+	t.Setenv("FAKE_WORKER_NO_READY", "1")
+	url := tunneldServer(t, `{}`)
+	d := &Driver{py: "fake-python", tunnelStartTimeout: 200 * time.Millisecond, tunneldURL: url}
+
 	if _, err := d.StartTunnel(context.Background()); err == nil {
-		t.Fatal("expected a timeout error when no tunnel ever appears")
+		t.Fatal("expected an error when neither tunneld nor the userspace tunnel comes up")
+	}
+	if _, ok := d.Tunnel(); ok {
+		t.Error("no tunnel should be registered after both attempts failed")
+	}
+}
+
+// The worker is told which tunnel to use, and how. Locks the invocation the
+// same way the other driver command shapes are locked.
+func TestUserspaceWorkerArgs(t *testing.T) {
+	d := &Driver{}
+	if got := d.userspaceWorkerArgs(); strings.Join(got, " ") != "--userspace" {
+		t.Errorf("userspaceWorkerArgs() = %v, want [--userspace]", got)
+	}
+
+	d = &Driver{targetUDID: "udid-1"}
+	if got := strings.Join(d.userspaceWorkerArgs(), " "); got != "--userspace --udid udid-1" {
+		t.Errorf("userspaceWorkerArgs() = %q, want \"--userspace --udid udid-1\"", got)
+	}
+
+	ti := driver.TunnelInfo{Address: "fde6::1", Port: 54321}
+	if got := strings.Join(rsdWorkerArgs(ti), " "); got != "--rsd fde6::1 54321" {
+		t.Errorf("rsdWorkerArgs() = %q, want \"--rsd fde6::1 54321\"", got)
 	}
 }
 

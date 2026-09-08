@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/remi-deher/maps-main/engine/internal/domain"
@@ -34,6 +35,11 @@ type Driver struct {
 	mount    driver.TunnelMount
 	location *locationSession
 	locMu    sync.Mutex
+
+	// userspace is set once StartTunnel has fallen back to the no-admin
+	// in-process tunnel, which the worker owns rather than tunneld. It changes
+	// how health is checked and forbids re-resolving — see userspace.go.
+	userspace atomic.Bool
 
 	// Cached Python (major, minor) probed once, used to pick the tunnel
 	// protocol: pymobiledevice3 defaults `remote tunneld` to the TCP tunnel

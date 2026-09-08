@@ -18,12 +18,12 @@ param(
 
 $ErrorActionPreference = "Stop"
 
-$GoIosVersion = "v1.2.0"      # keep in sync with docker/Dockerfile
+$GoIosVersion = "v1.3.2"      # keep in sync with docker/Dockerfile
 # Python 3.13+ is required for pymobiledevice3's TCP RSD tunnel: on older
 # interpreters `remote tunneld` defaults to the QUIC tunnel, which Apple
 # removed in iOS 18.2+ — so a 3.12 bundle silently fails to tunnel modern
 # devices. The pmd3 driver forces --protocol tcp when it detects 3.13+.
-$PythonVersion = "3.13.1"
+$PythonVersion = "3.13.15"
 $WintunVersion = "0.14.1"
 
 New-Item -ItemType Directory -Force -Path $TargetDir | Out-Null
@@ -61,6 +61,12 @@ if ($onWindows) {
 if ($onWindows -and $IncludePython) {
     $pyDir = Join-Path $TargetDir "python-embed"
     Write-Host "Setting up python-embed ($PythonVersion) + pymobiledevice3 in $pyDir"
+    # Start from an empty directory: Expand-Archive -Force overwrites files but
+    # never removes the ones a previous version left behind. A 3.12 -> 3.13 bump
+    # otherwise leaves python312._pth next to python313._pth, and the lookup
+    # below then patches the stale one — site-packages stays disabled, pip is
+    # invisible, and the bundle silently ships without pymobiledevice3.
+    if (Test-Path $pyDir) { Remove-Item -Recurse -Force $pyDir }
     New-Item -ItemType Directory -Force -Path $pyDir | Out-Null
 
     $zip = Join-Path $env:TEMP "python-embed.zip"
@@ -89,7 +95,11 @@ if ($onWindows -and $IncludePython) {
         # Enable site-packages so pip-installed modules import. The embeddable
         # distribution names this file after the version (python313._pth for
         # 3.13.x); derive it so a version bump doesn't silently miss it.
-        $pth = Get-ChildItem -Filter 'python3*._pth' | Select-Object -First 1
+        $pthFiles = @(Get-ChildItem -Filter 'python3*._pth')
+        if ($pthFiles.Count -ne 1) {
+            throw "expected exactly one python3*._pth in $pyDir, found $($pthFiles.Count): $($pthFiles.Name -join ', ')"
+        }
+        $pth = $pthFiles[0]
         (Get-Content $pth.Name) -replace '#import site', 'import site' | Set-Content $pth.Name
         Invoke-WebRequest -Uri "https://bootstrap.pypa.io/get-pip.py" -OutFile get-pip.py
         ./python.exe get-pip.py --no-warn-script-location
