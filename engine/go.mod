@@ -2,7 +2,7 @@ module github.com/remi-deher/maps-main/engine
 
 go 1.26
 
-toolchain go1.26.5
+toolchain go1.26.6
 
 require github.com/gorilla/websocket v1.5.3
 
