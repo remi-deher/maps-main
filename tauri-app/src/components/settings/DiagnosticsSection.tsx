@@ -3,6 +3,7 @@ import { RefreshCw, Smartphone } from "lucide-react";
 import { useEngine } from "../../context/websocket";
 import { usePairing } from "../../context/pairingContext";
 import type { SettingsForm } from "../../features/settings/useSettingsForm";
+import { ReadinessPanel } from "./ReadinessPanel";
 
 // Everything needed to work out why a device isn't reachable: where the driver
 // binaries are, what USB sees, which pairing records exist locally, and the
@@ -28,6 +29,9 @@ export const DiagnosticsSection: React.FC<{ form: SettingsForm }> = ({ form }) =
 
       {diagnostics ? (
         <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+          {/* First, because it answers the question the rest only hints at. */}
+          <ReadinessPanel readiness={diagnostics.readiness} />
+
           <fieldset className="field-group">
             <legend className="field-group-legend">Chemins des pilotes (PC)</legend>
             <div className="info-grid">

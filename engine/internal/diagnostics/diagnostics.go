@@ -34,6 +34,10 @@ type Diagnostics struct {
 	USBDevices         []driver.Device `json:"usbDevices"`
 	USBDevicesError    string          `json:"usbDevicesError,omitempty"`
 	UnpairedUSBDevices []string        `json:"unpairedUsbDevices,omitempty"`
+	// Readiness is the pre-flight report: which prerequisites for injecting a
+	// position are met, and what to do about the ones that aren't. Carried here
+	// so it reaches every client through the existing GET_DIAGNOSTICS action.
+	Readiness Readiness `json:"readiness"`
 }
 
 type DeviceLister interface {
@@ -142,6 +146,12 @@ func pmd3VersionString(ctx context.Context, py string, base []string) string {
 
 // Collect gathers diagnostics about drivers, certificates, and devices.
 func Collect(ctx context.Context, explicit map[string]string, lister DeviceLister) (Diagnostics, error) {
+	return CollectWithProbe(ctx, explicit, lister, nil)
+}
+
+// CollectWithProbe is Collect plus the device-state probe used by the pre-flight
+// report. prober may be nil for drivers that can't interrogate the device.
+func CollectWithProbe(ctx context.Context, explicit map[string]string, lister DeviceLister, prober driver.DeviceStateProbe) (Diagnostics, error) {
 	var diag Diagnostics
 
 	goIosBin, goIosErr := platform.ResolveGoIos(explicit)
@@ -178,6 +188,8 @@ func Collect(ctx context.Context, explicit map[string]string, lister DeviceListe
 			diag.UnpairedUSBDevices = append(diag.UnpairedUSBDevices, dev.UDID)
 		}
 	}
+
+	diag.Readiness = CheckReadiness(ctx, lister, prober)
 
 	return diag, nil
 }

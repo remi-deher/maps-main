@@ -131,6 +131,30 @@ type Pairer interface {
 	Pair(ctx context.Context) error
 }
 
+// DeviceState is what a device must be in before any DVT service — location
+// simulation included — can work, beyond being merely plugged in and paired.
+// Both fields are tri-state: a nil pointer means "the backend couldn't tell",
+// which must be reported differently from a confident "no".
+type DeviceState struct {
+	// DeveloperModeEnabled mirrors Settings > Privacy & Security > Developer
+	// Mode. It is off by default on iOS 16+, requires a device restart to turn
+	// on, and without it the tunnel comes up but every DVT service is refused —
+	// which is why it otherwise surfaces as an unexplained timeout.
+	DeveloperModeEnabled *bool
+	// DeveloperImageMounted reports whether the Developer Disk Image (an
+	// Apple-signed personalized image on iOS 17+) is mounted. DVT services only
+	// exist on the device once it is.
+	DeveloperImageMounted *bool
+}
+
+// DeviceStateProbe is an optional capability: drivers able to interrogate the
+// device's developer state implement it, so the engine can tell an operator
+// exactly which prerequisite is missing instead of letting them all collapse
+// into the same tunnel timeout.
+type DeviceStateProbe interface {
+	ProbeDeviceState(ctx context.Context) DeviceState
+}
+
 // TunnelReresolver is an optional capability: drivers that can refresh the
 // active tunnel's endpoint for the current device without restarting the daemon
 // implement it, so the health monitor can transparently follow a device moving
