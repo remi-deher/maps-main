@@ -17,8 +17,13 @@ final class MapSessionModel {
     let engine: any EngineClientProtocol
     let location = LocationManager()
 
-    init(engine: any EngineClientProtocol = EngineClient()) {
-        self.engine = engine
+    // The default engine is built in the body rather than as a default
+    // argument: Swift evaluates default argument expressions in a nonisolated
+    // context, so `= EngineClient()` doesn't compile now that EngineClient is
+    // main-actor isolated. Passing nil means "give me the real one"; tests and
+    // previews inject their own.
+    init(engine: (any EngineClientProtocol)? = nil) {
+        self.engine = engine ?? EngineClient()
     }
 
     private var reportTask: Task<Void, Never>?
