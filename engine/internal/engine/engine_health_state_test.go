@@ -189,7 +189,9 @@ func TestPersistExportsLiveSettings(t *testing.T) {
 	eng := New(&mockDriver{id: domain.DriverPmd3}, settings.Default())
 	eng.SetStore(store)
 
-	eng.AddFavorite(context.Background(), 48.8566, 2.3522, "Paris")
+	if err := eng.AddFavorite(context.Background(), 48.8566, 2.3522, "Paris"); err != nil {
+		t.Fatalf("AddFavorite: %v", err)
+	}
 
 	saved, saves := store.snapshot()
 	if saves == 0 {
@@ -210,7 +212,9 @@ func TestPersistFailureIsLoggedNotFatal(t *testing.T) {
 	eng := New(&mockDriver{id: domain.DriverPmd3}, settings.Default())
 	eng.SetStore(store)
 
-	eng.AddFavorite(context.Background(), 48.8566, 2.3522, "Paris")
+	if err := eng.AddFavorite(context.Background(), 48.8566, 2.3522, "Paris"); err != nil {
+		t.Fatalf("AddFavorite: %v", err)
+	}
 
 	var found bool
 	for _, entry := range eng.GetLogs() {
@@ -228,7 +232,9 @@ func TestPersistFailureIsLoggedNotFatal(t *testing.T) {
 // persistence rather than panic on a nil interface.
 func TestPersistWithoutAStoreIsANoop(t *testing.T) {
 	eng := New(&mockDriver{id: domain.DriverPmd3}, settings.Default())
-	eng.AddFavorite(context.Background(), 48.8566, 2.3522, "Paris")
+	if err := eng.AddFavorite(context.Background(), 48.8566, 2.3522, "Paris"); err != nil {
+		t.Fatalf("AddFavorite: %v", err)
+	}
 
 	if got := len(eng.Status().Favorites); got != 1 {
 		t.Errorf("favorites = %d, want the action to have applied anyway", got)
