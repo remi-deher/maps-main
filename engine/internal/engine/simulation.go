@@ -41,6 +41,18 @@ func (e *Engine) startRouteSimulation(ctx context.Context, plan sim.Plan) {
 	// Broadcast sequence preview — must unlock before calling emit to avoid
 	// deadlock if the emit callback (hub broadcast) re-enters the engine.
 	e.mu.Lock()
+	// A stop issued between the go statement and this first write would
+	// otherwise be undone here: StopRoute cancels ctx and then sets the status
+	// to "ready", so a goroutine that had not started yet would come along
+	// afterwards and put it back to "moving" with a stale preview — and, with
+	// its context already cancelled, never tick again to correct it. Checking
+	// inside the same critical section StopRoute uses makes stop win in either
+	// interleaving: we either see the cancellation, or we write first and are
+	// then cleared.
+	if ctx.Err() != nil {
+		e.mu.Unlock()
+		return
+	}
 	e.st.CurrentSequencePreview = make([]domain.SequencePoint, len(points))
 	for i, p := range points {
 		e.st.CurrentSequencePreview[i] = domain.SequencePoint{Lat: p.Lat, Lon: p.Lon}
@@ -140,6 +152,11 @@ func (e *Engine) startPatrolSimulation(ctx context.Context, zone domain.PatrolZo
 
 	// Default starting position
 	e.mu.Lock()
+	// Same cancel-before-first-write guard as startRouteSimulation above.
+	if ctx.Err() != nil {
+		e.mu.Unlock()
+		return
+	}
 	currentPos := domain.LatLon{Lat: 48.8566, Lon: 2.3522}
 	if e.st.LastInjectedLocation != nil {
 		currentPos = domain.LatLon{Lat: e.st.LastInjectedLocation.Lat, Lon: e.st.LastInjectedLocation.Lon}

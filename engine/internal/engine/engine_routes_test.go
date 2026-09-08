@@ -262,3 +262,60 @@ func TestPausedSimulationStopsInjecting(t *testing.T) {
 		t.Errorf("position moved while paused: %v -> %v", baseline, after)
 	}
 }
+
+// Regression: stopping immediately after starting must win.
+//
+// startRouteSimulation writes State = "moving" and the sequence preview in its
+// opening block. That goroutine may not have been scheduled yet when StopRoute
+// runs, in which case it used to come along afterwards and undo the stop — and,
+// its context already cancelled, never tick again to correct the status. The UI
+// was then stuck on "moving" with a stale preview until something else
+// refreshed it. Windows CI caught this as a flake in the test above; the loop
+// makes it deterministic.
+func TestStopImmediatelyAfterPlayIsNotUndoneByTheStartingSimulation(t *testing.T) {
+	for range 50 {
+		eng := New(&mockDriver{id: domain.DriverPmd3}, settings.Default())
+		if err := eng.PlayCustomGpx(context.Background(), testGPX, 50); err != nil {
+			t.Fatalf("PlayCustomGpx: %v", err)
+		}
+		if err := eng.StopRoute(context.Background()); err != nil {
+			t.Fatalf("StopRoute: %v", err)
+		}
+
+		// Give the simulation goroutine every chance to run and clobber us.
+		time.Sleep(2 * time.Millisecond)
+
+		st := eng.Status()
+		if st.State != "ready" {
+			t.Fatalf("state = %q after an immediate stop, want ready", st.State)
+		}
+		if st.CurrentSequencePreview != nil {
+			t.Fatal("the sequence preview survived an immediate stop")
+		}
+	}
+}
+
+// Same race on the patrol path, which has its own starting goroutine.
+func TestStopImmediatelyAfterPatrolStartIsNotUndone(t *testing.T) {
+	zone := domain.PatrolZone{
+		Type:   "circle",
+		Center: &domain.LatLon{Lat: 48.8566, Lon: 2.3522},
+		Radius: 500,
+		Active: true,
+	}
+	for range 50 {
+		eng := New(&mockDriver{id: domain.DriverPmd3}, settings.Default())
+		if err := eng.PatrolUpdate(context.Background(), zone); err != nil {
+			t.Fatalf("PatrolUpdate: %v", err)
+		}
+		if err := eng.StopRoute(context.Background()); err != nil {
+			t.Fatalf("StopRoute: %v", err)
+		}
+
+		time.Sleep(2 * time.Millisecond)
+
+		if got := eng.Status().State; got != "ready" {
+			t.Fatalf("state = %q after an immediate stop, want ready", got)
+		}
+	}
+}
