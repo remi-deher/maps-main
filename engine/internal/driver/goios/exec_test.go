@@ -12,8 +12,10 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -425,5 +427,138 @@ func TestDeviceDetailsQueriesPinnedDevice(t *testing.T) {
 	})
 	if !strings.Contains(got, "--udid=udid-2") {
 		t.Errorf("info args %q must target the pinned device", got)
+	}
+}
+
+// TestConcurrentDriverAccessIsRaceFree exercises the access pattern the engine
+// actually produces: the health monitor probing device state every few seconds,
+// the simulation ticker injecting once a second, and inbound diagnostics
+// requests — all on one shared Driver. The lazily-resolved binary path and the
+// discovered UDID were plain fields written from each of those paths, so this
+// only means anything under -race.
+func TestConcurrentDriverAccessIsRaceFree(t *testing.T) {
+	withFakeExec(t, "list-ok")
+	d := &Driver{binPaths: map[string]string{}, bin: "fake-ios"}
+	d.mount.SetActive(driver.TunnelInfo{Address: "fde6:1234::1", Port: 54321}, "udid-1")
+
+	ctx := context.Background()
+	var wg sync.WaitGroup
+	for i := 0; i < 8; i++ {
+		wg.Add(3)
+		go func() { defer wg.Done(); _ = d.SetLocation(ctx, 48.85, 2.35) }()
+		go func() { defer wg.Done(); d.ProbeDeviceState(ctx) }()
+		go func() { defer wg.Done(); _, _ = d.DeviceDetails(ctx) }()
+	}
+	wg.Wait()
+}
+
+// recordExec swaps the package's exec indirection for one that records every
+// argument list the driver builds, while each spawned "process" exits
+// immediately (so a tunnel daemon is always seen as dying before a tunnel
+// appears). Returns a snapshot function for the recorded invocations.
+func recordExec(t *testing.T) func() []string {
+	t.Helper()
+	var mu sync.Mutex
+	var calls []string
+
+	record := func(arg []string) {
+		mu.Lock()
+		calls = append(calls, strings.Join(arg, " "))
+		mu.Unlock()
+	}
+	origCommand, origCommandContext := execCommand, execCommandContext
+	execCommand = func(name string, arg ...string) *exec.Cmd {
+		record(arg)
+		return exectest.FakeCommand("cmd-ok")(name, arg...)
+	}
+	execCommandContext = func(ctx context.Context, name string, arg ...string) *exec.Cmd {
+		record(arg)
+		return exectest.FakeCommandContext("cmd-ok")(ctx, name, arg...)
+	}
+	t.Cleanup(func() { execCommand, execCommandContext = origCommand, origCommandContext })
+
+	return func() []string {
+		mu.Lock()
+		defer mu.Unlock()
+		return append([]string(nil), calls...)
+	}
+}
+
+func containsArg(calls []string, want string) bool {
+	for _, c := range calls {
+		if strings.Contains(c, want) {
+			return true
+		}
+	}
+	return false
+}
+
+// TestStartTunnelFallsBackToUserspace is the regression for the bug that made
+// the no-admin path unreachable: when the kernel-TUN attempt fails, StartTunnel
+// must retry with --userspace. Creating the kernel TUN adapter needs
+// administrator rights, so on a machine without them this second attempt is the
+// only one that can ever succeed.
+func TestStartTunnelFallsBackToUserspace(t *testing.T) {
+	calls := recordExec(t)
+	d := &Driver{bin: "fake-ios", tunnelStartTimeout: 500 * time.Millisecond}
+
+	if _, err := d.StartTunnel(context.Background()); err == nil {
+		t.Fatal("expected StartTunnel to fail when no tunnel ever appears")
+	}
+	got := calls()
+	if !containsArg(got, "tunnel start") {
+		t.Fatalf("no kernel-TUN attempt in %v", got)
+	}
+	if !containsArg(got, "--userspace") {
+		t.Errorf("no userspace fallback attempt in %v", got)
+	}
+}
+
+// TestStartTunnelSkipsFallbackOnCancelledContext is the other half of the
+// contract: a caller that cancelled (shutdown, driver switch) must not have a
+// second tunnel started behind its back. This is also why the *caller's*
+// deadline has to cover both attempts — see driver.StartBudget.
+func TestStartTunnelSkipsFallbackOnCancelledContext(t *testing.T) {
+	calls := recordExec(t)
+	d := &Driver{bin: "fake-ios", tunnelStartTimeout: 5 * time.Second}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if _, err := d.StartTunnel(ctx); err == nil {
+		t.Fatal("expected StartTunnel to fail once the context is done")
+	}
+	if got := calls(); containsArg(got, "--userspace") {
+		t.Errorf("userspace fallback must not run after the caller gave up: %v", got)
+	}
+}
+
+// TestTunnelInfoPortIsConfigurable pins that the agent is launched on the port
+// we then query. The port used to be a package constant, so two engines on one
+// machine (a Windows service beside the desktop app, two cluster nodes) fought
+// over it — the arrangement go-ios itself recommends is one agent per device on
+// its own --tunnel-info-port.
+func TestTunnelInfoPortIsConfigurable(t *testing.T) {
+	d := &Driver{bin: "fake-ios", tunnelInfoPort: 28777}
+
+	if got := d.tunnelsURL(); got != "http://127.0.0.1:28777/tunnels" {
+		t.Errorf("tunnelsURL = %q, must follow the configured port", got)
+	}
+	args := strings.Join(d.tunnelStartArgs(false), " ")
+	if !strings.Contains(args, "--tunnel-info-port=28777") {
+		t.Errorf("tunnel start args %q must launch the agent on the configured port", args)
+	}
+}
+
+// TestBeforeStartDoesNotSpawnStopagent covers the switch away from `ios tunnel
+// stopagent`: that command accepts no options, so it could only ever target
+// go-ios's default port — missing our own agent on a custom port while killing
+// agents belonging to another engine or to a tunnel the user started by hand.
+func TestBeforeStartDoesNotSpawnStopagent(t *testing.T) {
+	calls := recordExec(t)
+	d := &Driver{bin: "fake-ios", tunnelInfoPort: 28778, tunnelStartTimeout: 200 * time.Millisecond}
+
+	_, _ = d.StartTunnel(context.Background())
+	if got := calls(); containsArg(got, "stopagent") {
+		t.Errorf("stopagent must not be spawned any more, got %v", got)
 	}
 }

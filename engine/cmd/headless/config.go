@@ -7,6 +7,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -46,6 +47,7 @@ func resolveRunConfig(args []string, getenv getenvFunc, def settings.Settings, o
 	goiosBin := fs.String("goios-bin", getenv("GPSMOCK_GOIOS_BIN"), "explicit path to the go-ios binary")
 	pythonBin := fs.String("python-bin", getenv("GPSMOCK_PYTHON_BIN"), "explicit path to the python interpreter (pmd3 driver)")
 	rsdFlag := fs.String("rsd", getenv("GPSMOCK_RSD"), "manual RSD endpoint host:port (WiFi transport; skips tunnel start)")
+	driverAPIPort := fs.Int("driver-api-port", envIntOr(getenv, "GPSMOCK_DRIVER_API_PORT", 0), "loopback port for the driver's tunnel daemon API (go-ios tunnel-info, pmd3 tunneld); 0 keeps the backend default. Set it to run two engines on one machine.")
 	logFile := fs.String("log-file", getenv("GPSMOCK_LOG_FILE"), "also write logs to this file (used by the Windows service)")
 	noTunnel := fs.Bool("no-tunnel", envBool(getenv, "GPSMOCK_NO_TUNNEL"), "do not start the tunnel at boot")
 	clusterMode := fs.String("cluster-mode", envOr(getenv, "GPSMOCK_CLUSTER_MODE", def.ClusterMode), "HA cluster mode: off | manual | auto (auto discovers peers via mDNS)")
@@ -69,6 +71,7 @@ func resolveRunConfig(args []string, getenv getenvFunc, def settings.Settings, o
 		goiosBin:           *goiosBin,
 		pythonBin:          *pythonBin,
 		rsd:                *rsdFlag,
+		driverAPIPort:      *driverAPIPort,
 		logFile:            *logFile,
 		noTunnel:           *noTunnel,
 		clusterMode:        *clusterMode,
@@ -139,6 +142,21 @@ func envOr(getenv getenvFunc, key, fallback string) string {
 func envBool(getenv getenvFunc, key string) bool {
 	v := getenv(key)
 	return v == "1" || v == "true" || v == "yes"
+}
+
+// envIntOr parses key as a base-10 integer; a missing or unparseable value
+// falls back rather than failing startup over a malformed env var.
+func envIntOr(getenv getenvFunc, key string, fallback int) int {
+	v := getenv(key)
+	if v == "" {
+		return fallback
+	}
+	n, err := strconv.Atoi(v)
+	if err != nil {
+		log.Printf("invalid integer %q for %s, using default %d", v, key, fallback)
+		return fallback
+	}
+	return n
 }
 
 // envDurationOr parses key as a Go duration string (e.g. "90s", "5m"); on a

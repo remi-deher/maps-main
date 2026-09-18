@@ -3,7 +3,6 @@ package goios
 import (
 	"context"
 	"os/exec"
-	"strconv"
 	"time"
 
 	"github.com/remi-deher/maps-main/engine/internal/driver"
@@ -25,9 +24,6 @@ const (
 // the userspace tunnel needs no adapter and can still come up — so the app
 // "just works" without elevation, at a small throughput cost.
 func (d *Driver) StartTunnel(ctx context.Context) (driver.TunnelInfo, error) {
-	if d.tunnelStartTimeout <= 0 {
-		d.tunnelStartTimeout = defaultTunnelStartTimeout
-	}
 	// Try to resolve UDID before starting tunnel
 	_ = d.getUDID(ctx)
 
@@ -60,8 +56,8 @@ func (d *Driver) mountDeveloperImage(ctx context.Context) {
 		return
 	}
 	args := []string{"image", "auto"}
-	if d.udid != "" {
-		args = append(args, "--udid="+d.udid)
+	if udid := d.cachedUDID(); udid != "" {
+		args = append(args, "--udid="+udid)
 	}
 	mountCtx, cancel := context.WithTimeout(ctx, 60*time.Second)
 	defer cancel()
@@ -81,22 +77,17 @@ func (d *Driver) startTunnelMode(ctx context.Context, userspace bool) (driver.Tu
 		StartLabel:    label,
 		DaemonLabel:   "tunnel",
 		ManualAddress: d.manual,
-		StartTimeout:  d.tunnelStartTimeout,
+		StartTimeout:  d.startTimeout(),
 		PollInterval:  tunnelPollInterval,
 		BeforeStart: func(ctx context.Context) error {
-			// Clear any stale tunnel agent so our fresh `tunnel start` owns a
-			// clean HTTP API on tunnelInfoPort. A leftover agent (from a prior
-			// run, a manual `ios tunnel start`, or our own just-failed kernel-TUN
-			// attempt) would otherwise keep serving its own — possibly empty —
-			// tunnel list. Best-effort; ignore errors (no agent to stop is the
-			// common, fine case). Bounded: callers like the health monitor's
-			// retry loop pass a context without a deadline, and a hung stopagent
-			// would otherwise hold the engine's tunnel lock indefinitely.
-			if bin, err := d.binPath(); err == nil {
-				stopCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
-				defer cancel()
-				_ = execCommandContext(stopCtx, bin, "tunnel", "stopagent").Run()
-			}
+			// Clear any stale agent holding OUR tunnel-info port so the fresh
+			// `tunnel start` owns a clean API there. A leftover agent (from a
+			// prior run, or our own just-failed kernel-TUN attempt) would
+			// otherwise keep serving its own — possibly empty — tunnel list.
+			// Best-effort and bounded by the HTTP client's own timeout; callers
+			// like the health monitor's retry loop pass a context with no
+			// deadline, and a hung stop would hold the engine's tunnel lock.
+			d.shutdownAgent(ctx)
 			return nil
 		},
 		StartDaemon: func(context.Context) (*exec.Cmd, error) {
@@ -110,6 +101,16 @@ func (d *Driver) startTunnelMode(ctx context.Context, userspace bool) (driver.Tu
 	})
 }
 
+// startTimeout is the per-attempt budget for bringing a tunnel up. Read-only
+// after New, so no lock: a zero value (a Driver built directly, as tests do)
+// falls back to the backend default rather than to TunnelMount's generic one.
+func (d *Driver) startTimeout() time.Duration {
+	if d.tunnelStartTimeout > 0 {
+		return d.tunnelStartTimeout
+	}
+	return defaultTunnelStartTimeout
+}
+
 // tunnelStartArgs builds the `ios tunnel start` argument list for the given
 // mode. --pair-record-path (in lockdownArgs) and --tunnel-info-port are always
 // passed; --userspace is added only for the no-admin userspace fallback.
@@ -117,12 +118,12 @@ func (d *Driver) tunnelStartArgs(userspace bool) []string {
 	args := append([]string{"tunnel", "start"}, d.lockdownArgs...)
 	// Pin the tunnel-info HTTP API port so endpoint.go's queries hit the exact
 	// daemon we just launched, not whatever the CLI default is.
-	args = append(args, "--tunnel-info-port="+strconv.Itoa(tunnelInfoPort))
+	args = append(args, "--tunnel-info-port="+driver.Itoa(d.infoPort()))
 	if userspace {
 		args = append(args, "--userspace")
 	}
-	if d.udid != "" {
-		args = append(args, "--udid="+d.udid)
+	if udid := d.cachedUDID(); udid != "" {
+		args = append(args, "--udid="+udid)
 	}
 	return args
 }

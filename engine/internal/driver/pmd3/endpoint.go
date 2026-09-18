@@ -12,10 +12,31 @@ import (
 	"github.com/remi-deher/maps-main/engine/internal/driver"
 )
 
-const defaultTunneldURL = "http://127.0.0.1:49151/"
+// defaultTunneldPort is pymobiledevice3's own tunneld default. Configurable so
+// two engines on one machine can each run their own daemon instead of fighting
+// over a single fixed port.
+const defaultTunneldPort = 49151
 
 // tunneldClient is the short-timeout HTTP client used to poll the tunneld API.
 var tunneldClient = &http.Client{Timeout: 3 * time.Second}
+
+// port is the tunneld REST API port this driver's daemon owns.
+func (d *Driver) port() int {
+	if d.tunneldPort > 0 {
+		return d.tunneldPort
+	}
+	return defaultTunneldPort
+}
+
+// baseURL is the root of this daemon's REST API. tunneldURL is a test seam; in
+// production the URL is derived from the port we launched tunneld on, so the
+// two can never drift apart.
+func (d *Driver) baseURL() string {
+	if d.tunneldURL != "" {
+		return d.tunneldURL
+	}
+	return "http://127.0.0.1:" + driver.Itoa(d.port()) + "/"
+}
 
 // tunneldEntry mirrors one tunnel object from the tunneld REST API, e.g.
 // {"<udid>":[{"tunnel-address":"fd...:1","tunnel-port":64337,"interface":"utunN"}]}.
@@ -28,11 +49,7 @@ type tunneldEntry struct {
 // queryTunneld asks the running daemon's REST API for the current device tunnel
 // and returns the first entry with a usable RSD address+port.
 func (d *Driver) queryTunneld(ctx context.Context) (driver.TunnelEndpoint, bool) {
-	url := d.tunneldURL
-	if url == "" {
-		url = defaultTunneldURL
-	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, d.baseURL(), nil)
 	if err != nil {
 		return driver.TunnelEndpoint{}, false
 	}
@@ -52,11 +69,7 @@ func (d *Driver) queryTunneld(ctx context.Context) (driver.TunnelEndpoint, bool)
 // currently has a tunnel for — tunneld auto-discovers Apple devices paired on
 // the LAN via mDNS/Bonjour on its own, this just surfaces what it found.
 func (d *Driver) ListNetworkDevices(ctx context.Context) ([]driver.NetworkDevice, error) {
-	url := d.tunneldURL
-	if url == "" {
-		url = defaultTunneldURL
-	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, d.baseURL(), nil)
 	if err != nil {
 		return nil, err
 	}

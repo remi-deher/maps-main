@@ -24,13 +24,20 @@ var (
 
 // Driver is the pymobiledevice3-backed implementation.
 type Driver struct {
-	py                 string            // cached python executable ("" until resolved)
 	base               []string          // base args, e.g. ["-m","pymobiledevice3"]
 	binPaths           map[string]string // explicit overrides, for lazy resolution
 	manual             string            // optional "host:port" RSD endpoint (WiFi transport)
 	targetUDID         string            // optional: pin resolution to this device's tunnel
 	tunnelStartTimeout time.Duration
-	tunneldURL         string // tunneld REST API base ("" => defaultTunneldURL); overridable in tests
+	tunneldURL         string // tunneld REST API base ("" => derived from tunneldPort); test seam
+	tunneldPort        int    // daemon's REST API port (0 => defaultTunneldPort)
+	transport          driver.TransportKind
+
+	// pyMu guards the lazily-resolved interpreter path. Everything above is set
+	// once by New and read-only afterwards; this is the one field the health
+	// monitor, the simulation ticker and inbound actions can all write.
+	pyMu sync.RWMutex
+	py   string // cached python executable ("" until resolved)
 
 	mount    driver.TunnelMount
 	location *locationSession
@@ -65,16 +72,32 @@ func New(cfg driver.Config) (driver.Driver, error) {
 		manual:             cfg.ManualAddress,
 		targetUDID:         cfg.TargetUDID,
 		tunnelStartTimeout: timeout,
+		tunneldPort:        cfg.DaemonAPIPort,
+		transport:          cfg.Transport,
 	}, nil
 }
 
-// pyCommand returns the Python executable, resolving it lazily if New couldn't.
+// pyCommand returns the Python executable, resolving it lazily if New couldn't
+// and caching the result: without the cache every single command re-walked the
+// PATH looking for an interpreter that wasn't there.
 func (d *Driver) pyCommand() (string, error) {
-	if d.py != "" {
-		return d.py, nil
+	d.pyMu.RLock()
+	py := d.py
+	d.pyMu.RUnlock()
+	if py != "" {
+		return py, nil
 	}
-	py, _, err := platform.Pmd3Command(d.binPaths)
-	return py, err
+	resolved, _, err := platform.Pmd3Command(d.binPaths)
+	if err != nil {
+		return "", err
+	}
+	d.pyMu.Lock()
+	if d.py == "" {
+		d.py = resolved
+	}
+	py = d.py
+	d.pyMu.Unlock()
+	return py, nil
 }
 
 func init() {

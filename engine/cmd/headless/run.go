@@ -30,6 +30,7 @@ type runConfig struct {
 	goiosBin      string
 	pythonBin     string
 	rsd           string
+	driverAPIPort int
 	logFile       string
 	noTunnel      bool
 
@@ -79,7 +80,7 @@ func runEngine(ctx context.Context, cfg runConfig) error {
 
 	transport := parseTransport(cfg.transport)
 
-	dcfg := driver.Config{Transport: transport, ManualAddress: cfg.rsd, BinaryPaths: map[string]string{}, TunnelStartTimeout: cfg.tunnelStartTimeout}
+	dcfg := driver.Config{Transport: transport, ManualAddress: cfg.rsd, BinaryPaths: map[string]string{}, DaemonAPIPort: cfg.driverAPIPort, TunnelStartTimeout: cfg.tunnelStartTimeout}
 	if cfg.goiosBin != "" {
 		dcfg.BinaryPaths["go-ios"] = cfg.goiosBin
 	}
@@ -150,12 +151,14 @@ func runEngine(ctx context.Context, cfg runConfig) error {
 	eng.StartMdnsWake(ctx)
 
 	if !cfg.noTunnel {
-		tunnelStartTimeout := cfg.tunnelStartTimeout
-		if tunnelStartTimeout <= 0 {
-			tunnelStartTimeout = 90 * time.Second
-		}
+		// Not cfg.tunnelStartTimeout: that is the budget for ONE tunnel attempt,
+		// and StartTunnel may need two (kernel-TUN, then the no-admin userspace
+		// fallback) plus the developer-image mount. Passing the per-attempt value
+		// here made the first attempt consume the whole deadline, so the fallback
+		// never ran at boot — see driver.StartBudget.
+		bootBudget := driver.StartBudget(cfg.tunnelStartTimeout)
 		go func() {
-			tctx, cancel := context.WithTimeout(ctx, tunnelStartTimeout)
+			tctx, cancel := context.WithTimeout(ctx, bootBudget)
 			defer cancel()
 			if err := eng.StartTunnel(tctx); err != nil {
 				log.Printf("tunnel not started: %v", err)

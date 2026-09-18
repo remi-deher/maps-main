@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os/exec"
+	"sync"
 	"time"
 
 	"github.com/remi-deher/maps-main/engine/internal/domain"
@@ -21,15 +22,25 @@ var (
 )
 
 // Driver is the go-ios backed implementation.
+//
+// One Driver is shared by everything that talks to the device: the health
+// monitor's 5s loop, the 1Hz simulation ticker and every inbound WebSocket
+// action all call into it concurrently. Fields written after construction are
+// therefore guarded by mu; everything above it is set once by New and read-only
+// afterwards.
 type Driver struct {
-	bin                string            // cached resolved CLI path ("" until resolved)
 	binPaths           map[string]string // explicit overrides, for lazy resolution
 	lockdownArgs       []string
 	manual             string // optional "host:port" RSD endpoint (WiFi transport)
 	targetUDID         string // optional: pin resolution (and `tunnel start --udid`) to this device
 	tunnelStartTimeout time.Duration
-	tunnelInfoURL      string // go-ios tunnel-info HTTP API base ("" => defaultTunnelInfoURL); overridable in tests
-	udid               string
+	tunnelInfoURL      string // go-ios tunnel-info HTTP API base ("" => derived from tunnelInfoPort); test seam
+	tunnelInfoPort     int    // agent's tunnel-info API port (0 => defaultTunnelInfoPort)
+
+	// mu guards the lazily-resolved binary path and the discovered UDID.
+	mu   sync.RWMutex
+	bin  string // cached resolved CLI path ("" until resolved)
+	udid string
 
 	mount driver.TunnelMount
 }
@@ -49,15 +60,57 @@ func New(cfg driver.Config) (driver.Driver, error) {
 	}
 	// Pre-seed udid from the target so `tunnel start --udid` and getUDID pin to
 	// the chosen device without a `ios list` round-trip.
-	return &Driver{bin: bin, binPaths: cfg.BinaryPaths, lockdownArgs: lock, manual: cfg.ManualAddress, targetUDID: cfg.TargetUDID, tunnelStartTimeout: timeout, udid: cfg.TargetUDID}, nil
+	return &Driver{
+		bin:                bin,
+		binPaths:           cfg.BinaryPaths,
+		lockdownArgs:       lock,
+		manual:             cfg.ManualAddress,
+		targetUDID:         cfg.TargetUDID,
+		tunnelStartTimeout: timeout,
+		tunnelInfoPort:     cfg.DaemonAPIPort,
+		udid:               cfg.TargetUDID,
+	}, nil
 }
 
-// binPath returns the go-ios CLI path, resolving it lazily if New couldn't.
+// binPath returns the go-ios CLI path, resolving it lazily if New couldn't and
+// caching the result so a machine that installs go-ios mid-run stops paying a
+// PATH lookup per command.
 func (d *Driver) binPath() (string, error) {
-	if d.bin != "" {
-		return d.bin, nil
+	d.mu.RLock()
+	bin := d.bin
+	d.mu.RUnlock()
+	if bin != "" {
+		return bin, nil
 	}
-	return platform.ResolveGoIos(d.binPaths)
+	resolved, err := platform.ResolveGoIos(d.binPaths)
+	if err != nil {
+		return "", err
+	}
+	d.mu.Lock()
+	if d.bin == "" {
+		d.bin = resolved
+	}
+	bin = d.bin
+	d.mu.Unlock()
+	return bin, nil
+}
+
+// cachedUDID returns the discovered UDID without triggering a lookup.
+func (d *Driver) cachedUDID() string {
+	d.mu.RLock()
+	defer d.mu.RUnlock()
+	return d.udid
+}
+
+// setUDID records a discovered UDID, unless a target is pinned — in that case
+// the pinned value is the only correct answer and must never be replaced.
+func (d *Driver) setUDID(udid string) {
+	if d.targetUDID != "" || udid == "" {
+		return
+	}
+	d.mu.Lock()
+	d.udid = udid
+	d.mu.Unlock()
 }
 
 func init() {
@@ -144,14 +197,14 @@ func (d *Driver) detailsUDID(ctx context.Context) (string, error) {
 }
 
 func (d *Driver) getUDID(ctx context.Context) string {
-	if d.udid != "" {
-		return d.udid
+	if udid := d.cachedUDID(); udid != "" {
+		return udid
 	}
 	devices, err := d.ListDevices(ctx)
 	if err == nil && len(devices) > 0 {
-		d.udid = devices[0].UDID
+		d.setUDID(devices[0].UDID)
 	}
-	return d.udid
+	return d.cachedUDID()
 }
 
 func (d *Driver) Tunnel() (driver.TunnelInfo, bool) {

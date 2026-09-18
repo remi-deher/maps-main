@@ -183,11 +183,12 @@ func (s *Server) dispatchDebugLog(p api.DebugLogPayload) error {
 	return nil
 }
 
-// dispatchSwitchDriver runs the driver switch in the background: it can take
-// up to 90s (device pairing/handshake), far longer than the per-action
-// timeout the rest of dispatch uses, so it gets its own context and reports
-// its outcome via trackAction once done instead of blocking the dispatch
-// loop or this action's deferred tracking.
+// dispatchSwitchDriver runs the driver switch in the background: tearing down a
+// tunnel and bringing another one up takes minutes in the worst case (developer
+// image mount, then a kernel-TUN attempt and a userspace fallback), far longer
+// than the per-action timeout the rest of dispatch uses, so it gets its own
+// context sized by the engine and reports its outcome via trackAction once done
+// instead of blocking the dispatch loop or this action's deferred tracking.
 func (s *Server) dispatchSwitchDriver(env api.Envelope) {
 	var p api.SwitchDriverPayload
 	if err := json.Unmarshal(env.Data, &p); err != nil {
@@ -196,7 +197,10 @@ func (s *Server) dispatchSwitchDriver(env api.Envelope) {
 		return
 	}
 	go func(driverID, transport, wifiAddress, targetUDID string) {
-		ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+		// The engine owns this budget: it must cover the developer-image mount
+		// and both tunnel attempts, otherwise the switch cuts the no-admin
+		// userspace fallback off before it ever runs.
+		ctx, cancel := context.WithTimeout(context.Background(), s.eng.TunnelStartBudget())
 		defer cancel()
 		err := s.eng.SwitchDriver(ctx, driverID, transport, wifiAddress, targetUDID)
 		if err != nil {

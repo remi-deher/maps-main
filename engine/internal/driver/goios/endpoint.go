@@ -11,13 +11,12 @@ import (
 	"github.com/remi-deher/maps-main/engine/internal/driver"
 )
 
-const (
-	// tunnelInfoPort is go-ios's local tunnel-info HTTP API port. We pass it
-	// explicitly to `ios tunnel start` (see tunnel.go) so the daemon and our
-	// queries always agree on it instead of relying on the CLI default.
-	tunnelInfoPort       = 28100
-	defaultTunnelInfoURL = "http://127.0.0.1:28100"
-)
+// defaultTunnelInfoPort is go-ios's own tunnel-info HTTP API default. We always
+// pass the port explicitly to `ios tunnel start` (see tunnel.go) so the daemon
+// and our queries agree on it, and it is configurable so two engines on one
+// machine can each own an agent — which is the arrangement go-ios itself
+// recommends ("run one per device on its own --tunnel-info-port").
+const defaultTunnelInfoPort = 28100
 
 // tunnelAPIClient is the short-timeout client used to poll go-ios's tunnel-info
 // HTTP API. Reading GET /tunnels directly — instead of spawning `ios tunnel ls`
@@ -38,12 +37,49 @@ type tunnelEntry struct {
 	UserspaceTunPort int    `json:"userspaceTunPort"`
 }
 
-func (d *Driver) tunnelsURL() string {
-	base := d.tunnelInfoURL
-	if base == "" {
-		base = defaultTunnelInfoURL
+// infoPort is the tunnel-info API port this driver's agent owns.
+func (d *Driver) infoPort() int {
+	if d.tunnelInfoPort > 0 {
+		return d.tunnelInfoPort
 	}
-	return base + "/tunnels"
+	return defaultTunnelInfoPort
+}
+
+// tunnelInfoBase is the root of this agent's tunnel-info API. tunnelInfoURL is
+// a test seam; in production the URL is derived from the port we launched the
+// agent on, so the two can never drift apart.
+func (d *Driver) tunnelInfoBase() string {
+	if d.tunnelInfoURL != "" {
+		return d.tunnelInfoURL
+	}
+	return "http://127.0.0.1:" + driver.Itoa(d.infoPort())
+}
+
+func (d *Driver) tunnelsURL() string {
+	return d.tunnelInfoBase() + "/tunnels"
+}
+
+// shutdownAgent asks the tunnel agent listening on OUR port to stop, via the
+// /shutdown endpoint its tunnel-info server exposes.
+//
+// This replaces `ios tunnel stopagent`, which takes no options: it can only
+// ever target go-ios's default port, so it both missed an agent of ours running
+// on a custom port and killed agents belonging to another engine instance or to
+// a tunnel the user had started by hand. Talking to the endpoint directly also
+// saves spawning a process (and the 15s timeout that guarded it) on every
+// single tunnel attempt.
+func (d *Driver) shutdownAgent(ctx context.Context) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, d.tunnelInfoBase()+"/shutdown", nil)
+	if err != nil {
+		return
+	}
+	resp, err := tunnelAPIClient.Do(req)
+	if err != nil {
+		// No agent listening is the common, fine case.
+		return
+	}
+	_, _ = io.Copy(io.Discard, resp.Body)
+	_ = resp.Body.Close()
 }
 
 // fetchTunnels asks go-ios's tunnel-info HTTP API (GET /tunnels) for the live

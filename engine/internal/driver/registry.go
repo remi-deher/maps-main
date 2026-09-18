@@ -27,6 +27,14 @@ type Config struct {
 	// the resolver only ever returns the tunnel whose UDID matches. Empty means
 	// "first usable device". Mutually exclusive with ManualAddress in practice.
 	TargetUDID string
+	// DaemonAPIPort overrides the loopback port the backend's tunnel daemon
+	// serves its local API on (go-ios's tunnel-info API, pymobiledevice3's
+	// tunneld REST API). Zero means the backend default. It exists so two
+	// engines can coexist on one machine — a Windows service next to the
+	// desktop app, or two cluster nodes — instead of fighting over one fixed
+	// port; go-ios documents exactly this ("run one per device on its own
+	// --tunnel-info-port").
+	DaemonAPIPort int
 	// TunnelStartTimeout overrides how long a driver waits for the RSD
 	// address to appear before giving up on StartTunnel. Zero means "use the
 	// driver's own default" (45s for go-ios, 60s for pmd3 — pmd3 additionally

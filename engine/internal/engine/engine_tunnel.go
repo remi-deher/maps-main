@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"runtime"
 	"strings"
+	"time"
 
 	"github.com/remi-deher/maps-main/engine/internal/api"
 	"github.com/remi-deher/maps-main/engine/internal/domain"
@@ -152,6 +153,17 @@ func (e *Engine) SwitchDriver(ctx context.Context, driverID, transport, wifiAddr
 		return err
 	}
 	return nil
+}
+
+// TunnelStartBudget is how long a caller must give StartTunnel before treating
+// it as failed — long enough for the developer-image mount plus both tunnel
+// attempts (kernel-TUN, then the no-admin userspace fallback). Callers that
+// invent their own deadline silently disable that fallback.
+func (e *Engine) TunnelStartBudget() time.Duration {
+	e.mu.RLock()
+	perAttempt := e.driverCfgBase.TunnelStartTimeout
+	e.mu.RUnlock()
+	return driver.StartBudget(perAttempt)
 }
 
 // StartTunnel brings up the driver tunnel and updates the status.

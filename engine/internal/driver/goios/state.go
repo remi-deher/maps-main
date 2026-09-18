@@ -77,7 +77,7 @@ func (d *Driver) developerImageMounted(ctx context.Context, bin string) (bool, b
 }
 
 func (d *Driver) runProbe(ctx context.Context, bin string, args ...string) ([]byte, error) {
-	if udid := d.udid; udid != "" {
+	if udid := d.cachedUDID(); udid != "" {
 		args = append(args, "--udid="+udid)
 	}
 	probeCtx, cancel := context.WithTimeout(ctx, driver.ProbeTimeout)

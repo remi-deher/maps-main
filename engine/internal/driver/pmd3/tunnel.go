@@ -23,9 +23,6 @@ const (
 // the first attempt fails and the fallback is what makes the app work at all.
 // See userspace.go for what the fallback changes.
 func (d *Driver) StartTunnel(ctx context.Context) (driver.TunnelInfo, error) {
-	if d.tunnelStartTimeout <= 0 {
-		d.tunnelStartTimeout = defaultTunnelStartTimeout
-	}
 	d.userspace.Store(false)
 
 	// The DDI is a prerequisite for every DVT service, location simulation
@@ -64,7 +61,7 @@ func (d *Driver) startTunneld(ctx context.Context) (driver.TunnelInfo, error) {
 		StartLabel:    "remote tunneld",
 		DaemonLabel:   "remote tunneld",
 		ManualAddress: d.manual,
-		StartTimeout:  d.tunnelStartTimeout,
+		StartTimeout:  d.startTimeout(),
 		PollInterval:  tunnelPollInterval,
 		TimeoutHint:   pmd3TunneldTimeoutHint,
 		StartDaemon: func(context.Context) (*exec.Cmd, error) {
@@ -79,6 +76,16 @@ func (d *Driver) startTunneld(ctx context.Context) (driver.TunnelInfo, error) {
 	})
 }
 
+// startTimeout is the per-attempt budget for bringing a tunnel up. Read-only
+// after New, so no lock: a zero value (a Driver built directly, as tests do)
+// falls back to the backend default rather than to TunnelMount's generic one.
+func (d *Driver) startTimeout() time.Duration {
+	if d.tunnelStartTimeout > 0 {
+		return d.tunnelStartTimeout
+	}
+	return defaultTunnelStartTimeout
+}
+
 // tunneldArgs builds the `remote tunneld` invocation. It forces the TCP tunnel
 // on Python 3.13+ (see pythonSupportsTCPTunnel): pymobiledevice3 otherwise
 // defaults to QUIC, which Apple removed in iOS 18.2+ — a QUIC daemon then
@@ -86,11 +93,33 @@ func (d *Driver) startTunneld(ctx context.Context) (driver.TunnelInfo, error) {
 // times out. On < 3.13 TCP isn't available, so we leave the daemon on its
 // default (QUIC) as the only transport it can offer.
 func (d *Driver) tunneldArgs() []string {
-	args := []string{"remote", "tunneld"}
+	args := []string{"remote", "tunneld", "--port", driver.Itoa(d.port())}
 	if d.pythonSupportsTCPTunnel() {
 		args = append(args, "--protocol", "tcp")
 	}
-	return args
+	return append(args, monitorArgs(d.transport)...)
+}
+
+// monitorArgs restricts which discovery monitors tunneld runs.
+//
+// tunneld watches four sources concurrently and keeps a tunnel per UDID: two
+// mDNS browses (`--usb` for _remoted._tcp, `--wifi` for _remotepairing._tcp),
+// usbmux, and mobdev2 (the Wi-Fi-sync mDNS record). All four are on by default,
+// which is what "auto" should mean.
+//
+// This is the only place the engine's transport selector can be honored at all:
+// neither daemon lets you pick a network adapter, and the RSD address always
+// belongs to a virtual interface, so USB vs WiFi cannot be told apart after the
+// fact. Restricting the monitors decides it up front instead.
+func monitorArgs(transport driver.TransportKind) []string {
+	switch transport {
+	case driver.TransportUSB:
+		return []string{"--no-wifi", "--no-mobdev2"}
+	case driver.TransportWiFi:
+		return []string{"--no-usb", "--no-usbmux"}
+	default:
+		return nil
+	}
 }
 
 const pmd3TunneldTimeoutHint = "le serveur tunneld répond, mais aucun tunnel RSD n'a été publié. Vérifiez que l'iPhone est déverrouillé, approuvé, en mode développeur, et lancez l'application/serveur avec les droits administrateur si l'adaptateur tunnel ne peut pas être créé."
