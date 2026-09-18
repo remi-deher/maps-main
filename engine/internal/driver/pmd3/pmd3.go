@@ -39,9 +39,10 @@ type Driver struct {
 	pyMu sync.RWMutex
 	py   string // cached python executable ("" until resolved)
 
-	mount    driver.TunnelMount
-	location *locationSession
-	locMu    sync.Mutex
+	mount     driver.TunnelMount
+	mountGate driver.MountGate
+	location  *locationSession
+	locMu     sync.Mutex
 
 	// userspace is set once StartTunnel has fallen back to the no-admin
 	// in-process tunnel, which the worker owns rather than tunneld. It changes

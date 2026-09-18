@@ -42,7 +42,8 @@ type Driver struct {
 	bin  string // cached resolved CLI path ("" until resolved)
 	udid string
 
-	mount driver.TunnelMount
+	mount     driver.TunnelMount
+	mountGate driver.MountGate
 }
 
 // New builds a go-ios Driver. It does NOT fail when the CLI can't be found:

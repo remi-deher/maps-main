@@ -50,9 +50,21 @@ func (d *Driver) mountDeveloperImage(ctx context.Context) {
 	if err != nil {
 		return
 	}
+	if d.mountGate.Mounted(d.targetUDID) {
+		return
+	}
+	// `mounter list` is cheap and answers the only question that matters;
+	// `mounter auto-mount` may talk to Apple's signing server. Ask before paying.
+	if mounted, ok := d.developerImageMounted(ctx, py); ok && mounted {
+		d.mountGate.MarkMounted(d.targetUDID)
+		return
+	}
+
 	mountCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
-	_ = execCommandContext(mountCtx, py, d.args("mounter", "auto-mount")...).Run()
+	if err := execCommandContext(mountCtx, py, d.args("mounter", "auto-mount")...).Run(); err == nil {
+		d.mountGate.MarkMounted(d.targetUDID)
+	}
 }
 
 func (d *Driver) startTunneld(ctx context.Context) (driver.TunnelInfo, error) {

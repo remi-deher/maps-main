@@ -89,6 +89,12 @@ func TestHelperProcess(t *testing.T) {
 		os.Exit(1)
 	case "cmd-ok":
 		fmt.Println("ok")
+	case "image-mounted":
+		// `ios image list` reports one mounted image; every other command is a
+		// no-op so a caller can assert which ones were spawned at all.
+		if sub == "image list" {
+			fmt.Println(`[{"ImageSignature":"deadbeef"}]`)
+		}
 	default:
 		os.Exit(0)
 	}
@@ -458,6 +464,13 @@ func TestConcurrentDriverAccessIsRaceFree(t *testing.T) {
 // appears). Returns a snapshot function for the recorded invocations.
 func recordExec(t *testing.T) func() []string {
 	t.Helper()
+	return recordExecScenario(t, "cmd-ok")
+}
+
+// recordExecScenario is recordExec with a caller-chosen fake scenario, for
+// tests that need the child process to answer with something specific.
+func recordExecScenario(t *testing.T, scenario string) func() []string {
+	t.Helper()
 	var mu sync.Mutex
 	var calls []string
 
@@ -469,11 +482,11 @@ func recordExec(t *testing.T) func() []string {
 	origCommand, origCommandContext := execCommand, execCommandContext
 	execCommand = func(name string, arg ...string) *exec.Cmd {
 		record(arg)
-		return exectest.FakeCommand("cmd-ok")(name, arg...)
+		return exectest.FakeCommand(scenario)(name, arg...)
 	}
 	execCommandContext = func(ctx context.Context, name string, arg ...string) *exec.Cmd {
 		record(arg)
-		return exectest.FakeCommandContext("cmd-ok")(ctx, name, arg...)
+		return exectest.FakeCommandContext(scenario)(ctx, name, arg...)
 	}
 	t.Cleanup(func() { execCommand, execCommandContext = origCommand, origCommandContext })
 
@@ -560,5 +573,40 @@ func TestBeforeStartDoesNotSpawnStopagent(t *testing.T) {
 	_, _ = d.StartTunnel(context.Background())
 	if got := calls(); containsArg(got, "stopagent") {
 		t.Errorf("stopagent must not be spawned any more, got %v", got)
+	}
+}
+
+// TestMountIsSkippedWhenTheImageIsAlreadyMounted covers the expensive step the
+// retry loop used to repeat: `ios image auto` personalizes the image through
+// Apple's signing server (bounded at 60s) and ran before every tunnel attempt,
+// holding the engine's tunnel lock, to redo device-side state that had not
+// changed. The cheap `ios image list` answers the question instead.
+func TestMountIsSkippedWhenTheImageIsAlreadyMounted(t *testing.T) {
+	calls := recordExecScenario(t, "image-mounted")
+	d := &Driver{bin: "fake-ios", udid: "udid-1", tunnelStartTimeout: 200 * time.Millisecond}
+
+	_, _ = d.StartTunnel(context.Background())
+	got := calls()
+	if !containsArg(got, "image list") {
+		t.Fatalf("expected the cheap mount check to run, got %v", got)
+	}
+	if containsArg(got, "image auto") {
+		t.Errorf("must not re-mount an image already reported as mounted: %v", got)
+	}
+	if !d.mountGate.Mounted("udid-1") {
+		t.Error("an observed mount must be remembered so the next retry skips the check too")
+	}
+}
+
+// TestMountRunsWhenTheImageIsMissing is the other half: a failure to observe a
+// mounted image must never be cached, because that is exactly the case where
+// retrying is what fixes it (device locked, or offline at the time).
+func TestMountRunsWhenTheImageIsMissing(t *testing.T) {
+	calls := recordExec(t) // "cmd-ok" prints no JSON, so the probe cannot conclude
+	d := &Driver{bin: "fake-ios", udid: "udid-1", tunnelStartTimeout: 200 * time.Millisecond}
+
+	_, _ = d.StartTunnel(context.Background())
+	if got := calls(); !containsArg(got, "image auto") {
+		t.Errorf("expected a mount attempt when the image state is unknown, got %v", got)
 	}
 }

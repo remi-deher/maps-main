@@ -55,13 +55,26 @@ func (d *Driver) mountDeveloperImage(ctx context.Context) {
 	if err != nil {
 		return
 	}
+	udid := d.cachedUDID()
+	if d.mountGate.Mounted(udid) {
+		return
+	}
+	// `ios image list` is cheap and answers the only question that matters;
+	// `ios image auto` may talk to Apple's signing server. Ask before paying.
+	if mounted, ok := d.developerImageMounted(ctx, bin); ok && mounted {
+		d.mountGate.MarkMounted(udid)
+		return
+	}
+
 	args := []string{"image", "auto"}
-	if udid := d.cachedUDID(); udid != "" {
+	if udid != "" {
 		args = append(args, "--udid="+udid)
 	}
 	mountCtx, cancel := context.WithTimeout(ctx, 60*time.Second)
 	defer cancel()
-	_ = execCommandContext(mountCtx, bin, args...).Run()
+	if err := execCommandContext(mountCtx, bin, args...).Run(); err == nil {
+		d.mountGate.MarkMounted(udid)
+	}
 }
 
 // startTunnelMode brings up the tunnel in either kernel-TUN (userspace=false) or

@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"os"
 	"os/exec"
 	"strings"
 	"sync"
@@ -62,26 +63,39 @@ func newLocationSession(ctx context.Context, py string, workerArgs []string, end
 	if err != nil {
 		return nil, fmt.Errorf("pmd3 location worker stdin: %w", err)
 	}
-	stdoutPipe, err := cmd.StdoutPipe()
+	// Deliberately os.Pipe rather than cmd.StdoutPipe/StderrPipe: Wait() closes
+	// the pipes those return, so os/exec documents that reading from them
+	// concurrently with Wait is incorrect — and this session does exactly that,
+	// with a stderr capture goroutine running for the worker's whole life and a
+	// reader that may still be draining stdout after an abandoned round-trip.
+	// Pipes we own are untouched by Wait and simply reach EOF when the child
+	// exits, so no teardown path has to coordinate with them.
+	stdoutR, stdoutW, err := os.Pipe()
 	if err != nil {
 		return nil, fmt.Errorf("pmd3 location worker stdout: %w", err)
 	}
-	stderrPipe, err := cmd.StderrPipe()
+	stderrR, stderrW, err := os.Pipe()
 	if err != nil {
+		closeAll(stdoutR, stdoutW)
 		return nil, fmt.Errorf("pmd3 location worker stderr: %w", err)
 	}
+	cmd.Stdout, cmd.Stderr = stdoutW, stderrW
 
 	s := &locationSession{
 		cmd:      cmd,
 		stdin:    stdin,
-		stdout:   bufio.NewReader(stdoutPipe),
+		stdout:   bufio.NewReader(stdoutR),
 		endpoint: endpoint,
 	}
-	go s.captureStderr(stderrPipe)
 
 	if err := cmd.Start(); err != nil {
+		closeAll(stdoutR, stdoutW, stderrR, stderrW)
 		return nil, fmt.Errorf("pmd3 location worker start: %w", err)
 	}
+	// The child holds its own descriptors now; drop ours, or the readers would
+	// never see EOF once it exits.
+	closeAll(stdoutW, stderrW)
+	go s.captureStderr(stderrR)
 
 	startCtx, cancel := context.WithTimeout(ctx, workerStartTimeout)
 	err = s.readResponse(startCtx)
@@ -113,6 +127,16 @@ func (s *locationSession) forceKill() {
 	select {
 	case <-waitCh:
 	case <-time.After(5 * time.Second):
+	}
+}
+
+// closeAll closes every non-nil closer, ignoring errors. Used on the setup
+// paths where a half-built session has to release the descriptors it opened.
+func closeAll(closers ...io.Closer) {
+	for _, c := range closers {
+		if c != nil {
+			_ = c.Close()
+		}
 	}
 }
 
@@ -213,7 +237,8 @@ func (s *locationSession) readResponse(ctx context.Context) error {
 	}
 }
 
-func (s *locationSession) captureStderr(r io.Reader) {
+func (s *locationSession) captureStderr(r io.ReadCloser) {
+	defer func() { _ = r.Close() }()
 	sc := bufio.NewScanner(r)
 	for sc.Scan() {
 		s.tailMu.Lock()
