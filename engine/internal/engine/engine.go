@@ -78,6 +78,10 @@ type Engine struct {
 
 	resetHealthBackoff chan struct{}
 
+	// metrics holds the monotonic counters exported at /metrics. Atomics, so
+	// the injection path never takes a lock just to count.
+	metrics engineMetrics
+
 	// mdnsWaker owns the passive mDNS browses that keep iPhones discoverable
 	// over WiFi. Held here so RestartMdns replaces the running browses instead
 	// of stacking another set on top of them.
@@ -186,6 +190,11 @@ func (e *Engine) updateTunnelHealthLocked(fn func(*api.TunnelHealth)) {
 // re-inject, relance keep-alive — keeps the counters honest.
 func (e *Engine) driverSetLocation(ctx context.Context, lat, lon float64) error {
 	err := e.driver().SetLocation(ctx, lat, lon)
+	if err != nil {
+		e.metrics.injectionsFailed.Add(1)
+	} else {
+		e.metrics.injectionsOK.Add(1)
+	}
 	now := nowMs()
 	e.mu.Lock()
 	e.updateTunnelHealthLocked(func(th *api.TunnelHealth) {

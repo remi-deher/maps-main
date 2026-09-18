@@ -159,6 +159,15 @@ func TestMetricsRESTExposesPrometheusFormat(t *testing.T) {
 		"gpsmock_ws_clients_connected",
 		"# TYPE gpsmock_ws_bytes_sent_total counter",
 		"gpsmock_ws_clients_dropped_total",
+		// The tunnel is what this engine exists to run; /metrics used to say
+		// nothing about it, so "it sometimes stops injecting" could only be
+		// answered by reading logs after the fact.
+		"# TYPE gpsmock_tunnel_up gauge",
+		"# TYPE gpsmock_injections_total counter",
+		"gpsmock_injection_failures_total",
+		"gpsmock_tunnel_start_failures_total",
+		"gpsmock_tunnel_reresolves_total",
+		"gpsmock_tunnel_restarts_total",
 	} {
 		if !strings.Contains(text, want) {
 			t.Errorf("metrics output missing %q\ngot:\n%s", want, text)

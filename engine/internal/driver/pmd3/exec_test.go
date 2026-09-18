@@ -10,6 +10,7 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net"
 	"net/http"
@@ -100,7 +101,7 @@ func runLocationWorkerHelper() {
 		time.Sleep(30 * time.Second)
 		return
 	}
-	fmt.Println(`{"ok":true,"ready":true}`)
+	fmt.Println(`{"ok":true,"id":0,"ready":true}`)
 	sc := bufio.NewScanner(os.Stdin)
 	for sc.Scan() {
 		line := sc.Text()
@@ -108,14 +109,27 @@ func runLocationWorkerHelper() {
 			_ = appendLine(f, line)
 		}
 		var req struct {
-			Action string `json:"action"`
+			ID     uint64  `json:"id"`
+			Action string  `json:"action"`
+			Lat    float64 `json:"lat"`
 		}
 		_ = json.Unmarshal([]byte(line), &req)
+		// Every response echoes the request id, like the real worker: that is
+		// what lets the engine drop the late reply to a round-trip it gave up on
+		// instead of mistaking it for the next request's answer.
 		if req.Action == os.Getenv("FAKE_LOCATION_FAIL_ACTION") {
-			fmt.Println(`{"ok":false,"error":"simulated worker failure"}`)
+			fmt.Printf("{\"ok\":false,\"id\":%d,\"error\":\"simulated worker failure\"}\n", req.ID)
 			continue
 		}
-		fmt.Println(`{"ok":true}`)
+		// Stall the one request that asks for a marker latitude, to exercise an
+		// abandoned round-trip: its reply arrives long after the caller stopped
+		// waiting for it, while every other request stays prompt.
+		if d := os.Getenv("FAKE_LOCATION_STALL_AT_LAT"); d != "" && fmt.Sprintf("%v", req.Lat) == os.Getenv("FAKE_LOCATION_STALL_LAT") {
+			if delay, err := time.ParseDuration(d); err == nil {
+				time.Sleep(delay)
+			}
+		}
+		fmt.Printf("{\"ok\":true,\"id\":%d}\n", req.ID)
 		if req.Action == "stop" {
 			return
 		}
@@ -502,5 +516,51 @@ func TestMovedEndpointDiscardsTheWorkerWithoutAskingItToStop(t *testing.T) {
 		if strings.Contains(line, `"action":"stop"`) {
 			t.Errorf("a stop was sent to the stale worker: %q", line)
 		}
+	}
+}
+
+// TestAbandonedRoundTripKeepsTheSessionUsable is the payoff of correlating
+// requests and responses by id.
+//
+// The protocol used to be an uncorrelated stream, so a reply that arrived after
+// its caller gave up would be read as the answer to the *next* request. The
+// only safe response was to poison the session, which charged a full worker
+// restart — an RSD handshake, up to workerStartTimeout — for a single slow tick
+// of a route injecting once a second. Now the late reply lands on a slot nobody
+// holds and is dropped.
+func TestAbandonedRoundTripKeepsTheSessionUsable(t *testing.T) {
+	t.Setenv("FAKE_LOCATION_STALL_AT_LAT", "700ms")
+	t.Setenv("FAKE_LOCATION_STALL_LAT", "1")
+	withFakeExec(t, "cmd-ok")
+	d := &Driver{py: "fake-python", base: []string{}}
+	d.mount.SetActive(driver.TunnelInfo{Address: "10.0.0.1", Port: 1234}, "")
+	t.Cleanup(func() { _ = d.stopLocationSession(context.Background()) })
+
+	// Open the session first, so the stall hits an injection and not the
+	// handshake (which legitimately does tear the worker down).
+	if err := d.SetLocation(context.Background(), 48.8566, 2.3522); err != nil {
+		t.Fatalf("first SetLocation: %v", err)
+	}
+	session := d.location
+	if session == nil {
+		t.Fatal("expected a persistent location worker")
+	}
+
+	stallCtx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+	if err := d.SetLocation(stallCtx, 1, 1); !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("stalled SetLocation error = %v, want the caller's deadline", err)
+	}
+	if d.location != session {
+		t.Fatal("a caller's own timeout must not discard a healthy worker")
+	}
+
+	// The stalled reply is in flight; give it time to arrive and be dropped.
+	time.Sleep(900 * time.Millisecond)
+	if err := d.SetLocation(context.Background(), 40.6892, -74.0445); err != nil {
+		t.Errorf("SetLocation after an abandoned round-trip: %v", err)
+	}
+	if d.location != session {
+		t.Error("expected the same worker to still be in use")
 	}
 }

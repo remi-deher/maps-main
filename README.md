@@ -62,7 +62,7 @@ Le moteur expose maintenant un endpoint `/diagnostics` et un message WebSocket `
 - État du driver (version, santé, logs récents).
 - Liste des périphériques USB détectés.
 - Statistiques de latence du heartbeat.
-- Métriques Prometheus (`engine_driver_up`, `engine_http_seconds`).
+- Métriques Prometheus sur `/metrics` : état et compteurs du tunnel (`gpsmock_tunnel_up`, `gpsmock_tunnel_uptime_seconds`, `gpsmock_tunnel_health_rtt_seconds`, `gpsmock_injections_total`, `gpsmock_injection_failures_total`, `gpsmock_tunnel_reresolves_total`, `gpsmock_tunnel_restarts_total`), plus WebSocket et cluster.
 - Snapshots JSON téléchargeables via `/snapshots/latest.json`.
 
 Ces données sont affichées dans les onglets **Settings** du client Tauri et dans la vue **Diagnostics** de l’app iOS, facilitant le support.

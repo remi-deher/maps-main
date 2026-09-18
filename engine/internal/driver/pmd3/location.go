@@ -2,6 +2,7 @@ package pmd3
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/remi-deher/maps-main/engine/internal/driver"
@@ -16,6 +17,15 @@ func (d *Driver) SetLocation(ctx context.Context, lat, lon float64) error {
 		return err
 	}
 	if err := session.set(ctx, lat, lon); err != nil {
+		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			// Our own deadline expired; nothing says the worker is unwell. Each
+			// request carries an id, so the reply this call walked away from is
+			// discarded on arrival rather than mistaken for the next call's
+			// answer — the session stays usable. Tearing it down here would
+			// charge a full worker restart (an RSD handshake, up to
+			// workerStartTimeout) for one slow tick of a 1Hz route.
+			return err
+		}
 		// The worker process may have died or lost connection. Invalidate the
 		// session so the next call opens a fresh DVT connection instead of
 		// hammering a dead process indefinitely.

@@ -57,36 +57,44 @@ def describe(exc):
 
 async def run_simulation(dvt, ready_extra=None):
     async with LocationSimulation(dvt) as location:
-        write({"ok": True, "ready": True, **(ready_extra or {})})
+        # The handshake is unprompted, so it carries id 0 — the slot the engine
+        # reserves for it before the process is even started.
+        write({"ok": True, "id": 0, "ready": True, **(ready_extra or {})})
 
         for line in sys.stdin:
             line = line.strip()
             if not line:
                 continue
 
+            request_id = 0
             try:
                 request = json.loads(line)
+                # Echo the request id back on every response. The engine matches
+                # replies to requests by it, so a round-trip it abandoned on
+                # timeout can be discarded on arrival instead of being mistaken
+                # for the answer to the next request.
+                request_id = request.get("id", 0)
                 action = request.get("action")
                 if action == "set":
                     await maybe_await(location.set(float(request["lat"]), float(request["lon"])))
-                    write({"ok": True})
+                    write({"ok": True, "id": request_id})
                 elif action == "clear":
                     await maybe_await(location.clear())
-                    write({"ok": True})
+                    write({"ok": True, "id": request_id})
                 elif action == "ping":
                     # Liveness only: answering means the worker's event loop is
                     # running and its stdin/stdout protocol is in sync. In
                     # userspace mode this is what the driver's CheckHealth uses,
                     # since there is no socket to dial — the tunnel lives inside
                     # this process.
-                    write({"ok": True})
+                    write({"ok": True, "id": request_id})
                 elif action == "stop":
-                    write({"ok": True})
+                    write({"ok": True, "id": request_id})
                     return
                 else:
-                    write({"ok": False, "error": f"unknown action: {action}"})
+                    write({"ok": False, "id": request_id, "error": f"unknown action: {action}"})
             except Exception as exc:
-                write({"ok": False, "error": describe(exc)})
+                write({"ok": False, "id": request_id, "error": describe(exc)})
 
 
 async def run_with_rsd(address, port):
@@ -146,5 +154,7 @@ if __name__ == "__main__":
     try:
         asyncio.run(main(sys.argv[1:]))
     except Exception as exc:
-        write({"ok": False, "error": describe(exc)})
+        # A failure before (or instead of) the handshake: id 0 is what the
+        # engine is waiting on at that point.
+        write({"ok": False, "id": 0, "error": describe(exc)})
         raise

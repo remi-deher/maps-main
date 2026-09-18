@@ -189,6 +189,7 @@ func (e *Engine) healthLoop(ctx context.Context) {
 			// "redémarrage…" every tick forever while the tunnel never actually
 			// comes back (the stuck state that used to require a full engine
 			// restart after a long idle period).
+			e.metrics.tunnelRestarts.Add(1)
 			e.markTunnelLost()
 			_ = drv.StopTunnel(ctx)
 			if err := e.StartTunnel(ctx); err != nil {
@@ -256,6 +257,9 @@ func (e *Engine) applyTunnelUpdate(info driver.TunnelInfo) {
 			th.LastReresolveAt = nowMs()
 		}
 	})
+	if changed {
+		e.metrics.tunnelReresolves.Add(1)
+	}
 	e.emitStatusLocked() // releases e.mu
 
 	if changed {

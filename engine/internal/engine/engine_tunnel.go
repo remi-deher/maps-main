@@ -192,8 +192,10 @@ func (e *Engine) StartTunnel(ctx context.Context) error {
 	e.LogEvent("info", "tunnel", "tunnel", "start", fmt.Sprintf("Démarrage du tunnel (%s)", drv.ID()), map[string]string{
 		"driver": string(drv.ID()),
 	})
+	startedAt := time.Now()
 	ti, err := drv.StartTunnel(startCtx)
 	if err != nil {
+		e.metrics.tunnelStartFailures.Add(1)
 		if !e.isCurrentDriverGeneration(generation, drv) {
 			return nil
 		}
@@ -224,6 +226,8 @@ func (e *Engine) StartTunnel(ctx context.Context) error {
 		_ = drv.StopTunnel(context.Background())
 		return nil
 	}
+	e.metrics.tunnelStarts.Add(1)
+	e.metrics.lastStartNanos.Store(int64(time.Since(startedAt)))
 	e.LogEvent("info", "tunnel", "tunnel", "start", fmt.Sprintf("Tunnel actif (%s) : %s:%d", drv.ID(), ti.Address, ti.Port), map[string]string{
 		"driver":  string(drv.ID()),
 		"address": ti.Address,
