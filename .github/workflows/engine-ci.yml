@@ -70,6 +70,14 @@ jobs:
       - name: test (race)
         run: go test -race ./...
 
+      # The in-process go-ios backend is behind a build tag, so the steps above
+      # never compile it. Without this it would rot silently until someone
+      # actually needed it — see docs/GOIOS_NATIVE_DRIVER.md.
+      - name: build & test (goiosnative)
+        run: |
+          go build -tags goiosnative ./...
+          go test -tags goiosnative ./internal/driver/goiosnative/
+
       - name: coverage threshold
         if: runner.os == 'Linux'
         shell: bash
