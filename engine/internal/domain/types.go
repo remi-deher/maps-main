@@ -9,6 +9,10 @@ type DriverID string
 const (
 	DriverPmd3  DriverID = "pymobiledevice"
 	DriverGoIos DriverID = "go-ios"
+	// DriverGoIosNative drives go-ios as a Go library instead of as a CLI. Only
+	// registered in builds carrying the `goiosnative` tag, which is why nothing
+	// may assume it is present in the driver menu.
+	DriverGoIosNative DriverID = "go-ios-native"
 )
 
 // ConnectionType describes how the engine reached the device.

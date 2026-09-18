@@ -80,6 +80,10 @@ go run ./cmd/headless -driver go-ios -transport usb -goios-bin "C:/chemin/vers/i
 go run ./cmd/headless -driver pymobiledevice -transport usb
 # transport Wi‑Fi (RSD) – spécifier l’endpoint
 go run ./cmd/headless -driver pymobiledevice -transport wifi -rsd 192.168.1.50:54321
+# driver go‑ios in‑process (optionnel, build tag) – voir docs/GOIOS_NATIVE_DRIVER.md
+go run -tags goiosnative ./cmd/headless -driver go-ios-native
+# deux moteurs sur la même machine : donner à chacun son port de démon
+go run ./cmd/headless -driver go-ios -driver-api-port 28110
 ```
 
 ### Application desktop (Tauri)
@@ -133,4 +137,4 @@ MIT – voir le fichier [LICENSE](LICENSE).
 
 ---
 
-*Consultez les fichiers sous `docs/` pour des explications détaillées : [ARCHITECTURE.md](docs/ARCHITECTURE.md), [UI_UX_BASELINE.md](docs/UI_UX_BASELINE.md), etc.*
+*Consultez les fichiers sous `docs/` pour des explications détaillées : [ARCHITECTURE.md](docs/ARCHITECTURE.md), [GOIOS_NATIVE_DRIVER.md](docs/GOIOS_NATIVE_DRIVER.md), [UI_UX_BASELINE.md](docs/UI_UX_BASELINE.md), etc.*
