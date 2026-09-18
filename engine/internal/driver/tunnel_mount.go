@@ -272,12 +272,28 @@ func (m *TunnelMount) CheckHealth(timeout time.Duration) bool {
 	if !on || daemonExited {
 		return false
 	}
-	conn, err := net.DialTimeout("tcp", net.JoinHostPort(ti.Address, strconv.Itoa(ti.Port)), timeout)
+	conn, err := net.DialTimeout("tcp", healthDialTarget(ti), timeout)
 	if err != nil {
 		return false
 	}
 	_ = conn.Close()
 	return true
+}
+
+// healthDialTarget is what CheckHealth actually connects to.
+//
+// A kernel-TUN tunnel puts a route to the device's RSD address in the OS
+// routing table, so dialing address:rsdPort is a real end-to-end probe. A
+// userspace tunnel has no adapter and no route: the device is reachable only
+// through the local TCP proxy the tunnel agent listens on, so dialing the
+// device address there always fails and would make the watchdog re-resolve on
+// every single tick while the tunnel is perfectly healthy. Probe the proxy
+// instead — it is the only socket that exists in that mode.
+func healthDialTarget(ti TunnelInfo) string {
+	if ti.UserspacePort > 0 {
+		return net.JoinHostPort("127.0.0.1", strconv.Itoa(ti.UserspacePort))
+	}
+	return net.JoinHostPort(ti.Address, strconv.Itoa(ti.Port))
 }
 
 func (m *TunnelMount) set(info TunnelInfo, cmd *exec.Cmd, udid string) {

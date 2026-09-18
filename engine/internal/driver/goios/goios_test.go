@@ -18,8 +18,8 @@ func TestParseDeviceList(t *testing.T) {
 			name: "two devices",
 			in:   `{"deviceList":["udid-1","udid-2"]}`,
 			want: []driver.Device{
-				{UDID: "udid-1", Source: "usb"},
-				{UDID: "udid-2", Source: "usb"},
+				{UDID: "udid-1", Source: "usbmux"},
+				{UDID: "udid-2", Source: "usbmux"},
 			},
 		},
 		{
@@ -50,24 +50,24 @@ func TestParseDeviceList(t *testing.T) {
 
 func TestStringField(t *testing.T) {
 	raw := map[string]any{"DeviceName": "iPhone", "ProductVersion": 17}
-	if got := stringField(raw, "DeviceName"); got != "iPhone" {
+	if got := driver.StringField(raw, "DeviceName"); got != "iPhone" {
 		t.Errorf("DeviceName = %q, want iPhone", got)
 	}
 	// Wrong type or missing key must degrade to "", not panic.
-	if got := stringField(raw, "ProductVersion"); got != "" {
+	if got := driver.StringField(raw, "ProductVersion"); got != "" {
 		t.Errorf("ProductVersion (non-string) = %q, want empty", got)
 	}
-	if got := stringField(raw, "Missing"); got != "" {
+	if got := driver.StringField(raw, "Missing"); got != "" {
 		t.Errorf("Missing key = %q, want empty", got)
 	}
 }
 
 func TestFtoa(t *testing.T) {
-	if got := ftoa(48.8566); got != "48.8566" {
-		t.Errorf("ftoa(48.8566) = %q, want 48.8566", got)
+	if got := driver.Ftoa(48.8566); got != "48.8566" {
+		t.Errorf("driver.Ftoa(48.8566) = %q, want 48.8566", got)
 	}
-	if got := ftoa(-2.0); got != "-2" {
-		t.Errorf("ftoa(-2.0) = %q, want -2", got)
+	if got := driver.Ftoa(-2.0); got != "-2" {
+		t.Errorf("driver.Ftoa(-2.0) = %q, want -2", got)
 	}
 }
 

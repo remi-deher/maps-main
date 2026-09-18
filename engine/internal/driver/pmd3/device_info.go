@@ -30,14 +30,20 @@ except Exception as e:
 
 // DeviceDetails implements driver.DeviceInfoProvider for the pmd3 driver.
 func (d *Driver) DeviceDetails(ctx context.Context) (driver.DeviceDetails, error) {
-	devices, err := d.ListDevices(ctx)
-	if err != nil {
-		return driver.DeviceDetails{}, err
+	udid := d.targetUDID
+	if udid == "" {
+		// Only fall back to "whatever is plugged in" when no device is pinned:
+		// reporting devices[0] while injections target targetUDID would describe
+		// the wrong iPhone.
+		devices, err := d.ListDevices(ctx)
+		if err != nil {
+			return driver.DeviceDetails{}, err
+		}
+		if len(devices) == 0 {
+			return driver.DeviceDetails{}, fmt.Errorf("pmd3: no device detected")
+		}
+		udid = devices[0].UDID
 	}
-	if len(devices) == 0 {
-		return driver.DeviceDetails{}, fmt.Errorf("pmd3: no device detected")
-	}
-	udid := devices[0].UDID
 
 	py, err := d.pyCommand()
 	if err != nil {
@@ -60,19 +66,14 @@ func (d *Driver) DeviceDetails(ctx context.Context) (driver.DeviceDetails, error
 
 	details := driver.DeviceDetails{
 		UDID:           udid,
-		Name:           stringField(raw, "DeviceName"),
-		ProductType:    stringField(raw, "ProductType"),
-		ProductVersion: stringField(raw, "ProductVersion"),
-		SerialNumber:   stringField(raw, "SerialNumber"),
-		WifiAddress:    stringField(raw, "WiFiAddress"),
+		Name:           driver.StringField(raw, "DeviceName"),
+		ProductType:    driver.StringField(raw, "ProductType"),
+		ProductVersion: driver.StringField(raw, "ProductVersion"),
+		SerialNumber:   driver.StringField(raw, "SerialNumber"),
+		WifiAddress:    driver.StringField(raw, "WiFiAddress"),
 	}
 	if ti, ok := d.Tunnel(); ok {
 		details.TunnelAddress = ti.Address
 	}
 	return details, nil
-}
-
-func stringField(raw map[string]any, key string) string {
-	s, _ := raw[key].(string)
-	return s
 }

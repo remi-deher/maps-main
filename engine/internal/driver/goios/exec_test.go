@@ -394,3 +394,36 @@ func TestCheckHealthFailsAgainstClosedPort(t *testing.T) {
 		t.Error("expected CheckHealth to fail against a closed port")
 	}
 }
+
+// TestDeviceDetailsKeepsPinnedUDID guards the regression where DeviceDetails
+// took devices[0] unconditionally and wrote it back to d.udid: on a machine
+// with two devices attached, one diagnostics request re-pointed every
+// subsequent `setlocation --udid=` at the wrong iPhone.
+func TestDeviceDetailsKeepsPinnedUDID(t *testing.T) {
+	withFakeExec(t, "info-ok")
+	d := &Driver{bin: "fake-ios", targetUDID: "udid-2", udid: "udid-2"}
+
+	if _, err := d.DeviceDetails(context.Background()); err != nil {
+		t.Fatalf("DeviceDetails: %v", err)
+	}
+	if got := d.getUDID(context.Background()); got != "udid-2" {
+		t.Errorf("pinned UDID became %q after DeviceDetails, want it untouched", got)
+	}
+}
+
+// TestDeviceDetailsQueriesPinnedDevice checks the pinned UDID is the one `ios
+// info` is actually asked about — and that no `ios list` round-trip is needed
+// to find it.
+func TestDeviceDetailsQueriesPinnedDevice(t *testing.T) {
+	d := &Driver{bin: "fake-ios", targetUDID: "udid-2", udid: "udid-2"}
+	got := echoArgs(t, func() error {
+		_, err := d.DeviceDetails(context.Background())
+		// The echo-args fake prints nothing, so the JSON decode fails; the args
+		// it recorded are what this test is about.
+		_ = err
+		return nil
+	})
+	if !strings.Contains(got, "--udid=udid-2") {
+		t.Errorf("info args %q must target the pinned device", got)
+	}
+}

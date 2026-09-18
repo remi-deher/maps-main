@@ -84,7 +84,7 @@ func (d *Driver) userspaceWorkerArgs() []string {
 // rsdWorkerArgs builds the worker invocation for a tunnel that already exists
 // (tunneld, or a manual address).
 func rsdWorkerArgs(endpoint driver.TunnelInfo) []string {
-	return []string{"--rsd", endpoint.Address, itoa(endpoint.Port)}
+	return []string{"--rsd", endpoint.Address, driver.Itoa(endpoint.Port)}
 }
 
 // checkUserspaceHealth pings the worker holding the in-process tunnel. It is

@@ -34,8 +34,8 @@ func TestParseDeviceList(t *testing.T) {
 			name: "two devices",
 			in:   `[{"Identifier":"udid-1","DeviceName":"iPhone","ConnectionType":"USB"},{"Identifier":"udid-2","DeviceName":"iPad","ConnectionType":"Network"}]`,
 			want: []driver.Device{
-				{UDID: "udid-1", Name: "iPhone", Source: "USB"},
-				{UDID: "udid-2", Name: "iPad", Source: "Network"},
+				{UDID: "udid-1", Name: "iPhone", Source: "usb"},
+				{UDID: "udid-2", Name: "iPad", Source: "wifi"},
 			},
 		},
 		{
@@ -65,11 +65,11 @@ func TestParseDeviceList(t *testing.T) {
 }
 
 func TestFtoa(t *testing.T) {
-	if got := ftoa(48.8566); got != "48.8566" {
-		t.Errorf("ftoa(48.8566) = %q, want 48.8566", got)
+	if got := driver.Ftoa(48.8566); got != "48.8566" {
+		t.Errorf("driver.Ftoa(48.8566) = %q, want 48.8566", got)
 	}
-	if got := ftoa(-2.0); got != "-2" {
-		t.Errorf("ftoa(-2.0) = %q, want -2", got)
+	if got := driver.Ftoa(-2.0); got != "-2" {
+		t.Errorf("driver.Ftoa(-2.0) = %q, want -2", got)
 	}
 }
 

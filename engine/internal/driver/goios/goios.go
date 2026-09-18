@@ -91,14 +91,10 @@ func (d *Driver) ListDevices(ctx context.Context) ([]driver.Device, error) {
 // DeviceDetails runs `ios info` against the first detected device and returns
 // its lockdown metadata, enriched with the active tunnel address when known.
 func (d *Driver) DeviceDetails(ctx context.Context) (driver.DeviceDetails, error) {
-	devices, err := d.ListDevices(ctx)
+	udid, err := d.detailsUDID(ctx)
 	if err != nil {
 		return driver.DeviceDetails{}, err
 	}
-	if len(devices) == 0 {
-		return driver.DeviceDetails{}, fmt.Errorf("go-ios: no device detected")
-	}
-	udid := devices[0].UDID
 
 	bin, err := d.binPath()
 	if err != nil {
@@ -114,20 +110,37 @@ func (d *Driver) DeviceDetails(ctx context.Context) (driver.DeviceDetails, error
 		return driver.DeviceDetails{}, fmt.Errorf("go-ios info: invalid JSON: %w", err)
 	}
 
-	d.udid = udid
-
 	details := driver.DeviceDetails{
 		UDID:           udid,
-		Name:           stringField(raw, "DeviceName"),
-		ProductType:    stringField(raw, "ProductType"),
-		ProductVersion: stringField(raw, "ProductVersion"),
-		SerialNumber:   stringField(raw, "SerialNumber"),
-		WifiAddress:    stringField(raw, "WiFiAddress"),
+		Name:           driver.StringField(raw, "DeviceName"),
+		ProductType:    driver.StringField(raw, "ProductType"),
+		ProductVersion: driver.StringField(raw, "ProductVersion"),
+		SerialNumber:   driver.StringField(raw, "SerialNumber"),
+		WifiAddress:    driver.StringField(raw, "WiFiAddress"),
 	}
 	if ti, ok := d.Tunnel(); ok {
 		details.TunnelAddress = ti.Address
 	}
 	return details, nil
+}
+
+// detailsUDID picks which device DeviceDetails should describe. A pinned
+// targetUDID always wins: this call used to take devices[0] unconditionally and
+// then write it back to d.udid, so on a two-device machine one diagnostics
+// request silently re-pointed every subsequent `setlocation --udid=` at the
+// wrong iPhone.
+func (d *Driver) detailsUDID(ctx context.Context) (string, error) {
+	if d.targetUDID != "" {
+		return d.targetUDID, nil
+	}
+	devices, err := d.ListDevices(ctx)
+	if err != nil {
+		return "", err
+	}
+	if len(devices) == 0 {
+		return "", fmt.Errorf("go-ios: no device detected")
+	}
+	return devices[0].UDID, nil
 }
 
 func (d *Driver) getUDID(ctx context.Context) string {
@@ -139,11 +152,6 @@ func (d *Driver) getUDID(ctx context.Context) string {
 		d.udid = devices[0].UDID
 	}
 	return d.udid
-}
-
-func stringField(raw map[string]any, key string) string {
-	s, _ := raw[key].(string)
-	return s
 }
 
 func (d *Driver) Tunnel() (driver.TunnelInfo, bool) {

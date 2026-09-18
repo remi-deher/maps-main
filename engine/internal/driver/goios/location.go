@@ -3,7 +3,8 @@ package goios
 import (
 	"context"
 	"fmt"
-	"strconv"
+
+	"github.com/remi-deher/maps-main/engine/internal/driver"
 )
 
 // SetLocation injects a spoofed position via `ios setlocation`, targeting the
@@ -20,12 +21,12 @@ func (d *Driver) SetLocation(ctx context.Context, lat, lon float64) error {
 	args := []string{
 		"setlocation",
 		"--address=" + ti.Address,
-		"--rsd-port=" + strconv.Itoa(ti.Port),
-		"--lat=" + ftoa(lat),
-		"--lon=" + ftoa(lon),
+		"--rsd-port=" + driver.Itoa(ti.Port),
+		"--lat=" + driver.Ftoa(lat),
+		"--lon=" + driver.Ftoa(lon),
 	}
 	if ti.UserspacePort > 0 {
-		args = append(args, "--userspace-port="+strconv.Itoa(ti.UserspacePort))
+		args = append(args, "--userspace-port="+driver.Itoa(ti.UserspacePort))
 	}
 	if udid := d.getUDID(ctx); udid != "" {
 		args = append(args, "--udid="+udid)
@@ -42,10 +43,10 @@ func (d *Driver) ClearLocation(ctx context.Context) error {
 	args := []string{
 		"resetlocation",
 		"--address=" + ti.Address,
-		"--rsd-port=" + strconv.Itoa(ti.Port),
+		"--rsd-port=" + driver.Itoa(ti.Port),
 	}
 	if ti.UserspacePort > 0 {
-		args = append(args, "--userspace-port="+strconv.Itoa(ti.UserspacePort))
+		args = append(args, "--userspace-port="+driver.Itoa(ti.UserspacePort))
 	}
 	if udid := d.getUDID(ctx); udid != "" {
 		args = append(args, "--udid="+udid)
@@ -64,5 +65,3 @@ func (d *Driver) run(ctx context.Context, args ...string) error {
 	}
 	return nil
 }
-
-func ftoa(v float64) string { return strconv.FormatFloat(v, 'f', -1, 64) }

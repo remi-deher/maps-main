@@ -17,7 +17,9 @@ func parseDeviceList(out []byte) []driver.Device {
 	}
 	devices := make([]driver.Device, 0, len(payload.DeviceList))
 	for _, udid := range payload.DeviceList {
-		devices = append(devices, driver.Device{UDID: udid, Source: "usb"})
+		// `ios list` prints bare UDIDs with no connection type, so the honest
+		// answer is "usbmux saw it", not "it is on USB".
+		devices = append(devices, driver.Device{UDID: udid, Source: "usbmux"})
 	}
 	return devices
 }

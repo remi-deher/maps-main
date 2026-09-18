@@ -3,7 +3,6 @@ package pmd3
 import (
 	"context"
 	"fmt"
-	"strconv"
 
 	"github.com/remi-deher/maps-main/engine/internal/driver"
 )
@@ -129,7 +128,3 @@ func (d *Driver) takeLocationSession() *locationSession {
 func sameEndpoint(a, b driver.TunnelInfo) bool {
 	return a.Address == b.Address && a.Port == b.Port
 }
-
-func ftoa(v float64) string { return strconv.FormatFloat(v, 'f', -1, 64) }
-
-func itoa(v int) string { return strconv.Itoa(v) }

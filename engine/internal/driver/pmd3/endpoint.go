@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"sort"
 	"time"
 
 	"github.com/remi-deher/maps-main/engine/internal/driver"
@@ -73,8 +74,8 @@ func (d *Driver) ListNetworkDevices(ctx context.Context) ([]driver.NetworkDevice
 		return nil, fmt.Errorf("pmd3 tunneld: invalid JSON: %w", err)
 	}
 	var devices []driver.NetworkDevice
-	for udid, tunnels := range byUDID {
-		for _, t := range tunnels {
+	for _, udid := range sortedUDIDs(byUDID) {
+		for _, t := range byUDID[udid] {
 			if t.Address == "" || t.Port <= 0 {
 				continue
 			}
@@ -82,6 +83,19 @@ func (d *Driver) ListNetworkDevices(ctx context.Context) ([]driver.NetworkDevice
 		}
 	}
 	return devices, nil
+}
+
+// sortedUDIDs returns the response's UDIDs in a stable order. Go randomizes map
+// iteration, so without this the "first usable tunnel" picked for a machine with
+// two devices attached — and therefore which iPhone gets the injections — could
+// differ between two consecutive polls.
+func sortedUDIDs(byUDID map[string][]tunneldEntry) []string {
+	udids := make([]string, 0, len(byUDID))
+	for udid := range byUDID {
+		udids = append(udids, udid)
+	}
+	sort.Strings(udids)
+	return udids
 }
 
 // parseTunneld decodes the tunneld API response (a JSON object keyed by UDID,
@@ -93,11 +107,11 @@ func parseTunneld(body []byte, targetUDID string) (driver.TunnelEndpoint, bool) 
 	if err := json.Unmarshal(body, &byUDID); err != nil {
 		return driver.TunnelEndpoint{}, false
 	}
-	for udid, tunnels := range byUDID {
+	for _, udid := range sortedUDIDs(byUDID) {
 		if targetUDID != "" && udid != targetUDID {
 			continue
 		}
-		for _, t := range tunnels {
+		for _, t := range byUDID[udid] {
 			if endpoint, ok := driver.NewTunnelEndpoint(t.Address, t.Port, udid); ok {
 				return endpoint, true
 			}

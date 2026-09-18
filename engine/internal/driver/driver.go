@@ -6,10 +6,16 @@ package driver
 
 import (
 	"context"
+	"strings"
 	"time"
 
 	"github.com/remi-deher/maps-main/engine/internal/domain"
 )
+
+// ProbeTimeout bounds a single device-state query (developer mode, mounted
+// developer image). These run inside a diagnostics request, so a locked or
+// sleeping device must make the report late, not make it hang.
+const ProbeTimeout = 10 * time.Second
 
 // TunnelInfo describes an established RSD tunnel.
 type TunnelInfo struct {
@@ -27,9 +33,29 @@ type TunnelInfo struct {
 
 // Device is a discoverable iOS device.
 type Device struct {
-	UDID   string
-	Name   string
-	Source string // "usb" | "wifi" | "mdns"
+	UDID string
+	Name string
+	// Source is how the backend saw this device: "usb", "wifi", "mdns", or
+	// "usbmux" when the tool reports a usbmux device without telling us which
+	// side of it the device is on (go-ios's `ios list` prints bare UDIDs, so
+	// claiming "usb" there would be a guess).
+	Source string
+}
+
+// NormalizeSource maps a backend's raw connection-type string onto Device.Source's
+// vocabulary. pymobiledevice3 reports usbmux's own "USB"/"Network" wording;
+// anything unrecognized is passed through lowercased rather than dropped.
+func NormalizeSource(raw string) string {
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case "usb":
+		return "usb"
+	case "network", "wifi":
+		return "wifi"
+	case "":
+		return "usbmux"
+	default:
+		return strings.ToLower(strings.TrimSpace(raw))
+	}
 }
 
 // Driver is the lifecycle contract every iOS backend implements. Mirrors the

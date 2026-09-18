@@ -4,15 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"strings"
-	"time"
 
 	"github.com/remi-deher/maps-main/engine/internal/driver"
 )
-
-// probeTimeout bounds each device query. These run inside a diagnostics
-// request, so a locked or sleeping device must make the report late, not make
-// it hang.
-const probeTimeout = 10 * time.Second
 
 // ProbeDeviceState reports whether the device is in a state where DVT services
 // can work at all: Developer Mode on, Developer Disk Image mounted. Both are
@@ -70,7 +64,7 @@ func (d *Driver) developerImageMounted(ctx context.Context, py string) (bool, bo
 }
 
 func (d *Driver) runProbe(ctx context.Context, py string, args ...string) ([]byte, error) {
-	probeCtx, cancel := context.WithTimeout(ctx, probeTimeout)
+	probeCtx, cancel := context.WithTimeout(ctx, driver.ProbeTimeout)
 	defer cancel()
 	return execCommandContext(probeCtx, py, d.args(args...)...).Output()
 }

@@ -124,3 +124,19 @@ func TestStartTimeoutFiltersDaemonNoiseAndAddsHint(t *testing.T) {
 		t.Fatalf("timeout error should keep non-noise daemon output:\n%s", msg)
 	}
 }
+
+// TestHealthDialTargetUsesUserspaceProxy pins the rule that a userspace tunnel
+// is probed through its local TCP proxy. There is no TUN adapter in that mode,
+// so no route to the device address exists: dialing it always fails and made
+// the watchdog re-resolve on every tick while the tunnel was healthy.
+func TestHealthDialTargetUsesUserspaceProxy(t *testing.T) {
+	kernel := TunnelInfo{Address: "fde6:1234::1", Port: 54321}
+	if got, want := healthDialTarget(kernel), "[fde6:1234::1]:54321"; got != want {
+		t.Errorf("kernel-TUN dial target = %q, want %q", got, want)
+	}
+
+	userspace := TunnelInfo{Address: "fde6:1234::1", Port: 54321, UserspacePort: 61000}
+	if got, want := healthDialTarget(userspace), "127.0.0.1:61000"; got != want {
+		t.Errorf("userspace dial target = %q, want %q", got, want)
+	}
+}

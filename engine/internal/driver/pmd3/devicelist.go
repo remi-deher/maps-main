@@ -22,7 +22,7 @@ func parseDeviceList(out []byte) []driver.Device {
 		devices = append(devices, driver.Device{
 			UDID:   e.Identifier,
 			Name:   e.DeviceName,
-			Source: e.ConnectionType,
+			Source: driver.NormalizeSource(e.ConnectionType),
 		})
 	}
 	return devices

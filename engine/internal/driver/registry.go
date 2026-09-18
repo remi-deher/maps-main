@@ -12,10 +12,13 @@ import (
 // Config carries the runtime parameters a driver factory needs to build a
 // concrete backend.
 type Config struct {
+	// Transport restricts which discovery paths the tunnel daemon is allowed to
+	// use. Auto (the default) leaves every monitor enabled, which is what both
+	// backends do on their own. Only pymobiledevice3 can actually honor a
+	// restriction (`remote tunneld` exposes per-monitor toggles); go-ios has no
+	// equivalent flag and documents the field as advisory there.
 	Transport   TransportKind
-	Fallback    bool
 	BinaryPaths map[string]string // logical name -> resolved path/command
-	StorageDir  string
 	// ManualAddress, when set ("host:port"), makes the driver target this RSD
 	// endpoint directly (WiFi/network transport) instead of starting a tunnel.
 	ManualAddress string
