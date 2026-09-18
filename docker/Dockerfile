@@ -28,13 +28,20 @@ RUN cd engine && CGO_ENABLED=0 go build -tags webui -trimpath -ldflags="-s -w" \
 # Build arguments to customize driver installation
 ARG WITH_GOIOS=1
 ARG GOIOS_VERSION=v1.3.2
-ARG GOIOS_QUIC_GO_VERSION=v0.59.1
 ARG GOIOS_X_CRYPTO_VERSION=v0.53.0
 ARG GOIOS_X_NET_VERSION=v0.56.0
 
 # Compile go-ios from source (enables multi-architecture/platform support, e.g. ARM64).
-# go-ios v1.2.0 still pins vulnerable quic-go/x packages; refresh those at
-# build time and apply the tiny quic-go API rename needed by newer releases.
+#
+# The x/crypto and x/net bumps are deliberate: go-ios pins slightly older patch
+# releases than the ones this image ships everywhere else, and carrying two
+# versions of them in one image is what makes a dependency scan noisy.
+#
+# What used to be here and is gone: a quic-go pin and a `sed` rewriting
+# quic.Connection to *quic.Conn. Both were written for go-ios v1.2.0. v1.3.2
+# already pins quic-go v0.59.1 and already uses *quic.Conn, so the pin re-pinned
+# the version it was already on and the sed matched nothing — a silent no-op
+# that would have hidden the next upstream rename instead of failing on it.
 RUN if [ "$WITH_GOIOS" = "1" ]; then \
       go mod download github.com/danielpaulus/go-ios@${GOIOS_VERSION} \
       && tmp="$(mktemp -d)" \
@@ -42,9 +49,7 @@ RUN if [ "$WITH_GOIOS" = "1" ]; then \
       && chmod -R u+w "$tmp" \
       && cd "$tmp" \
       && rm -f go.work go.work.sum \
-      && sed -i 's/quic\.Connection/*quic.Conn/g' ios/tunnel/tunnel.go \
       && go get \
-        github.com/quic-go/quic-go@${GOIOS_QUIC_GO_VERSION} \
         golang.org/x/crypto@${GOIOS_X_CRYPTO_VERSION} \
         golang.org/x/net@${GOIOS_X_NET_VERSION} \
       && go mod tidy \
