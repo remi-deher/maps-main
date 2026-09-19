@@ -10,7 +10,7 @@ require (
 	github.com/danielpaulus/go-ios v1.3.2
 	github.com/google/uuid v1.6.0
 	github.com/grandcat/zeroconf v1.0.0
-	golang.org/x/sys v0.47.0
+	golang.org/x/sys v0.48.0
 	modernc.org/sqlite v1.56.0
 )
 
