@@ -221,11 +221,14 @@ struct ItineraryHeader: View {
     }
 
     private func move(_ stop: RouteStop, by offset: Int) {
-        guard let from = stops.firstIndex(where: { $0.id == stop.id }) else { return }
-        let to = from + offset
-        guard stops.indices.contains(to) else { return }
+        guard let source = stops.firstIndex(where: { $0.id == stop.id }) else { return }
+        let target = source + offset
+        guard stops.indices.contains(target) else { return }
         withAnimation {
-            stops.move(fromOffsets: IndexSet(integer: from), toOffset: to > from ? to + 1 : to)
+            stops.move(
+                fromOffsets: IndexSet(integer: source),
+                toOffset: target > source ? target + 1 : target
+            )
         }
     }
 }

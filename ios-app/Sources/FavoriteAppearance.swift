@@ -73,7 +73,13 @@ enum FavoriteAppearance: String, CaseIterable, Identifiable {
     }
 }
 
-@MainActor
+// Pas de `@MainActor` ici, contrairement à `AddressResolver` : ce magasin ne
+// fait que lire et écrire un dictionnaire dans UserDefaults, sans travail
+// asynchrone, et son `shared` s'initialise donc hors du main actor — ce que le
+// compilateur refusait (« main actor-isolated property 'choices' can not be
+// mutated from a nonisolated context »). Même forme que `AppLogger`, qui rend
+// le même service depuis toujours. Tous les accès viennent du corps des vues,
+// donc du thread principal.
 @Observable
 final class FavoriteAppearanceStore {
     static let shared = FavoriteAppearanceStore()
@@ -83,7 +89,7 @@ final class FavoriteAppearanceStore {
     // Clé « lat,lon » arrondie -> rawValue de FavoriteAppearance.
     private(set) var choices: [String: String]
 
-    nonisolated init() {
+    private init() {
         choices = UserDefaults.standard.dictionary(forKey: Self.storageKey) as? [String: String] ?? [:]
     }
 
