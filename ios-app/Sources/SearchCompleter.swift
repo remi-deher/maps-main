@@ -35,6 +35,24 @@ final class SearchCompleter: NSObject, MKLocalSearchCompleterDelegate {
         }
     }
 
+    // Biaise les suggestions sur ce que l'utilisateur regarde.
+    //
+    // La version précédente centrait sur la position réelle du téléphone — le
+    // pire choix possible ici, où l'on passe son temps à regarder ailleurs :
+    // chercher « boulangerie » en observant Lyon depuis Paris proposait des
+    // boulangeries parisiennes. Plans biaise sur la région affichée.
+    //
+    // L'étendue est bornée : en dessous de ~2 km le completer ne propose
+    // presque rien, au-delà de ~100 km il propose n'importe quoi.
+    func updateRegion(_ region: MKCoordinateRegion) {
+        let span = MKCoordinateSpan(
+            latitudeDelta: min(max(region.span.latitudeDelta, 0.02), 1.0),
+            longitudeDelta: min(max(region.span.longitudeDelta, 0.02), 1.0)
+        )
+        completer.region = MKCoordinateRegion(center: region.center, span: span)
+    }
+
+    // Repli quand la carte n'a pas encore rapporté de région (premier lancement).
     func updateRegion(center: CLLocationCoordinate2D) {
         completer.region = MKCoordinateRegion(center: center, latitudinalMeters: 50_000, longitudinalMeters: 50_000)
     }

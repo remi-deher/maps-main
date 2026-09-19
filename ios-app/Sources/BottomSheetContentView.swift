@@ -9,6 +9,7 @@ struct BottomSheetContentView: View {
     let gpx: GpxImport
     let simulation: BottomSheetSimulationContext
     let chrome: BottomSheetChromeContext
+    let status: BottomSheetStatusContext
 
     private var isSearching: Bool {
         !search.query.wrappedValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
@@ -33,6 +34,19 @@ struct BottomSheetContentView: View {
 
     var body: some View {
         VStack(spacing: 12) {
+            if chrome.showsFirstRunPrimer {
+                FirstRunPrimerCard(onContinue: chrome.onCompleteFirstRunPrimer)
+            }
+
+            BottomSheetStatusBannerView(status: status)
+
+            // Puces de catégories dès que le champ est actif et vide — c'est le
+            // moment où Plans les propose, et où l'utilisateur ne sait pas
+            // encore quoi taper.
+            if search.isFocused.wrappedValue, !isSearching {
+                SearchCategoryChipsView(onSelect: search.onSelectCategory)
+            }
+
             if hasGenericSimulationControls {
                 SimulationControlBarView(
                     simulationState: simulation.state,
@@ -70,6 +84,12 @@ struct BottomSheetContentView: View {
             )
         } else if let selectedPlace = place.selectedPlace {
             placeCard(selectedPlace)
+        } else if !place.results.isEmpty {
+            SearchResultsListView(
+                results: place.results,
+                referenceCoordinate: place.referenceCoordinate,
+                onSelect: place.onSelectResult
+            )
         } else if isSearching {
             BottomSheetSearchResultsView(
                 searchSuggestions: search.suggestions,
@@ -77,12 +97,21 @@ struct BottomSheetContentView: View {
                 query: search.query.wrappedValue,
                 onSelectSuggestion: search.onSelectSuggestion
             )
+        } else if search.isFocused.wrappedValue {
+            // Mode recherche : champ actif, requête vide. Plans n'affiche alors
+            // que les récents — pas tout l'accueil (favoris, GPX, patrouille,
+            // réglages, diagnostics), qui noyait la seule chose utile à cet
+            // instant. Les puces de catégories sont déjà rendues au-dessus.
+            searchIdleContent
         } else if !itinerary.stops.wrappedValue.isEmpty {
             ItineraryOptions(
                 stops: itinerary.stops.wrappedValue,
                 speed: itinerary.speed,
                 profile: itinerary.profile.wrappedValue,
                 totalEstimate: itineraryTotalEstimate,
+                alternatives: itinerary.alternatives,
+                selectedAlternativeIndex: itinerary.selectedAlternativeIndex,
+                onSelectAlternative: itinerary.onSelectAlternative,
                 onLaunch: itinerary.onLaunch
             )
         } else {
@@ -111,13 +140,37 @@ struct BottomSheetContentView: View {
             place: selectedPlace,
             isFavorite: isFavorite(selectedPlace),
             referenceCoordinate: place.referenceCoordinate,
+            resultPosition: place.resultPosition,
+            resultCount: place.resultCount,
+            onSelectPreviousResult: place.onSelectPreviousResult,
+            onSelectNextResult: place.onSelectNextResult,
             onTeleport: place.actions.onTeleport,
             onRoute: place.actions.onRoute,
             onAddStop: place.actions.onAddStop,
             onFavorite: place.actions.onFavorite,
-            onCopyCoordinates: place.actions.onCopyCoordinates,
-            onDismiss: place.actions.onDismiss
+            onRemoveFavorite: place.actions.onRemoveFavorite,
+            onCopyCoordinates: place.actions.onCopyCoordinates
         )
+    }
+
+    @ViewBuilder
+    private var searchIdleContent: some View {
+        if library.recentPlaces.isEmpty {
+            ContentUnavailableView(
+                "Aucun lieu récent",
+                systemImage: "clock",
+                description: Text("Cherchez une adresse ou touchez une catégorie ci-dessus.")
+            )
+            .padding(.top, 8)
+        } else {
+            RecentPlacesSection(
+                recentPlaces: library.recentPlaces,
+                limit: 10,
+                onSelect: library.onSelectRecentPlace,
+                onDelete: library.onDeleteRecentPlace,
+                onClear: library.onClearRecentPlaces
+            )
+        }
     }
 
     private var homeContent: some View {
@@ -131,6 +184,7 @@ struct BottomSheetContentView: View {
                 onSelectFavorite: library.onSelectFavorite,
                 onDeleteFavorite: library.onDeleteFavorite,
                 onSelectRecentPlace: library.onSelectRecentPlace,
+                onDeleteRecentPlace: library.onDeleteRecentPlace,
                 onClearRecentPlaces: library.onClearRecentPlaces,
                 onLoadLastItinerary: library.onLoadLastItinerary,
                 onOpenSettings: chrome.onOpenSettings,

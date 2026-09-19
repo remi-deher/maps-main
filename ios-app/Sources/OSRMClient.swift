@@ -37,6 +37,49 @@ enum OSRMClient {
         return components?.url
     }
 
+    // Tous les tracés proposés par OSRM entre deux points, le plus rapide en
+    // premier. Plans affiche 2-3 variantes et laisse choisir ; ici le choix a
+    // en plus un effet réel, puisqu'il détermine la route que la simulation
+    // suivra (voir MapCoordinator.viaPointForSelectedAlternative).
+    static func fetchRoutes(
+        from start: CLLocationCoordinate2D,
+        to end: CLLocationCoordinate2D,
+        profile transportProfile: String
+    ) async -> [OSRMRoute] {
+        guard isValid(start), isValid(end) else {
+            AppLogger.shared.warn("OSRM fetchRoutes: coordonnée invalide (start=\(start), end=\(end))")
+            return []
+        }
+        let profile = profile(for: transportProfile)
+        guard let url = makeURL(
+            path: "/route/v1/\(profile)/\(start.longitude),\(start.latitude);\(end.longitude),\(end.latitude)",
+            queryItems: [
+                URLQueryItem(name: "overview", value: "full"),
+                URLQueryItem(name: "geometries", value: "geojson"),
+                URLQueryItem(name: "alternatives", value: "true")
+            ]
+        ) else {
+            return []
+        }
+        do {
+            let (data, _) = try await URLSession.shared.data(from: url)
+            let decoded = try JSONDecoder().decode(OSRMRouteResponse.self, from: data)
+            return decoded.routes
+                .map { route in
+                    OSRMRoute(
+                        path: route.geometry.coordinates.map { CLLocationCoordinate2D(latitude: $0[1], longitude: $0[0]) },
+                        distanceMeters: route.distance,
+                        durationSeconds: route.duration
+                    )
+                }
+                .filter { $0.path.count > 1 }
+                .sorted { $0.durationSeconds < $1.durationSeconds }
+        } catch {
+            AppLogger.shared.warn("OSRM fetchRoutes a échoué: \(error.localizedDescription)")
+            return []
+        }
+    }
+
     static func fetchRoute(
         from start: CLLocationCoordinate2D,
         to end: CLLocationCoordinate2D,

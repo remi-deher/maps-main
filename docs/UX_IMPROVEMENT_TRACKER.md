@@ -44,7 +44,77 @@ Basé sur `docs/UI_UX_BASELINE.md` §4. Statut vérifié par inspection du code.
 - ~~**A3 — Localisation** (#9)~~ ✅ fait : String Catalog `.xcstrings` (source fr) + `SWIFT_EMIT_LOC_STRINGS`. Infra prête, traductions à peupler via l'extracteur Xcode (pas de local Xcode disponible — CI seule).
 - ~~**A4 — App Intents**~~ ✅ fait pour Pause/Reprise/Stop/Relance (#14a). #14b (favoris AppEntity) et #4b (Live Activity interactive) différés.
 
-**iOS = 100 % fait** (hors #14b/#4b différés et polish #6/#2/#12/#17/#18).
+**iOS = 100 % fait pour la roadmap de juin 2026** (hors #14b/#4b différés).
+
+> ⚠️ La refonte bottom-sheet qui a suivi a introduit de nouveaux écarts — dont
+> la disparition du bandeau de connexion coché ✅ en #8. Ils sont audités et
+> traités dans **`docs/UI_UX_AUDIT_IOS_2026-09.md`** (section A-bis ci-dessous).
+
+---
+
+## A-bis. Client iOS — seconde passe (audit 2026-09-18)
+
+Source : `docs/UI_UX_AUDIT_IOS_2026-09.md`. Statut détaillé dans la section 6 de
+ce document. Résumé :
+
+| Bloc | Statut | Note |
+|---|---|---|
+| P0 (icône, accents, scroll `medium`, état de connexion, attribution MapKit) | ✅ | 5/5 |
+| P1 (verre hors de la sheet, jetons de fond, Dynamic Type + a11y `ItineraryPanel`, `onChange`) | ✅ | 8/9 |
+| P1-7 Live Activity interactive | 🟡 | teinte/symboles/deep link faits ; boutons `Button(intent:)` différés (App Group + cible partagée) |
+| P1-8 String Catalog peuplé | ⬜ | nécessite l'extracteur Xcode au build (pas de Mac ici) |
+| P2 (dédoublonnage, favoris en tête, requête conservée, clavier, onboarding permissions, géocodage, favori bascule) | ✅ | 8/9 |
+| P2-9 paysage / iPad | ⬜ | demande de repenser les détents ; non vérifiable sans appareil |
+
+**Découverte en plus** : `ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME`
+n'était posé sur aucune cible — l'`AccentColor` du catalogue n'était donc jamais
+la teinte globale, et toute l'app rendait en bleu système au lieu de l'indigo.
+Corrigé dans `project.yml`.
+
+**Vérification** : aucune compilation possible depuis cet environnement
+(Windows) — la CI iOS et une relecture visuelle sur appareil restent à faire.
+
+### Passe 2 — rapprochement de Plans (2026-09-19)
+
+Détail en section 7 de `docs/UI_UX_AUDIT_IOS_2026-09.md`.
+
+| Sujet | Statut | Note |
+|---|---|---|
+| Grammaire de la fiche lieu (boutons ronds, header = titre, pager de résultats, partage, Look Around plein écran) | ✅ | |
+| Catégories de POI (libellé, épingles colorées) | ✅ | `PointOfInterestStyle`, ~40 catégories |
+| Caméra dérivée de la couverture de la sheet | ✅ | remplace le décalage `0,32` codé en dur |
+| Recherche : puces de catégories, « Rechercher dans cette zone » | ✅ | |
+| Alternatives de trajet | ✅ | rendues réelles par un point de passage : `RouteLeg` ne transporte pas de géométrie |
+| Trafic, tap-pour-fermer, icônes de favoris | ✅ | le tap carte reste à vérifier sur appareil |
+| **Mode navigation** (caméra suiveuse, tracé consommé, `navigation.progress`, heure d'arrivée) | ⬜ | écarté à la demande — plus gros reliquat Plans |
+
+### Passe 3 — panneau et recherche (2026-09-19)
+
+Détail en section 8 de `docs/UI_UX_AUDIT_IOS_2026-09.md`.
+
+| Sujet | Statut |
+|---|---|
+| Suggestions biaisées sur la carte visible (et non sur le téléphone) | ✅ |
+| Focus du champ → panneau en grand | ✅ |
+| Mode recherche épuré (puces + récents) | ✅ |
+| Redimensionnements de détent réduits à ceux qui révèlent un panneau | ✅ |
+| Favoris en pastilles rondes, en-têtes de section | ✅ |
+| Détent replié à hauteur fixe (boucle de mesure supprimée) | ✅ |
+| Interaction carte jusqu'au détent moyen | ✅ |
+| Suppression unitaire d'un récent | ✅ |
+| Panneau en `List` (balayage-pour-supprimer) | ⬜ écarté — incompatible avec les panneaux non cellulaires |
+
+### Passe 4 — liste de résultats et finitions (2026-09-19)
+
+Détail en section 9 de `docs/UI_UX_AUDIT_IOS_2026-09.md`.
+
+| Sujet | Statut |
+|---|---|
+| Liste de résultats de recherche (nom, catégorie, distance) | ✅ |
+| Retour arrière fiche → liste, requête modifiée → suggestions | ✅ |
+| Filet sous le header au défilement, plomberie `scrollOffset` supprimée | ✅ |
+| Contrôles carte fusionnés (`glassEffectUnion`) et masqués au détent plein | ✅ à vérifier sur appareil |
+| Détent moyen variable selon le contenu | ⬜ écarté — réintroduit la boucle de layout supprimée en passe 3, et le cas ne se présente pas |
 
 ---
 

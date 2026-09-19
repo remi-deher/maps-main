@@ -52,6 +52,13 @@ targets:
         NSBonjourServices:
           - _gpsmock._tcp
         NSSupportsLiveActivities: true
+        # Cible du tap sur la Live Activity / l'île dynamique
+        # (Widgets/SimulationActivityWidget.swift -> widgetURL), traitée par
+        # ContentView.onOpenURL.
+        CFBundleURLTypes:
+          - CFBundleURLName: com.remi2.gpsmock.companion
+            CFBundleURLSchemes:
+              - gpsmock
         UIBackgroundModes:
           - location
           - fetch
@@ -63,6 +70,11 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.remi2.gpsmock.companion
         INFOPLIST_FILE: Sources/Info.plist
         GENERATE_INFOPLIST_FILE: NO
+        # Sans ce réglage, l'AccentColor du catalogue est compilé mais n'est pas
+        # désigné comme teinte globale : tous les `Color.accentColor` de l'app
+        # retombaient sur le bleu système au lieu de l'indigo défini dans
+        # Assets.xcassets. Les templates Xcode le posent, XcodeGen non.
+        ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
         # Extract Swift string literals into Localizable.xcstrings at build,
         # so the app has a real String Catalog (source = fr) ready for
         # translations instead of hard-coded strings (§3.10 baseline).
@@ -96,6 +108,10 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.remi2.gpsmock.companion.widgets
         INFOPLIST_FILE: Widgets/Info.plist
         GENERATE_INFOPLIST_FILE: NO
+        # Widgets/Assets.xcassets reprend l'AccentColor de l'app : la cible
+        # widget n'embarque pas le catalogue de l'app, et `Color.accentColor`
+        # y retombait sur le bleu système (audit P1-7).
+        ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
 
   GpsMockCompanionTests:
     type: bundle.unit-test

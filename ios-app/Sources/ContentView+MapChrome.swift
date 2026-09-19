@@ -18,6 +18,13 @@ extension ContentView {
                     Label(choice.label, systemImage: choice.symbol).tag(choice.rawValue)
                 }
             }
+            // Plans loge la bascule trafic dans ce même menu calques.
+            if mapStyleChoice != .imagery {
+                Divider()
+                Toggle(isOn: $mapShowsTraffic) {
+                    Label("Trafic", systemImage: "car.2.fill")
+                }
+            }
         } label: {
             Label("Style de carte", systemImage: mapStyleChoice.symbol)
                 .labelStyle(.iconOnly)
@@ -45,43 +52,79 @@ extension ContentView {
         .accessibilityLabel(coordinator.isMapTilted ? "Revenir en vue 2D" : "Passer en vue 3D")
     }
 
+    // « Rechercher dans cette zone », comme Plans l'affiche quand on déplace la
+    // carte après une recherche : relancer la même requête là où l'on regarde
+    // maintenant, sans retaper ni revenir au champ.
+    var searchThisAreaButton: some View {
+        Button {
+            coordinator.searchVisibleArea()
+        } label: {
+            Label("Rechercher dans cette zone", systemImage: "arrow.clockwise")
+                .font(.subheadline.weight(.semibold))
+                .padding(.horizontal, 16)
+                .frame(minHeight: 44)
+        }
+        .buttonStyle(.glass)
+        .buttonBorderShape(.capsule)
+    }
+
     @ViewBuilder
     func mapChrome(safeArea: EdgeInsets, availableHeight: CGFloat) -> some View {
         let bottomPadding = mapControlsBottomPadding(
             safeArea: safeArea,
             availableHeight: availableHeight
         )
-        let isHiddenForKeyboard = searchFocused
+        // Masqués au clavier, et au détent plein : la sheet couvre alors la
+        // quasi-totalité de la carte, et Plans escamote ses contrôles plutôt
+        // que de les laisser flotter sur le bandeau qui dépasse.
+        let areControlsHidden = searchFocused || coordinator.sheetDetent == .large
 
         GlassEffectContainer(spacing: 12) {
-            VStack(alignment: .trailing, spacing: 10) {
+            VStack(spacing: 10) {
+                if coordinator.canSearchVisibleArea {
+                    searchThisAreaButton
+                        .glassEffectID("searchThisArea", in: mapGlassNamespace)
+                        .transition(.move(edge: .top).combined(with: .opacity))
+                }
                 TipView(MapLongPressTip(), arrowEdge: .top)
                     .frame(maxWidth: 280)
                 Spacer()
             }
+            .frame(maxWidth: .infinity)
             .padding(.top, max(safeArea.top + 8, 8))
-            .padding(.trailing, max(safeArea.trailing + 16, 16))
+            .padding(.horizontal, max(safeArea.trailing + 16, 16))
+            .opacity(areControlsHidden ? 0 : 1)
+            .allowsHitTesting(!areControlsHidden)
+            .accessibilityHidden(areControlsHidden)
+            .animation(.snappy(duration: 0.25), value: coordinator.canSearchVisibleArea)
 
             HStack {
                 Spacer()
+                // `glassEffectUnion` fait des trois boutons un seul bloc de
+                // verre, comme la pile de contrôles de Plans, au lieu de trois
+                // pastilles qui lensifient chacune dans son coin. Les zones
+                // tactiles restent distinctes.
                 VStack(spacing: 10) {
                     mapPitchButton
+                        .glassEffectUnion(id: "mapControls", namespace: mapGlassNamespace)
                     mapStyleMenu
+                        .glassEffectUnion(id: "mapControls", namespace: mapGlassNamespace)
                     RecenterButton(
                         systemImage: recenterIconName,
                         isActive: coordinator.followMode != .off,
                         onTap: recenterOnUser
                     )
+                    .glassEffectUnion(id: "mapControls", namespace: mapGlassNamespace)
                 }
             }
             .padding(.trailing, max(safeArea.trailing + 16, 16))
             .padding(.bottom, bottomPadding)
-            .opacity(isHiddenForKeyboard ? 0 : 1)
-            .scaleEffect(isHiddenForKeyboard ? 0.96 : 1, anchor: .bottomTrailing)
-            .allowsHitTesting(!isHiddenForKeyboard)
-            .accessibilityHidden(isHiddenForKeyboard)
+            .opacity(areControlsHidden ? 0 : 1)
+            .scaleEffect(areControlsHidden ? 0.96 : 1, anchor: .bottomTrailing)
+            .allowsHitTesting(!areControlsHidden)
+            .accessibilityHidden(areControlsHidden)
             .animation(.interactiveSpring(response: 0.28, dampingFraction: 0.88), value: bottomPadding)
-            .animation(.easeOut(duration: 0.12), value: isHiddenForKeyboard)
+            .animation(.easeOut(duration: 0.12), value: areControlsHidden)
         }
     }
 

@@ -6,7 +6,7 @@ extension ContentView {
     // The persistent panel's content, hosted by the system sheet. Kept out of
     // ContentView.swift so the root view reads as the app shell instead of a
     // long dependency-wiring block.
-    func bottomSheetContent(scrollOffset: Binding<CGFloat>) -> some View {
+    func bottomSheetContent() -> some View {
         BottomSheet(
             search: searchContext,
             itinerary: itineraryContext,
@@ -16,13 +16,24 @@ extension ContentView {
             gpx: gpxImport,
             simulation: simulationContext,
             chrome: chromeContext,
+            status: statusContext,
             presentation: BottomSheetPresentationContext(
-                scrollOffset: scrollOffset,
-                sheetDetent: $coordinator.sheetDetent,
-                collapsedHeight: coordinator.collapsedSheetHeight,
-                onCollapsedHeightChange: updateCollapsedSheetHeight
+                sheetDetent: $coordinator.sheetDetent
             )
         )
+        // Retour haptique d'échec quand une action est refusée faute de
+        // moteur : le bandeau explique, l'haptique signale (audit P0-4).
+        .sensoryFeedback(.error, trigger: coordinator.actionBlockedFeedback)
+        // La barre « Terminé » doit être déclarée sur la présentation qui
+        // contient le champ — ici la sheet. Posée sur ContentView (le
+        // présentateur), elle ne s'attachait jamais au clavier du champ de
+        // recherche. Voir docs/UI_UX_AUDIT_IOS_2026-09.md, P2-4.
+        .toolbar {
+            ToolbarItemGroup(placement: .keyboard) {
+                Spacer()
+                Button("Terminé") { searchFocused = false }
+            }
+        }
         .fileImporter(isPresented: $coordinator.showGpxImporter, allowedContentTypes: [.gpx, .xml]) { result in
             switch result {
             case .success(let url):
@@ -54,7 +65,7 @@ extension ContentView {
     }
 
     var collapsedPresentationDetentHeight: CGFloat {
-        max(72, coordinator.collapsedSheetHeight + 14)
+        BottomSheet.collapsedDetentHeight
     }
 
     var mediumPresentationDetent: PresentationDetent {
@@ -117,10 +128,23 @@ extension ContentView {
             isFocused: $searchFocused,
             suggestions: coordinator.searchCompleter.results,
             isSearching: coordinator.searchCompleter.isSearching,
-            onSelectSuggestion: coordinator.selectSearchSuggestion,
+            onSelectSuggestion: { completion in
+                // Rend la main au clavier avant de recentrer la carte : sinon
+                // il reste ouvert par-dessus le résultat qu'on vient de choisir.
+                searchFocused = false
+                coordinator.selectSearchSuggestion(completion)
+            },
             onSubmit: {
                 searchFocused = false
                 coordinator.submitSearch(session: session)
+            },
+            onSelectCategory: { category in
+                searchFocused = false
+                coordinator.searchQuery = category
+                coordinator.runTextSearch(
+                    query: category,
+                    fallbackRegionCenter: session.location.lastLocation?.coordinate
+                )
             }
         )
     }
@@ -132,6 +156,9 @@ extension ContentView {
             profile: $coordinator.itineraryProfile,
             legEstimates: coordinator.legEstimates,
             activeRoute: coordinator.activeRoute,
+            alternatives: coordinator.routeAlternativeChoices,
+            selectedAlternativeIndex: coordinator.selectedAlternativeIndex,
+            onSelectAlternative: { coordinator.selectAlternative($0) },
             onAddStop: { searchFocused = true },
             onLaunch: { coordinator.launchItinerary(session: session) },
             onShowActiveRouteDetails: coordinator.showActiveRouteDetails,
@@ -148,6 +175,7 @@ extension ContentView {
             },
             recentPlaces: coordinator.recentPlaces,
             onSelectRecentPlace: coordinator.selectRecentPlace,
+            onDeleteRecentPlace: { coordinator.removeRecentPlace($0) },
             onClearRecentPlaces: coordinator.clearRecentPlaces,
             hasSavedItinerary: coordinator.hasSavedItinerary,
             onLoadLastItinerary: coordinator.loadLastItinerary
@@ -157,6 +185,12 @@ extension ContentView {
     var placeContext: BottomSheetPlaceContext {
         BottomSheetPlaceContext(
             selectedPlace: coordinator.selectedPlace,
+            resultPosition: coordinator.selectedResultPosition,
+            resultCount: coordinator.searchResults.count,
+            onSelectPreviousResult: { coordinator.stepSearchResult(by: -1) },
+            onSelectNextResult: { coordinator.stepSearchResult(by: 1) },
+            results: coordinator.searchResults,
+            onSelectResult: { coordinator.selectSearchResult($0) },
             referenceCoordinate: coordinator.spoofedCoordinate(session: session) ?? session.location.lastLocation?.coordinate,
             actions: placeActions
         )
@@ -171,8 +205,33 @@ extension ContentView {
         )
     }
 
+    // État du moteur remonté sur l'écran principal : bandeau de connexion
+    // quand il manque, affichage permanent de la position injectée sinon.
+    // Voir docs/UI_UX_AUDIT_IOS_2026-09.md, P0-4 et P2-7.
+    var statusContext: BottomSheetStatusContext {
+        let simulationState = session.engine.status?.state
+        let hasSimulationBanner = coordinator.activeRoute != nil
+            || session.engine.status?.patrolZone?.active == true
+            || simulationState == "moving"
+            || simulationState == "paused"
+
+        return BottomSheetStatusContext(
+            connectionState: coordinator.engineState(session: session),
+            lastError: session.engine.lastError,
+            injectedLocation: session.engine.status?.lastInjectedLocation,
+            driftMeters: session.engine.status?.lastRealLocation?.drift,
+            hasDedicatedSimulationBanner: hasSimulationBanner,
+            onConnect: {
+                session.toggleConnection(engineAddress: engineAddress, keepAliveEnabled: keepAliveEnabled)
+            },
+            onOpenSettings: { coordinator.showSettings = true }
+        )
+    }
+
     var chromeContext: BottomSheetChromeContext {
         BottomSheetChromeContext(
+            showsFirstRunPrimer: !hasSeenPermissionsPrimer,
+            onCompleteFirstRunPrimer: completeFirstRunPrimer,
             onOpenSettings: { coordinator.showSettings = true },
             onReportProblem: {
                 coordinator.settingsOpenToDiagnostics = true
@@ -188,8 +247,9 @@ extension ContentView {
             onRoute: routeToSelectedPlace,
             onAddStop: addSelectedPlaceAsStop,
             onFavorite: favoriteSelectedPlace,
+            onRemoveFavorite: unfavoriteSelectedPlace,
             onCopyCoordinates: copySelectedPlaceCoordinates,
-            onDismiss: { coordinator.clearSelection() }
+            onDismiss: { coordinator.dismissSelectedPlace() }
         )
     }
 
@@ -216,16 +276,6 @@ extension ContentView {
             onLaunch: launchGpxTrack,
             onCancel: clearGpxTrack
         )
-    }
-
-    func updateCollapsedSheetHeight(_ newHeight: CGFloat) {
-        let roundedHeight = newHeight.rounded(.toNearestOrAwayFromZero)
-        if abs(roundedHeight - coordinator.collapsedSheetHeight) > 1 {
-            coordinator.collapsedSheetHeight = roundedHeight
-            if coordinator.sheetDetent == .collapsed {
-                coordinator.nativeSheetDetent = collapsedPresentationDetent
-            }
-        }
     }
 
     func teleportSelectedPlace() {
@@ -256,6 +306,11 @@ extension ContentView {
             lon: place.coordinate.longitude,
             name: place.title
         )
+    }
+
+    func unfavoriteSelectedPlace() {
+        guard let place = coordinator.selectedPlace, coordinator.requireConnection(session: session) else { return }
+        session.engine.removeFavorite(lat: place.coordinate.latitude, lon: place.coordinate.longitude)
     }
 
     func copySelectedPlaceCoordinates() {

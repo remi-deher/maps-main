@@ -6,6 +6,7 @@ struct BottomSheetHeaderView: View {
     let place: BottomSheetPlaceContext
     let simulation: BottomSheetSimulationContext
     let chrome: BottomSheetChromeContext
+    let status: BottomSheetStatusContext
     let isCollapsed: Bool
 
     private enum TrailingAction: Equatable {
@@ -19,12 +20,19 @@ struct BottomSheetHeaderView: View {
         !itinerary.stops.wrappedValue.isEmpty && !search.isFocused.wrappedValue
     }
 
+    private var isShowingPlace: Bool {
+        place.selectedPlace != nil && !search.isFocused.wrappedValue
+    }
+
     private var trailingAction: TrailingAction {
-        if isCollapsed {
-            return .settings
-        }
+        // Un lieu sélectionné passe avant l'état replié : au détent collapsed
+        // la barre de lieu remplace le champ de recherche, et son bouton rond
+        // doit fermer le lieu, pas ouvrir les réglages.
         if place.selectedPlace != nil {
             return .cancelPlace
+        }
+        if isCollapsed {
+            return .settings
         }
         if search.isFocused.wrappedValue || !search.query.wrappedValue.isEmpty {
             return .cancelSearch
@@ -40,6 +48,8 @@ struct BottomSheetHeaderView: View {
                     simulationState: simulation.state,
                     onShowActiveRouteDetails: itinerary.onShowActiveRouteDetails
                 )
+            } else if isShowingPlace, let selectedPlace = place.selectedPlace {
+                placeHeader(selectedPlace)
             } else if isPlanningItinerary {
                 BottomSheetItineraryPlanningHeaderView(itinerary: itinerary)
             } else {
@@ -56,6 +66,39 @@ struct BottomSheetHeaderView: View {
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 4)
+    }
+
+    // Quand un lieu est sélectionné, le champ de recherche cède la place au
+    // nom du lieu — exactement ce que fait Plans. Le titre vit donc ici et pas
+    // dans `PlaceCard`, ce qui évite de l'afficher deux fois et le rend visible
+    // même au détent replié, où la carte n'est pas rendue.
+    private func placeHeader(_ selectedPlace: SelectedPlace) -> some View {
+        let appearance = PointOfInterestStyle.appearance(for: selectedPlace.category)
+        return HStack(spacing: 12) {
+            Image(systemName: appearance.symbol)
+                .font(.headline)
+                .foregroundStyle(.white)
+                .frame(width: 40, height: 40)
+                .background(appearance.color, in: Circle())
+                .accessibilityHidden(true)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(selectedPlace.title)
+                    .font(.headline)
+                    .lineLimit(1)
+                if let subtitle = selectedPlace.subtitle, !subtitle.isEmpty {
+                    Text(subtitle)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+            }
+
+            Spacer(minLength: 8)
+
+            trailingButton
+        }
+        .padding(.leading, 4)
     }
 
     private var trailingButton: some View {
@@ -79,13 +122,28 @@ struct BottomSheetHeaderView: View {
             .contentShape(Circle())
             .background {
                 if action == .settings {
-                    Circle().fill(Color.accentColor.opacity(0.82))
+                    Circle().fill(Color.accentColor)
+                }
+            }
+            // Pastille d'alerte quand le moteur n'est pas joignable : au détent
+            // collapsed, ce bouton est la seule chose visible de la sheet — sans
+            // elle, l'état « non connecté » serait invisible tant que
+            // l'utilisateur n'ouvre pas le panneau (audit P0-4).
+            .overlay(alignment: .topTrailing) {
+                if action == .settings, status.needsAttention {
+                    Circle()
+                        .fill(.orange)
+                        .frame(width: 12, height: 12)
+                        .overlay(Circle().strokeBorder(Color(.systemBackground), lineWidth: 2))
+                        .offset(x: -6, y: 6)
+                        .accessibilityHidden(true)
                 }
             }
         }
         .buttonStyle(.plain)
-        .glassEffect(.regular.interactive(), in: Circle())
+        .background(Color(.tertiarySystemFill), in: Circle())
         .accessibilityLabel(action == .settings ? "Réglages" : "Annuler")
+        .accessibilityValue(action == .settings && status.needsAttention ? "Moteur non connecté" : "")
         .animation(.snappy(duration: 0.2), value: action)
     }
 

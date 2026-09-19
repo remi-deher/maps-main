@@ -58,12 +58,12 @@ struct PatrolPanel: View {
                 launchFeedback += 1
                 onLaunch()
             }
-            .buttonStyle(.glassProminent)
+            .buttonStyle(.borderedProminent)
             .tint(.accentColor)
             .frame(maxWidth: .infinity, minHeight: 44)
         }
         .padding(18)
-        .adaptiveGlassEffect(in: RoundedRectangle(cornerRadius: 26, style: .continuous))
+        .sheetCardBackground(in: RoundedRectangle(cornerRadius: 26, style: .continuous))
         .padding(.horizontal, 16)
         .sensoryFeedback(.success, trigger: launchFeedback)
     }

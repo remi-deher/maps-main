@@ -480,8 +480,8 @@ final class EngineClient: NSObject, URLSessionWebSocketDelegate, EngineClientPro
 
     private func sendEnvelope(_ envelope: EngineEnvelope) {
         guard let task else {
-            AppLogger.shared.warn("Action \(envelope.type) ignoree: non connecte au moteur")
-            lastError = "Non connecte au moteur - action ignoree."
+            AppLogger.shared.warn("Action \(envelope.type) ignorée : non connecté au moteur")
+            lastError = "Non connecté au moteur — action ignorée."
             return
         }
         guard let payload = try? JSONSerialization.data(withJSONObject: envelope.jsonObject),

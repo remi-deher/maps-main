@@ -12,6 +12,8 @@ struct BottomSheetSearchContext {
     // Fired when the user hits the keyboard's "Rechercher" key: commit the
     // typed query to a full search rather than waiting for a suggestion tap.
     var onSubmit: () -> Void
+    // Lancé par une puce de catégorie (SearchCategoryChipsView).
+    var onSelectCategory: (String) -> Void
 }
 
 struct BottomSheetItineraryContext {
@@ -20,6 +22,11 @@ struct BottomSheetItineraryContext {
     var profile: Binding<String>
     let legEstimates: [UUID: LegEstimate]
     let activeRoute: ActiveRoute?
+    // Variantes de trajet pour une destination unique (vide au-delà), et
+    // rang de celle qui est retenue.
+    let alternatives: [RouteAlternative]
+    let selectedAlternativeIndex: Int
+    var onSelectAlternative: (Int) -> Void
     var onAddStop: () -> Void
     var onLaunch: () -> Void
     var onShowActiveRouteDetails: () -> Void
@@ -32,6 +39,7 @@ struct BottomSheetLibraryContext {
     var onDeleteFavorite: (Favorite) -> Void
     let recentPlaces: [RecentPlace]
     var onSelectRecentPlace: (RecentPlace) -> Void
+    var onDeleteRecentPlace: (RecentPlace) -> Void
     var onClearRecentPlaces: () -> Void
     let hasSavedItinerary: Bool
     var onLoadLastItinerary: () -> Void
@@ -39,6 +47,16 @@ struct BottomSheetLibraryContext {
 
 struct BottomSheetPlaceContext {
     let selectedPlace: SelectedPlace?
+    // Rang (1-based) du lieu affiché dans le jeu de résultats courant, et
+    // taille de ce jeu : Plans laisse passer d'un résultat au suivant sans
+    // repasser par la liste.
+    let resultPosition: Int?
+    let resultCount: Int
+    var onSelectPreviousResult: () -> Void
+    var onSelectNextResult: () -> Void
+    // Jeu de résultats complet, affiché en liste tant qu'aucun n'est choisi.
+    let results: [SelectedPlace]
+    var onSelectResult: (SelectedPlace) -> Void
     // Where "distance from here" is measured from — the simulated position if
     // one is active, otherwise the device's real location. nil hides the line.
     let referenceCoordinate: CLLocationCoordinate2D?
@@ -53,6 +71,10 @@ struct BottomSheetSimulationContext {
 }
 
 struct BottomSheetChromeContext {
+    // Carte de première ouverture : visible tant que l'utilisateur n'a pas
+    // validé les explications d'autorisations (audit P2-5).
+    var showsFirstRunPrimer: Bool
+    var onCompleteFirstRunPrimer: () -> Void
     var onOpenSettings: () -> Void
     // Opens settings straight to the diagnostics screen (distinct from the
     // generic settings entry) for "Signaler un problème".
@@ -61,8 +83,5 @@ struct BottomSheetChromeContext {
 }
 
 struct BottomSheetPresentationContext {
-    var scrollOffset: Binding<CGFloat>
     var sheetDetent: Binding<SheetDetent>
-    var collapsedHeight: CGFloat
-    var onCollapsedHeightChange: (CGFloat) -> Void
 }

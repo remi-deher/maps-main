@@ -1,22 +1,32 @@
 # GPS-Mock Companion (iOS)
 
-App SwiftUI, façon Plans (carte plein écran MapKit + omnibar flottante en
-Liquid Glass, iOS 26), qui tourne sur l'iPhone à côté de l'app GPS-Mock
+App SwiftUI, façon Plans (carte plein écran MapKit + bottom sheet
+persistante, iOS 26), qui tourne sur l'iPhone à côté de l'app GPS-Mock
 desktop :
 
 - Carte plein écran (`Map`/`MapReader` SwiftUI natifs) avec la position
-  réelle (point bleu) et la position simulée (marker) ; toucher la carte
-  propose de téléporter, lancer un trajet jusqu'ici, ou ajouter un favori.
-- **Omnibar flottante** (`OmniBar.swift`) en verre liquide (`.glassEffect`,
-  `GlassEffectContainer`) : recherche d'adresse (`MKLocalSearch`, natif, pas
-  de clé API) + bouton réglages séparé. Sous l'omnibar, un panneau flottant
-  (`SuggestionsPanel.swift`) affiche les résultats de recherche en train de
-  taper, ou les favoris en suggestions quand le champ est vide — sélectionner
-  une entrée recentre la carte et ouvre le même menu d'actions qu'un tap sur
-  la carte.
-- Les infos de connexion (adresse, état, dérive, découverte réseau) sont
-  déportées dans une feuille de réglages (`SettingsSheet.swift`) ouverte via
-  l'icône engrenage, pour garder l'écran principal épuré.
+  réelle (point bleu) et la position simulée (anneau pulsé) ; maintenir un
+  point enfoncé propose de s'y téléporter, lancer un trajet jusqu'ici, ou
+  l'ajouter en favori.
+- **Trois couches, comme Plans** : la carte, les contrôles flottants en
+  Liquid Glass au-dessus d'elle (`ContentView+MapChrome.swift`,
+  `RecenterButton.swift` — 2D/3D, calques, recentrage), et une **bottom sheet
+  persistante** (`BottomSheet.swift` et les vues `BottomSheet*`) au contenu
+  opaque. Le verre s'arrête à la couche flottante : à l'intérieur de la sheet
+  les cartes utilisent des fonds groupés (`SheetCardBackground.swift`), ce qui
+  évite le verre empilé sur du verre. Voir
+  `docs/UI_UX_AUDIT_IOS_2026-09.md`.
+- **Recherche** dans le header de la sheet (`BottomSheetSearchField.swift`) :
+  suggestions instantanées via `MKLocalSearchCompleter` (natif, pas de clé
+  API), fragments saisis surlignés, résultats multiples épinglés sur la carte.
+- **État du moteur visible** (`BottomSheetStatusBannerView.swift`) : bandeau
+  « Moteur non connecté » avec bouton Connecter quand la liaison manque,
+  affichage permanent de la position injectée et de la dérive sinon. Le
+  détail (adresse, appairage, pilote, découverte réseau) reste dans la feuille
+  de réglages (`SettingsSheet.swift`) ouverte via le bouton rond du header.
+- **Première ouverture** (`FirstRunPrimerCard.swift`) : les autorisations
+  (position, réseau local, notifications) sont expliquées avant d'être
+  demandées, au lieu de trois alertes système empilées au lancement.
 - Découverte automatique du moteur sur le réseau local via Bonjour/mDNS
   (`_gpsmock._tcp`, voir `EngineDiscovery.swift`) : plus besoin de taper
   l'IP:port à la main si le moteur est sur le même réseau. Le moteur Go

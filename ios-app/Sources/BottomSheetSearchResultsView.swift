@@ -29,18 +29,29 @@ struct BottomSheetSearchResultsView: View {
                     .padding(.top, 8)
             }
         } else {
-            VStack(spacing: 0) {
-                ForEach(searchSuggestions, id: \.compositeID) { completion in
-                    searchResultRow(completion)
-                    if completion.compositeID != searchSuggestions.last?.compositeID {
-                        Divider()
-                            .padding(.leading, 58)
-                    }
+            VStack(alignment: .leading, spacing: 10) {
+                // Plans structure toujours sa liste de recherche par section.
+                Text("Suggestions")
+                    .font(.title3.weight(.semibold))
+                    .padding(.horizontal, 16)
+
+                suggestionsCard
+            }
+        }
+    }
+
+    private var suggestionsCard: some View {
+        VStack(spacing: 0) {
+            ForEach(searchSuggestions, id: \.compositeID) { completion in
+                searchResultRow(completion)
+                if completion.compositeID != searchSuggestions.last?.compositeID {
+                    Divider()
+                        .padding(.leading, 58)
                 }
             }
-            .adaptiveGlassEffect(in: RoundedRectangle(cornerRadius: 22, style: .continuous))
-            .padding(.horizontal, 16)
         }
+        .sheetCardBackground(in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+        .padding(.horizontal, 16)
     }
 
     private func searchResultRow(_ completion: MKLocalSearchCompletion) -> some View {
