@@ -44,7 +44,7 @@ struct BottomSheetActiveRouteControlsView: View {
                     .frame(width: headerIconSize, height: headerIconSize)
 
                 VStack(alignment: .leading, spacing: 3) {
-                    Text(simulationState == "paused" ? "Itineraire en pause" : "Itineraire en cours")
+                    Text(simulationState == "paused" ? "Itinéraire en pause" : "Itinéraire en cours")
                         .font(.headline)
                     Text("Destination : \(route.destinationName)")
                         .font(.caption)
@@ -58,10 +58,10 @@ struct BottomSheetActiveRouteControlsView: View {
             HStack(spacing: 10) {
                 if let estimate = totalEstimate(for: route) {
                     routeMetricTile(title: "Distance", value: routeDistanceText(estimate))
-                    routeMetricTile(title: "Duree", value: routeDurationText(estimate))
+                    routeMetricTile(title: "Durée", value: routeDurationText(estimate))
                     routeMetricTile(title: "Vitesse", value: "\(Int(route.speed)) km/h")
                 } else {
-                    routeMetricTile(title: "Trajet", value: route.stepCount > 1 ? "\(route.stepCount) arrets" : "Direct")
+                    routeMetricTile(title: "Trajet", value: route.stepCount > 1 ? "\(route.stepCount) arrêts" : "Direct")
                     routeMetricTile(title: "Profil", value: route.profile == "walking" ? "Marche" : "Voiture")
                     routeMetricTile(title: "Vitesse", value: "\(Int(route.speed)) km/h")
                 }
@@ -74,7 +74,7 @@ struct BottomSheetActiveRouteControlsView: View {
             routeStopsList(route)
         }
         .padding(18)
-        .adaptiveGlassEffect(in: RoundedRectangle(cornerRadius: 26, style: .continuous))
+        .sheetCardBackground(in: RoundedRectangle(cornerRadius: 26, style: .continuous))
         .padding(.horizontal, 16)
     }
 
@@ -100,7 +100,7 @@ struct BottomSheetActiveRouteControlsView: View {
         .padding(.horizontal, 12)
         .padding(.vertical, 10)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color(.secondarySystemFill), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .sheetInnerBackground(in: RoundedRectangle(cornerRadius: 14, style: .continuous))
     }
 
     private func activeRoutePlaceCard(_ place: SelectedPlace) -> some View {
@@ -125,24 +125,30 @@ struct BottomSheetActiveRouteControlsView: View {
             }
 
             HStack(spacing: 10) {
-                Button(action: placeActions.onFavorite) {
-                    Label(isFavorite(place) ? "Favori" : "Favoris", systemImage: isFavorite(place) ? "star.fill" : "star")
+                Button {
+                    if isFavorite(place) {
+                        placeActions.onRemoveFavorite()
+                    } else {
+                        placeActions.onFavorite()
+                    }
+                } label: {
+                    Label(isFavorite(place) ? "Retirer" : "Favori", systemImage: isFavorite(place) ? "star.fill" : "star")
                         .frame(maxWidth: .infinity, minHeight: actionButtonHeight)
                 }
-                .buttonStyle(.glass)
+                .buttonStyle(.bordered)
                 .buttonBorderShape(.capsule)
 
                 Button(action: placeActions.onAddStop) {
-                    Label("Ajouter un arret", systemImage: "plus")
+                    Label("Ajouter un arrêt", systemImage: "plus")
                         .frame(maxWidth: .infinity, minHeight: actionButtonHeight)
                 }
-                .buttonStyle(.glassProminent)
+                .buttonStyle(.borderedProminent)
                 .tint(Color.accentColor)
                 .buttonBorderShape(.capsule)
             }
         }
         .padding(14)
-        .background(Color(.secondarySystemFill), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .sheetInnerBackground(in: RoundedRectangle(cornerRadius: 18, style: .continuous))
         .accessibilityElement(children: .contain)
     }
 
@@ -159,7 +165,7 @@ struct BottomSheetActiveRouteControlsView: View {
                 }
             }
         }
-        .background(Color(.secondarySystemFill), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .sheetInnerBackground(in: RoundedRectangle(cornerRadius: 18, style: .continuous))
     }
 
     private func routeStepRow(index: Int, stop: RouteStop, estimate: LegEstimate?) -> some View {
@@ -249,8 +255,8 @@ struct BottomSheetActiveRouteHeaderView: View {
             .contentShape(Capsule())
         }
         .buttonStyle(.plain)
-        .glassEffect(.regular.interactive(), in: .capsule)
-        .accessibilityLabel("Details de l'itineraire")
+        .background(Color(.tertiarySystemFill), in: .capsule)
+        .accessibilityLabel("Détails de l'itinéraire")
     }
 
     private func activeRouteSubtitle(_ route: ActiveRoute) -> String {
@@ -299,17 +305,17 @@ struct BottomSheetActiveRouteControlDockView: View {
                     .font(.headline.weight(.semibold))
                     .frame(maxWidth: .infinity, minHeight: 48)
             }
-            .buttonStyle(.glassProminent)
+            .buttonStyle(.borderedProminent)
             .tint(Color.accentColor)
             .buttonBorderShape(.capsule)
 
             Button(action: onStopRoute) {
-                Label("Arreter", systemImage: "stop.fill")
+                Label("Arrêter", systemImage: "stop.fill")
                     .labelStyle(.iconOnly)
                     .foregroundStyle(.red)
                     .frame(width: 48, height: 48)
             }
-            .buttonStyle(.glass)
+            .buttonStyle(.bordered)
             .buttonBorderShape(.circle)
 
             Menu {
@@ -317,22 +323,22 @@ struct BottomSheetActiveRouteControlDockView: View {
                     Label("Recentrer", systemImage: "location.viewfinder")
                 }
                 Button(action: onShowActiveRouteDetails) {
-                    Label("Details", systemImage: "list.bullet")
+                    Label("Détails", systemImage: "list.bullet")
                 }
                 Button(action: onOpenSettings) {
-                    Label("Reglages", systemImage: "gearshape.fill")
+                    Label("Réglages", systemImage: "gearshape.fill")
                 }
             } label: {
                 Label("Plus", systemImage: "ellipsis")
                     .labelStyle(.iconOnly)
                     .frame(width: 48, height: 48)
             }
-            .buttonStyle(.glass)
+            .buttonStyle(.bordered)
             .buttonBorderShape(.circle)
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 10)
-        .adaptiveGlassEffect(in: RoundedRectangle(cornerRadius: 26, style: .continuous))
+        .sheetCardBackground(in: RoundedRectangle(cornerRadius: 26, style: .continuous))
         .padding(.horizontal, 12)
     }
 }
@@ -351,7 +357,7 @@ struct SimulationControlBarView: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text(simulationState == "paused" ? "Simulation en pause" : "Position active")
                     .font(.subheadline.weight(.semibold))
-                Text(simulationState == "paused" ? "Reprendre ou arreter le parcours" : "Le moteur applique la position")
+                Text(simulationState == "paused" ? "Reprendre ou arrêter le parcours" : "Le moteur applique la position")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
@@ -363,7 +369,7 @@ struct SimulationControlBarView: View {
                         .labelStyle(.iconOnly)
                         .frame(width: 44, height: 44)
                 }
-                .buttonStyle(.glassProminent)
+                .buttonStyle(.borderedProminent)
                 .tint(.accentColor)
                 .buttonBorderShape(.circle)
             } else {
@@ -372,21 +378,21 @@ struct SimulationControlBarView: View {
                         .labelStyle(.iconOnly)
                         .frame(width: 44, height: 44)
                 }
-                .buttonStyle(.glass)
+                .buttonStyle(.bordered)
                 .buttonBorderShape(.circle)
             }
             Button(action: onStopRoute) {
-                Label("Arreter", systemImage: "stop.fill")
+                Label("Arrêter", systemImage: "stop.fill")
                     .labelStyle(.iconOnly)
                     .foregroundStyle(.red)
                     .frame(width: 44, height: 44)
             }
-            .buttonStyle(.glass)
+            .buttonStyle(.bordered)
             .buttonBorderShape(.circle)
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 10)
-        .adaptiveGlassEffect(in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .sheetCardBackground(in: RoundedRectangle(cornerRadius: 20, style: .continuous))
         .padding(.horizontal, 16)
     }
 }
@@ -401,24 +407,24 @@ struct PatrolActiveBarView: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text("Patrouille active")
                     .font(.subheadline.weight(.semibold))
-                Text("Deplacement automatique dans la zone")
+                Text("Déplacement automatique dans la zone")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
             }
             Spacer()
             Button(action: patrol.onStop) {
-                Label("Arreter la patrouille", systemImage: "stop.fill")
+                Label("Arrêter la patrouille", systemImage: "stop.fill")
                     .labelStyle(.iconOnly)
                     .foregroundStyle(.red)
                     .frame(width: 44, height: 44)
             }
-            .buttonStyle(.glass)
+            .buttonStyle(.bordered)
             .buttonBorderShape(.circle)
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 10)
-        .adaptiveGlassEffect(in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .sheetCardBackground(in: RoundedRectangle(cornerRadius: 20, style: .continuous))
         .padding(.horizontal, 16)
     }
 }

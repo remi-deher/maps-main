@@ -44,6 +44,18 @@ final class MapCoordinator {
     var searchQuery = ""
     var searchCompleter = SearchCompleter()
 
+    // Dernière recherche plein texte et centre de carte au moment où elle a
+    // tourné : servent à proposer « Rechercher dans cette zone » une fois que
+    // l'utilisateur a suffisamment déplacé la carte (MapCoordinator+Search).
+    var lastSearchQuery: String?
+    var lastSearchCenter: CLLocationCoordinate2D?
+
+    // Variantes de trajet pour une destination unique, la plus rapide en
+    // premier. Voir MapCoordinator+RouteAlternatives.swift.
+    var routeAlternatives: [OSRMRoute] = []
+    var selectedAlternativeIndex = 0
+    @ObservationIgnored var alternativesTask: Task<Void, Never>?
+
     var itineraryStops: [RouteStop] = []
     var itinerarySpeed: Double = 30
     var itineraryProfile: String = "driving"
@@ -70,11 +82,27 @@ final class MapCoordinator {
     }
     var followMode: FollowMode = .off
 
+    // Règle : on ne redimensionne la sheet que pour **révéler un panneau que
+    // l'utilisateur doit voir pour agir** (fiche lieu, panneau GPX, panneau
+    // patrouille, bandeau « moteur non connecté », itinéraire lancé). Tout le
+    // reste laisse le détent où l'utilisateur l'a mis — chaque redimensionnement
+    // gratuit est un saut qu'il n'a pas demandé, et Plans n'en fait que deux.
     var sheetDetent: SheetDetent = .collapsed
-    var collapsedSheetHeight: CGFloat = BottomSheet.collapsedHeight
+
+    // Part de la hauteur de carte que la sheet recouvre au détent courant.
+    // Sert à deux choses : la safe area basse de la `Map` (pour que
+    // l'attribution Apple reste visible) et le cadrage caméra ci-dessous, qui
+    // reposait avant sur un facteur 0,32 codé en dur — juste au détent
+    // `medium`, faux partout ailleurs.
+    var sheetCoverage: CGFloat {
+        switch sheetDetent {
+        case .collapsed: return 0.12
+        case .medium: return 0.43
+        case .large: return 0.45
+        }
+    }
     var nativeSheetPresented = true
-    var nativeSheetDetent: PresentationDetent = .height(72)
-    var sheetScrollOffset: CGFloat = 0
+    var nativeSheetDetent: PresentationDetent = .height(BottomSheet.collapsedDetentHeight)
     var isMapTilted = false
     var showSettings = false
     // When true, the settings sheet opens straight to the diagnostics screen
@@ -151,6 +179,7 @@ final class MapCoordinator {
         activeRoute = route
         itineraryStops = []
         plannedRoutePath = []
+        clearRouteAlternatives()
         selectedPlace = nil
         searchResults = []
         fitItinerary(route.stops, session: session)
@@ -190,12 +219,15 @@ final class MapCoordinator {
         selectedPlace = nil
         searchResults = []
         fitItinerary(updatedRoute.stops, session: session)
-        withAnimation { sheetDetent = .medium }
     }
 
     func playActiveRoute(_ route: ActiveRoute, session: MapSessionModel) {
+        // `stopsForPlayback` peut insérer un point de passage quand une variante
+        // de trajet a été choisie : le moteur ne reçoit que des couples
+        // début/fin et reroute lui-même, c'est le seul moyen de lui faire
+        // suivre la variante. La liste affichée reste celle de l'utilisateur.
         let legs = playbackBuilder.sequenceLegs(
-            for: route.stops,
+            for: stopsForPlayback(route.stops),
             speed: route.speed,
             profile: route.profile,
             startingCoordinate: session.location.lastLocation?.coordinate
@@ -214,7 +246,6 @@ final class MapCoordinator {
     func stopActiveRoute(session: MapSessionModel) {
         session.engine.stopRoute()
         activeRoute = nil
-        withAnimation { sheetDetent = .medium }
     }
 
     func showActiveRouteDetails() {
@@ -268,8 +299,21 @@ final class MapCoordinator {
         }
     }
 
+    // Incrémenté à chaque action refusée faute de moteur — pilote le
+    // `sensoryFeedback(.error)` de la sheet. Avant, `requireConnection` faisait
+    // échouer l'action en silence : on tapait « Positionner ici » et il ne se
+    // passait rien (docs/UI_UX_AUDIT_IOS_2026-09.md, P0-4).
+    var actionBlockedFeedback = 0
+
     func requireConnection(session: MapSessionModel) -> Bool {
-        session.engine.state == .connected
+        if session.engine.state == .connected { return true }
+        actionBlockedFeedback += 1
+        // Déplie la sheet pour que le bandeau « Moteur non connecté » — qui
+        // porte l'explication et le bouton Connecter — soit effectivement lu.
+        if sheetDetent == .collapsed {
+            withAnimation { sheetDetent = .medium }
+        }
+        return false
     }
 
     func saveLastItinerary() {
@@ -317,6 +361,11 @@ final class MapCoordinator {
         saveRecentPlaces()
     }
 
+    func removeRecentPlace(_ recent: RecentPlace) {
+        recentPlaces.removeAll { $0.id == recent.id }
+        saveRecentPlaces()
+    }
+
     func clearRecentPlaces() {
         recentPlaces = []
         saveRecentPlaces()
@@ -327,19 +376,31 @@ final class MapCoordinator {
     }
 
     func focus(on coordinate: CLLocationCoordinate2D, latitudinalMeters: CLLocationDistance = 800) {
-        // Shift the region center south so the point lands in the map area
-        // *above* the bottom sheet (which covers ~43% of the screen at medium)
-        // instead of being hidden underneath it — the same offset Plans applies
-        // when it surfaces a place card.
-        let southShift = latitudinalMeters * 0.32 / 111_000
-        let center = CLLocationCoordinate2D(
-            latitude: coordinate.latitude - southShift,
-            longitude: coordinate.longitude
-        )
         followMode = .off
         withAnimation {
-            cameraPosition = .region(MKCoordinateRegion(center: center, latitudinalMeters: latitudinalMeters, longitudinalMeters: latitudinalMeters))
+            cameraPosition = .region(regionCenteringAboveSheet(on: coordinate, latitudinalMeters: latitudinalMeters))
         }
+    }
+
+    // Le point doit tomber au milieu de la bande de carte restée visible
+    // au-dessus de la sheet, pas au milieu de l'écran. Le centre de la région
+    // descend donc de la moitié de ce que la sheet recouvre — calculé depuis le
+    // détent courant, ce qui rend le cadrage juste aux trois détents au lieu du
+    // seul `medium`.
+    func regionCenteringAboveSheet(
+        on coordinate: CLLocationCoordinate2D,
+        latitudinalMeters: CLLocationDistance
+    ) -> MKCoordinateRegion {
+        let southShiftMeters = latitudinalMeters * Double(sheetCoverage) / 2
+        let center = CLLocationCoordinate2D(
+            latitude: coordinate.latitude - southShiftMeters / 111_000,
+            longitude: coordinate.longitude
+        )
+        return MKCoordinateRegion(
+            center: center,
+            latitudinalMeters: latitudinalMeters,
+            longitudinalMeters: latitudinalMeters
+        )
     }
 
     func fitItinerary(_ stops: [RouteStop], session: MapSessionModel) {
@@ -369,9 +430,18 @@ final class MapCoordinator {
             return MKCoordinateRegion(center: first, latitudinalMeters: 800, longitudinalMeters: 800)
         }
 
-        let center = CLLocationCoordinate2D(latitude: (minLat + maxLat) / 2, longitude: (minLon + maxLon) / 2)
+        // La sheet mange le bas de la carte : on dilate la hauteur de la région
+        // pour que le contenu tienne dans la bande visible, puis on descend le
+        // centre d'autant. Sans ça, cadrer un trajet le plaçait à cheval sur la
+        // sheet — la moitié sud du tracé passait dessous.
+        let visibleFraction = max(1 - Double(sheetCoverage), 0.3)
+        let latitudeDelta = max((maxLat - minLat) * 1.6, 0.01) / visibleFraction
+        let center = CLLocationCoordinate2D(
+            latitude: (minLat + maxLat) / 2 - latitudeDelta * Double(sheetCoverage) / 2,
+            longitude: (minLon + maxLon) / 2
+        )
         let span = MKCoordinateSpan(
-            latitudeDelta: max((maxLat - minLat) * 1.6, 0.01),
+            latitudeDelta: latitudeDelta,
             longitudeDelta: max((maxLon - minLon) * 1.6, 0.01)
         )
         return MKCoordinateRegion(center: center, span: span)

@@ -33,6 +33,13 @@ struct ItineraryHeader: View {
 
     @State private var draggingStopID: UUID?
 
+    // Pastilles d'étape, cible tactile et taille de poignée : mises à l'échelle
+    // du Dynamic Type au lieu d'être figées. C'était la dernière vue à utiliser
+    // des `.font(.system(size:))` en dur et des frames constants — à l'échelle
+    // AX5 le texte débordait de sa pastille (audit P1-3 et P1-4).
+    @ScaledMetric(relativeTo: .caption) private var badgeSize: CGFloat = 24
+    @ScaledMetric(relativeTo: .body) private var controlSize: CGFloat = 44
+
     var body: some View {
         VStack(spacing: 8) {
             LazyVStack(alignment: .leading, spacing: 0) {
@@ -61,7 +68,7 @@ struct ItineraryHeader: View {
                 Button(action: onAddStop) {
                     HStack {
                         Image(systemName: "plus.circle.fill")
-                            .font(.system(size: 14, weight: .semibold))
+                            .font(.subheadline.weight(.semibold))
                         Text("Ajouter un arrêt")
                             .font(.subheadline.weight(.semibold))
                     }
@@ -73,12 +80,21 @@ struct ItineraryHeader: View {
 
                 Spacer()
 
+                // `Label` plutôt qu'une `Image` nue : l'icône seule s'affiche,
+                // mais le texte reste pour VoiceOver (audit P1-5). Largeur
+                // minimale plutôt que figée, pour ne pas tronquer en Dynamic
+                // Type élevé.
                 Picker("Profil", selection: $profile) {
-                    Image(systemName: "car.fill").tag("driving")
-                    Image(systemName: "figure.walk").tag("walking")
+                    Label("Voiture", systemImage: "car.fill")
+                        .labelStyle(.iconOnly)
+                        .tag("driving")
+                    Label("À pied", systemImage: "figure.walk")
+                        .labelStyle(.iconOnly)
+                        .tag("walking")
                 }
                 .pickerStyle(.segmented)
-                .frame(width: 100)
+                .frame(minWidth: 100)
+                .fixedSize()
             }
             .padding(.top, 4)
             .padding(.horizontal, 4)
@@ -88,8 +104,8 @@ struct ItineraryHeader: View {
     private var startingPointRow: some View {
         HStack(spacing: 10) {
             Image(systemName: "location.fill")
-                .font(.system(size: 10, weight: .bold))
-                .frame(width: 22, height: 22)
+                .font(.caption2.weight(.bold))
+                .frame(width: badgeSize, height: badgeSize)
                 .background(Color.blue, in: Circle())
                 .foregroundStyle(.white)
 
@@ -111,14 +127,14 @@ struct ItineraryHeader: View {
                         .frame(width: 3, height: 3)
                 }
             }
-            .frame(width: 22)
+            .frame(width: badgeSize)
 
             if let estimate = legEstimates[stop.id] {
                 let distance = Measurement(value: estimate.distanceMeters, unit: UnitLength.meters)
                 let duration = durationFormatter.string(from: estimate.travelTime) ?? ""
 
                 Text("\(duration) (\(estimateFormatter.string(from: distance)))")
-                    .font(.system(size: 10, weight: .medium))
+                    .font(.caption2.weight(.medium))
                     .foregroundStyle(.secondary)
                     .padding(.horizontal, 8)
                     .padding(.vertical, 2)
@@ -134,18 +150,18 @@ struct ItineraryHeader: View {
     private func stopBadge(index: Int) -> some View {
         if index == stops.count - 1 {
             Image(systemName: "mappin.and.ellipse")
-                .font(.system(size: 11, weight: .bold))
-                .frame(width: 22, height: 22)
+                .font(.caption2.weight(.bold))
+                .frame(width: badgeSize, height: badgeSize)
                 .background(Color.red, in: Circle())
-                .foregroundColor(.white)
+                .foregroundStyle(.white)
         } else {
             let letterCode = 65 + index
             let letter = String(Character(UnicodeScalar(letterCode)!))
             Text(letter)
                 .font(.caption.bold())
-                .frame(width: 22, height: 22)
+                .frame(width: badgeSize, height: badgeSize)
                 .background(Color(.systemGray4), in: Circle())
-                .foregroundColor(.primary)
+                .foregroundStyle(.primary)
         }
     }
 
@@ -162,22 +178,58 @@ struct ItineraryHeader: View {
 
             Image(systemName: "line.3.horizontal")
                 .foregroundStyle(.tertiary)
-                .frame(width: 44, height: 34)
+                .frame(width: controlSize, height: controlSize)
                 .accessibilityHidden(true)
 
             Button(role: .destructive) {
-                withAnimation {
-                    stops.removeAll { $0.id == stop.id }
-                }
+                removeStop(stop)
             } label: {
                 Image(systemName: "trash")
                     .foregroundStyle(.red)
-                    .frame(width: 34, height: 34)
+                    .frame(width: controlSize, height: controlSize)
+                    .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
+            .accessibilityLabel("Supprimer \(stop.name)")
         }
         .padding(.vertical, 4)
         .contentShape(Rectangle())
+        // La réorganisation se fait au glisser-déposer, inaccessible en
+        // VoiceOver / Contrôle de sélection : ces actions offrent le même
+        // résultat au rotor (audit P1-6).
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(accessibilityLabel(index: index, stop: stop))
+        .accessibilityActions {
+            if index > 0 {
+                Button("Monter dans l'itinéraire") { move(stop, by: -1) }
+            }
+            if index < stops.count - 1 {
+                Button("Descendre dans l'itinéraire") { move(stop, by: 1) }
+            }
+            Button("Supprimer l'étape", role: .destructive) { removeStop(stop) }
+        }
+    }
+
+    private func accessibilityLabel(index: Int, stop: RouteStop) -> String {
+        "Étape \(index + 1) sur \(stops.count) : \(stop.name)"
+    }
+
+    private func removeStop(_ stop: RouteStop) {
+        withAnimation {
+            stops.removeAll { $0.id == stop.id }
+        }
+    }
+
+    private func move(_ stop: RouteStop, by offset: Int) {
+        guard let source = stops.firstIndex(where: { $0.id == stop.id }) else { return }
+        let target = source + offset
+        guard stops.indices.contains(target) else { return }
+        withAnimation {
+            stops.move(
+                fromOffsets: IndexSet(integer: source),
+                toOffset: target > source ? target + 1 : target
+            )
+        }
     }
 }
 
@@ -187,6 +239,9 @@ struct ItineraryOptions: View {
     @Binding var speed: Double
     let profile: String
     let totalEstimate: LegEstimate?
+    var alternatives: [RouteAlternative] = []
+    var selectedAlternativeIndex: Int = 0
+    var onSelectAlternative: (Int) -> Void = { _ in }
     var onLaunch: () -> Void
 
     @State private var showGpxExporter = false
@@ -196,6 +251,7 @@ struct ItineraryOptions: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             routePreviewCard
+            alternativesSection
 
             VStack(alignment: .leading, spacing: 8) {
                 HStack {
@@ -221,7 +277,7 @@ struct ItineraryOptions: View {
                         .font(.subheadline.weight(.semibold))
                         .frame(maxWidth: .infinity, minHeight: 44)
                 }
-                .buttonStyle(.glass)
+                .buttonStyle(.bordered)
                 .disabled(stops.isEmpty)
 
                 Button {
@@ -232,7 +288,7 @@ struct ItineraryOptions: View {
                         .font(.subheadline.weight(.bold))
                         .frame(maxWidth: .infinity, minHeight: 44)
                 }
-                .buttonStyle(.glassProminent)
+                .buttonStyle(.borderedProminent)
                 .tint(.accentColor)
                 .disabled(stops.isEmpty)
             }
@@ -260,6 +316,80 @@ struct ItineraryOptions: View {
         )
     }
 
+    // Variantes de trajet, comme Plans les empile sous la destination : la plus
+    // rapide en tête, les autres avec leur surcoût en minutes. Choisir n'est pas
+    // décoratif — un point de passage est injecté au lancement pour que la
+    // simulation emprunte réellement la variante retenue
+    // (MapCoordinator+RouteAlternatives.swift).
+    @ViewBuilder
+    private var alternativesSection: some View {
+        if alternatives.count > 1 {
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Trajets proposés")
+                    .font(.subheadline.weight(.semibold))
+                    .padding(.horizontal, 4)
+
+                VStack(spacing: 0) {
+                    ForEach(alternatives) { alternative in
+                        alternativeRow(alternative)
+                        if alternative.index != alternatives.count - 1 {
+                            Divider().padding(.leading, 46)
+                        }
+                    }
+                }
+                .sheetInnerBackground(in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+            }
+        }
+    }
+
+    private func alternativeRow(_ alternative: RouteAlternative) -> some View {
+        let isSelected = alternative.index == selectedAlternativeIndex
+        return Button {
+            onSelectAlternative(alternative.index)
+        } label: {
+            HStack(spacing: 12) {
+                Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
+                    .font(.title3)
+                    .foregroundStyle(isSelected ? Color.accentColor : Color.secondary)
+                    .frame(width: 34, height: 34)
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(alternativeTitle(alternative))
+                        .font(.subheadline.weight(isSelected ? .semibold : .regular))
+                        .foregroundStyle(.primary)
+                    Text(alternativeDetail(alternative))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
+                Spacer(minLength: 8)
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 10)
+            .frame(minHeight: 56)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityAddTraits(isSelected ? [.isButton, .isSelected] : .isButton)
+    }
+
+    private func alternativeTitle(_ alternative: RouteAlternative) -> String {
+        if alternative.isFastest {
+            return "Le plus rapide"
+        }
+        let extraMinutes = max(Int((alternative.extraSeconds / 60).rounded()), 1)
+        return "+\(extraMinutes) min"
+    }
+
+    private func alternativeDetail(_ alternative: RouteAlternative) -> String {
+        let distance = Measurement(value: alternative.route.distanceMeters, unit: UnitLength.meters)
+        var parts = [estimateFormatter.string(from: distance)]
+        if let duration = durationFormatter.string(from: alternative.route.durationSeconds), !duration.isEmpty {
+            parts.insert(duration, at: 0)
+        }
+        return parts.joined(separator: " · ")
+    }
+
     @ViewBuilder
     private var routePreviewCard: some View {
         if let destination = stops.last {
@@ -283,7 +413,7 @@ struct ItineraryOptions: View {
             }
             .padding(14)
             .frame(maxWidth: .infinity, minHeight: 68, alignment: .leading)
-            .background(Color(.secondarySystemFill), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+            .sheetCardBackground(in: RoundedRectangle(cornerRadius: 18, style: .continuous))
         }
     }
 

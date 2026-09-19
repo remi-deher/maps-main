@@ -44,6 +44,9 @@ struct PlaceActions {
     var onRoute: () -> Void
     var onAddStop: () -> Void
     var onFavorite: () -> Void
+    // Retrait du favori : le bouton bascule au lieu de se désactiver une fois
+    // le lieu ajouté (docs/UI_UX_AUDIT_IOS_2026-09.md, P2-8).
+    var onRemoveFavorite: () -> Void
     var onCopyCoordinates: () -> Void
     var onDismiss: () -> Void
 }

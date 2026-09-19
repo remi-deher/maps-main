@@ -1,12 +1,5 @@
 import SwiftUI
 
-private struct HeaderHeightKey: PreferenceKey {
-    static var defaultValue: CGFloat = BottomSheet.collapsedHeight
-    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
-        value = nextValue()
-    }
-}
-
 private struct ScrollOffsetKey: PreferenceKey {
     static var defaultValue: CGFloat = 0
     static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
@@ -15,7 +8,18 @@ private struct ScrollOffsetKey: PreferenceKey {
 }
 
 struct BottomSheet: View {
-    static let collapsedHeight: CGFloat = 52
+    // Hauteur du détent replié, constante.
+    //
+    // Elle était auparavant mesurée sur le header par une `PreferenceKey`, puis
+    // réinjectée dans `presentationDetents` — une boucle de layout dont le
+    // résultat changeait avec la nature du header (champ de recherche ~66 pt,
+    // barre de lieu ~56 pt) : sélectionner un lieu faisait donc bouger le
+    // détent replié sous le doigt. Plans a une hauteur fixe.
+    //
+    // 104 pt laisse de la marge au header même à fort Dynamic Type ; au-delà de
+    // l'échelle AX3 il peut se retrouver légèrement rogné au détent replié,
+    // compromis assumé contre la suppression de l'aller-retour de mesure.
+    static let collapsedDetentHeight: CGFloat = 104
 
     let search: BottomSheetSearchContext
     let itinerary: BottomSheetItineraryContext
@@ -25,11 +29,16 @@ struct BottomSheet: View {
     let gpx: GpxImport
     let simulation: BottomSheetSimulationContext
     let chrome: BottomSheetChromeContext
+    let status: BottomSheetStatusContext
 
-    @Binding private var scrollOffset: CGFloat
     @Binding private var sheetDetent: SheetDetent
-    private let collapsedHeight: CGFloat
-    private let onCollapsedHeightChange: (CGFloat) -> Void
+
+    // Le contenu est-il descendu sous le header ? Sert uniquement au filet de
+    // séparation ci-dessous, d'où l'état local : la valeur était auparavant
+    // remontée jusqu'à `MapCoordinator.sheetScrollOffset` — sur trois couches,
+    // à chaque frame de défilement — et n'était lue nulle part. La garder
+    // locale évite aussi de réévaluer la sheet entière pendant qu'on scrolle.
+    @State private var isContentScrolled = false
 
     private var isCollapsed: Bool {
         sheetDetent == .collapsed
@@ -48,6 +57,7 @@ struct BottomSheet: View {
         gpx: GpxImport,
         simulation: BottomSheetSimulationContext,
         chrome: BottomSheetChromeContext,
+        status: BottomSheetStatusContext,
         presentation: BottomSheetPresentationContext
     ) {
         self.search = search
@@ -58,10 +68,8 @@ struct BottomSheet: View {
         self.gpx = gpx
         self.simulation = simulation
         self.chrome = chrome
-        self._scrollOffset = presentation.scrollOffset
+        self.status = status
         self._sheetDetent = presentation.sheetDetent
-        self.collapsedHeight = presentation.collapsedHeight
-        self.onCollapsedHeightChange = presentation.onCollapsedHeightChange
     }
 
     var body: some View {
@@ -72,13 +80,16 @@ struct BottomSheet: View {
                 place: place,
                 simulation: simulation,
                 chrome: chrome,
+                status: status,
                 isCollapsed: isCollapsed
             )
-            .background(
-                GeometryReader { proxy in
-                    Color.clear.preference(key: HeaderHeightKey.self, value: proxy.size.height)
-                }
-            )
+            // Filet de séparation quand le contenu passe sous le header, comme
+            // Plans : sans lui, les lignes qui défilent semblent sortir de
+            // nulle part sous le champ de recherche.
+            .overlay(alignment: .bottom) {
+                Divider()
+                    .opacity(isContentScrolled ? 1 : 0)
+            }
 
             if !isCollapsed {
                 scrollableContent
@@ -100,7 +111,6 @@ struct BottomSheet: View {
                 .padding(.bottom, 8)
             }
         }
-        .onPreferenceChange(HeaderHeightKey.self, perform: handleCollapsedHeight)
     }
 
     private var scrollableContent: some View {
@@ -113,7 +123,8 @@ struct BottomSheet: View {
                 patrol: patrol,
                 gpx: gpx,
                 simulation: simulation,
-                chrome: chrome
+                chrome: chrome,
+                status: status
             )
             .padding(.bottom, hasActiveRouteControls ? 8 : 24)
             .background(
@@ -124,17 +135,22 @@ struct BottomSheet: View {
             )
         }
         .coordinateSpace(name: "scroll")
-        .scrollDisabled(sheetDetent != .large)
+        // Scrollable dès que la sheet est ouverte, pas seulement au détent
+        // `large` : au détent `medium` (43 % de l'écran) une PlaceCard avec
+        // aperçu Look Around, ou une liste de plus de cinq suggestions,
+        // dépasse la hauteur disponible — le verrouiller rendait le bas du
+        // contenu définitivement inatteignable. Plans scrolle à tous ses
+        // détents. Voir docs/UI_UX_AUDIT_IOS_2026-09.md, P0-3.
+        .scrollDisabled(isCollapsed)
         .scrollDismissesKeyboard(.interactively)
         .onPreferenceChange(ScrollOffsetKey.self) { value in
-            scrollOffset = value
+            // Ne réécrit l'état que lorsque le booléen bascule, pas à chaque
+            // frame de défilement.
+            let scrolled = value < -2
+            if scrolled != isContentScrolled {
+                withAnimation(.easeOut(duration: 0.15)) { isContentScrolled = scrolled }
+            }
         }
     }
 
-    private func handleCollapsedHeight(_ measured: CGFloat) {
-        let rounded = measured.rounded(.toNearestOrAwayFromZero)
-        if abs(rounded - collapsedHeight) > 1 {
-            onCollapsedHeightChange(rounded)
-        }
-    }
 }

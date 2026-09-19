@@ -13,7 +13,7 @@ struct BottomSheetSearchField: View {
                 .font(.title3.weight(.semibold))
                 .accessibilityHidden(true)
 
-            TextField(hasItineraryStops ? "Ajouter un arrêt..." : "Rechercher une adresse", text: $searchQuery)
+            TextField(hasItineraryStops ? "Ajouter un arrêt…" : "Rechercher un lieu ou une adresse", text: $searchQuery)
                 .focused(isFocused)
                 .submitLabel(.search)
                 .onSubmit(onSubmit)
@@ -40,7 +40,9 @@ struct BottomSheetSearchField: View {
         .padding(.trailing, searchQuery.isEmpty ? 20 : 8)
         .frame(minHeight: 58)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .glassEffect(.regular.interactive(), in: .capsule)
+        // Champ plein, pas de verre : on est dans la sheet, pas au-dessus
+        // de la carte (audit P1-1). C'est aussi ce que fait Plans.
+        .background(Color(.tertiarySystemFill), in: .capsule)
         .animation(.snappy(duration: 0.18), value: searchQuery.isEmpty)
     }
 
