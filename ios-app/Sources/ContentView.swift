@@ -60,7 +60,21 @@ struct ContentView: View {
         )
     }
 
+    // Le corps est découpé en trois groupes d'observateurs plutôt qu'en une
+    // seule chaîne de vingt modificateurs : au-delà, le vérificateur de types
+    // de Swift abandonne (« unable to type-check this expression in reasonable
+    // time »). Chaque fonction est inférée séparément, ce qui ramène le coût à
+    // quelque chose de raisonnable — et rend la lecture plus simple.
     var body: some View {
+        observingEngineState(
+            observingSheetAndSearch(
+                observingLifecycle(mapStackWithSheet)
+            )
+        )
+    }
+
+    // La carte plein écran et ses contrôles flottants.
+    private var mapStack: some View {
         ZStack(alignment: .bottom) {
             EngineMapView(
                 spoofedLocation: coordinator.spoofedCoordinate(session: session),
@@ -101,6 +115,11 @@ struct ContentView: View {
                 mapChrome(safeArea: geo.safeAreaInsets, availableHeight: geo.size.height)
             }
         }
+    }
+
+    // ... surmontée de la sheet persistante.
+    private var mapStackWithSheet: some View {
+        mapStack
         .sheet(isPresented: $coordinator.nativeSheetPresented) {
             bottomSheetContent()
                 .presentationDetents(bottomSheetPresentationDetents, selection: $coordinator.nativeSheetDetent)
@@ -113,6 +132,11 @@ struct ContentView: View {
                 .presentationCornerRadius(26)
                 .interactiveDismissDisabled(true)
         }
+    }
+
+    // Cycle de vie, préférences persistées, clavier et liens entrants.
+    private func observingLifecycle(_ content: some View) -> some View {
+        content
         .onAppear {
             session.location.setAccuracyMode(locationAccuracyMode)
             // Seed the itinerary builder with the user's default speed/profile.
@@ -171,6 +195,11 @@ struct ContentView: View {
             // the next plain "Réglages" tap opens the top-level menu.
             if !isPresented { coordinator.settingsOpenToDiagnostics = false }
         }
+    }
+
+    // Détents de la sheet, recherche et itinéraire en cours de composition.
+    private func observingSheetAndSearch(_ content: some View) -> some View {
+        content
         .onChange(of: coordinator.nativeSheetPresented) { _, isPresented in
             if !isPresented {
                 coordinator.nativeSheetPresented = true
@@ -181,26 +210,6 @@ struct ContentView: View {
         }
         .onChange(of: coordinator.sheetDetent) { _, newDetent in
             syncNativeSheetDetent(to: newDetent)
-        }
-        .onChange(of: coordinator.engineState(session: session)) { _, _ in
-            session.handleEngineStateChange(notificationsEnabled: notificationsEnabled)
-        }
-        .onChange(of: coordinator.engineStatusState(session: session)) { oldState, newState in
-            session.handleSimulationStateChange(notificationsEnabled: notificationsEnabled)
-            coordinator.syncActiveRouteState(
-                oldEngineState: oldState,
-                newEngineState: newState,
-                oldNavigationState: coordinator.navigationState(session: session),
-                newNavigationState: coordinator.navigationState(session: session)
-            )
-        }
-        .onChange(of: coordinator.navigationState(session: session)) { oldState, newState in
-            coordinator.syncActiveRouteState(
-                oldEngineState: coordinator.engineStatusState(session: session),
-                newEngineState: coordinator.engineStatusState(session: session),
-                oldNavigationState: oldState,
-                newNavigationState: newState
-            )
         }
         .onChange(of: discovery.state) { _, newState in handleDiscoveryStateChange(newState) }
         .onChange(of: coordinator.searchQuery) { _, newValue in
@@ -225,6 +234,39 @@ struct ContentView: View {
         }
         .onChange(of: coordinator.itineraryStops) { _, newStops in handleItineraryStopsChange(newStops) }
         .onChange(of: coordinator.itineraryProfile) { _, newProfile in handleItineraryProfileChange(newProfile) }
+        .onChange(of: coordinator.selectedPlace) { _, place in
+            // The place card now lives inside the bottom sheet (it used to
+            // float over the map, where the sheet could end up covering it)
+            // - expand the sheet so it's actually visible when set.
+            if place != nil {
+                withAnimation { coordinator.sheetDetent = .medium }
+            }
+        }
+    }
+
+    // État du moteur, Live Activity et sélection d'un POI système.
+    private func observingEngineState(_ content: some View) -> some View {
+        content
+        .onChange(of: coordinator.engineState(session: session)) { _, _ in
+            session.handleEngineStateChange(notificationsEnabled: notificationsEnabled)
+        }
+        .onChange(of: coordinator.engineStatusState(session: session)) { oldState, newState in
+            session.handleSimulationStateChange(notificationsEnabled: notificationsEnabled)
+            coordinator.syncActiveRouteState(
+                oldEngineState: oldState,
+                newEngineState: newState,
+                oldNavigationState: coordinator.navigationState(session: session),
+                newNavigationState: coordinator.navigationState(session: session)
+            )
+        }
+        .onChange(of: coordinator.navigationState(session: session)) { oldState, newState in
+            coordinator.syncActiveRouteState(
+                oldEngineState: coordinator.engineStatusState(session: session),
+                newEngineState: coordinator.engineStatusState(session: session),
+                oldNavigationState: oldState,
+                newNavigationState: newState
+            )
+        }
         .onChange(of: liveActivityKey) { _, key in
             liveActivity.sync(state: key.state, locationName: key.name, enabled: liveActivityEnabled)
         }
@@ -234,14 +276,6 @@ struct ContentView: View {
                 locationName: coordinator.lastInjectedLocationName(session: session),
                 enabled: enabled
             )
-        }
-        .onChange(of: coordinator.selectedPlace) { _, place in
-            // The place card now lives inside the bottom sheet (it used to
-            // float over the map, where the sheet could end up covering it)
-            // - expand the sheet so it's actually visible when set.
-            if place != nil {
-                withAnimation { coordinator.sheetDetent = .medium }
-            }
         }
         .onChange(of: coordinator.selectedFeature) { _, feature in
             // Tapping a system POI resolves into the same SelectedPlace flow as

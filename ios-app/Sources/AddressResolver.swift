@@ -14,7 +14,12 @@ import Observation
 // Ici : une seule requête à la fois, un cache mémoire + disque partagé par
 // toutes les vues, et un repli sur les coordonnées formatées en cas d'échec —
 // de sorte qu'une ligne finit toujours par afficher quelque chose de lisible.
-@MainActor
+// Pas de `@MainActor` : `shared` s'initialise hors du main actor, et le
+// compilateur refuse d'y muter une propriété isolée (« main actor-isolated
+// property 'addresses' can not be mutated from a nonisolated context »). Comme
+// `AppLogger` et `FavoriteAppearanceStore`, ce magasin s'en passe : tous ses
+// appelants sont des vues, donc le thread principal, et la `Task` du worker
+// hérite de ce contexte puisqu'elle est créée depuis lui.
 @Observable
 final class AddressResolver {
     static let shared = AddressResolver()
@@ -35,11 +40,7 @@ final class AddressResolver {
         let longitude: Double
     }
 
-    // `nonisolated` : l'initialisation de `shared` a lieu hors du main actor.
-    // Elle ne fait qu'affecter des propriétés stockées, ce que Swift autorise
-    // depuis un init non isolé — même motif que la note de MapSessionModel sur
-    // les expressions évaluées en contexte non isolé.
-    nonisolated init() {
+    private init() {
         addresses = UserDefaults.standard.dictionary(forKey: Self.storageKey) as? [String: String] ?? [:]
     }
 
@@ -65,7 +66,11 @@ final class AddressResolver {
 
     private func startWorkerIfNeeded() {
         guard worker == nil else { return }
-        worker = Task { [weak self] in
+        // `@MainActor` explicite sur la tâche : la classe n'est plus isolée,
+        // donc sans cette annotation le worker tournerait sur l'exécuteur
+        // global et muterait `addresses` — une propriété observée par des vues
+        // — hors du thread principal.
+        worker = Task { @MainActor [weak self] in
             guard let self else { return }
             while let next = dequeue() {
                 await resolve(next)
@@ -73,7 +78,7 @@ final class AddressResolver {
                 // robinet bien avant la fin d'une longue liste sinon.
                 try? await Task.sleep(for: .milliseconds(250))
             }
-            // Tout est sur le main actor : personne ne peut empiler une
+            // Tout se passe sur le main actor : personne ne peut empiler une
             // demande entre le dequeue vide et cette ligne.
             worker = nil
         }
