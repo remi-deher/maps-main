@@ -31,6 +31,11 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
 
+      - name: Check French strings (accents)
+        # L'app est FR-only : une chaîne visible sans accent compile et passe
+        # inaperçue. Voir docs/UI_UX_AUDIT_IOS_2026-09.md, P0-2.
+        run: python3 Scripts/check_french_strings.py
+
       - name: Select latest stable Xcode (need the iOS 26 SDK)
         uses: maxim-lobanov/setup-xcode@ed7a3b1fda3918c0306d1b724322adc0b8cc0a90 # v1
         with:
